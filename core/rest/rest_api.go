@@ -41,6 +41,7 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode"
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/crypto"
+	"github.com/hyperledger/fabric/core/util"
 	"github.com/hyperledger/fabric/core/crypto/primitives"
 	pb "github.com/hyperledger/fabric/protos"
 )
@@ -182,11 +183,7 @@ func (s *ServerOpenchainREST) SetResponseType(rw web.ResponseWriter, req *web.Re
 // of client login tokens.
 func getRESTFilePath() string {
 	localStore := viper.GetString("peer.fileSystemPath")
-	if !strings.HasSuffix(localStore, "/") {
-		localStore = localStore + "/"
-	}
-	localStore = localStore + "client/"
-	return localStore
+	return util.CanonicalizeFilePath(util.CanonicalizeFilePath(localStore) + "client")
 }
 
 // isEnrollmentIDValid returns true if the given enrollmentID matches the valid

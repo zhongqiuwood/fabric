@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"path/filepath"
 	"strconv"
 	"sync"
 	"syscall"
@@ -301,43 +300,6 @@ func createEventHubServer() (net.Listener, *grpc.Server, error) {
 		pb.RegisterEventsServer(grpcServer, ehServer)
 	}
 	return lis, grpcServer, err
-}
-
-func writePid(fileName string, pid int) error {
-	err := os.MkdirAll(filepath.Dir(fileName), 0755)
-	if err != nil {
-		return err
-	}
-
-	fd, err := os.OpenFile(fileName, os.O_RDWR|os.O_CREATE, 0644)
-	if err != nil {
-		return err
-	}
-	defer fd.Close()
-	if err := syscall.Flock(int(fd.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
-		return fmt.Errorf("can't lock '%s', lock is held", fd.Name())
-	}
-
-	if _, err := fd.Seek(0, 0); err != nil {
-		return err
-	}
-
-	if err := fd.Truncate(0); err != nil {
-		return err
-	}
-
-	if _, err := fmt.Fprintf(fd, "%d", pid); err != nil {
-		return err
-	}
-
-	if err := fd.Sync(); err != nil {
-		return err
-	}
-
-	if err := syscall.Flock(int(fd.Fd()), syscall.LOCK_UN); err != nil {
-		return fmt.Errorf("can't release lock '%s', lock is held", fd.Name())
-	}
-	return nil
 }
 
 var once sync.Once

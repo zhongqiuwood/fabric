@@ -19,6 +19,7 @@ package pbft
 import (
 	"fmt"
 	"os"
+	"sync"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -34,9 +35,10 @@ const configPrefix = "CORE_PBFT"
 
 var pluginInstance consensus.Consenter // singleton service
 var config *viper.Viper
+var configLock sync.Mutex
 
 func init() {
-	config = loadConfig()
+	config = nil;
 }
 
 // GetPlugin returns the handle to the Consenter singleton
@@ -50,6 +52,13 @@ func GetPlugin(c consensus.Stack) consensus.Consenter {
 // New creates a new Obc* instance that provides the Consenter interface.
 // Internally, it uses an opaque pbft-core instance.
 func New(stack consensus.Stack) consensus.Consenter {
+	
+	configLock.Lock()
+	if config == nil{
+		config = loadConfig()
+	}
+	defer configLock.Unlock()
+	
 	handle, _, _ := stack.GetNetworkHandles()
 	id, _ := getValidatorID(handle)
 

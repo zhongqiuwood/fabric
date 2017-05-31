@@ -17,18 +17,14 @@ limitations under the License.
 package util
 
 import (
-	"strings"
 
 	"github.com/spf13/viper"
+	"github.com/hyperledger/fabric/core/util"
 )
 
 // GetCliFilePath is a helper function to retrieve the local storage directory
 // of client login tokens.
 func GetCliFilePath() string {
 	localStore := viper.GetString("peer.fileSystemPath")
-	if !strings.HasSuffix(localStore, "/") {
-		localStore = localStore + "/"
-	}
-	localStore = localStore + "client/"
-	return localStore
+	return util.CanonicalizeFilePath(util.CanonicalizeFilePath(localStore) + "client")
 }

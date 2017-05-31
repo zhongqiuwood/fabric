@@ -21,11 +21,11 @@ import (
 	"io"
 	"os"
 	"path"
-	"strings"
 
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
+	"github.com/hyperledger/fabric/core/util"
 )
 
 var dbLogger = logging.MustGetLogger("db")
@@ -140,10 +140,8 @@ func getDBPath() string {
 	if dbPath == "" {
 		panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
 	}
-	if !strings.HasSuffix(dbPath, "/") {
-		dbPath = dbPath + "/"
-	}
-	return dbPath + "db"
+
+	return util.CanonicalizeFilePath(dbPath) + "db"
 }
 
 // Open open underlying rocksdb

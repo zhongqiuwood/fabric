@@ -1,4 +1,5 @@
 // !build embed
+// +build !windows
 
 package gorocksdb
 

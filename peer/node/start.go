@@ -37,6 +37,7 @@ import (
 	"github.com/hyperledger/fabric/core/ledger/genesis"
 	"github.com/hyperledger/fabric/core/peer"
 	"github.com/hyperledger/fabric/core/rest"
+	"github.com/hyperledger/fabric/core/util"
 	"github.com/hyperledger/fabric/core/system_chaincode"
 	"github.com/hyperledger/fabric/events/producer"
 	pb "github.com/hyperledger/fabric/protos"
@@ -119,8 +120,14 @@ func serve(args []string) error {
 		logger.Infof("Privacy enabled status: false")
 	}
 
-	db.Start()
+	if err := writePid(util.CanonicalizeFilePath(viper.GetString("peer.fileSystemPath"))+"peer.pid",
+		 os.Getpid()); err != nil {
+		return err
+	}
 
+	db.Start()
+	defer db.Stop()
+	
 	var opts []grpc.ServerOption
 	if comm.TLSEnabled() {
 		creds, err := credentials.NewServerTLSFromFile(viper.GetString("peer.tls.cert.file"),
@@ -219,10 +226,6 @@ func serve(args []string) error {
 		}
 		serve <- grpcErr
 	}()
-
-	if err := writePid(viper.GetString("peer.fileSystemPath")+"/peer.pid", os.Getpid()); err != nil {
-		return err
-	}
 
 	// Start the event hub server
 	if ehubGrpcServer != nil && ehubLis != nil {

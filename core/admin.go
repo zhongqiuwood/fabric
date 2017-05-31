@@ -25,6 +25,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/hyperledger/fabric/core/util"
 	pb "github.com/hyperledger/fabric/protos"
 )
 
@@ -72,7 +73,7 @@ func (*ServerAdmin) StopServer(context.Context, *empty.Empty) (*pb.ServerStatus,
 	status := &pb.ServerStatus{Status: pb.ServerStatus_STOPPED}
 	log.Debugf("returning status: %s", status)
 
-	pidFile := viper.GetString("peer.fileSystemPath") + "/peer.pid"
+	pidFile := util.CanonicalizeFilePath(viper.GetString("peer.fileSystemPath")) + "peer.pid"
 	log.Debugf("Remove pid file  %s", pidFile)
 	os.Remove(pidFile)
 	defer os.Exit(0)

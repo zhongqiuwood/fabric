@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/viper"
+	"github.com/hyperledger/fabric/core/util"
 )
 
 func (node *nodeImpl) initConfiguration(name string) (err error) {
@@ -88,8 +89,8 @@ func (conf *configuration) init() error {
 		return err
 	}
 
-	conf.configurationPath = viper.GetString(conf.configurationPathProperty)
-	conf.rootDataPath = conf.configurationPath
+	conf.configurationPath = util.CanonicalizeFilePath(viper.GetString(conf.configurationPathProperty))
+	conf.rootDataPath = filepath.Dir(conf.configurationPath)
 
 	// Set configuration path
 	conf.configurationPath = filepath.Join(

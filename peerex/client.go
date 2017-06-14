@@ -32,16 +32,27 @@ func InitPeerViper(envprefix string, filename string, configPath ...string) erro
 	
 }
 
+var globalConfigDone = false
+
 type GlobalConfig struct{
 	
 	EnvPrefix  	   string
 	ConfigFileName string	
-	ConfigPath []  string
+	ConfigPath 	   []string
 	
 	LogRole	   string //peer, node, network, chaincode, version, can apply different log level from config file	
 }
 
-func (g *GlobalConfig) InitGlobal() error{
+func (_ *GlobalConfig) InitFinished() bool{
+	return globalConfigDone
+}
+
+func (g GlobalConfig) InitGlobal() error{
+	
+	if globalConfigDone {
+		logger.Info("Global initiazation has done ...")
+		return nil
+	}
 	
 	if g.EnvPrefix == ""{
 		g.EnvPrefix = viperEnvPrefix
@@ -52,12 +63,13 @@ func (g *GlobalConfig) InitGlobal() error{
 	}
 	
 	if g.ConfigPath == nil{
-		viper.AddConfigPath("./") // Path to look for the config file in
+		g.ConfigPath = make([]string, 1, 10)
+		g.ConfigPath[0] = "./"// Path to look for the config file in
 		// Path to look for the config file in based on GOPATH
 		gopath := os.Getenv("GOPATH")
 		for _, p := range filepath.SplitList(gopath) {
 			peerpath := filepath.Join(p, "src/github.com/hyperledger/fabric/peer")
-			viper.AddConfigPath(peerpath)
+			g.ConfigPath = append(g.ConfigPath, peerpath)
 		}		
 	}
 	
@@ -71,9 +83,15 @@ func (g *GlobalConfig) InitGlobal() error{
 	}
 	flogging.LoggingInit(g.LogRole)
 	
+	err = core.CacheConfiguration()
+	if err != nil{
+		return err
+	}
+	
+	globalConfigDone = true
 	logger.Info("Global init done ...")
 	
-	return core.CacheConfiguration()
+	return nil
 }
 
 type PerformanceTuning struct{

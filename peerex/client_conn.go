@@ -1,21 +1,22 @@
-package client
+package peerex
 
 import (
-	fabricpeer_comm "github.com/hyperledger/fabric/peer/common"
-	fabricpeer "github.com/hyperledger/fabric/core/peer"
+	_ "github.com/hyperledger/fabric/peer/common"
+	"github.com/hyperledger/fabric/core/peer"
+	"google.golang.org/grpc"
 )
 
 type ClientConn struct{	
-	fabricpeer_comm.DevopsConn
+	C *grpc.ClientConn
 }
 
 func (conn *ClientConn) Dialdefault() error{
-	c, err := fabricpeer.NewPeerClientConnection()
+	c, err := peer.NewPeerClientConnection()
 	if err != nil{
 		return err
 	}
 	
-	conn.DevopsConn.C = c
+	conn.C = c
 	return nil
 }
 

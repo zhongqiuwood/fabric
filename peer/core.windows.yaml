@@ -63,6 +63,7 @@ logging:
     # Developers: Please see fabric/docs/Setup/logging-control.md for more
     # options.
     level: debug
+    client: debug
     #peer: warning
 
     #node:      info

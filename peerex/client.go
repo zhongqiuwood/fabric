@@ -32,6 +32,10 @@ func InitPeerViper(envprefix string, filename string, configPath ...string) erro
 	
 }
 
+func InitLogger(module string) *logging.Logger{
+	return logging.MustGetLogger(module)
+}
+
 var globalConfigDone = false
 
 type GlobalConfig struct{
@@ -79,7 +83,7 @@ func (g GlobalConfig) InitGlobal() error{
 	}
 	
 	if g.LogRole == "" {
-		g.LogRole = "peer"
+		g.LogRole = "client"
 	}
 	flogging.LoggingInit(g.LogRole)
 	

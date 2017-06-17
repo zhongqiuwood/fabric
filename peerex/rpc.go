@@ -21,7 +21,7 @@ func (_ *Rpc) NewManager() *rpcManager{
 	return &rpcManager{ctx, cancel}
 }
 
-type RpcBuilder struct{
+type lRpcBuilder struct{
 	ChaincodeName	 string
 //	ChaincodeLang    string
 	Function		 string

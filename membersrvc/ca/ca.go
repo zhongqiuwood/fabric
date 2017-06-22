@@ -39,6 +39,7 @@ import (
 
 	"github.com/hyperledger/fabric/core/crypto/primitives"
 	"github.com/hyperledger/fabric/flogging"
+	"github.com/hyperledger/fabric/core/util"
 	pb "github.com/hyperledger/fabric/membersrvc/protos"
 	_ "github.com/mattn/go-sqlite3" // This blank import is required to load sqlite3 driver
 	"github.com/op/go-logging"
@@ -132,7 +133,7 @@ func NewDefaultCertificateSpecWithCommonName(id string, commonName string, pub i
 func CacheConfiguration() {
 	caOrganization = viper.GetString("pki.ca.subject.organization")
 	caCountry = viper.GetString("pki.ca.subject.country")
-	rootPath = viper.GetString("server.rootpath")
+	rootPath = util.CanonicalizeFilePath(viper.GetString("server.rootpath"))
 	caDir = viper.GetString("server.cadir")
 }
 

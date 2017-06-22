@@ -34,8 +34,6 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-const envPrefix = "MEMBERSRVC_CA"
-
 var logger = logging.MustGetLogger("server")
 
 func main() {
@@ -44,7 +42,7 @@ func main() {
 	viper.AutomaticEnv()
 	replacer := strings.NewReplacer(".", "_")
 	viper.SetEnvKeyReplacer(replacer)
-	viper.SetConfigName("membersrvc")
+	viper.SetConfigName(cfgFileName)
 	viper.SetConfigType("yaml")
 	viper.AddConfigPath("./")
 	// Path to look for the config file based on GOPATH

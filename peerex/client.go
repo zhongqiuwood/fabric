@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/viper"
 	
 	"github.com/hyperledger/fabric/core"
+	"github.com/hyperledger/fabric/core/util"
 	"github.com/hyperledger/fabric/flogging"
 )
 
@@ -96,6 +97,14 @@ func (g GlobalConfig) InitGlobal() error{
 	logger.Info("Global init done ...")
 	
 	return nil
+}
+
+func (_ *GlobalConfig) GetPeerFS() string{
+	if !globalConfigDone{
+		return ""
+	}
+	
+	return util.CanonicalizeFilePath(viper.GetString("peer.fileSystemPath"))
 }
 
 type PerformanceTuning struct{

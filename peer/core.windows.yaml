@@ -174,9 +174,9 @@ peer:
         tlsca:
             paddr: localhost:7054
         tls:
-            enabled: false
+            enabled: true
             rootcert:
-                file: tlsca.cert
+                file: 'd:\tlsca.cert'
             # The server name use to verify the hostname returned by TLS handshake
             serverhostoverride:
 
@@ -390,7 +390,7 @@ security:
     # Enable security will force every entity on the network to enroll with obc-ca
     # and maintain a valid set of certificates in order to communicate with
     # other peers
-    enabled: false
+    enabled: true
     # To enroll NVP or VP with membersrvc. These parameters are for 1 time use.
     # They will not be valid on subsequent times without un-enroll first.
     # The values come from off-line registration with obc-ca. For testing, make

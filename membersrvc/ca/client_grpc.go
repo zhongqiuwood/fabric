@@ -107,8 +107,12 @@ func GetClientConn(address string, serverName string) (*grpc.ClientConn, error) 
 
 	if viper.GetBool("security.tls_enabled") {
 		caLogger.Debug("TLS was enabled [security.tls_enabled == true]")
-
-		creds, err := NewClientTLSFromFile(viper.GetString("security.client.cert.file"), viper.GetString("security.serverhostoverride"))
+		overridename := viper.GetString("security.serverhostoverride")
+		if overridename != ""{
+			serverName = overridename
+		}
+		
+		creds, err := NewClientTLSFromFile(viper.GetString("security.client.cert.file"), serverName)
 
 		if err != nil {
 			caLogger.Error("Could not establish TLS client connection in GetClientConn while getting creds:")

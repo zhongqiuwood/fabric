@@ -184,7 +184,7 @@ func serve(args []string) error {
 
 	// Register Devops server
 	serverDevops := core.NewDevopsServer(peerServer)
-	pb.RegisterDevopsServer(grpcServer, serverDevops)
+	//pb.RegisterDevopsServer(grpcServer, serverDevops)
 
 	// Register the ServerOpenchain server
 	serverOpenchain, err := rest.NewOpenchainServerWithPeerInfo(peerServer)
@@ -193,7 +193,7 @@ func serve(args []string) error {
 		return err
 	}
 
-	pb.RegisterOpenchainServer(grpcServer, serverOpenchain)
+	//pb.RegisterOpenchainServer(grpcServer, serverOpenchain)
 
 	// Create and register the REST service if configured
 	if viper.GetBool("rest.enabled") {
@@ -216,6 +216,23 @@ func serve(args []string) error {
 		fmt.Println(sig)
 		serve <- nil
 	}()
+
+	
+	if viper.GetBool("service.enabled") {
+		go func() {
+			srverr := service.StartFabricService(serverOpenchain, serverDevops)
+			if srverr != nil {
+				srverr = fmt.Errorf("fabric service exited with error: %s", srverr)
+			} else {
+				logger.Info("fabric service exited")
+			}
+			serve <- srverr
+		}()		
+	}else{
+		//else we still expose these interfaces to the original service
+		pb.RegisterDevopsServer(grpcServer, serverDevops)
+		pb.RegisterOpenchainServer(grpcServer, serverOpenchain)
+	}
 
 	go func() {
 		var grpcErr error

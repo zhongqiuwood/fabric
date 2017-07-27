@@ -120,7 +120,7 @@ func serve(args []string) error {
 		logger.Infof("Privacy enabled status: false")
 	}
 
-	if err := writePid(util.CanonicalizeFilePath(viper.GetString("peer.fileSystemPath"))+"peer.pid",
+	if err := writePid(util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))+"peer.pid",
 		 os.Getpid()); err != nil {
 		return err
 	}

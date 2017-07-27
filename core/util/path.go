@@ -4,7 +4,7 @@ package util
 
 import "strings"
 
-func CanonicalizeFilePath(path string) string {
+func CanonicalizePath(path string) string {
 
 	if !strings.HasSuffix(path, "/") {
 		path = path + "/"
@@ -12,3 +12,11 @@ func CanonicalizeFilePath(path string) string {
 	return path
 	
 }
+
+func CanonicalizeFilePath(filepath string) string {
+
+	return filepath
+	
+}
+
+

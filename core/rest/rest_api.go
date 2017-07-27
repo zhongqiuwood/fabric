@@ -183,7 +183,7 @@ func (s *ServerOpenchainREST) SetResponseType(rw web.ResponseWriter, req *web.Re
 // of client login tokens.
 func getRESTFilePath() string {
 	localStore := viper.GetString("peer.fileSystemPath")
-	return util.CanonicalizeFilePath(util.CanonicalizeFilePath(localStore) + "client")
+	return util.CanonicalizePath(util.CanonicalizePath(localStore) + "client")
 }
 
 // isEnrollmentIDValid returns true if the given enrollmentID matches the valid

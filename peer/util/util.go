@@ -26,5 +26,5 @@ import (
 // of client login tokens.
 func GetCliFilePath() string {
 	localStore := viper.GetString("peer.fileSystemPath")
-	return util.CanonicalizeFilePath(util.CanonicalizeFilePath(localStore) + "client")
+	return util.CanonicalizePath(util.CanonicalizePath(localStore) + "client")
 }

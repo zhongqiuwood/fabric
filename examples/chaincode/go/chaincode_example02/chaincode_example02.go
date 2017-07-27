@@ -26,7 +26,6 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
-
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
 
@@ -75,6 +74,13 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface, function stri
 	if function == "delete" {
 		// Deletes an entity from its state
 		return t.delete(stub, args)
+	}
+
+	attr, errattr := stub.ReadCertAttribute("position")
+	if errattr != nil{
+		fmt.Println("attr fail", errattr)
+	}else{
+		fmt.Println("attr position is", string(attr))
 	}
 
 	var A, B string    // Entities
@@ -156,6 +162,13 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 	}
 	var A string // Entities
 	var err error
+
+	attr, errattr := stub.ReadCertAttribute("position")
+	if errattr != nil{
+		fmt.Println("attr fail", errattr)
+	}else{
+		fmt.Println("attr position is", string(attr))
+	}
 
 	if len(args) != 1 {
 		return nil, errors.New("Incorrect number of arguments. Expecting name of the person to query")

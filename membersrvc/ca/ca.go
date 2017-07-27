@@ -133,7 +133,7 @@ func NewDefaultCertificateSpecWithCommonName(id string, commonName string, pub i
 func CacheConfiguration() {
 	caOrganization = viper.GetString("pki.ca.subject.organization")
 	caCountry = viper.GetString("pki.ca.subject.country")
-	rootPath = util.CanonicalizeFilePath(viper.GetString("server.rootpath"))
+	rootPath = util.CanonicalizePath(viper.GetString("server.rootpath"))
 	caDir = viper.GetString("server.cadir")
 }
 

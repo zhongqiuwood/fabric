@@ -89,7 +89,7 @@ func (conf *configuration) init() error {
 		return err
 	}
 
-	conf.configurationPath = util.CanonicalizeFilePath(viper.GetString(conf.configurationPathProperty))
+	conf.configurationPath = util.CanonicalizePath(viper.GetString(conf.configurationPathProperty))
 	conf.rootDataPath = filepath.Dir(conf.configurationPath)
 
 	// Set configuration path

@@ -104,7 +104,7 @@ func (_ *GlobalConfig) GetPeerFS() string{
 		return ""
 	}
 	
-	return util.CanonicalizeFilePath(viper.GetString("peer.fileSystemPath"))
+	return util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
 }
 
 type PerformanceTuning struct{

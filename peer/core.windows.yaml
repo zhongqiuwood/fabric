@@ -33,6 +33,19 @@ rest:
 
 ###############################################################################
 #
+#    Devops section
+#
+###############################################################################
+devops:
+
+    # Enable/disable setting for the REST service. It is recommended to disable
+    # REST service on validators in production deployment and use non-validating
+    # nodes to host REST service
+    enabled: true
+    listenAddress: 127.0.0.1:7051
+
+###############################################################################
+#
 #    LOGGING section
 #
 ###############################################################################
@@ -90,7 +103,8 @@ peer:
     networkId: dev
 
     # The Address this Peer will listen on
-    listenAddress: 127.0.0.1:7051
+    listenAddress: 127.0.0.1:7055
+
     # The Address this Peer will bind to for providing services
     address: 127.0.0.1:7051
     # Whether the Peer should programmatically determine the address to bind to.
@@ -174,7 +188,7 @@ peer:
         tlsca:
             paddr: localhost:7054
         tls:
-            enabled: true
+            enabled: false
             rootcert:
                 file: 'd:\tlsca.cert'
             # The server name use to verify the hostname returned by TLS handshake
@@ -390,7 +404,7 @@ security:
     # Enable security will force every entity on the network to enroll with obc-ca
     # and maintain a valid set of certificates in order to communicate with
     # other peers
-    enabled: true
+    enabled: false
     # To enroll NVP or VP with membersrvc. These parameters are for 1 time use.
     # They will not be valid on subsequent times without un-enroll first.
     # The values come from off-line registration with obc-ca. For testing, make

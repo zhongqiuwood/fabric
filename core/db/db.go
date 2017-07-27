@@ -141,7 +141,7 @@ func getDBPath() string {
 		panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
 	}
 
-	return util.CanonicalizeFilePath(dbPath) + "db"
+	return util.CanonicalizePath(dbPath) + "db"
 }
 
 // Open open underlying rocksdb

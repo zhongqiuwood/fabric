@@ -33,16 +33,16 @@ rest:
 
 ###############################################################################
 #
-#    Devops section
+#    service section
 #
 ###############################################################################
-devops:
+service:
 
-    # Enable/disable setting for the REST service. It is recommended to disable
-    # REST service on validators in production deployment and use non-validating
-    # nodes to host REST service
+    # Enable/disable setting for the secondary rpc for chain and devops service.
     enabled: true
-    listenAddress: 127.0.0.1:7051
+
+    # The address that the rpc service will listen on 
+    address: 127.0.0.1:7051
 
 ###############################################################################
 #
@@ -105,8 +105,14 @@ peer:
     # The Address this Peer will listen on
     listenAddress: 127.0.0.1:7055
 
+    # The Address this Peer will bind for p2p communication
+    accessAddr: 127.0.0.1:7055
+
     # The Address this Peer will bind to for providing services
+    # If the target peer's service is enabled, it should be the port at which 
+    # service is listening
     address: 127.0.0.1:7051
+    
     # Whether the Peer should programmatically determine the address to bind to.
     # This case is useful for docker containers.
     addressAutoDetect: false
@@ -169,15 +175,20 @@ peer:
             # if > 0, if buffer full, blocks till timeout
             timeout: 10
 
-    # TLS Settings for p2p communications
+    # TLS Settings for server and p2p communications
     tls:
-        enabled:  false
+    # enable tls for service (or whole, including p2p, if service is disabled)
+        enabled: true
         cert:
-            file: testdata/server1.pem
+            file: '%appdata%\hyperledger\cert\gamepaivp1.crt'
         key:
-            file: testdata/server1.key
+            file: '%appdata%\hyperledger\cert\gamepaivp1.key'
         # The server name use to verify the hostname returned by TLS handshake
-        serverhostoverride:
+        rootcert:
+            file: '%appdata%\hyperledger\ca.crt'
+        serverhostoverride: node1.gamepai.mobi
+    # enable for p2p, will use tlsca
+        p2pusetlsca: false
 
     # PKI member services properties
     pki:

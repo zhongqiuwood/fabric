@@ -9,6 +9,8 @@ import (
 
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
+	
+	"github.com/hyperledger/fabric/core/util"
 )
 
 const defaultTimeout = time.Second * 3
@@ -41,9 +43,9 @@ func InitTLSForPeer() credentials.TransportCredentials {
 		sn = viper.GetString("peer.tls.serverhostoverride")
 	}
 	var creds credentials.TransportCredentials
-	if viper.GetString("peer.tls.cert.file") != "" {
+	if rootcert := viper.GetString("peer.tls.rootcert.file"); rootcert != "" {
 		var err error
-		creds, err = credentials.NewClientTLSFromFile(viper.GetString("peer.tls.cert.file"), sn)
+		creds, err = credentials.NewClientTLSFromFile(util.CanonicalizeFilePath(rootcert), sn)
 		if err != nil {
 			grpclog.Fatalf("Failed to create TLS credentials %v", err)
 		}

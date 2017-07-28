@@ -31,7 +31,8 @@ import (
 	"github.com/hyperledger/fabric/consensus/helper"
 	"github.com/hyperledger/fabric/core"
 	"github.com/hyperledger/fabric/core/chaincode"
-	"github.com/hyperledger/fabric/core/comm"
+	_ "github.com/hyperledger/fabric/core/comm"
+	"github.com/hyperledger/fabric/core/service"
 	"github.com/hyperledger/fabric/core/crypto"
 	"github.com/hyperledger/fabric/core/db"
 	"github.com/hyperledger/fabric/core/ledger/genesis"
@@ -44,7 +45,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
+	_ "google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"
 )
 
@@ -129,13 +130,11 @@ func serve(args []string) error {
 	defer db.Stop()
 	
 	var opts []grpc.ServerOption
-	if comm.TLSEnabled() {
-		creds, err := credentials.NewServerTLSFromFile(viper.GetString("peer.tls.cert.file"),
-			viper.GetString("peer.tls.key.file"))
-
-		if err != nil {
-			grpclog.Fatalf("Failed to generate credentials %v", err)
-		}
+	
+	creds, err := service.GetServiceTLSCred()
+	if err != nil {
+		grpclog.Fatalf("Failed to generate credentials %v", err)
+	}else if creds != nil{
 		opts = []grpc.ServerOption{grpc.Creds(creds)}
 	}
 
@@ -301,14 +300,11 @@ func createEventHubServer() (net.Listener, *grpc.Server, error) {
 
 		//TODO - do we need different SSL material for events ?
 		var opts []grpc.ServerOption
-		if comm.TLSEnabled() {
-			creds, err := credentials.NewServerTLSFromFile(
-				viper.GetString("peer.tls.cert.file"),
-				viper.GetString("peer.tls.key.file"))
-
-			if err != nil {
-				return nil, nil, fmt.Errorf("Failed to generate credentials %v", err)
-			}
+		
+		creds, err := service.GetServiceTLSCred()
+		if err != nil {
+			return nil, nil, fmt.Errorf("Failed to generate credentials %v", err)
+		}else if creds != nil{
 			opts = []grpc.ServerOption{grpc.Creds(creds)}
 		}
 

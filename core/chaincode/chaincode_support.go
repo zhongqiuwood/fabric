@@ -34,6 +34,7 @@ import (
 	"github.com/hyperledger/fabric/core/container/ccintf"
 	"github.com/hyperledger/fabric/core/crypto"
 	"github.com/hyperledger/fabric/core/ledger"
+	"github.com/hyperledger/fabric/core/util"
 	pb "github.com/hyperledger/fabric/protos"
 )
 
@@ -127,8 +128,8 @@ func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEn
 
 	s.peerTLS = viper.GetBool("peer.tls.enabled")
 	if s.peerTLS {
-		s.peerTLSCertFile = viper.GetString("peer.tls.cert.file")
-		s.peerTLSKeyFile = viper.GetString("peer.tls.key.file")
+		s.peerTLSCertFile = util.CanonicalizeFilePath(viper.GetString("peer.tls.rootcert.file"))
+//		s.peerTLSKeyFile = viper.GetString("peer.tls.key.file")
 		s.peerTLSSvrHostOrd = viper.GetString("peer.tls.serverhostoverride")
 	}
 
@@ -169,7 +170,7 @@ type ChaincodeSupport struct {
 	peerID               string
 	peerTLS              bool
 	peerTLSCertFile      string
-	peerTLSKeyFile       string
+//	peerTLSKeyFile       string
 	peerTLSSvrHostOrd    string
 	keepalive            time.Duration
 }

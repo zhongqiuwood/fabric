@@ -1758,7 +1758,9 @@ func StartOpenchainRESTServer(server *ServerOpenchain, devops *core.Devops) {
 
 	// Start server
 	if comm.TLSEnabled() {
-		err := http.ListenAndServeTLS(viper.GetString("rest.address"), viper.GetString("peer.tls.cert.file"), viper.GetString("peer.tls.key.file"), router)
+		err := http.ListenAndServeTLS(viper.GetString("rest.address"), 
+			util.CanonicalizeFilePath(viper.GetString("peer.tls.cert.file")), 
+			util.CanonicalizeFilePath(viper.GetString("peer.tls.key.file")), router)
 		if err != nil {
 			restLogger.Errorf("ListenAndServeTLS: %s", err)
 		}

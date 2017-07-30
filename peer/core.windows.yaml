@@ -106,12 +106,12 @@ peer:
     listenAddress: 127.0.0.1:7055
 
     # The Address this Peer will bind for p2p communication
-    accessAddr: 127.0.0.1:7055
+    address: 127.0.0.1:7055
 
-    # The Address this Peer will bind to for providing services
+    # The Address which peer will use when run as client
     # If the target peer's service is enabled, it should be the port at which 
     # service is listening
-    address: 127.0.0.1:7051
+    cliaddress: 127.0.0.1:7051
     
     # Whether the Peer should programmatically determine the address to bind to.
     # This case is useful for docker containers.
@@ -178,7 +178,8 @@ peer:
     # TLS Settings for server and p2p communications
     tls:
     # enable tls for service (or whole, including p2p, if service is disabled)
-        enabled: true
+        enabled: false
+        serviceenabled: true
         cert:
             file: '%appdata%\hyperledger\cert\gamepaivp1.crt'
         key:
@@ -186,7 +187,7 @@ peer:
         # The server name use to verify the hostname returned by TLS handshake
         rootcert:
             file: '%appdata%\hyperledger\ca.crt'
-        serverhostoverride: node1.gamepai.mobi
+        serverhostoverride: node1.gamecenter.mobi
     # enable for p2p, will use tlsca
         p2pusetlsca: false
 
@@ -199,11 +200,11 @@ peer:
         tlsca:
             paddr: localhost:7054
         tls:
-            enabled: false
+            enabled: true
             rootcert:
-                file: 'd:\tlsca.cert'
+                file: '%appdata%\hyperledger\ca.crt'
             # The server name use to verify the hostname returned by TLS handshake
-            serverhostoverride:
+            serverhostoverride: gateway.gamecenter.mobi
 
     # Peer discovery settings.  Controls how this peer discovers other peers
     discovery:
@@ -415,7 +416,7 @@ security:
     # Enable security will force every entity on the network to enroll with obc-ca
     # and maintain a valid set of certificates in order to communicate with
     # other peers
-    enabled: false
+    enabled: true
     # To enroll NVP or VP with membersrvc. These parameters are for 1 time use.
     # They will not be valid on subsequent times without un-enroll first.
     # The values come from off-line registration with obc-ca. For testing, make

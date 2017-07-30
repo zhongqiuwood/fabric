@@ -125,7 +125,7 @@ func WriteGopathSrc(tw *tar.Writer, excludeDir string) error {
 
 	// Add the certificates to tar
 	if viper.GetBool("peer.tls.enabled") {
-		err := WriteFileToPackage(viper.GetString("peer.tls.cert.file"), "src/certs/cert.pem", tw)
+		err := WriteFileToPackage(viper.GetString("peer.tls.rootcert.file"), "src/certs/cert.pem", tw)
 		if err != nil {
 			return fmt.Errorf("Error writing cert file to package: %s", err)
 		}

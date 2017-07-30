@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"github.com/hyperledger/fabric/core/crypto"
+	"github.com/hyperledger/fabric/core/util"
 	"github.com/hyperledger/fabric/flogging"
 	"github.com/hyperledger/fabric/membersrvc/ca"
 	"github.com/hyperledger/fabric/metadata"
@@ -86,7 +87,9 @@ func main() {
 
 	if viper.GetBool("security.tls_enabled") {
 		logger.Debug("TLS was enabled [security.tls_enabled == true]")
-		creds, err := credentials.NewServerTLSFromFile(viper.GetString("server.tls.cert.file"), viper.GetString("server.tls.key.file"))
+		creds, err := credentials.NewServerTLSFromFile(
+			util.CanonicalizeFilePath(viper.GetString("server.tls.cert.file")), 
+			util.CanonicalizeFilePath(viper.GetString("server.tls.key.file")))
 		if err != nil {
 			logger.Panic(err)
 		}

@@ -69,7 +69,7 @@ func CacheConfiguration() (err error) {
 	getLocalAddress := func() (peerAddress string, err error) {
 		if viper.GetBool("peer.addressAutoDetect") {
 			// Need to get the port from the peer.address setting, and append to the determined host IP
-			_, port, err := net.SplitHostPort(viper.GetString("peer.accessAddr"))
+			_, port, err := net.SplitHostPort(viper.GetString("peer.address"))
 			if err != nil {
 				err = fmt.Errorf("Error auto detecting Peer's address: %s", err)
 				return "", err
@@ -77,7 +77,7 @@ func CacheConfiguration() (err error) {
 			peerAddress = net.JoinHostPort(GetLocalIP(), port)
 			peerLogger.Infof("Auto detected peer address: %s", peerAddress)
 		} else {
-			peerAddress = viper.GetString("peer.accessAddr")
+			peerAddress = viper.GetString("peer.address")
 		}
 		return
 	}

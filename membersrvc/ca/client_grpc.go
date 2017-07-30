@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"time"
 
+	"github.com/hyperledger/fabric/core/util"
 	pb "github.com/hyperledger/fabric/membersrvc/protos"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -112,7 +113,9 @@ func GetClientConn(address string, serverName string) (*grpc.ClientConn, error) 
 			serverName = overridename
 		}
 		
-		creds, err := NewClientTLSFromFile(viper.GetString("security.client.cert.file"), serverName)
+		creds, err := NewClientTLSFromFile(
+			util.CanonicalizeFilePath(viper.GetString("security.client.cert.file")),
+			 serverName)
 
 		if err != nil {
 			caLogger.Error("Could not establish TLS client connection in GetClientConn while getting creds:")

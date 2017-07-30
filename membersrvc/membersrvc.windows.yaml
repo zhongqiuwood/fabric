@@ -16,9 +16,9 @@ server:
         # TLS certificate and key file paths
         tls:
             cert:
-                file:
+                file: '%appdata%\hyperledger\cert\gamepaigw.crt'
             key:
-                file:
+                file: '%appdata%\hyperledger\cert\gamepaigw.key'
 
 security:
     # Either 256 or 384   (note: must be the exact same value as specified in the core.yaml file)
@@ -28,7 +28,7 @@ security:
     hashAlgorithm: SHA3
 
     # The server host CN (Common Name) to be used (needs to match the TLS Server Certificate)
-    serverhostoverride: tlsca
+    serverhostoverride: gateway.gamecenter.mobi
 
     # Boolean (true/false) value indicating whether TLS should be used between the client and
     # the various CA services (ECA, TCA, TLSCA, ACA)
@@ -38,7 +38,7 @@ security:
     # between the client and the ACA service
     client:
        cert:
-           file:
+           file: '%appdata%\hyperledger\ca.crt'
 
 
 # Enabling/disabling different logging levels of the CA.
@@ -48,10 +48,10 @@ logging:
 # Please see fabric/docs/Setup/logging-control.md for more
 # options.
     server: warning
-    ca: warning
-    eca: warning
-    ecap: warning
-    ecaa: warning
+    ca: info
+    eca: debug
+    ecap: debug
+    ecaa: info
     aca: warning
     acap: warning
     tca: warning
@@ -301,5 +301,5 @@ aca:
 pki:
           ca:
                  subject:
-                         organization: Hyperledger
-                         country: US
+                         organization: Gamepai Fund.
+                         country: CN

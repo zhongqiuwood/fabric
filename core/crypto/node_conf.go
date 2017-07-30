@@ -249,7 +249,7 @@ func (conf *configuration) getTLSCACertsChainFilename() string {
 }
 
 func (conf *configuration) getTLSCACertsExternalPath() string {
-	return viper.GetString("peer.pki.tls.rootcert.file")
+	return util.CanonicalizeFilePath(viper.GetString("peer.pki.tls.rootcert.file"))
 }
 
 func (conf *configuration) isTLSEnabled() bool {

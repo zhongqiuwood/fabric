@@ -63,7 +63,7 @@ func initPeerClient() (err error) {
 
 	peerClientConn, err = peer.NewPeerClientConnection()
 	if err != nil {
-		fmt.Printf("error connection to server at host:port = %s\n", viper.GetString("peer.address"))
+		fmt.Printf("error connection to server at host:port = %s\n", viper.GetString("peer.cliaddress"))
 		return
 	}
 	serverClient = pb.NewPeerClient(peerClientConn)

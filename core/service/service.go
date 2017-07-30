@@ -16,20 +16,17 @@ import (
 	"github.com/hyperledger/fabric/core/rest"
 	"github.com/hyperledger/fabric/core/comm"
 	"github.com/hyperledger/fabric/core/util"
-	_ "github.com/hyperledger/fabric/protos"
+	pb "github.com/hyperledger/fabric/protos"
 )
 
 var serviceLogger = logging.MustGetLogger("service")
 
 func GetServiceTLSCred() (credentials.TransportCredentials, error){
 
-	if comm.TLSEnabled() {
-		return credentials.NewServerTLSFromFile(
-			util.CanonicalizeFilePath(viper.GetString("peer.tls.cert.file")),
-			util.CanonicalizeFilePath(viper.GetString("peer.tls.key.file")))
-	}
+	return credentials.NewServerTLSFromFile(
+		util.CanonicalizeFilePath(viper.GetString("peer.tls.cert.file")),
+		util.CanonicalizeFilePath(viper.GetString("peer.tls.key.file")))
 
-	return nil, nil	
 }
 
 func StartFabricService(server *rest.ServerOpenchain, devops *core.Devops) error{
@@ -48,15 +45,21 @@ func StartFabricService(server *rest.ServerOpenchain, devops *core.Devops) error
 	}	
 	
 	var opts []grpc.ServerOption
-	creds, err := GetServiceTLSCred()
+	
+	if comm.TLSEnabled(true){
+		creds, err := GetServiceTLSCred()
 
-	if err != nil {
-		grpclog.Fatalf("Failed to generate credentials %v", err)
-	}else if creds != nil{
-		opts = []grpc.ServerOption{grpc.Creds(creds)}
+		if err != nil {
+			grpclog.Fatalf("Failed to generate credentials %v", err)
+			return err
+		}
+		opts = []grpc.ServerOption{grpc.Creds(creds)}			
 	}
 	
 	grpcServer := grpc.NewServer(opts...)
+	
+	pb.RegisterDevopsServer(grpcServer, devops)
+	pb.RegisterOpenchainServer(grpcServer, server)	
 	
 	serviceLogger.Infof("Starting peer service with address=%s",
 		listenAddr)	

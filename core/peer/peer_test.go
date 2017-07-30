@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 
 	tmpConn, err := NewPeerClientConnection()
 	if err != nil {
-		fmt.Printf("error connection to server at host:port = %s\n", viper.GetString("peer.address"))
+		fmt.Printf("error connection to server at host:port = %s\n", viper.GetString("peer.cliaddress"))
 		os.Exit(1)
 	}
 	peerClientConn = tmpConn

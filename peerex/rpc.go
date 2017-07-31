@@ -75,7 +75,9 @@ func (b *RpcBuilder) prepare(args []string) *pb.ChaincodeInvocationSpec{
 	invocation := &pb.ChaincodeInvocationSpec{ChaincodeSpec: spec}
 	
 	if b.Security != nil{
+		spec.SecureContext = b.Security.User
 		spec.Attributes = b.Security.Attributes
+		spec.Metadata = b.Security.Metadata
 		if len(b.Security.CustomIDGenAlg) != 0{
 			invocation.IdGenerationAlg = b.Security.CustomIDGenAlg
 		}

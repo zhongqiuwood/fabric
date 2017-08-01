@@ -133,7 +133,7 @@ func getPeerAddress() string {
 		return peerAddress
 	}
 
-	if peerAddress = viper.GetString("peer.accessAddr"); peerAddress == "" {
+	if peerAddress = viper.GetString("peer.address"); peerAddress == "" {
 		chaincodeLogger.Fatalf("peer.address not configured, can't connect to peer")
 	}
 
@@ -142,7 +142,7 @@ func getPeerAddress() string {
 
 func newPeerClientConnection() (*grpc.ClientConn, error) {
 	var peerAddress = getPeerAddress()
-	if comm.TLSEnabled(false) {
+	if comm.TLSEnabled() {
 		return comm.NewClientConnectionWithAddress(peerAddress, true, true, comm.InitTLSForPeer())
 	}
 	return comm.NewClientConnectionWithAddress(peerAddress, true, false, nil)

@@ -2,16 +2,30 @@ package peerex
 
 import (
 	_ "github.com/hyperledger/fabric/peer/common"
-	"github.com/hyperledger/fabric/core/peer"
+	"github.com/hyperledger/fabric/core/comm"
 	"google.golang.org/grpc"
+	"github.com/spf13/viper"
 )
 
 type ClientConn struct{	
 	C *grpc.ClientConn
 }
 
+// NewPeerClientConnection Returns a new grpc.ClientConn to the configured local PEER.
+func newPeerClientConnection() (*grpc.ClientConn, error) {
+	return newPeerClientConnectionWithAddress(viper.GetString("service.cliaddress"))
+}
+
+// NewPeerClientConnectionWithAddress Returns a new grpc.ClientConn to the configured PEER.
+func newPeerClientConnectionWithAddress(peerAddress string) (*grpc.ClientConn, error) {
+	if comm.TLSEnabledforService() {
+		return comm.NewClientConnectionWithAddress(peerAddress, true, true, comm.InitTLSForPeer())
+	}
+	return comm.NewClientConnectionWithAddress(peerAddress, true, false, nil)
+}
+
 func (conn *ClientConn) Dialdefault() error{
-	c, err := peer.NewPeerClientConnection()
+	c, err := newPeerClientConnection()
 	if err != nil{
 		return err
 	}

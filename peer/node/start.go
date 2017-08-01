@@ -131,7 +131,7 @@ func serve(args []string) error {
 	
 	var opts []grpc.ServerOption
 	
-	if comm.TLSEnabled(false){
+	if comm.TLSEnabled(){
 	
 		creds, err := service.GetServiceTLSCred()
 		if err != nil {
@@ -180,9 +180,6 @@ func serve(args []string) error {
 	// Register the Peer server
 	pb.RegisterPeerServer(grpcServer, peerServer)
 
-	// Register the Admin server
-	pb.RegisterAdminServer(grpcServer, core.NewAdminServer())
-
 	// Register Devops server
 	serverDevops := core.NewDevopsServer(peerServer)
 	//pb.RegisterDevopsServer(grpcServer, serverDevops)
@@ -193,8 +190,6 @@ func serve(args []string) error {
 		err = fmt.Errorf("Error creating OpenchainServer: %s", err)
 		return err
 	}
-
-	//pb.RegisterOpenchainServer(grpcServer, serverOpenchain)
 
 	// Create and register the REST service if configured
 	if viper.GetBool("rest.enabled") {
@@ -217,23 +212,22 @@ func serve(args []string) error {
 		fmt.Println(sig)
 		serve <- nil
 	}()
-
+	
+	fsrv := func(startSrv func(*rest.ServerOpenchain, *core.Devops) error){
+		srverr := startSrv(serverOpenchain, serverDevops)
+		if srverr != nil {
+			srverr = fmt.Errorf("fabric service exited with error: %s", srverr)
+		} else {
+			logger.Info("fabric service exited")
+		}
+		serve <- srverr		
+	}
 	
 	if viper.GetBool("service.enabled") {
-		go func() {
-			srverr := service.StartFabricService(serverOpenchain, serverDevops)
-			if srverr != nil {
-				srverr = fmt.Errorf("fabric service exited with error: %s", srverr)
-			} else {
-				logger.Info("fabric service exited")
-			}
-			serve <- srverr
-		}()		
-	}else{
-		//else we still expose these interfaces to the original service
-		pb.RegisterDevopsServer(grpcServer, serverDevops)
-		pb.RegisterOpenchainServer(grpcServer, serverOpenchain)
+		go fsrv(service.StartFabricService)
 	}
+	
+	go fsrv(service.StartLocalService)
 
 	go func() {
 		var grpcErr error
@@ -303,7 +297,7 @@ func createEventHubServer() (net.Listener, *grpc.Server, error) {
 		//TODO - do we need different SSL material for events ?
 		var opts []grpc.ServerOption
 		
-		if comm.TLSEnabled(false){
+		if comm.TLSEnabled(){
 			creds, err := service.GetServiceTLSCred()
 			if err != nil {
 				return nil, nil, fmt.Errorf("Failed to generate credentials %v", err)

@@ -138,7 +138,7 @@ var peerLogger = logging.MustGetLogger("peer")
 
 // NewPeerClientConnection Returns a new grpc.ClientConn to the configured local PEER.
 func NewPeerClientConnection() (*grpc.ClientConn, error) {
-	return NewPeerClientConnectionWithAddress(viper.GetString("peer.cliaddress"))
+	return NewPeerClientConnectionWithAddress(viper.GetString("peer.localaddr"))
 }
 
 // GetLocalIP returns the non loopback local IP of the host
@@ -160,7 +160,7 @@ func GetLocalIP() string {
 
 // NewPeerClientConnectionWithAddress Returns a new grpc.ClientConn to the configured PEER.
 func NewPeerClientConnectionWithAddress(peerAddress string) (*grpc.ClientConn, error) {
-	if comm.TLSEnabled(true) {
+	if comm.TLSEnabledForLocalSrv() {
 		return comm.NewClientConnectionWithAddress(peerAddress, true, true, comm.InitTLSForPeer())
 	}
 	return comm.NewClientConnectionWithAddress(peerAddress, true, false, nil)

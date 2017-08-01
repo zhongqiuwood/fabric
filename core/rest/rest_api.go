@@ -1748,7 +1748,7 @@ func buildOpenchainRESTRouter() *web.Router {
 // middleware and routes.
 func StartOpenchainRESTServer(server *ServerOpenchain, devops *core.Devops) {
 	// Initialize the REST service object
-	restLogger.Infof("Initializing the REST service on %s, TLS is %s.", viper.GetString("rest.address"), (map[bool]string{true: "enabled", false: "disabled"})[comm.TLSEnabled(false)])
+	restLogger.Infof("Initializing the REST service on %s, TLS is %s.", viper.GetString("rest.address"), (map[bool]string{true: "enabled", false: "disabled"})[comm.TLSEnabled()])
 
 	// Record the pointer to the underlying ServerOpenchain and Devops objects.
 	serverOpenchain = server
@@ -1757,7 +1757,7 @@ func StartOpenchainRESTServer(server *ServerOpenchain, devops *core.Devops) {
 	router := buildOpenchainRESTRouter()
 
 	// Start server, we consider it is an "internal" service
-	if comm.TLSEnabled(false) {
+	if comm.TLSEnabled() {
 		err := http.ListenAndServeTLS(viper.GetString("rest.address"), 
 			util.CanonicalizeFilePath(viper.GetString("peer.tls.cert.file")), 
 			util.CanonicalizeFilePath(viper.GetString("peer.tls.key.file")), router)

@@ -44,6 +44,11 @@ service:
     # The address that the rpc service will listen on 
     address: 127.0.0.1:7051
 
+    # The Address which peer will use when run as client
+    # If the target peer's service is enabled, it should be the port at which 
+    # service is listening
+    cliaddress: 127.0.0.1:7051
+
 ###############################################################################
 #
 #    LOGGING section
@@ -101,6 +106,9 @@ peer:
     # networkId: dev
     # networkId: test
     networkId: dev
+
+    # For local calling of peer, often the node and node client can both use
+    localaddr: 127.0.0.1:7056
 
     # The Address this Peer will listen on
     listenAddress: 127.0.0.1:7055
@@ -177,9 +185,14 @@ peer:
 
     # TLS Settings for server and p2p communications
     tls:
-    # enable tls for service (or whole, including p2p, if service is disabled)
+    # enable tls for p2p
         enabled: false
-        serviceenabled: true
+    # enable tls for p2p, will use tlsca
+        p2pusetlsca: false
+    # enable for remote rpc call
+        serviceenabled: false
+    # enable for local rpc call
+        localsrvabled: false
         cert:
             file: '%appdata%\hyperledger\cert\gamepaivp1.crt'
         key:
@@ -188,8 +201,6 @@ peer:
         rootcert:
             file: '%appdata%\hyperledger\ca.crt'
         serverhostoverride: node1.gamecenter.mobi
-    # enable for p2p, will use tlsca
-        p2pusetlsca: false
 
     # PKI member services properties
     pki:

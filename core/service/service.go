@@ -29,10 +29,8 @@ func GetServiceTLSCred() (credentials.TransportCredentials, error){
 
 }
 
-func StartFabricService(server *rest.ServerOpenchain, devops *core.Devops) error{
-	
-	//just c&p code from peer/node/start.go here
-	listenAddr := viper.GetString("service.address")
+func startSrv(server *rest.ServerOpenchain, devops *core.Devops, listenAddr string, 
+	enableTLS bool, regAdmin bool) error{
 
 	if "" == listenAddr {
 		return errors.New("Listen address for service not specified")
@@ -46,7 +44,7 @@ func StartFabricService(server *rest.ServerOpenchain, devops *core.Devops) error
 	
 	var opts []grpc.ServerOption
 	
-	if comm.TLSEnabled(true){
+	if enableTLS{
 		creds, err := GetServiceTLSCred()
 
 		if err != nil {
@@ -59,10 +57,12 @@ func StartFabricService(server *rest.ServerOpenchain, devops *core.Devops) error
 	grpcServer := grpc.NewServer(opts...)
 	
 	pb.RegisterDevopsServer(grpcServer, devops)
-	pb.RegisterOpenchainServer(grpcServer, server)	
+	pb.RegisterOpenchainServer(grpcServer, server)
+	if regAdmin{
+		pb.RegisterAdminServer(grpcServer, core.NewAdminServer())
+	}
 	
-	serviceLogger.Infof("Starting peer service with address=%s",
-		listenAddr)	
+	serviceLogger.Infof("Starting service with address=%s", listenAddr)	
 	
 	if grpcErr := grpcServer.Serve(lis); grpcErr != nil {
 		return fmt.Errorf("grpc server exited with error: %s", grpcErr)
@@ -70,5 +70,18 @@ func StartFabricService(server *rest.ServerOpenchain, devops *core.Devops) error
 		serviceLogger.Info("grpc server exited")
 	}	
 	
-	return nil
+	return nil	
+}
+
+func StartLocalService(server *rest.ServerOpenchain, devops *core.Devops) error{
+
+	return startSrv(server, devops, viper.GetString("peer.localaddr"), 
+		comm.TLSEnabledForLocalSrv(), true)
+}
+
+func StartFabricService(server *rest.ServerOpenchain, devops *core.Devops) error{
+	
+	return startSrv(server, devops, viper.GetString("service.address"), 
+		comm.TLSEnabledforService(), false)		
+
 }

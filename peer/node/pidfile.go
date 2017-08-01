@@ -3,10 +3,10 @@
 package node
 
 import (
-	"errors"
+	"fmt"
 	"bytes"
 	"os"
-	"os/signal"
+	"io/ioutil"
 	"path/filepath"
 	"strconv"
 	"syscall"
@@ -52,16 +52,16 @@ func writePid(fileName string, pid int) error {
 func killbyPidfile(pidFile string) error{
 	
 	fmt.Printf("Stopping local peer using process pid from %s \n", pidFile)
-	logger.Infof("Error trying to connect to local peer: %s", err)
+	//logger.Infof("Error trying to connect to local peer: %s", err)
 	logger.Infof("Stopping local peer using process pid from %s", pidFile)
-	pid, err := readPid(pidFile)
-	if err != nil {
-		err = fmt.Errorf("Error trying to read pid from %s: %s", pidFile, ferr)
+	pid, ferr := readPid(pidFile)
+	if ferr != nil {
+		err := fmt.Errorf("Error trying to read pid from %s: %s", pidFile, ferr)
 		return err
 	}
 	killerr := syscall.Kill(pid, syscall.SIGTERM)
 	if killerr != nil {
-		err = fmt.Errorf("Error trying to kill -9 pid %d: %s", pid, killerr)
+		err := fmt.Errorf("Error trying to kill -9 pid %d: %s", pid, killerr)
 		return err
 	}
 	return nil;

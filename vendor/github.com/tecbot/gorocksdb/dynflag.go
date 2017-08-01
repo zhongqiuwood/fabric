@@ -3,5 +3,5 @@
 
 package gorocksdb
 
-// #cgo LDFLAGS: -lstdc++ 
+// #cgo LDFLAGS: -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy
 import "C"

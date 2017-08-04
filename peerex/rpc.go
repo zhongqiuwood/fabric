@@ -1,8 +1,10 @@
 package peerex
 
 import (
+	"fmt"
 	pb "github.com/hyperledger/fabric/protos"
 	"golang.org/x/net/context"
+	_ "google.golang.org/grpc"
 )
 
 type rpcManager struct{
@@ -63,6 +65,20 @@ func makeStringArgsToPb(funcname string, args []string) *pb.ChaincodeInput{
 	}
 	
 	return input
+}
+
+func (b *RpcBuilder) VerifyConn() error{
+	if b.Conn.C == nil{
+		return fmt.Errorf("Conn not inited")
+	}
+	
+//	s := b.Conn.C.GetState()
+	
+//	if s != grpc.Ready{
+//		return fmt.Errorf("Conn is not ready: <%s>", s)	
+//	}
+	
+	return nil
 }
 
 func (b *RpcBuilder) prepare(args []string) *pb.ChaincodeInvocationSpec{

@@ -34,7 +34,7 @@
 // Package main implements a simple gRPC server that demonstrates how to use gRPC-Go libraries
 // to perform unary, client streaming, server streaming and full duplex RPCs.
 //
-// It implements the route guide service whose definition can be found in proto/route_guide.proto.
+// It implements the route guide service whose definition can be found in routeguide/route_guide.proto.
 package main
 
 import (
@@ -79,7 +79,7 @@ func (s *routeGuideServer) GetFeature(ctx context.Context, point *pb.Point) (*pb
 		}
 	}
 	// No feature was found, return an unnamed feature
-	return &pb.Feature{"", point}, nil
+	return &pb.Feature{Location: point}, nil
 }
 
 // ListFeatures lists all features contained within the given bounding Rectangle.

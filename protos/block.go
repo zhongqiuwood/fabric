@@ -84,9 +84,9 @@ func (block *Block) GetHash() ([]byte, error) {
 // GetStateHash returns the stateHash stored in this block. The stateHash
 // is the value returned by state.GetHash() after running all transactions in
 // the block.
-func (block *Block) GetStateHash() []byte {
-	return block.StateHash
-}
+//func (block *Block) GetStateHash() []byte {
+//	return block.StateHash
+//}
 
 // SetPreviousBlockHash sets the hash of the previous block. This will be
 // called by blockchain.AddBlock when then the block is added.

@@ -36,15 +36,26 @@ package grpc
 import (
 	"bytes"
 	"io"
+	"math"
 	"reflect"
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"golang.org/x/net/context"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	perfpb "google.golang.org/grpc/test/codec_perf"
 	"google.golang.org/grpc/transport"
 )
+
+type fullReader struct {
+	reader io.Reader
+}
+
+func (f fullReader) Read(p []byte) (int, error) {
+	return io.ReadFull(f.reader, p)
+}
+
+var _ CallOption = EmptyCallOption{} // ensure EmptyCallOption implements the interface
 
 func TestSimpleParsing(t *testing.T) {
 	bigMsg := bytes.Repeat([]byte{'x'}, 1<<24)
@@ -64,11 +75,11 @@ func TestSimpleParsing(t *testing.T) {
 		// Check that messages with length >= 2^24 are parsed.
 		{append([]byte{0, 1, 0, 0, 0}, bigMsg...), nil, bigMsg, compressionNone},
 	} {
-		buf := bytes.NewReader(test.p)
+		buf := fullReader{bytes.NewReader(test.p)}
 		parser := &parser{r: buf}
-		pt, b, err := parser.recvMsg()
+		pt, b, err := parser.recvMsg(math.MaxInt32)
 		if err != test.err || !bytes.Equal(b, test.b) || pt != test.pt {
-			t.Fatalf("parser{%v}.recvMsg() = %v, %v, %v\nwant %v, %v, %v", test.p, pt, b, err, test.pt, test.b, test.err)
+			t.Fatalf("parser{%v}.recvMsg(_) = %v, %v, %v\nwant %v, %v, %v", test.p, pt, b, err, test.pt, test.b, test.err)
 		}
 	}
 }
@@ -76,7 +87,7 @@ func TestSimpleParsing(t *testing.T) {
 func TestMultipleParsing(t *testing.T) {
 	// Set a byte stream consists of 3 messages with their headers.
 	p := []byte{0, 0, 0, 0, 1, 'a', 0, 0, 0, 0, 2, 'b', 'c', 0, 0, 0, 0, 1, 'd'}
-	b := bytes.NewReader(p)
+	b := fullReader{bytes.NewReader(p)}
 	parser := &parser{r: b}
 
 	wantRecvs := []struct {
@@ -88,16 +99,16 @@ func TestMultipleParsing(t *testing.T) {
 		{compressionNone, []byte("d")},
 	}
 	for i, want := range wantRecvs {
-		pt, data, err := parser.recvMsg()
+		pt, data, err := parser.recvMsg(math.MaxInt32)
 		if err != nil || pt != want.pt || !reflect.DeepEqual(data, want.data) {
-			t.Fatalf("after %d calls, parser{%v}.recvMsg() = %v, %v, %v\nwant %v, %v, <nil>",
+			t.Fatalf("after %d calls, parser{%v}.recvMsg(_) = %v, %v, %v\nwant %v, %v, <nil>",
 				i, p, pt, data, err, want.pt, want.data)
 		}
 	}
 
-	pt, data, err := parser.recvMsg()
+	pt, data, err := parser.recvMsg(math.MaxInt32)
 	if err != io.EOF {
-		t.Fatalf("after %d recvMsgs calls, parser{%v}.recvMsg() = %v, %v, %v\nwant _, _, %v",
+		t.Fatalf("after %d recvMsgs calls, parser{%v}.recvMsg(_) = %v, %v, %v\nwant _, _, %v",
 			len(wantRecvs), p, pt, data, err, io.EOF)
 	}
 }
@@ -113,7 +124,7 @@ func TestEncode(t *testing.T) {
 	}{
 		{nil, nil, []byte{0, 0, 0, 0, 0}, nil},
 	} {
-		b, err := encode(protoCodec{}, test.msg, nil, nil)
+		b, err := encode(protoCodec{}, test.msg, nil, nil, nil)
 		if err != test.err || !bytes.Equal(b, test.b) {
 			t.Fatalf("encode(_, _, %v, _) = %v, %v\nwant %v, %v", test.cp, b, err, test.b, test.err)
 		}
@@ -129,7 +140,7 @@ func TestCompress(t *testing.T) {
 		// outputs
 		err error
 	}{
-		{make([]byte, 1024), &gzipCompressor{}, &gzipDecompressor{}, nil},
+		{make([]byte, 1024), NewGZIPCompressor(), NewGZIPDecompressor(), nil},
 	} {
 		b := new(bytes.Buffer)
 		if err := test.cp.Do(b, test.data); err != test.err {
@@ -149,48 +160,18 @@ func TestToRPCErr(t *testing.T) {
 		// input
 		errIn error
 		// outputs
-		errOut *rpcError
+		errOut error
 	}{
-		{transport.StreamErrorf(codes.Unknown, ""), Errorf(codes.Unknown, "").(*rpcError)},
-		{transport.ErrConnClosing, Errorf(codes.Internal, transport.ErrConnClosing.Desc).(*rpcError)},
+		{transport.StreamError{Code: codes.Unknown, Desc: ""}, status.Error(codes.Unknown, "")},
+		{transport.ErrConnClosing, status.Error(codes.Internal, transport.ErrConnClosing.Desc)},
 	} {
 		err := toRPCErr(test.errIn)
-		rpcErr, ok := err.(*rpcError)
-		if !ok {
-			t.Fatalf("toRPCErr{%v} returned type %T, want %T", test.errIn, err, rpcError{})
+		if _, ok := status.FromError(err); !ok {
+			t.Fatalf("toRPCErr{%v} returned type %T, want %T", test.errIn, err, status.Error(codes.Unknown, ""))
 		}
-		if *rpcErr != *test.errOut {
+		if !reflect.DeepEqual(err, test.errOut) {
 			t.Fatalf("toRPCErr{%v} = %v \nwant %v", test.errIn, err, test.errOut)
 		}
-	}
-}
-
-func TestContextErr(t *testing.T) {
-	for _, test := range []struct {
-		// input
-		errIn error
-		// outputs
-		errOut transport.StreamError
-	}{
-		{context.DeadlineExceeded, transport.StreamErrorf(codes.DeadlineExceeded, "%v", context.DeadlineExceeded)},
-		{context.Canceled, transport.StreamErrorf(codes.Canceled, "%v", context.Canceled)},
-	} {
-		err := transport.ContextErr(test.errIn)
-		if err != test.errOut {
-			t.Fatalf("ContextErr{%v} = %v \nwant %v", test.errIn, err, test.errOut)
-		}
-	}
-}
-
-func TestErrorsWithSameParameters(t *testing.T) {
-	const description = "some description"
-	e1 := Errorf(codes.AlreadyExists, description)
-	e2 := Errorf(codes.AlreadyExists, description)
-	if e1 == e2 {
-		t.Fatalf("Error interfaces should not be considered equal - e1: %p - %v  e2: %p - %v", e1, e1, e2, e2)
-	}
-	if Code(e1) != Code(e2) || ErrorDesc(e1) != ErrorDesc(e2) {
-		t.Fatalf("Expected errors to have same code and description - e1: %p - %v  e2: %p - %v", e1, e1, e2, e2)
 	}
 }
 
@@ -198,12 +179,12 @@ func TestErrorsWithSameParameters(t *testing.T) {
 // bytes.
 func bmEncode(b *testing.B, mSize int) {
 	msg := &perfpb.Buffer{Body: make([]byte, mSize)}
-	encoded, _ := encode(protoCodec{}, msg, nil, nil)
+	encoded, _ := encode(protoCodec{}, msg, nil, nil, nil)
 	encodedSz := int64(len(encoded))
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		encode(protoCodec{}, msg, nil, nil)
+		encode(protoCodec{}, msg, nil, nil, nil)
 	}
 	b.SetBytes(encodedSz)
 }
@@ -230,4 +211,41 @@ func BenchmarkEncode512KiB(b *testing.B) {
 
 func BenchmarkEncode1MiB(b *testing.B) {
 	bmEncode(b, 1024*1024)
+}
+
+// bmCompressor benchmarks a compressor of a Protocol Buffer message containing
+// mSize bytes.
+func bmCompressor(b *testing.B, mSize int, cp Compressor) {
+	payload := make([]byte, mSize)
+	cBuf := bytes.NewBuffer(make([]byte, mSize))
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		cp.Do(cBuf, payload)
+		cBuf.Reset()
+	}
+}
+
+func BenchmarkGZIPCompressor1B(b *testing.B) {
+	bmCompressor(b, 1, NewGZIPCompressor())
+}
+
+func BenchmarkGZIPCompressor1KiB(b *testing.B) {
+	bmCompressor(b, 1024, NewGZIPCompressor())
+}
+
+func BenchmarkGZIPCompressor8KiB(b *testing.B) {
+	bmCompressor(b, 8*1024, NewGZIPCompressor())
+}
+
+func BenchmarkGZIPCompressor64KiB(b *testing.B) {
+	bmCompressor(b, 64*1024, NewGZIPCompressor())
+}
+
+func BenchmarkGZIPCompressor512KiB(b *testing.B) {
+	bmCompressor(b, 512*1024, NewGZIPCompressor())
+}
+
+func BenchmarkGZIPCompressor1MiB(b *testing.B) {
+	bmCompressor(b, 1024*1024, NewGZIPCompressor())
 }

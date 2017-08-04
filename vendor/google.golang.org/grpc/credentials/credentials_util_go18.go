@@ -1,7 +1,8 @@
-// +build race
+// +build go1.8
 
 /*
- * Copyright 2016, Google Inc.
+ *
+ * Copyright 2017, Google Inc.
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
@@ -32,8 +33,21 @@
  *
  */
 
-package grpc_test
+package credentials
 
-func init() {
-	raceMode = true
+import (
+	"crypto/tls"
+)
+
+// cloneTLSConfig returns a shallow clone of the exported
+// fields of cfg, ignoring the unexported sync.Once, which
+// contains a mutex and must not be copied.
+//
+// If cfg is nil, a new zero tls.Config is returned.
+func cloneTLSConfig(cfg *tls.Config) *tls.Config {
+	if cfg == nil {
+		return &tls.Config{}
+	}
+
+	return cfg.Clone()
 }

@@ -19,9 +19,9 @@ func newPeerClientConnection() (*grpc.ClientConn, error) {
 // NewPeerClientConnectionWithAddress Returns a new grpc.ClientConn to the configured PEER.
 func newPeerClientConnectionWithAddress(peerAddress string) (*grpc.ClientConn, error) {
 	if comm.TLSEnabledforService() {
-		return comm.NewClientConnectionWithAddress(peerAddress, true, true, comm.InitTLSForPeer())
+		return comm.NewClientConnectionWithAddress(peerAddress, false, true, comm.InitTLSForPeer())
 	}
-	return comm.NewClientConnectionWithAddress(peerAddress, true, false, nil)
+	return comm.NewClientConnectionWithAddress(peerAddress, false, false, nil)
 }
 
 func (conn *ClientConn) Dialdefault() error{

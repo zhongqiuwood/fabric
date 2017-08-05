@@ -1,7 +1,7 @@
 package peerex
 
 import (
-	_ "github.com/hyperledger/fabric/peer/common"
+	
 	"github.com/hyperledger/fabric/core/comm"
 	"google.golang.org/grpc"
 	"github.com/spf13/viper"

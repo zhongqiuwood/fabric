@@ -3,6 +3,9 @@ package peerex
 import (
 	"os"
 	"path/filepath"
+	"time"
+	"bufio"
+	"errors"
 	"strings"
 	"runtime"
 	
@@ -47,11 +50,21 @@ type GlobalConfig struct{
 	LogRole	   string //peer, node, network, chaincode, version, can apply different log level from config file	
 }
 
+type fileLog struct{
+	backend logging.Backend
+	bufwr   bufio.Writer
+}
+
+func (fl *fileLog) Log(lv logging.Level, id int, rec *logging.Record) error{
+	fl.backend.Log(lv, id, rec)
+	return nil	
+}
+
 func (_ *GlobalConfig) InitFinished() bool{
 	return globalConfigDone
 }
 
-func (g GlobalConfig) InitGlobal() error{
+func (g GlobalConfig) InitGlobal(stdlog bool) error{
 	
 	if globalConfigDone {
 		logger.Info("Global initiazation has done ...")
@@ -82,15 +95,38 @@ func (g GlobalConfig) InitGlobal() error{
 		return err
 	}
 	
+	//init logger file path
+	if !stdlog{
+		fpath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
+		if fpath == ""{
+			return errors.New("No filesystem path is specified but require log-to-file")
+		}
+		
+		flog, err := os.Create(fpath + "log_" + string(time.Now().Format("Mon Jan 2,2006 15-04-05")))
+		if err != nil{
+			return err
+		}
+		
+		_, err = flog.Write([]byte("test abcdefg "))
+		if err != nil{
+			return err
+		}
+		
+		backend := logging.NewLogBackend(bufio.NewWriter(flog), "", 0)
+		//reset the format in flogging	
+		format := logging.MustStringFormatter(
+			"%{color}%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}",
+		)
+		backendFormatter := logging.NewBackendFormatter(backend, format)		
+		
+		logging.SetBackend(backendFormatter)		
+	}
+	
 	if g.LogRole == "" {
 		g.LogRole = "client"
 	}
-	flogging.LoggingInit(g.LogRole)
 	
-//	err = core.CacheConfiguration()
-//	if err != nil{
-//		return err
-//	}
+	flogging.LoggingInit(g.LogRole)
 	
 	globalConfigDone = true
 	logger.Info("Global init done ...")

@@ -506,6 +506,34 @@ type ClientConn struct {
 	mkp keepalive.ClientParameters
 }
 
+// GetState returns the ConnectivityState of ClientConn.
+func (cc *ClientConn) GetState() ConnectivityState {
+	
+	var deg_state ConnectivityState = TransientFailure
+	cc.mu.RLock()
+	defer cc.mu.RUnlock()
+	for _, conn := range cc.conns{
+		switch s := conn.getState(); s{
+			
+		//case Idle:
+		//case Connecting:		
+		//case Ready:		
+		case TransientFailure:
+		case Shutdown:
+			if deg_state == TransientFailure {
+				deg_state = s
+			}
+		default:
+		//when delegate multiple state, the largest one wins
+			if deg_state == TransientFailure || s > deg_state {
+				deg_state = s
+			}				
+		}
+	}
+	
+	return deg_state
+}
+
 // lbWatcher watches the Notify channel of the balancer in cc and manages
 // connections accordingly.  If doneChan is not nil, it is closed after the
 // first successfull connection is made.

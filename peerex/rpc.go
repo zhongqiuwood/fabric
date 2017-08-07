@@ -4,7 +4,7 @@ import (
 	"fmt"
 	pb "github.com/hyperledger/fabric/protos"
 	"golang.org/x/net/context"
-	_ "google.golang.org/grpc"
+	"google.golang.org/grpc"
 )
 
 type rpcManager struct{
@@ -72,11 +72,11 @@ func (b *RpcBuilder) VerifyConn() error{
 		return fmt.Errorf("Conn not inited")
 	}
 	
-//	s := b.Conn.C.GetState()
+	s := b.Conn.C.GetState()
 	
-//	if s != grpc.Ready{
-//		return fmt.Errorf("Conn is not ready: <%s>", s)	
-//	}
+	if s != grpc.Ready{
+		return fmt.Errorf("Conn is not ready: <%s>", s)	
+	}
 	
 	return nil
 }

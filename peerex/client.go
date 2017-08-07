@@ -9,7 +9,6 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	
-	"github.com/hyperledger/fabric/core"
 	"github.com/hyperledger/fabric/core/util"
 	"github.com/hyperledger/fabric/flogging"
 )
@@ -88,10 +87,10 @@ func (g GlobalConfig) InitGlobal() error{
 	}
 	flogging.LoggingInit(g.LogRole)
 	
-	err = core.CacheConfiguration()
-	if err != nil{
-		return err
-	}
+//	err = core.CacheConfiguration()
+//	if err != nil{
+//		return err
+//	}
 	
 	globalConfigDone = true
 	logger.Info("Global init done ...")
@@ -103,7 +102,7 @@ func (_ *GlobalConfig) GetPeerFS() string{
 	if !globalConfigDone{
 		return ""
 	}
-	
+		
 	return util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
 }
 

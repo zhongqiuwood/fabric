@@ -1,4 +1,4 @@
-package peerex
+package console
 
 import (
 	_ "github.com/spf13/viper"
@@ -23,14 +23,7 @@ var console = consoleForPeer{cobra.Command{
 	},
 }}
 
-func GetConsolePeer(config *GlobalConfig) *consoleForPeer{
-	
-	if !config.InitFinished(){
-		err := config.InitGlobal()
-		if err != nil{
-			return nil
-		}
-	}
+func GetConsolePeer() *consoleForPeer{
 	
 	console.AddCommand(version.Cmd())
 	console.AddCommand(node.Cmd())

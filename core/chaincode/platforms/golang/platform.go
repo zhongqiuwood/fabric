@@ -71,8 +71,12 @@ func (goPlatform *Platform) ValidateSpec(spec *pb.ChaincodeSpec) error {
 // WritePackage writes the Go chaincode package
 func (goPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
 
-	var err error
-	spec.ChaincodeID.Name, err = generateHashcode(spec, tw)
+	//Paicode: We respect the given chaincode name so it is easy to read 
+	hashName, err := generateHashcode(spec, tw)
+	if spec.ChaincodeID.Name == ""{
+		spec.ChaincodeID.Name = hashName
+	}
+	
 	if err != nil {
 		return err
 	}

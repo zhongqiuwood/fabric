@@ -1,7 +1,6 @@
 package peerex
 
 import (
-	"os"
     "testing"
     _ "github.com/spf13/viper"
 )
@@ -10,7 +9,7 @@ func TestGlobalInit(t *testing.T) {
 
 	config := &GlobalConfig{}
 
-	err := config.InitGlobal()
+	err := config.InitGlobal(true)
 	
 	if err != nil{
 		t.Fatal(err)
@@ -20,7 +19,7 @@ func TestGlobalInit(t *testing.T) {
 		t.Fatal("Status not set")
 	}
 	
-	err = config.InitGlobal()
+	err = config.InitGlobal(true)
 	
 	if err != nil{
 		t.Fatal(err)

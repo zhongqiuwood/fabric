@@ -43,6 +43,11 @@ func DecodeTransactionToInvoke(payload string) (*pb.ChaincodeInvocationSpec, err
 		return nil, fmt.Errorf("protobuf decode fail %s", err.Error())
 	}
 	
+	if invoke.ChaincodeSpec == nil || invoke.ChaincodeSpec.CtorMsg == nil ||
+	 invoke.ChaincodeSpec.CtorMsg.Args == nil || len(invoke.ChaincodeSpec.CtorMsg.Args) == 0{
+		return nil, fmt.Errorf("Uninitialized invoke tx")
+	}	
+	
 	return invoke, nil
 }
 

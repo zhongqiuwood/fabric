@@ -32,6 +32,10 @@ func TestDecoding(t *testing.T) {
 
 	t.Log(invoke)
 
-
+	invoke, err = DecodeTransactionToInvoke("")
+	
+	if err == nil{
+		t.Fatal("not recognized empty payload")
+	}
 }
 

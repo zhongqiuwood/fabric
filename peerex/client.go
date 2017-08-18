@@ -64,6 +64,16 @@ func (_ *GlobalConfig) InitFinished() bool{
 	return globalConfigDone
 }
 
+func (g GlobalConfig) InitGlobalWrapper(stdlog bool,
+	defaultViperSetting map[string]string) error {
+
+	for k, v := range defaultViperSetting {
+		viper.SetDefault(k, v)
+	}
+
+	return g.InitGlobal(stdlog)
+}
+
 func (g GlobalConfig) InitGlobal(stdlog bool) error{
 	
 	if globalConfigDone {

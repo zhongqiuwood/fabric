@@ -64,6 +64,14 @@ func (_ *GlobalConfig) InitFinished() bool{
 	return globalConfigDone
 }
 
+func (g GlobalConfig) InitGlobalWrapper(stdlog bool, fileSystemPath string, crtFile string) error {
+
+	viper.Set("peer.fileSystemPath", fileSystemPath)
+	viper.Set("peer.tls.rootcert.file", crtFile)
+
+	return g.InitGlobal(stdlog)
+}
+
 func (g GlobalConfig) InitGlobal(stdlog bool) error{
 	
 	if globalConfigDone {

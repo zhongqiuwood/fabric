@@ -53,7 +53,7 @@ func (_ *GlobalConfig) InitFinished() bool{
 }
 
 func (g GlobalConfig) InitGlobalWrapper(stdlog bool,
-	defaultViperSetting map[string]string) error {
+	defaultViperSetting map[string]interface{}) error {
 
 	for k, v := range defaultViperSetting {
 		viper.SetDefault(k, v)

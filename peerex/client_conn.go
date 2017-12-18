@@ -34,4 +34,14 @@ func (conn *ClientConn) Dialdefault() error{
 	return nil
 }
 
+func (conn *ClientConn) Dial(server string) error {
+	c, err := newPeerClientConnectionWithAddress(server)
+	if err != nil {
+		return err
+	}
+
+	conn.C = c
+	return nil
+}
+
 

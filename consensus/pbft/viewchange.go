@@ -194,7 +194,7 @@ func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
 
 	if vc.View < instance.view {
 		logger.Warningf("Replica %d found view-change message for old view", instance.id)
-		return nil
+		return instance.checkOldViewCnt(vc)
 	}
 
 	if !instance.correctViewChange(vc) {
@@ -204,7 +204,7 @@ func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
 
 	if _, ok := instance.viewChangeStore[vcidx{vc.View, vc.ReplicaId}]; ok {
 		logger.Warningf("Replica %d already has a view change message for view %d from replica %d", instance.id, vc.View, vc.ReplicaId)
-		return nil
+		return instance.checkOldViewCnt(vc)
 	}
 
 	instance.viewChangeStore[vcidx{vc.View, vc.ReplicaId}] = vc
@@ -249,6 +249,38 @@ func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
 		instance.startTimer(instance.lastNewViewTimeout, "new view change")
 		instance.lastNewViewTimeout = 2 * instance.lastNewViewTimeout
 		return viewChangeQuorumEvent{}
+	}
+
+	return nil
+}
+
+func (instance *pbftCore) checkOldViewCnt(vc *ViewChange) events.Event {
+
+	// Ignore
+	if vc.ReplicaId == instance.id {
+		return nil
+	}
+
+	// Make
+	if instance.oldViewCnt == nil {
+		instance.oldViewCnt = make(map[vcidx]uint64)
+	}
+
+	// cnt += 1
+	v, ok := instance.oldViewCnt[vcidx{vc.View, vc.ReplicaId}]
+	if ok {
+		instance.oldViewCnt[vcidx{vc.View, vc.ReplicaId}] = v + 1
+	} else {
+		instance.oldViewCnt[vcidx{vc.View, vc.ReplicaId}] = 1
+	}
+
+	// Over
+	if v > 10 && (v % uint64(instance.N) == instance.id) {
+		// Reset cnt
+		instance.oldViewCnt[vcidx{vc.View, vc.ReplicaId}] = 0
+
+		// Send ViewChange
+		return instance.sendViewChange()
 	}
 
 	return nil

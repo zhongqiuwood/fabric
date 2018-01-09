@@ -10,8 +10,8 @@
 #	- Host's GOPATH environment variable is set.
 #
 # To get started on a fresh Ubuntu install:
-#	mkdir -p $GOPATH/src/github.com/hyperledger
-#	cd $GOPATH/src/github.com/hyperledger
+#	mkdir -p $GOPATH/src/github.com/abchain
+#	cd $GOPATH/src/github.com/abchain
 #	git clone http://gerrit.hyperledger.org/r/fabric
 #	sudo ./fabric/devenv/setupUbuntuOnPPC64el.sh
 #	cd $GOPATH/src/github.com/abchain/fabric

@@ -8,8 +8,8 @@
 # To get started:
 #       sudo su
 #       yum install git
-#       mkdir -p $HOME/git/src/github.com/hyperledger
-#       cd $HOME/git/src/github.com/hyperledger
+#       mkdir -p $HOME/git/src/github.com/abchain
+#       cd $HOME/git/src/github.com/abchain
 #       git clone http://gerrit.hyperledger.org/r/fabric
 #       source fabric/devenv/setupRHELonZ.sh
 #       make peer unit-test behave

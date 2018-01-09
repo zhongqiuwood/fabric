@@ -6,7 +6,7 @@ if [ "$2" != "hyperledger" ]; then
         echo " User Name is $2 "
 	echo " Repository Name is $3 "
 
-mkdir -p $HOME/gopath/src/github.com/hyperledger
+mkdir -p $HOME/gopath/src/github.com/abchain
 
 	echo "hyperledger/fabric folder created"
 

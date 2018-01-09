@@ -403,8 +403,8 @@ prepareExampleForDeployInNetworkMode() {
       cd $DSTDIR
       cp $SRCDIR/${chaincodeSrc}.go .
       test "$SDK_TLS" = "1" && cp "$SDK_CA_CERT_FILE" .
-      mkdir -p vendor/github.com/hyperledger
-      cd vendor/github.com/hyperledger
+      mkdir -p vendor/github.com/abchain
+      cd vendor/github.com/abchain
       echo "copying github.com/abchain/fabric; please wait ..."
       # git clone https://github.com/abchain/fabric > /dev/null
       cp -r $FABRIC .

@@ -431,8 +431,8 @@ shim.
 
 ::
 
-    mkdir -p $GOPATH/src/github.com/hyperledger
-    cd $GOPATH/src/github.com/hyperledger
+    mkdir -p $GOPATH/src/github.com/abchain
+    cd $GOPATH/src/github.com/abchain
     git clone http://gerrit.hyperledger.org/r/fabric
 
 Now, you should be able to build your chaincode.

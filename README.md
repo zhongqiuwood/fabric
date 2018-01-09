@@ -40,11 +40,11 @@ Full details of how to contribute to this project are documented [here](http://h
 
 [Hyperledger Slack](http://hyperledgerproject.slack.com) - if you need an invitation, try our [Slack inviter](https://slack.hyperledger.org)
 
-[Hyperledger Wiki](https://github.com/hyperledger/hyperledger/wiki)
+[Hyperledger Wiki](https://github.com/abchain/hyperledger/wiki)
 
-[Hyperledger Code of Conduct](https://github.com/hyperledger/hyperledger/wiki/Hyperledger-Project-Code-of-Conduct)
+[Hyperledger Code of Conduct](https://github.com/abchain/hyperledger/wiki/Hyperledger-Project-Code-of-Conduct)
 
-[Community Calendar](https://github.com/hyperledger/hyperledger/wiki/PublicMeetingCalendar)
+[Community Calendar](https://github.com/abchain/hyperledger/wiki/PublicMeetingCalendar)
 
 ## License <a name="license"></a>
 The Hyperledger Project uses the [Apache License Version 2.0](LICENSE) software

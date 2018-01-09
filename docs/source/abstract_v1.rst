@@ -86,7 +86,7 @@ codebase that will spawn the capabilities in v1.0:
    project, you will need an :doc:`LF account <Gerrit/lf-account>` This
    will give you single sign-on to JIRA and Gerrit.
 -  Explore the design document for the new
-   `architecture <https://github.com/hyperledger-archives/fabric/wiki/Next-Consensus-Architecture-Proposal>`__
+   `architecture <https://github.com/abchain-archives/fabric/wiki/Next-Consensus-Architecture-Proposal>`__
 -  Explore `JIRA <https://jira.hyperledger.org/projects/FAB/issues/>`__
    for open Hyperledger fabric issues.
 -  Explore the

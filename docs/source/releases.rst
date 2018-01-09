@@ -43,7 +43,7 @@ Key enhancements:
 -  b39c93a - Update Cobra and pflag vendor libraries
 -  dad7a9d - Reassign port numbers to 7050-7060 range
 
-`v0.5-developer-preview <https://github.com/hyperledger-archives/fabric/tree/v0.5-developer-preview>`__
+`v0.5-developer-preview <https://github.com/abchain-archives/fabric/tree/v0.5-developer-preview>`__
 June 17, 2016
 
 A developer preview release of the Hyperledger Fabric intended to

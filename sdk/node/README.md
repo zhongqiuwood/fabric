@@ -8,7 +8,7 @@ To view the complete Node.js SDK documentation, additional usage samples, and ge
 
 ## Installation
 
-If you are interfacing with a network running the Hyperledger Fabric [`v0.5-developer-preview`](https://github.com/hyperledger-archives/fabric/tree/v0.5-developer-preview) branch, you must use the hfc version 0.5.x release and install it with the following command:
+If you are interfacing with a network running the Hyperledger Fabric [`v0.5-developer-preview`](https://github.com/abchain-archives/fabric/tree/v0.5-developer-preview) branch, you must use the hfc version 0.5.x release and install it with the following command:
 
     npm install hfc@0.5.x
 

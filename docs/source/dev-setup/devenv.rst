@@ -72,8 +72,8 @@ little bit of setup needed:
 ::
 
     cd $GOPATH/src
-    mkdir -p github.com/hyperledger
-    cd github.com/hyperledger
+    mkdir -p github.com/abchain
+    cd github.com/abchain
 
 Recall that we are using ``Gerrit`` for source control, which has its
 own internal git repositories. Hence, we will need to :doc:`clone from

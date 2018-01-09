@@ -5,7 +5,7 @@ We welcome contributions to the Hyperledger Project in many forms, and
 there's always plenty to do!
 
 First things first, please review the Hyperledger Project's `Code of
-Conduct <https://github.com/hyperledger/hyperledger/wiki/Hyperledger-Project-Code-of-Conduct>`__
+Conduct <https://github.com/abchain/hyperledger/wiki/Hyperledger-Project-Code-of-Conduct>`__
 before participating. It is important that we keep things civil.
 
 Getting a Linux Foundation account
@@ -43,7 +43,7 @@ Requirements and Use Cases
 --------------------------
 
 We have a `Requirements
-WG <https://github.com/hyperledger/hyperledger/wiki/Requirements-WG>`__
+WG <https://github.com/abchain/hyperledger/wiki/Requirements-WG>`__
 that is documenting use cases and from those use cases deriving
 requirements. If you are interested in contributing to this effort,
 please feel free to join the discussion in

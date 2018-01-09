@@ -204,8 +204,8 @@ To get started, from a freshly installed OS:
 
     sudo su
     yum install git
-    mkdir -p $HOME/git/src/github.com/hyperledger
-    cd $HOME/git/src/github.com/hyperledger
+    mkdir -p $HOME/git/src/github.com/abchain
+    cd $HOME/git/src/github.com/abchain
     git clone http://gerrit.hyperledger.org/r/fabric
     source fabric/devenv/setupRHELonZ.sh
 
@@ -235,8 +235,8 @@ the following commands to build the fabric code:
 
 ::
 
-    mkdir -p $GOPATH/src/github.com/hyperledger
-    cd $GOPATH/src/github.com/hyperledger
+    mkdir -p $GOPATH/src/github.com/abchain
+    cd $GOPATH/src/github.com/abchain
     git clone http://gerrit.hyperledger.org/r/fabric
     sudo ./fabric/devenv/setupUbuntuOnPPC64le.sh
     cd $GOPATH/src/github.com/abchain/fabric

@@ -101,11 +101,11 @@ links. If you'd prefer to dive right in, see the
 :doc:`Quickstart <#quickstart-documentation>` section, below.
 
 -  `Whitepaper
-   WG <https://github.com/hyperledger/hyperledger/wiki/Whitepaper-WG>`__:
+   WG <https://github.com/abchain/hyperledger/wiki/Whitepaper-WG>`__:
    where the community is developing a whitepaper to explain the
    motivation and goals for the project.
 -  `Requirements
-   WG <https://github.com/hyperledger/hyperledger/wiki/Requirements-WG>`__:
+   WG <https://github.com/abchain/hyperledger/wiki/Requirements-WG>`__:
    where the community is developing use cases and requirements.
 -  :doc:`Canonical use cases <biz/usecases>`
 -  :doc:`Glossary <glossary>`: to understand the terminology that we use

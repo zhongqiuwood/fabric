@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/chaincode/shim"
+	"github.com/abchain/fabric/core/chaincode/shim"
 )
 
 func checkInit(t *testing.T, scc *SimpleChaincode, stub *shim.MockStub, args []string) {

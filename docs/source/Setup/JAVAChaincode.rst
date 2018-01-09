@@ -3,7 +3,7 @@ Java chaincode
 
 Note: This guide generally assumes you have followed the Chaincode
 development environment setup tutorial
-`here <https://github.com/hyperledger/fabric/blob/v0.6/docs/Setup/Chaincode-setup.md>`__.
+`here <https://github.com/abchain/fabric/blob/v0.6/docs/Setup/Chaincode-setup.md>`__.
 
 To get started developing Java chaincode
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -39,7 +39,7 @@ To get started developing Java chaincode
 
    ::
 
-       cd $GOPATH/src/github.com/hyperledger/fabric
+       cd $GOPATH/src/github.com/abchain/fabric
        make peer
        peer node start
 
@@ -49,7 +49,7 @@ To get started developing Java chaincode
 
 ::
 
-        peer chaincode deploy -l java -p /opt/gopath/src/github.com/hyperledger/fabric/examples/chaincode/java/SimpleSample -c '{"Args": ["init", "a","100", "b", "200"]}'
+        peer chaincode deploy -l java -p /opt/gopath/src/github.com/abchain/fabric/examples/chaincode/java/SimpleSample -c '{"Args": ["init", "a","100", "b", "200"]}'
 
 ``6d9a704d95284593fe802a5de89f84e86fb975f00830bc6488713f9441b835cf32d9cd07b087b90e5cb57a88360f90a4de39521a5595545ad689cd64791679e9``
 
@@ -93,7 +93,7 @@ Java chaincode deployment in DEV Mode
 
    ::
 
-       cd $GOPATH/src/github.com/hyperledger/fabric
+       cd $GOPATH/src/github.com/abchain/fabric
        make peer
        peer node start --peer-chaincodedev
 
@@ -102,7 +102,7 @@ Java chaincode deployment in DEV Mode
 
    ::
 
-       cd $GOPATH/src/github.com/hyperledger/fabric/core/chaincode/shim/java
+       cd $GOPATH/src/github.com/abchain/fabric/core/chaincode/shim/java
        gradle -b build.gradle clean
        gradle -b build.gradle build
 
@@ -110,7 +110,7 @@ Java chaincode deployment in DEV Mode
 
    ::
 
-       cd $GOPATH/src/github.com/hyperledger/fabric/examples/chaincode/java/SimpleSample
+       cd $GOPATH/src/github.com/abchain/fabric/examples/chaincode/java/SimpleSample
        gradle -b build.gradle build
 
 5. Run the SimpleSample chaincode using the

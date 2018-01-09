@@ -23,11 +23,11 @@ import (
 	"sort"
 	"time"
 
-	_ "github.com/hyperledger/fabric/core" // Logging format init
+	_ "github.com/abchain/fabric/core" // Logging format init
 
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/peer"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/peer"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 )

@@ -31,7 +31,7 @@ Event client should output "Event Address: 172.17.0.2:7053" and wait for events.
 Submit a transaction to deploy chaincode_example02.
 
 ```sh
-CORE_PEER_ADDRESS=172.17.0.2:7051 peer chaincode deploy -p github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
+CORE_PEER_ADDRESS=172.17.0.2:7051 peer chaincode deploy -p github.com/abchain/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
 ```
 
 Notice success transaction in the events client.
@@ -54,12 +54,12 @@ CORE_PEER_ADDRESS=172.17.0.2:7051 peer chaincode invoke -n 1edd7021ab71b766f4928
 Notice error transaction in events client.
 
 # Tesing chaincode events
-Chaincode github.com/hyperledger/fabric/examples/chaincode/go/eventsender can be used to test event sender.
+Chaincode github.com/abchain/fabric/examples/chaincode/go/eventsender can be used to test event sender.
 ## Deploy eventsender chaincode
 Stop the event listener and restart it as follows  
 
 ```
-CORE_PEER_ADDRESS=172.17.0.2:7051 ./peer chaincode deploy -p github.com/hyperledger/fabric/examples/chaincode/go/eventsender -c '{"Function":"init", "Args":[]}'
+CORE_PEER_ADDRESS=172.17.0.2:7051 ./peer chaincode deploy -p github.com/abchain/fabric/examples/chaincode/go/eventsender -c '{"Function":"init", "Args":[]}'
 ```
 
 ```

@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/util"
 )
 
 // NewBlock creates a new block with the specified proposer ID, list of,

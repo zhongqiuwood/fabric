@@ -22,8 +22,8 @@ import (
 	"io/ioutil"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 )
 
 //generateHashcode gets hashcode of the code under path. If path is a HTTP(s) url

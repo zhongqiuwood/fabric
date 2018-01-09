@@ -21,8 +21,8 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/util"
-	"github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/protos"
 )
 
 var something = "c29tZXRoaW5n"

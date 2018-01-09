@@ -23,16 +23,16 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	ccintf "github.com/hyperledger/fabric/core/container/ccintf"
-	"github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	ccintf "github.com/abchain/fabric/core/container/ccintf"
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/looplab/fsm"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
 
-	"github.com/hyperledger/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger"
 )
 
 const (

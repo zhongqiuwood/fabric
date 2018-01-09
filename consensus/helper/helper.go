@@ -23,14 +23,14 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 
-	"github.com/hyperledger/fabric/consensus"
-	"github.com/hyperledger/fabric/consensus/executor"
-	"github.com/hyperledger/fabric/consensus/helper/persist"
-	"github.com/hyperledger/fabric/core/chaincode"
-	crypto "github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/peer"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/consensus"
+	"github.com/abchain/fabric/consensus/executor"
+	"github.com/abchain/fabric/consensus/helper/persist"
+	"github.com/abchain/fabric/core/chaincode"
+	crypto "github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/peer"
+	pb "github.com/abchain/fabric/protos"
 )
 
 // Helper contains the reference to the peer's MessageHandlerCoordinator

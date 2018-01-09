@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/hyperledger/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 )
 
 type mockMsg struct {

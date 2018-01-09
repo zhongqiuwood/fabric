@@ -654,7 +654,7 @@ proc txSummary {} {
     note {} "[parms totalTransactions] total transaction(s) will be issued"
 }
 
-set chaincodePath "github.com/hyperledger/fabric/tools/busywork/counters"
+set chaincodePath "github.com/abchain/fabric/tools/busywork/counters"
 
 if {[parms deploy]} {
 

@@ -21,7 +21,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/db"
+	"github.com/abchain/fabric/core/db"
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
 )

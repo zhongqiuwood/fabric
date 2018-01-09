@@ -111,7 +111,7 @@ links. If you'd prefer to dive right in, see the
 -  :doc:`Glossary <glossary>`: to understand the terminology that we use
    throughout the Fabric project's documentation.
 -  `Fabric
-   FAQs <https://github.com/hyperledger/fabric/tree/master/docs/FAQ>`__
+   FAQs <https://github.com/abchain/fabric/tree/master/docs/FAQ>`__
 
 .. _developer-guides:
 
@@ -192,9 +192,9 @@ The Hyperledger Project uses the :doc:`Apache License Version
 
 .. |Build Status| image:: https://jenkins.hyperledger.org/buildStatus/icon?job=fabric-merge-x86_64
    :target: https://jenkins.hyperledger.org/view/fabric/job/fabric-merge-x86_64/
-.. |Go Report Card| image:: https://goreportcard.com/badge/github.com/hyperledger/fabric
-   :target: https://goreportcard.com/report/github.com/hyperledger/fabric
-.. |GoDoc| image:: https://godoc.org/github.com/hyperledger/fabric?status.svg
-   :target: https://godoc.org/github.com/hyperledger/fabric
+.. |Go Report Card| image:: https://goreportcard.com/badge/github.com/abchain/fabric
+   :target: https://goreportcard.com/report/github.com/abchain/fabric
+.. |GoDoc| image:: https://godoc.org/github.com/abchain/fabric?status.svg
+   :target: https://godoc.org/github.com/abchain/fabric
 .. |Documentation Status| image:: https://readthedocs.org/projects/hyperledger-fabric/badge/?version=latest
    :target: http://hyperledger-fabric.readthedocs.io/en/latest/?badge=latest

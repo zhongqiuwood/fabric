@@ -8,7 +8,7 @@ vp:
   # Script will wait until membersrvc is up (if it exists) before starting
   # $$GOPATH (double dollar) required to prevent docker-compose doing its own
   # substitution before the value gets to the container
-  command: sh -c "exec $$GOPATH/src/github.com/hyperledger/fabric/bddtests/scripts/start-peer.sh"
+  command: sh -c "exec $$GOPATH/src/github.com/abchain/fabric/bddtests/scripts/start-peer.sh"
   # Ideally we'd only mount /var/run/docker.sock but v1.5.2 of docker-compose
   # does not have to capability to mount individual files. Hence we mount the
   # entire folder in specific folder and specify it explicitly above.

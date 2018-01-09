@@ -23,7 +23,7 @@ import org.apache.commons.logging.LogFactory;
 
 /**
  * <h1>Classic "transfer" sample chaincode</h1>
- * (java implementation of <A href="https://github.com/hyperledger/fabric/blob/master/examples/chaincode/go/chaincode_example02/chaincode_example02.go">chaincode_example02.go</A>)
+ * (java implementation of <A href="https://github.com/abchain/fabric/blob/master/examples/chaincode/go/chaincode_example02/chaincode_example02.go">chaincode_example02.go</A>)
  * @author Sergey Pomytkin spomytkin@gmail.com
  *
  */

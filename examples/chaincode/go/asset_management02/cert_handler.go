@@ -19,8 +19,8 @@ package main
 import (
 	"errors"
 
-	"github.com/hyperledger/fabric/core/chaincode/shim"
-	"github.com/hyperledger/fabric/core/chaincode/shim/crypto/attr"
+	"github.com/abchain/fabric/core/chaincode/shim"
+	"github.com/abchain/fabric/core/chaincode/shim/crypto/attr"
 )
 
 // consts associated with TCert

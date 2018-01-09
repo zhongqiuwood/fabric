@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd $HOME/gopath/src/github.com/hyperledger/fabric/bddtests
+cd $HOME/gopath/src/github.com/abchain/fabric/bddtests
 
 count=$(git ls-files -o | wc -l)
 

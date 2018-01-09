@@ -20,7 +20,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/hyperledger/fabric/core/crypto/utils"
+	"github.com/abchain/fabric/core/crypto/utils"
 )
 
 func (peer *peerImpl) initKeyStore() error {

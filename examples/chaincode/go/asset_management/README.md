@@ -2,7 +2,7 @@
 
 ## Overview
 
-The *asset management* chaincode (*asset_management.go*) is a very simple chaincode designed to show how to exercise *access control* at the chaincode level as described in this document: [https://github.com/hyperledger/fabric/blob/master/docs/tech/application-ACL.md](https://github.com/hyperledger/fabric/blob/master/docs/tech/application-ACL.md)
+The *asset management* chaincode (*asset_management.go*) is a very simple chaincode designed to show how to exercise *access control* at the chaincode level as described in this document: [https://github.com/abchain/fabric/blob/master/docs/tech/application-ACL.md](https://github.com/abchain/fabric/blob/master/docs/tech/application-ACL.md)
 
 The chaincode exposes the following functions:
 

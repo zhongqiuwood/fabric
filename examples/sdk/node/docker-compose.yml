@@ -42,7 +42,7 @@ starter:
     - CORE_CHAINCODE_ID_NAME=mycc
     - CORE_PEER_ADDRESS=peer:7051
   # the following command will start the chain code when this container starts and ready it for deployment by the app
-  command: sh -c "sleep 20; /opt/gopath/src/github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02/chaincode_example02"
+  command: sh -c "sleep 20; /opt/gopath/src/github.com/abchain/fabric/examples/chaincode/go/chaincode_example02/chaincode_example02"
   stdin_open: true
   tty: true
   links:

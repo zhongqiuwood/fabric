@@ -19,7 +19,7 @@ package util
 import (
 
 	"github.com/spf13/viper"
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/util"
 )
 
 // GetCliFilePath is a helper function to retrieve the local storage directory

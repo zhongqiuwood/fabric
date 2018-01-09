@@ -21,7 +21,7 @@ import (
 
 	"encoding/hex"
 
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/util"
 
 	"bytes"
 	"os"

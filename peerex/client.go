@@ -9,9 +9,9 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	
-	"github.com/hyperledger/fabric/core"
-	"github.com/hyperledger/fabric/core/util"
-	"github.com/hyperledger/fabric/flogging"
+	"github.com/abchain/fabric/core"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/flogging"
 )
 
 var logger = logging.MustGetLogger("clientcore")
@@ -83,7 +83,7 @@ func (g GlobalConfig) InitGlobal() error{
 		// Path to look for the config file in based on GOPATH
 		gopath := os.Getenv("GOPATH")
 		for _, p := range filepath.SplitList(gopath) {
-			peerpath := filepath.Join(p, "src/github.com/hyperledger/fabric/peer")
+			peerpath := filepath.Join(p, "src/github.com/abchain/fabric/peer")
 			g.ConfigPath = append(g.ConfigPath, peerpath)
 		}		
 	}

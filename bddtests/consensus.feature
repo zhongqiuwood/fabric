@@ -25,7 +25,7 @@ Feature: Consensus between peers
       Then I should get a JSON response with "height" = "1"
 
       # Deploy
-      When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+      When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
                     | arg1 |  arg2 | arg3 | arg4 |
                     |  a   |  200  |  b   |  300 |
       Then I should have received a chaincode name
@@ -153,7 +153,7 @@ Feature: Consensus between peers
 #    Then I should get a JSON response with "height" = "1"
 #
 #    # Deploy
-#    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+#    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
 #                                            | arg1 |  arg2 | arg3 | arg4 |
 #                                            |  a   |  200  |  b   |  300 |
 #    Then I should have received a chaincode name
@@ -262,7 +262,7 @@ Feature: Consensus between peers
         Then I should get a JSON response with "height" = "1"
 
         # Deploy
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -326,7 +326,7 @@ Feature: Consensus between peers
     Then I should get a JSON response with array "peers" contains "4" elements
 
     # Deploy
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
                                             | arg1 |  arg2 | arg3 | arg4 |
                                             |  a   |  200  |  b   |  300 |
     Then I should have received a chaincode name
@@ -421,7 +421,7 @@ Feature: Consensus between peers
     Then I should get a JSON response with array "peers" contains "16" elements
 
     # Deploy
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
                                             | arg1 |  arg2 | arg3 | arg4 |
                                             |  a   |  200  |  b   |  300 |
     Then I should have received a chaincode name
@@ -494,7 +494,7 @@ Feature: Consensus between peers
     Then I should get a JSON response with "height" = "1"
 
     # Deploy
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
                                             | arg1 |  arg2 | arg3 | arg4 |
                                             |  a   |  200  |  b   |  300 |
     Then I should have received a chaincode name
@@ -540,7 +540,7 @@ Feature: Consensus between peers
     Then I should get a JSON response with "height" = "1"
 
     # Deploy
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
                                             | arg1 |  arg2 | arg3 | arg4 |
                                             |  a   |  200  |  b   |  300 |
     Then I should have received a chaincode name
@@ -593,7 +593,7 @@ Feature: Consensus between peers
     Then I should get a JSON response with "height" = "1"
 
     # Deploy
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
                                             | arg1 |  arg2 | arg3 | arg4 |
                                             |  a   |  200  |  b   |  300 |
     Then I should have received a chaincode name

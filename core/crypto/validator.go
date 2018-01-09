@@ -19,7 +19,7 @@ package crypto
 import (
 	"sync"
 
-	"github.com/hyperledger/fabric/core/crypto/utils"
+	"github.com/abchain/fabric/core/crypto/utils"
 )
 
 // Private type and variables

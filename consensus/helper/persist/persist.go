@@ -17,7 +17,7 @@ limitations under the License.
 package persist
 
 import (
-	"github.com/hyperledger/fabric/core/db"
+	"github.com/abchain/fabric/core/db"
 )
 
 // Helper provides an abstraction to access the Persist column family

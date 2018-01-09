@@ -10,7 +10,7 @@ mkdir -p $HOME/gopath/src/github.com/hyperledger
 
 	echo "hyperledger/fabric folder created"
 
-git clone -ql $HOME/gopath/src/github.com/$2/$3 $HOME/gopath/src/github.com/hyperledger/fabric
+git clone -ql $HOME/gopath/src/github.com/$2/$3 $HOME/gopath/src/github.com/abchain/fabric
 
 	echo "linked $2 user repo into hyperledger/fabric folder"
 

@@ -22,7 +22,7 @@ import (
 	"crypto/x509"
 	"io"
 
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives"
 )
 
 type publicKeyImpl struct {

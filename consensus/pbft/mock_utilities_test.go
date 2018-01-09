@@ -22,11 +22,11 @@ import (
 	"time"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/consensus/util/events"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/consensus/util/events"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
 
 	"github.com/golang/protobuf/ptypes/timestamp"
-	pb "github.com/hyperledger/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 )
 

@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/hyperledger/fabric/consensus/util/events"
+	"github.com/abchain/fabric/consensus/util/events"
 )
 
 // viewChangeQuorumEvent is returned to the event loop when a new ViewChange message is received which is part of a quorum cert

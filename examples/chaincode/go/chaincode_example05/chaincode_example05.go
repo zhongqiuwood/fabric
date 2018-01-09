@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/hyperledger/fabric/core/chaincode/shim"
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/chaincode/shim"
+	"github.com/abchain/fabric/core/util"
 )
 
 // This chaincode is a test for chaincode querying another chaincode - invokes chaincode_example02 and computes the sum of a and b and stores it as state
@@ -69,7 +69,7 @@ func (t *SimpleChaincode) Invoke(stub shim.ChaincodeStubInterface, function stri
 		return nil, errors.New("Incorrect number of arguments. Expecting 2")
 	}
 
-	chaincodeURL := args[0] // Expecting "github.com/hyperledger/fabric/core/example/chaincode/chaincode_example02"
+	chaincodeURL := args[0] // Expecting "github.com/abchain/fabric/core/example/chaincode/chaincode_example02"
 	sum = args[1]
 
 	// Query chaincode_example02

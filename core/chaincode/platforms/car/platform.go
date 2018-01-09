@@ -17,7 +17,7 @@ limitations under the License.
 package car
 
 import (
-	pb "github.com/hyperledger/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 )
 
 // Platform for the CAR type

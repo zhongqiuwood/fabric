@@ -94,7 +94,7 @@ codebase that will spawn the capabilities in v1.0:
    for upcoming Hyperledger fabric issues.
 -  Explore `JIRA <https://jira.hyperledger.org/issues/?filter=10147>`__
    for Hyperledger fabric issues tagged with "help wanted."
--  Explore the `source code <https://github.com/hyperledger/fabric>`__
+-  Explore the `source code <https://github.com/abchain/fabric>`__
 -  Explore the
    `documentation <http://hyperledger-fabric.readthedocs.io/en/latest/>`__
 

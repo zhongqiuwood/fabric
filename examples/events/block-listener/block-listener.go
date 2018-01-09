@@ -24,8 +24,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/hyperledger/fabric/events/consumer"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/events/consumer"
+	pb "github.com/abchain/fabric/protos"
 )
 
 type adapter struct {

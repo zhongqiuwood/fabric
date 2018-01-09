@@ -19,7 +19,7 @@ package ca
 import (
 	"errors"
 
-	pb "github.com/hyperledger/fabric/membersrvc/protos"
+	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
 )

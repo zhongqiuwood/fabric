@@ -25,9 +25,9 @@ execout -ignorestderr [busywork::bin]/userModeNetwork -peerLogging debug 4
 
 note {} "Deploying 2 chaincodes with interlock"
 busyOut -waitFor 2m \
-    deploy vp0 cc0 github.com/hyperledger/fabric/tools/busywork/counters parms -id cc0
+    deploy vp0 cc0 github.com/abchain/fabric/tools/busywork/counters parms -id cc0
 busyOut -waitFor 2m \
-    deploy vp1 cc1 github.com/hyperledger/fabric/tools/busywork/counters parms -id cc1
+    deploy vp1 cc1 github.com/abchain/fabric/tools/busywork/counters parms -id cc1
 
 note {} "Creating arrays with interlock"
 busyOut -waitFor 1m invoke vp2 cc0 create a1 1 a2 2

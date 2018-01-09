@@ -21,7 +21,7 @@ rm -rf membersrvc/ca/.ca/
 
 echo -n "Obtaining list of tests to run.."
 # Some examples don't play nice with `go test`
-PKGS=`go list github.com/hyperledger/fabric/... | grep -v /vendor/ | \
+PKGS=`go list github.com/abchain/fabric/... | grep -v /vendor/ | \
 	                                          grep -v /examples/chaincode/chaintool/ | \
 						  grep -v /examples/chaincode/go/asset_management | \
 						  grep -v /examples/chaincode/go/utxo | \
@@ -29,8 +29,8 @@ PKGS=`go list github.com/hyperledger/fabric/... | grep -v /vendor/ | \
 
 if [ x$ARCH == xppc64le -o x$ARCH == xs390x ]
 then
-PKGS=`echo $PKGS | sed  's@'github.com/hyperledger/fabric/core/chaincode/platforms/java/test'@@g'`
-PKGS=`echo $PKGS | sed  's@'github.com/hyperledger/fabric/core/chaincode/platforms/java'@@g'`
+PKGS=`echo $PKGS | sed  's@'github.com/abchain/fabric/core/chaincode/platforms/java/test'@@g'`
+PKGS=`echo $PKGS | sed  's@'github.com/abchain/fabric/core/chaincode/platforms/java'@@g'`
 fi
 
 echo "DONE!"

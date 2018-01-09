@@ -29,8 +29,8 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/protos"
 )
 
 var fail_func string = "fail"
@@ -616,7 +616,7 @@ func TestServerOpenchainREST_API_Chaincode_Deploy(t *testing.T) {
 		"params": {
 			"type": 1,
 			"chaincodeID": {
-				"path": "github.com/hyperledger/fabric/core/rest/test_chaincode"
+				"path": "github.com/abchain/fabric/core/rest/test_chaincode"
 			},
 			"ctorMsg": {
 				"args": ["` +
@@ -639,7 +639,7 @@ func TestServerOpenchainREST_API_Chaincode_Deploy(t *testing.T) {
 		"params": {
 			"type": 1,
 			"chaincodeID": {
-				"path": "github.com/hyperledger/fabric/core/rest/test_chaincode"
+				"path": "github.com/abchain/fabric/core/rest/test_chaincode"
 			},
 			"ctorMsg": {
 				"args": ["` +

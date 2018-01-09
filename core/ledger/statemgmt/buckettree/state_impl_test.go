@@ -19,8 +19,8 @@ package buckettree
 import (
 	"testing"
 
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/ledger/testutil"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger/testutil"
 )
 
 func TestStateImpl_ComputeHash_AllInMemory_NoContents(t *testing.T) {

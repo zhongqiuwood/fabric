@@ -25,8 +25,8 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/hyperledger/fabric/core/config"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/config"
+	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )

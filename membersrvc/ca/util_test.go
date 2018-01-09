@@ -20,7 +20,7 @@ import (
 	"reflect"
 	"testing"
 
-	pb "github.com/hyperledger/fabric/membersrvc/protos"
+	pb "github.com/abchain/fabric/membersrvc/protos"
 )
 
 func TestRandomString(t *testing.T) {

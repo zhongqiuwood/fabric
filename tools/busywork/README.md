@@ -1,7 +1,7 @@
 # busywork
 
 **busywork** is an exerciser framework for the
-[Hyperledger fabric](https://github.com/hyperledger/fabric) project. As an
+[Hyperledger fabric](https://github.com/abchain/fabric) project. As an
 *exerciser*, **busywork** is not a real blockchain application, but is simply
 a set of scripts, programs and utilities for stressing the blockchain fabric
 in various, often randomized ways - hence the name. **busywork** applications

@@ -1,7 +1,7 @@
 package peerex
 
 import (
-	pb "github.com/hyperledger/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 )
 

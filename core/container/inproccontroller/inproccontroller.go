@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/hyperledger/fabric/core/chaincode/shim"
-	"github.com/hyperledger/fabric/core/container/ccintf"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/chaincode/shim"
+	"github.com/abchain/fabric/core/container/ccintf"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 
 	"golang.org/x/net/context"

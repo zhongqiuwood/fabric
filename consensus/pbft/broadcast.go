@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hyperledger/fabric/consensus"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/consensus"
+	pb "github.com/abchain/fabric/protos"
 )
 
 type communicator interface {

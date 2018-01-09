@@ -29,7 +29,7 @@ import (
 	"net"
 	"time"
 
-	"github.com/hyperledger/fabric/core/crypto/utils"
+	"github.com/abchain/fabric/core/crypto/utils"
 )
 
 var (

@@ -21,7 +21,7 @@ TYPINGS := $(BINDIR)/typings
 TSC     := $(BINDIR)/tsc
 TYPEDOC := $(BINDIR)/typedoc
 
-DOCURI := "https://github.com/hyperledger/fabric/tree/master/sdk/node/"
+DOCURI := "https://github.com/abchain/fabric/tree/master/sdk/node/"
 
 SRC := $(shell find src -type f)
 CONFIG := $(shell ls *.json)

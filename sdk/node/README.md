@@ -22,7 +22,7 @@ For networks running newer versions of the Hyperledger Fabric, please install th
 
 In order to transact on a Hyperledger blockchain, you must first have an identity which is both **registered** and **enrolled**. **Registration** means issuing a user invitation to join a blockchain network. **Enrollment** means accepting a user invitation to join a blockchain network.
 
-In the current Hyperleger Fabric implementation, the administative user admin is already registered on the network by the virtue of the fact that their user ID and password pair are already added to the membership services server confiruation file, [membersrvc.yaml](https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml). Therefore, the admin user must only enroll to be able to transact on the network. After enrollment, the administrative user is then able to register and enroll new users, in the role of a registrar. New users are added to the network programmatically, through the HFC `chain.registerAndEnroll` API.
+In the current Hyperleger Fabric implementation, the administative user admin is already registered on the network by the virtue of the fact that their user ID and password pair are already added to the membership services server confiruation file, [membersrvc.yaml](https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml). Therefore, the admin user must only enroll to be able to transact on the network. After enrollment, the administrative user is then able to register and enroll new users, in the role of a registrar. New users are added to the network programmatically, through the HFC `chain.registerAndEnroll` API.
 
 ### Example
 
@@ -40,7 +40,7 @@ If you wish to enable TLS connection between the member services, the peers, and
 
 ## Objects, Classes, And Interfaces
 
-HFC is written primarily in Typescript and is object-oriented. The source can be found in the [fabric/sdk/node](https://github.com/hyperledger/fabric/tree/master/sdk/node) directory of the Hyperledger Fabric project. To better understand the object hierarchy, please read the high-level descriptions of the HFC objects (classes and interfaces) in the [HFC Objects](http://hyperledger-fabric.readthedocs.io/en/latest/nodeSDK/node-sdk-indepth/#hfc-objects) section within the Node.js SDK documentation. You can also build the complete reference documentation locally by following the instructions [here](http://hyperledger-fabric.readthedocs.io/en/latest/nodeSDK/app-developer-env-setup/).
+HFC is written primarily in Typescript and is object-oriented. The source can be found in the [fabric/sdk/node](https://github.com/abchain/fabric/tree/master/sdk/node) directory of the Hyperledger Fabric project. To better understand the object hierarchy, please read the high-level descriptions of the HFC objects (classes and interfaces) in the [HFC Objects](http://hyperledger-fabric.readthedocs.io/en/latest/nodeSDK/node-sdk-indepth/#hfc-objects) section within the Node.js SDK documentation. You can also build the complete reference documentation locally by following the instructions [here](http://hyperledger-fabric.readthedocs.io/en/latest/nodeSDK/app-developer-env-setup/).
 
 ## Unit Tests
 
@@ -52,26 +52,26 @@ Launch the Vagrant VM and log into the VM by executing the following command:
 
 Run the unit tests within the Vagrant environment with the following commands:
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make node-sdk-unit-tests
 
 The following are brief descriptions of each of the unit tests that are being run.
 
 #### registrar
 
-The [registrar.js](https://github.com/hyperledger/fabric/blob/master/sdk/node/test/unit/registrar.js) test case exercises registering users with the membership services server. It also tests registering a designated registrar user which can then register additional users.
+The [registrar.js](https://github.com/abchain/fabric/blob/master/sdk/node/test/unit/registrar.js) test case exercises registering users with the membership services server. It also tests registering a designated registrar user which can then register additional users.
 
 #### chain-tests
 
-The [chain-tests.js](https://github.com/hyperledger/fabric/blob/master/sdk/node/test/unit/chain-tests.js) test case exercises the [chaincode_example02.go](https://github.com/hyperledger/fabric/tree/master/examples/chaincode/go/chaincode_example02) chaincode when it has been deployed in both development mode and network mode.
+The [chain-tests.js](https://github.com/abchain/fabric/blob/master/sdk/node/test/unit/chain-tests.js) test case exercises the [chaincode_example02.go](https://github.com/abchain/fabric/tree/master/examples/chaincode/go/chaincode_example02) chaincode when it has been deployed in both development mode and network mode.
 
 #### asset-mgmt
 
-The [asset-mgmt.js](https://github.com/hyperledger/fabric/blob/master/sdk/node/test/unit/asset-mgmt.js) test case exercises the [asset_management.go](https://github.com/hyperledger/fabric/tree/master/examples/chaincode/go/asset_management) chaincode when it has been deployed in both development mode and network mode.
+The [asset-mgmt.js](https://github.com/abchain/fabric/blob/master/sdk/node/test/unit/asset-mgmt.js) test case exercises the [asset_management.go](https://github.com/abchain/fabric/tree/master/examples/chaincode/go/asset_management) chaincode when it has been deployed in both development mode and network mode.
 
 #### asset-mgmt-with-roles
 
-The [asset-mgmt-with-roles.js](https://github.com/hyperledger/fabric/blob/master/sdk/node/test/unit/asset-mgmt-with-roles.js) test case exercises the [asset_management_with_roles.go](https://github.com/hyperledger/fabric/tree/master/examples/chaincode/go/asset_management_with_roles) chaincode when it has been deployed in both development mode and network mode.
+The [asset-mgmt-with-roles.js](https://github.com/abchain/fabric/blob/master/sdk/node/test/unit/asset-mgmt-with-roles.js) test case exercises the [asset_management_with_roles.go](https://github.com/abchain/fabric/tree/master/examples/chaincode/go/asset_management_with_roles) chaincode when it has been deployed in both development mode and network mode.
 
 ## Basic Troubleshooting
 
@@ -84,7 +84,7 @@ Keep in mind that you can perform the enrollment process with the membership ser
    Error: user is already registered
    ```
 
-To address this, remove any stored crypto material from the CA server by following the instructions [here](https://github.com/hyperledger/fabric/blob/master/docs/Setup/Chaincode-setup.md#removing-temporary-files-when-security-is-enabled). You will also need to remove any of the crypto tokens stored on the client side by deleting the KeyValStore directory. That directory is configurable and is set to `/tmp/keyValStore` within the unit tests.
+To address this, remove any stored crypto material from the CA server by following the instructions [here](https://github.com/abchain/fabric/blob/master/docs/Setup/Chaincode-setup.md#removing-temporary-files-when-security-is-enabled). You will also need to remove any of the crypto tokens stored on the client side by deleting the KeyValStore directory. That directory is configurable and is set to `/tmp/keyValStore` within the unit tests.
 
 ## Support
 
@@ -96,4 +96,4 @@ We welcome any contributions to the Hyperledger Fabric Node.js SDK project. If y
 
 ## License
 
-Contributed to the Hyperledger Project under the [Apache Software License 2.0](https://github.com/hyperledger/fabric/blob/master/LICENSE).
+Contributed to the Hyperledger Project under the [Apache Software License 2.0](https://github.com/abchain/fabric/blob/master/LICENSE).

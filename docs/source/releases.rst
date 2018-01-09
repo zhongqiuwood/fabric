@@ -1,14 +1,14 @@
 Releases
 ========
 
-`v0.6-preview <https://github.com/hyperledger/fabric/tree/v0.6>`__
+`v0.6-preview <https://github.com/abchain/fabric/tree/v0.6>`__
 September 16, 2016
 
 A developer preview release of the Hyperledger Fabric intended to
 exercise the release logistics and stabilize a set of capabilities for
 developers to try out. This will be the last release under the original
 architecture. All subsequent releases will deliver on the `v1.0
-architecture <https://github.com/hyperledger/fabric/blob/master/proposals/r1/Next-Consensus-Architecture-Proposal.md>`__.
+architecture <https://github.com/abchain/fabric/blob/master/proposals/r1/Next-Consensus-Architecture-Proposal.md>`__.
 
 Key enhancements:
 

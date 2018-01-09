@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	cutil "github.com/hyperledger/fabric/core/container/util"
-	pb "github.com/hyperledger/fabric/protos"
+	cutil "github.com/abchain/fabric/core/container/util"
+	pb "github.com/abchain/fabric/protos"
 )
 
 func download(path string) (string, error) {

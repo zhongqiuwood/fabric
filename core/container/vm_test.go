@@ -24,9 +24,9 @@ import (
 	"os"
 	"testing"
 
-	cutil "github.com/hyperledger/fabric/core/container/util"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	cutil "github.com/abchain/fabric/core/container/util"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 )
 
@@ -73,7 +73,7 @@ func TestVM_BuildImage_ChaincodeLocal(t *testing.T) {
 		return
 	}
 	// Build the spec
-	chaincodePath := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example01"
+	chaincodePath := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example01"
 	spec := &pb.ChaincodeSpec{Type: pb.ChaincodeSpec_GOLANG, ChaincodeID: &pb.ChaincodeID{Path: chaincodePath}, CtorMsg: &pb.ChaincodeInput{Args: util.ToChaincodeArgs("f")}}
 	if _, err := vm.BuildChaincodeContainer(spec); err != nil {
 		t.Fail()

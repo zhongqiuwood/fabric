@@ -24,8 +24,8 @@ import (
 
 	"github.com/spf13/viper"
 
-	cutil "github.com/hyperledger/fabric/core/container/util"
-	pb "github.com/hyperledger/fabric/protos"
+	cutil "github.com/abchain/fabric/core/container/util"
+	pb "github.com/abchain/fabric/protos"
 )
 
 //tw is expected to have the chaincode in it from GenerateHashcode. This method
@@ -59,7 +59,7 @@ func writeChaincodePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
 	}
 
 	//let the executable's name be chaincode ID's name
-	newRunLine := fmt.Sprintf("RUN go install %s && cp src/github.com/hyperledger/fabric/peer/core.yaml $GOPATH/bin && mv $GOPATH/bin/%s $GOPATH/bin/%s", urlLocation, chaincodeGoName, spec.ChaincodeID.Name)
+	newRunLine := fmt.Sprintf("RUN go install %s && cp src/github.com/abchain/fabric/peer/core.yaml $GOPATH/bin && mv $GOPATH/bin/%s $GOPATH/bin/%s", urlLocation, chaincodeGoName, spec.ChaincodeID.Name)
 
 	//NOTE-this could have been abstracted away so we could use it for all platforms in a common manner
 	//However, it would still be docker specific. Hence any such abstraction has to be done in a manner that

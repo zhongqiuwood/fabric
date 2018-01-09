@@ -22,7 +22,7 @@ import (
 	"sort"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/util"
 )
 
 // StateDelta holds the changes to existing state. This struct is used for holding the uncommitted changes during execution of a tx-batch

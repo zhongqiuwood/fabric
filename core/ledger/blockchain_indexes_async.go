@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/protos"
 	"github.com/tecbot/gorocksdb"
 )
 

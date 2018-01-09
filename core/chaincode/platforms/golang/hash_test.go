@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/util"
 )
 
 // TestHashContentChange changes a random byte in a content and checks for hash change

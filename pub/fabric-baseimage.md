@@ -1,6 +1,6 @@
 ## Hyperledger Fabric Base image
 
-The base image used in the creation of the hyperledger/fabric-peer and hyperledger/fabric-membersrvc images for the [Hyperledger Fabric project](https://github.com/hyperledger/fabric).
+The base image used in the creation of the hyperledger/fabric-peer and hyperledger/fabric-membersrvc images for the [Hyperledger Fabric project](https://github.com/abchain/fabric).
 
 ## Usage
 

@@ -127,7 +127,7 @@ BUSYWORK_HOME = $(HOME)/.busywork
 ignore = $(shell mkdir -p $(BUSYWORK_HOME))
 endif
 
-FABRIC = $(GOPATH)/src/github.com/hyperledger/fabric
+FABRIC = $(GOPATH)/src/github.com/abchain/fabric
 
 .PHONY: null
 null:
@@ -177,16 +177,16 @@ peer_image:
 .PHONY: test go_tests behave_tests behave_tests_with_logs busyTest
 
 go_tests: nosec_noops_1
-	cd $(GOPATH)/src/github.com/hyperledger/fabric; \
-	go test -timeout=20m $$(go list github.com/hyperledger/fabric/... | \
+	cd $(GOPATH)/src/github.com/abchain/fabric; \
+	go test -timeout=20m $$(go list github.com/abchain/fabric/... | \
 		grep -v /vendor/ | grep -v /examples/)
 
 behave_tests: fabric_reset
-	cd $(GOPATH)/src/github.com/hyperledger/fabric/bddtests; \
+	cd $(GOPATH)/src/github.com/abchain/fabric/bddtests; \
 	behave
 
 behave_tests_with_logs: fabric_reset
-	cd $(GOPATH)/src/github.com/hyperledger/fabric/bddtests; \
+	cd $(GOPATH)/src/github.com/abchain/fabric/bddtests; \
 	behave -D logs=Y
 
 test: go_tests behave_tests

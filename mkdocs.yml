@@ -1,7 +1,7 @@
 site_name: Hyperledger Fabric
 site_url: http://hyperledger-fabric.readthedocs.io
 theme: readthedocs
-repo_url: https://github.com/hyperledger/fabric.git
+repo_url: https://github.com/abchain/fabric.git
 site_description: 'Welcome to the Hyperledger fabric documentation'
 strict: true
 theme_dir: 'docs/custom_theme'
@@ -83,4 +83,4 @@ markdown_extensions:
       enable_dollar_delimiter: True #for use of inline $..$
   - footnotes
 
-copyright: Copyright &copy; 2016 IBM Corp. <br></br>Contributed to the Hyperledger Project under the <a href="https://github.com/hyperledger/fabric/blob/master/LICENSE" target="_blank">Apache Software License 2.0</a>
+copyright: Copyright &copy; 2016 IBM Corp. <br></br>Contributed to the Hyperledger Project under the <a href="https://github.com/abchain/fabric/blob/master/LICENSE" target="_blank">Apache Software License 2.0</a>

@@ -99,7 +99,7 @@ function deploy(user) {
        args: ["a", "100", "b", "200"]
    };
    // where is the chain code, ignored in dev mode
-   deployRequest.chaincodePath = "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02";
+   deployRequest.chaincodePath = "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02";
 
    // Issue the deploy request and listen for events
    var tx = user.deploy(deployRequest);

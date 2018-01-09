@@ -19,7 +19,7 @@ package crypto
 import (
 	"crypto/x509"
 
-	ecies "github.com/hyperledger/fabric/core/crypto/primitives/ecies"
+	ecies "github.com/abchain/fabric/core/crypto/primitives/ecies"
 )
 
 func (node *nodeImpl) registerCryptoEngine(enrollID, enrollPWD string) error {

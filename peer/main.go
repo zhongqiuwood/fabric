@@ -29,13 +29,13 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/hyperledger/fabric/core"
-	"github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/flogging"
-	"github.com/hyperledger/fabric/peer/chaincode"
-	"github.com/hyperledger/fabric/peer/network"
-	"github.com/hyperledger/fabric/peer/node"
-	"github.com/hyperledger/fabric/peer/version"
+	"github.com/abchain/fabric/core"
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/flogging"
+	"github.com/abchain/fabric/peer/chaincode"
+	"github.com/abchain/fabric/peer/network"
+	"github.com/abchain/fabric/peer/node"
+	"github.com/abchain/fabric/peer/version"
 )
 
 var logger = logging.MustGetLogger("main")
@@ -92,7 +92,7 @@ func main() {
 		// Path to look for the config file in based on GOPATH
 		gopath := os.Getenv("GOPATH")
 		for _, p := range filepath.SplitList(gopath) {
-			peerpath := filepath.Join(p, "src/github.com/hyperledger/fabric/peer")
+			peerpath := filepath.Join(p, "src/github.com/abchain/fabric/peer")
 			viper.AddConfigPath(peerpath)
 		}
 	}

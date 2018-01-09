@@ -28,8 +28,8 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	pb "github.com/hyperledger/fabric/core/crypto/attributes/proto"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	pb "github.com/abchain/fabric/core/crypto/attributes/proto"
+	"github.com/abchain/fabric/core/crypto/primitives"
 )
 
 func TestMain(m *testing.M) {

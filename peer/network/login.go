@@ -23,10 +23,10 @@ import (
 	"os"
 
 	"github.com/howeyc/gopass"
-	"github.com/hyperledger/fabric/core/peer"
-	"github.com/hyperledger/fabric/peer/common"
-	"github.com/hyperledger/fabric/peer/util"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/peer"
+	"github.com/abchain/fabric/peer/common"
+	"github.com/abchain/fabric/peer/util"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/context"
 )

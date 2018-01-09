@@ -24,9 +24,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hyperledger/fabric/events/consumer"
-	"github.com/hyperledger/fabric/events/producer"
-	ehpb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/events/consumer"
+	"github.com/abchain/fabric/events/producer"
+	ehpb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

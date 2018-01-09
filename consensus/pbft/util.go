@@ -23,7 +23,7 @@ import (
 	"encoding/base64"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/util"
 )
 
 func hash(msg interface{}) string {

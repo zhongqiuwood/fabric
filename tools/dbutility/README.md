@@ -16,7 +16,7 @@ files in the db are different from the initial state but the contents would stil
 ### Running the utility
 For running this utility, execute following commands
 
-1. `cd $GOPATH/src/github.com/hyperledger/fabric/tools/dbstats`
+1. `cd $GOPATH/src/github.com/abchain/fabric/tools/dbstats`
 2. `go run dump_db_stats.go -dbDir 'path_to_db_dir'`
 
 Note that the dbDir in the second command points to a directory that contains the dir named 'db'.

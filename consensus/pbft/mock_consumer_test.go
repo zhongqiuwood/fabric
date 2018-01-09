@@ -20,9 +20,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/hyperledger/fabric/consensus"
-	"github.com/hyperledger/fabric/consensus/util/events"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/consensus"
+	"github.com/abchain/fabric/consensus/util/events"
+	pb "github.com/abchain/fabric/protos"
 
 	"github.com/spf13/viper"
 )

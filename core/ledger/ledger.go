@@ -23,14 +23,14 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt/state"
-	"github.com/hyperledger/fabric/events/producer"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger/statemgmt/state"
+	"github.com/abchain/fabric/events/producer"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 
-	"github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 )
 

@@ -19,7 +19,7 @@ package version
 import (
 	"fmt"
 
-	"github.com/hyperledger/fabric/metadata"
+	"github.com/abchain/fabric/metadata"
 	"github.com/spf13/cobra"
 )
 

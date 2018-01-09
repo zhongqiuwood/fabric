@@ -114,7 +114,7 @@ to allow the network to initialize:
 -  From the terminal session in the **starter** container execute the
    standalone Node.js application. The Docker terminal session should be
    in the working directory of the sample application called **app.js**
-   (*/opt/gopath/src/github.com/hyperledger/fabric/examples/sdk/node*).
+   (*/opt/gopath/src/github.com/abchain/fabric/examples/sdk/node*).
    Execute the following Node.js command to run the application:
 
 ::
@@ -152,7 +152,7 @@ in a new terminal session of the real system):
 
 ::
 
-         npm install /opt/gopath/src/github.com/hyperledger/fabric/sdk/node
+         npm install /opt/gopath/src/github.com/abchain/fabric/sdk/node
 
 -  run the application from within the **starter** Docker container
    using the following commands:

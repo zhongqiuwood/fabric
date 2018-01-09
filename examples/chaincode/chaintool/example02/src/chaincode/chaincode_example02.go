@@ -26,7 +26,7 @@ import (
 	"hyperledger/ccs"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/chaincode/shim"
+	"github.com/abchain/fabric/core/chaincode/shim"
 )
 
 type ChaincodeExample struct {

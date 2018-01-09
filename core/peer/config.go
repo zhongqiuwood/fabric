@@ -35,7 +35,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	pb "github.com/hyperledger/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 )
 
 // Is the configuration cached?

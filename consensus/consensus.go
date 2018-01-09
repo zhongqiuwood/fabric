@@ -17,7 +17,7 @@ limitations under the License.
 package consensus
 
 import (
-	pb "github.com/hyperledger/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 )
 
 // ExecutionConsumer allows callbacks from asycnhronous execution and statetransfer

@@ -21,14 +21,14 @@ chaincode invoker based on attribute values carried in the invoker's
 certificate.
 
 `'Authorizable
-counter' <https://github.com/hyperledger/fabric/blob/v0.6/examples/chaincode/go/authorizable_counter/authorizable_counter.go>`__
+counter' <https://github.com/abchain/fabric/blob/v0.6/examples/chaincode/go/authorizable_counter/authorizable_counter.go>`__
 is a simple example of ABAC, in this case only invokers whose "position"
 attribute has the value 'Software Engineer' will be able to increment
 the counter. On the other hand any invoker will be able to read the
 counter value.
 
 In order to implement this example we used
-`'VerifyAttribyte' <https://godoc.org/github.com/hyperledger/fabric/core/chaincode/shim#ChaincodeStub.VerifyAttribute>`__
+`'VerifyAttribyte' <https://godoc.org/github.com/abchain/fabric/core/chaincode/shim#ChaincodeStub.VerifyAttribute>`__
 function to check the attribute value from the chaincode code.
 
 ::
@@ -39,7 +39,7 @@ function to check the attribute value from the chaincode code.
     }
 
 The same behavior can be achieved by making use of `'Attribute
-support' <https://github.com/hyperledger/fabric/tree/v0.6/core/chaincode/shim/crypto/attr>`__
+support' <https://github.com/abchain/fabric/tree/v0.6/core/chaincode/shim/crypto/attr>`__
 API, in this case an attribute handler must be instantiated.
 
 ::

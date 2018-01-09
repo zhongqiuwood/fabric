@@ -29,9 +29,9 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	"github.com/hyperledger/fabric/membersrvc/protos"
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/membersrvc/protos"
 )
 
 func TestNewTCA(t *testing.T) {

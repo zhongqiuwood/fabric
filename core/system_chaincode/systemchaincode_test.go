@@ -23,13 +23,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/hyperledger/fabric/core/chaincode"
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/system_chaincode/api"
-	"github.com/hyperledger/fabric/core/system_chaincode/samplesyscc"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/chaincode"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/system_chaincode/api"
+	"github.com/abchain/fabric/core/system_chaincode/samplesyscc"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -109,7 +109,7 @@ func TestExecuteDeploySysChaincode(t *testing.T) {
 		{
 			Enabled:   true,
 			Name:      "sample_syscc",
-			Path:      "github.com/hyperledger/fabric/core/system_chaincode/samplesyscc",
+			Path:      "github.com/abchain/fabric/core/system_chaincode/samplesyscc",
 			InitArgs:  [][]byte{},
 			Chaincode: &samplesyscc.SampleSysCC{},
 		},
@@ -119,7 +119,7 @@ func TestExecuteDeploySysChaincode(t *testing.T) {
 	viper.Set("chaincode.system", map[string]string{"sample_syscc": "true"})
 	RegisterSysCCs()
 
-	url := "github.com/hyperledger/fabric/core/system_chaincode/sample_syscc"
+	url := "github.com/abchain/fabric/core/system_chaincode/sample_syscc"
 	f := "putval"
 	args := util.ToChaincodeArgs(f, "greeting", "hey there")
 

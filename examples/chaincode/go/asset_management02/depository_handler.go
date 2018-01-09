@@ -19,7 +19,7 @@ package main
 import (
 	"errors"
 
-	"github.com/hyperledger/fabric/core/chaincode/shim"
+	"github.com/abchain/fabric/core/chaincode/shim"
 )
 
 // consts associated with chaincode table

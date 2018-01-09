@@ -17,16 +17,16 @@ limitations under the License.
 package helper
 
 import (
-	"github.com/hyperledger/fabric/consensus"
-	"github.com/hyperledger/fabric/core/peer"
+	"github.com/abchain/fabric/consensus"
+	"github.com/abchain/fabric/core/peer"
 
 	"fmt"
 	"sync"
 
-	"github.com/hyperledger/fabric/consensus/controller"
-	"github.com/hyperledger/fabric/consensus/util"
-	"github.com/hyperledger/fabric/core/chaincode"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/consensus/controller"
+	"github.com/abchain/fabric/consensus/util"
+	"github.com/abchain/fabric/core/chaincode"
+	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 )
 

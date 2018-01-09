@@ -66,7 +66,7 @@ The second approach would be to leverage the :doc:`development
 environment <../dev-setup/devenv>` setup (which we will assume you
 have already established) to build and deploy your own binaries and/or
 Docker images from a clone of the
-`hyperledger/fabric <https://github.com/hyperledger/fabric>`__ GitHub
+`hyperledger/fabric <https://github.com/abchain/fabric>`__ GitHub
 repository. This approach is suitable for developers that might wish to
 contribute directly to the Hyperledger Fabric project, or that wish to
 deploy from a fork of the Hyperledger code base.
@@ -79,7 +79,7 @@ To create the Docker image for the ``hyperledger/fabric-peer``:
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make peer-image
 
 To create the Docker image for the ``hyperledger/fabric-membersrvc``:
@@ -276,12 +276,12 @@ environment variable.
 
    <!-- This needs to be sorted out with a revamped security section
 
-   Again, the validating peer `enrollID` and `enrollSecret` (`vp1` and `vp1_secret`) has to be added to [membersrvc.yaml](https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml).
+   Again, the validating peer `enrollID` and `enrollSecret` (`vp1` and `vp1_secret`) has to be added to [membersrvc.yaml](https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml).
 
-   You can start up a few more validating peers in a similar manner if you wish. Remember to change the peer ID and add the enrollID/enrollSecret to the [membersrvc.yaml](https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml).
+   You can start up a few more validating peers in a similar manner if you wish. Remember to change the peer ID and add the enrollID/enrollSecret to the [membersrvc.yaml](https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml).
 
    ### Enroll/Login a test user (if security is enabled):
-   If security is enabled, you must enroll a user with the certificate authority before sending requests. Choose a user that is already registered, i.e. added to the [membersrvc.yaml](https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml). Then, execute the command below to log in the user on the target validating peer. `CORE_PEER_ADDRESS` specifies the target validating peer for which the user is to be logged in.
+   If security is enabled, you must enroll a user with the certificate authority before sending requests. Choose a user that is already registered, i.e. added to the [membersrvc.yaml](https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml). Then, execute the command below to log in the user on the target validating peer. `CORE_PEER_ADDRESS` specifies the target validating peer for which the user is to be logged in.
 
    ```
    CORE_PEER_ADDRESS=172.17.0.2:7051 peer network login jim
@@ -294,18 +294,18 @@ environment variable.
 
    **Note:** When security is enabled, modify the CLI commands to deploy, invoke, or query a chaincode to pass the username of a logged in user. To log in a registered user through the CLI, execute the login command from the section above. On the CLI the username is passed with the -u parameter.
 
-   We can use the sample chaincode to test the network. You may find the chaincode here `$GOPATH/src/github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02`.
+   We can use the sample chaincode to test the network. You may find the chaincode here `$GOPATH/src/github.com/abchain/fabric/examples/chaincode/go/chaincode_example02`.
 
    Deploy the chaincode to the network. We can deploy to any validating peer by specifying `CORE_PEER_ADDRESS`:
 
    ```
-   CORE_PEER_ADDRESS=172.17.0.2:7051 peer chaincode deploy -p github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
+   CORE_PEER_ADDRESS=172.17.0.2:7051 peer chaincode deploy -p github.com/abchain/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
    ```
 
    With security enabled, modify the command as follows:
 
    ```
-   CORE_PEER_ADDRESS=172.17.0.2:7051 CORE_SECURITY_ENABLED=true CORE_SECURITY_PRIVACY=true peer chaincode deploy -u jim -p github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
+   CORE_PEER_ADDRESS=172.17.0.2:7051 CORE_SECURITY_ENABLED=true CORE_SECURITY_PRIVACY=true peer chaincode deploy -u jim -p github.com/abchain/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
    ```
 
    You can watch for the message "Received build request for chaincode spec" on the output screen of all validating peers.

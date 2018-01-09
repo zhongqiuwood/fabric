@@ -25,9 +25,9 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/fsouza/go-dockerclient"
-	"github.com/hyperledger/fabric/core/chaincode/platforms"
-	cutil "github.com/hyperledger/fabric/core/container/util"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/chaincode/platforms"
+	cutil "github.com/abchain/fabric/core/container/util"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 )
 

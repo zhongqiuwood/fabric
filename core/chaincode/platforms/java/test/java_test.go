@@ -20,10 +20,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/config"
-	"github.com/hyperledger/fabric/core/container"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/config"
+	"github.com/abchain/fabric/core/container"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 )
 
 func TestMain(m *testing.M) {

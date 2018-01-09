@@ -19,12 +19,12 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/chaincode/shim"
-	ex02 "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+	"github.com/abchain/fabric/core/chaincode/shim"
+	ex02 "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
 )
 
 // chaincode_example02's hash is used here and must be updated if the example is changed
-var example02Url = "github.com/hyperledger/fabric/core/example/chaincode/chaincode_example02"
+var example02Url = "github.com/abchain/fabric/core/example/chaincode/chaincode_example02"
 
 // chaincode_example05 looks like it wanted to return a JSON response to Query()
 // it doesn't actually do this though, it just returns the sum value

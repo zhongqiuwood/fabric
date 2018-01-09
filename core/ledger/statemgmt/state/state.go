@@ -20,11 +20,11 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt/buckettree"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt/raw"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt/trie"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
+	"github.com/abchain/fabric/core/ledger/statemgmt/raw"
+	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 )

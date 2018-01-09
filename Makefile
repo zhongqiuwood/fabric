@@ -50,7 +50,7 @@ endif
 DOCKER_TAG=$(shell uname -m)-$(PROJECT_VERSION)
 
 PKGNAME = github.com/$(PROJECT_NAME)
-GO_LDFLAGS = -X github.com/hyperledger/fabric/metadata.Version=$(PROJECT_VERSION)
+GO_LDFLAGS = -X github.com/abchain/fabric/metadata.Version=$(PROJECT_VERSION)
 CGO_FLAGS = CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy"
 UID = $(shell id -u)
 CHAINTOOL_RELEASE=v0.9.1
@@ -134,7 +134,7 @@ linter: gotools
 build/bin/chaintool: Makefile
 	@echo "Installing chaintool"
 	@mkdir -p $(@D)
-	curl -L https://github.com/hyperledger/fabric-chaintool/releases/download/$(CHAINTOOL_RELEASE)/chaintool > $@
+	curl -L https://github.com/abchain/fabric-chaintool/releases/download/$(CHAINTOOL_RELEASE)/chaintool > $@
 	chmod +x $@
 
 %/bin/chaintool: build/bin/chaintool
@@ -156,7 +156,7 @@ build/docker/bin/%: build/image/src/.dummy $(PROJECT_FILES)
 		--user=$(UID) \
 		-v $(abspath build/docker/bin):/opt/gopath/bin \
 		-v $(abspath build/docker/pkg):/opt/gopath/pkg \
-		hyperledger/fabric-src:$(DOCKER_TAG) go install -ldflags "$(GO_LDFLAGS)" github.com/hyperledger/fabric/$(TARGET)
+		hyperledger/fabric-src:$(DOCKER_TAG) go install -ldflags "$(GO_LDFLAGS)" github.com/abchain/fabric/$(TARGET)
 	@touch $@
 
 build/bin:

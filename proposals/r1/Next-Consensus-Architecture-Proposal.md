@@ -495,7 +495,7 @@ In the rest of this text, a `Confidential` *chaincode* is one with a
 confidentiality policy different from `000`. Also, in the rest of
 this text, we make the assumption that every peer is associated with an
 enrollment (encryption) public key, as described in
-[Hyperledger fabric Protocol specification](https://github.com/hyperledger/fabric/blob/master/docs/protocol-spec.md).  In particular, for every endorser `e` a public key `ePubKey` is known to all
+[Hyperledger fabric Protocol specification](https://github.com/abchain/fabric/blob/master/docs/protocol-spec.md).  In particular, for every endorser `e` a public key `ePubKey` is known to all
 peers and peer `e` knows the corresponding private key for decryption.
 
 **Disclaimers:**

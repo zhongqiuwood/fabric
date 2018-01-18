@@ -12,7 +12,7 @@ latest Hyperledger shim:
 
 The chaincode interface has changed from ``shim.ChaincodeStub`` to
 ``shim.ChaincodeStubInterface``. See the
-`interfaces.go <https://github.com/hyperledger/fabric/blob/v0.6/core/chaincode/shim/interfaces.go>`__
+`interfaces.go <https://github.com/abchain/fabric/blob/v0.6/core/chaincode/shim/interfaces.go>`__
 file for the shim source code. The following code snippet from line 74
 of chaincode\_example02 will highlight this alteration.
 
@@ -121,7 +121,7 @@ This is done by implementing the EventHub Service in your node program.
 The EventHub Service listens for events.
 
 You can customize the
-`eventsender.go <https://github.com/hyperledger/fabric/blob/v0.6/examples/chaincode/go/eventsender/eventsender.go>`__
+`eventsender.go <https://github.com/abchain/fabric/blob/v0.6/examples/chaincode/go/eventsender/eventsender.go>`__
 code to determine which events you want sent. In the example, only the
 invoke transaction type is coded to send outgoing events. See the
 following code snippet in eventsender.go which demonstrates invocations
@@ -185,7 +185,7 @@ for the application source code and deeper documentation.
 
 **2.** Java chaincode shim - new shim library to support java chaincode
 interacting with Hyperledger fabric. See the `java
-shim <https://github.com/hyperledger/fabric/tree/v0.6/core/chaincode/shim/java>`__
+shim <https://github.com/abchain/fabric/tree/v0.6/core/chaincode/shim/java>`__
 library for the source code.
 
 **3.** Ability to call chaincode using a 64encoded string. A custom
@@ -222,7 +222,7 @@ be avoided:
    non-determinism (e.g. "random" or "time")
 -  For templates of deterministic and properly-written chaincode, see
    the
-   `examples <https://github.com/hyperledger/fabric/tree/v0.6/examples/chaincode>`__
+   `examples <https://github.com/abchain/fabric/tree/v0.6/examples/chaincode>`__
    library. This directory contains samples written in Go and Java.
 
 **7.** Fabric Starter Kit - This section describes how to set up a
@@ -246,7 +246,7 @@ Bluemix instance of the blockchain service.
 
 **9.** Fabric v0.6 provides the ability to dynamically register and
 enroll users with attributes through the hfc SDK. See
-`asset-mgmt-with-dynamic-roles.js <https://github.com/hyperledger/fabric/blob/v0.6/sdk/node/test/unit/asset-mgmt-with-dynamic-roles.js>`__
+`asset-mgmt-with-dynamic-roles.js <https://github.com/abchain/fabric/blob/v0.6/sdk/node/test/unit/asset-mgmt-with-dynamic-roles.js>`__
 as an example. The hfc SDK previously allowed you to dynamically enroll
 users, but these users were already registered and aligned with
 attributes/affiliations hardcoded in the membersrvc.yml. Now a user with

@@ -59,7 +59,7 @@ The app needs a 'core.yaml' configuration file in order to bootstrap a non-valid
 
 ### Setup the fabric network
 
-We consider the fabric network as described here: [https://github.com/hyperledger/fabric/blob/master/consensus/docker-compose-files/compose-consensus-4.md](https://github.com/hyperledger/fabric/blob/master/consensus/docker-compose-files/compose-consensus-4.md) that consists of 4 validators and the membership service.
+We consider the fabric network as described here: [https://github.com/abchain/fabric/blob/master/consensus/docker-compose-files/compose-consensus-4.md](https://github.com/abchain/fabric/blob/master/consensus/docker-compose-files/compose-consensus-4.md) that consists of 4 validators and the membership service.
 
 Before setting up the network, the *fabric/peer/core.yaml* file must be modified by setting the following properties as specified below:
 

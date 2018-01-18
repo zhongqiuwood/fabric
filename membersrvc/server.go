@@ -24,11 +24,11 @@ import (
 
 	"strings"
 
-	"github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/core/util"
-	"github.com/hyperledger/fabric/flogging"
-	"github.com/hyperledger/fabric/membersrvc/ca"
-	"github.com/hyperledger/fabric/metadata"
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/flogging"
+	"github.com/abchain/fabric/membersrvc/ca"
+	"github.com/abchain/fabric/metadata"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -49,7 +49,7 @@ func main() {
 	// Path to look for the config file based on GOPATH
 	gopath := os.Getenv("GOPATH")
 	for _, p := range filepath.SplitList(gopath) {
-		cfgpath := filepath.Join(p, "src/github.com/hyperledger/fabric/membersrvc")
+		cfgpath := filepath.Join(p, "src/github.com/abchain/fabric/membersrvc")
 		viper.AddConfigPath(cfgpath)
 	}
 	err := viper.ReadInConfig()

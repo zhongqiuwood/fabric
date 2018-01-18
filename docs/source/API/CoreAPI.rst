@@ -18,7 +18,7 @@ node. Three interface choices are provided:
 
 **Note:** If you are working with APIs with security enabled, please
 review the `security setup
-instructions <https://github.com/hyperledger/fabric/blob/v0.6/docs/Setup/Chaincode-setup.md#security-setup-optional>`__
+instructions <https://github.com/abchain/fabric/blob/v0.6/docs/Setup/Chaincode-setup.md#security-setup-optional>`__
 before proceeding.
 
 CLI
@@ -28,12 +28,12 @@ To view the currently available CLI commands, execute the following:
 
 ::
 
-    cd /opt/gopath/src/github.com/hyperledger/fabric
+    cd /opt/gopath/src/github.com/abchain/fabric
     build/bin/peer
 
 You will see output similar to the example below (**NOTE:** rootcommand
 below is hardcoded in
-`main.go <https://github.com/hyperledger/fabric/blob/v0.6/main.go>`__.
+`main.go <https://github.com/abchain/fabric/blob/v0.6/main.go>`__.
 Currently, the build will create a *peer* executable file).
 
 ::
@@ -312,7 +312,7 @@ Deploy a Chaincode
 Deploy creates the docker image for the chaincode and subsequently
 deploys the package to the validating peer. An example is below.
 
-``peer chaincode deploy -p github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'``
+``peer chaincode deploy -p github.com/abchain/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'``
 
 The response to the chaincode deploy command will contain the chaincode
 identifier (hash) which will be required on subsequent
@@ -322,7 +322,7 @@ identify the deployed chaincode.
 With security enabled, modify the command to include the -u parameter
 passing the username of a logged in user as follows:
 
-``peer chaincode deploy -u jim -p github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'``
+``peer chaincode deploy -u jim -p github.com/abchain/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'``
 
 **Note:** If your GOPATH environment variable contains more than one
 element, the chaincode must be found in the first one or deployment will
@@ -337,7 +337,7 @@ command line. Target the IP address of either a validating or a
 non-validating node. In the example below, 172.17.0.2 is the IP address
 of a validating or a non-validating node and 7050 is the REST interface
 port defined in
-`core.yaml <https://github.com/hyperledger/fabric/blob/v0.6/peer/core.yaml>`__.
+`core.yaml <https://github.com/abchain/fabric/blob/v0.6/peer/core.yaml>`__.
 
 ``curl 172.17.0.2:7050/chain``
 
@@ -351,7 +351,7 @@ An example of the response is below.
     }
 
 The returned BlockchainInfo message is defined inside
-`fabric.proto <https://github.com/hyperledger/fabric/blob/v0.6/protos/fabric.proto#L96>`__.
+`fabric.proto <https://github.com/abchain/fabric/blob/v0.6/protos/fabric.proto#L96>`__.
 
 ::
 
@@ -368,7 +368,7 @@ of either a validating or a non-validating node on port 7050.
 ``curl 172.17.0.2:7050/chain/blocks/0``
 
 The returned Block message structure is defined inside
-`fabric.proto <https://github.com/hyperledger/fabric/blob/v0.6/protos/fabric.proto#L84>`__.
+`fabric.proto <https://github.com/abchain/fabric/blob/v0.6/protos/fabric.proto#L84>`__.
 
 ::
 
@@ -390,7 +390,7 @@ An example of a returned Block structure is below.
         "transactions":[{
             "type":1,
             "chaincodeID": {
-                "path":"github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+                "path":"github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
             },
             "payload":"ClwIARJYCk9naXRod...",
             "uuid":"abdcec99-ae5e-415e-a8be-1fca8e38ba71"
@@ -400,7 +400,7 @@ An example of a returned Block structure is below.
 
 For additional information on the available CLI commands, please see the
 :doc:`protocol
-specification <https://github.com/hyperledger/fabric/blob/v0.6/docs/protocol-spec>`
+specification <https://github.com/abchain/fabric/blob/v0.6/docs/protocol-spec>`
 section 6.3 on CLI.
 
 REST API
@@ -416,21 +416,21 @@ Swagger locally by following the instructions
 
 **Note:** The default REST interface port is ``7050``. It can be
 configured in
-`core.yaml <https://github.com/hyperledger/fabric/blob/master/peer/core.yaml>`__
+`core.yaml <https://github.com/abchain/fabric/blob/master/peer/core.yaml>`__
 using the ``rest.address`` property. If using Vagrant, the REST port
 mapping is defined in
-`Vagrantfile <https://github.com/hyperledger/fabric/blob/v0.6/devenv/Vagrantfile>`__.
+`Vagrantfile <https://github.com/abchain/fabric/blob/v0.6/devenv/Vagrantfile>`__.
 
 **Note on constructing a test blockchain** If you want to test the REST
 API locally, construct a test blockchain by running the
 TestServerOpenchain_API_GetBlockCount test implemented inside
-`api_test.go <https://github.com/hyperledger/fabric/blob/v0.6/core/rest/api_test.go>`__.
+`api_test.go <https://github.com/abchain/fabric/blob/v0.6/core/rest/api_test.go>`__.
 This test will create a test blockchain with 5 blocks. Subsequently
 restart the peer process.
 
 ::
 
-        cd /opt/gopath/src/github.com/hyperledger/fabric/core/rest
+        cd /opt/gopath/src/github.com/abchain/fabric/core/rest
         go test -v -run TestServerOpenchain_API_GetBlockCount
 
 REST Endpoints
@@ -438,7 +438,7 @@ REST Endpoints
 
 To learn about the REST API through Swagger, please take a look at the
 Swagger document
-`here <https://github.com/hyperledger/fabric/blob/v0.6/core/rest/rest_api.json>`__.
+`here <https://github.com/abchain/fabric/blob/v0.6/core/rest/rest_api.json>`__.
 You can upload the service description file to the Swagger service
 directly or, if you prefer, you can set up Swagger locally by following
 the instructions `here <#to-set-up-swagger-ui>`__.
@@ -470,7 +470,7 @@ Block
 
 Use the Block API to retrieve the contents of various blocks from the
 blockchain. The returned Block message structure is defined inside
-`fabric.proto <https://github.com/hyperledger/fabric/blob/v0.6/protos/fabric.proto#L84>`__.
+`fabric.proto <https://github.com/abchain/fabric/blob/v0.6/protos/fabric.proto#L84>`__.
 
 ::
 
@@ -489,7 +489,7 @@ Blockchain
 
 Use the Chain API to retrieve the current state of the blockchain. The
 returned BlockchainInfo message is defined inside
-`fabric.proto <https://github.com/hyperledger/fabric/blob/v0.6/protos/fabric.proto#L96>`__.
+`fabric.proto <https://github.com/abchain/fabric/blob/v0.6/protos/fabric.proto#L96>`__.
 
 ::
 
@@ -521,7 +521,7 @@ not produce a response.
 
 The following sample payloads may be used to deploy, invoke, and query a
 sample chaincode. To deploy a chaincode, supply the
-`ChaincodeSpec <https://github.com/hyperledger/fabric/blob/v0.6/protos/chaincode.proto#L60>`__
+`ChaincodeSpec <https://github.com/abchain/fabric/blob/v0.6/protos/chaincode.proto#L60>`__
 identifying the chaincode to deploy within the request payload.
 
 Chaincode Deployment Request without security enabled:
@@ -536,7 +536,7 @@ Chaincode Deployment Request without security enabled:
       "params": {
         "type": 1,
         "chaincodeID":{
-            "path":"github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+            "path":"github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
         },
         "ctorMsg": {
             "args":["init", "a", "1000", "b", "2000"]
@@ -562,7 +562,7 @@ Chaincode Deployment Request with security enabled (add
       "params": {
         "type": 1,
         "chaincodeID":{
-            "path":"github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+            "path":"github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
         },
         "ctorMsg": {
             "args":["init", "a", "1000", "b", "2000"]
@@ -592,7 +592,7 @@ Chaincode Deployment Response:
     }
 
 To invoke a chaincode, supply the
-`ChaincodeSpec <https://github.com/hyperledger/fabric/blob/master/protos/chaincode.proto#L60>`__
+`ChaincodeSpec <https://github.com/abchain/fabric/blob/master/protos/chaincode.proto#L60>`__
 identifying the chaincode to invoke within the request payload. Note the
 chaincode ``name`` field, which is the hash returned from the deployment
 request.
@@ -662,7 +662,7 @@ Chaincode Invocation Response:
     }
 
 To query a chaincode, supply the
-`ChaincodeSpec <https://github.com/hyperledger/fabric/blob/master/protos/chaincode.proto#L60>`__
+`ChaincodeSpec <https://github.com/abchain/fabric/blob/master/protos/chaincode.proto#L60>`__
 identifying the chaincode to query within the request payload. Note the
 chaincode ``name`` field, which is the hash returned from the deployment
 request.
@@ -742,9 +742,9 @@ nodes comprising the blockchain network.
 The /network/peers endpoint returns a list of all existing network
 connections for the target peer node. The list includes both validating
 and non-validating peers. The list of peers is returned as type
-```PeersMessage`` <https://github.com/hyperledger/fabric/blob/v0.6/protos/fabric.proto#L138>`__,
+```PeersMessage`` <https://github.com/abchain/fabric/blob/v0.6/protos/fabric.proto#L138>`__,
 containing an array of
-```PeerEndpoint`` <https://github.com/hyperledger/fabric/blob/v0.6/protos/fabric.proto#L127>`__.
+```PeerEndpoint`` <https://github.com/abchain/fabric/blob/v0.6/protos/fabric.proto#L127>`__.
 
 ::
 
@@ -790,7 +790,7 @@ certificates from the system.
 
 The /registrar endpoint is used to register a user with the CA. The
 required Secret payload is defined in
-`devops.proto <https://github.com/hyperledger/fabric/blob/v0.6/protos/devops.proto#L50>`__.
+`devops.proto <https://github.com/abchain/fabric/blob/v0.6/protos/devops.proto#L50>`__.
 
 ::
 
@@ -854,7 +854,7 @@ Transactions
 Use the /transactions/{UUID} endpoint to retrieve an individual
 transaction matching the UUID from the blockchain. The returned
 transaction message is defined inside
-`fabric.proto <https://github.com/hyperledger/fabric/blob/v0.6/protos/fabric.proto#L28>`__.
+`fabric.proto <https://github.com/abchain/fabric/blob/v0.6/protos/fabric.proto#L28>`__.
 
 ::
 
@@ -881,7 +881,7 @@ transaction message is defined inside
 
 For additional information on the REST endpoints and more detailed
 examples, please see the :doc:`protocol
-specification <https://github.com/hyperledger/fabric/blob/v0.6/docs/protocol-spec>`
+specification <https://github.com/abchain/fabric/blob/v0.6/docs/protocol-spec>`
 section 6.2 on the REST API.
 
 To set up Swagger-UI
@@ -890,7 +890,7 @@ To set up Swagger-UI
 `Swagger <http://swagger.io/>`__ is a convenient package that allows you
 to describe and document your REST API in a single file. The REST API is
 described in
-`rest_api.json <https://github.com/hyperledger/fabric/blob/v0.6/core/rest/rest_api.json>`__.
+`rest_api.json <https://github.com/abchain/fabric/blob/v0.6/core/rest/rest_api.json>`__.
 To interact with the peer node directly through the Swagger-UI, you can
 upload the available Swagger definition to the `Swagger
 service <http://swagger.io/>`__. Alternatively, you may set up a Swagger
@@ -910,7 +910,7 @@ installation on your machine by following the instructions below.
 
    ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric/core/rest
+       cd /opt/gopath/src/github.com/abchain/fabric/core/rest
        http-server -a 0.0.0.0 -p 5554 --cors
 
 4. Make sure that you are successfully able to access the API
@@ -931,19 +931,19 @@ installation on your machine by following the instructions below.
 
    ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric
+       cd /opt/gopath/src/github.com/abchain/fabric
        build/bin/peer node start
 
 8. If you need to construct a test blockchain on the local peer node,
    run the the TestServerOpenchain_API_GetBlockCount test implemented
    inside
-   `api\_test.go <https://github.com/hyperledger/fabric/blob/v0.6/core/rest/api_test.go>`__.
+   `api\_test.go <https://github.com/abchain/fabric/blob/v0.6/core/rest/api_test.go>`__.
    This test will create a blockchain with 5 blocks. Subsequently
    restart the peer process.
 
    ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric/core/rest
+       cd /opt/gopath/src/github.com/abchain/fabric/core/rest
        go test -v -run TestServerOpenchain_API_GetBlockCount
 
 9. Go back to the Swagger-UI interface inside your browser and load the
@@ -956,14 +956,14 @@ Node.js Application
 You can interface with the peer process from a Node.js application. One
 way to accomplish that is by relying on the Swagger API description
 document,
-`rest_api.json <https://github.com/hyperledger/fabric/blob/v0.6/core/rest/rest_api.json>`__
+`rest_api.json <https://github.com/abchain/fabric/blob/v0.6/core/rest/rest_api.json>`__
 and the `swagger-js
 plugin <https://github.com/swagger-api/swagger-js>`__. Another way to
 accomplish that relies upon the IBM Blockchain `JS
 SDK <https://github.com/IBM-Blockchain/ibm-blockchain-js>`__. Use the
 approach that you find the most convenient.
 
-`Using Swagger JS Plugin <https://github.com/hyperledger/fabric/blob/v0.6/docs/API/Samples/Sample_1.js>`__
+`Using Swagger JS Plugin <https://github.com/abchain/fabric/blob/v0.6/docs/API/Samples/Sample_1.js>`__
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 -  Demonstrates interfacing with a peer node from a Node.js application.
@@ -973,11 +973,11 @@ approach that you find the most convenient.
 **To run:**
 
 1. Build and install the `fabric
-   core <https://github.com/hyperledger/fabric/blob/v0.6/README.md#building-the-fabric-core->`__.
+   core <https://github.com/abchain/fabric/blob/v0.6/README.md#building-the-fabric-core->`__.
 
    ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric
+       cd /opt/gopath/src/github.com/abchain/fabric
        make peer
 
 2. Run a local peer node only (not a complete network) with:
@@ -990,7 +990,7 @@ approach that you find the most convenient.
 
    ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric/core/rest
+       cd /opt/gopath/src/github.com/abchain/fabric/core/rest
        go test -v -run TestServerOpenchain_API_GetBlockCount
 
 4. Start up an http-server on your local machine to serve up the
@@ -999,11 +999,11 @@ approach that you find the most convenient.
    ::
 
        npm install http-server -g
-       cd /opt/gopath/src/github.com/hyperledger/fabric/core/rest
+       cd /opt/gopath/src/github.com/abchain/fabric/core/rest
        http-server -a 0.0.0.0 -p 5554 --cors
 
 5. Download and unzip
-   `Sample_1.zip <https://github.com/hyperledger/fabric/blob/v0.6/docs/API/Samples/Sample_1.zip>`__
+   `Sample_1.zip <https://github.com/abchain/fabric/blob/v0.6/docs/API/Samples/Sample_1.zip>`__
 
    ::
 
@@ -1011,7 +1011,7 @@ approach that you find the most convenient.
        cd Sample_1
 
 6. Update the api_url variable within
-   `openchain.js <https://github.com/hyperledger/fabric/blob/v0.6/docs/API/Samples/Sample_1.js>`__
+   `openchain.js <https://github.com/abchain/fabric/blob/v0.6/docs/API/Samples/Sample_1.js>`__
    to the appropriate URL if it is not already the default
 
    ``var api_url = 'http://localhost:5554/rest_api.json';``

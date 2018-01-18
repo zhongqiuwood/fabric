@@ -17,7 +17,7 @@ limitations under the License.
 package crypto
 
 import (
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 )

@@ -19,8 +19,8 @@ package crypto
 import (
 	"crypto/x509"
 
-	"github.com/hyperledger/fabric/core/crypto/attributes"
-	"github.com/hyperledger/fabric/core/crypto/utils"
+	"github.com/abchain/fabric/core/crypto/attributes"
+	"github.com/abchain/fabric/core/crypto/utils"
 )
 
 type tCert interface {

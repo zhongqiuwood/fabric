@@ -25,8 +25,8 @@ import (
 	"github.com/looplab/fsm"
 	"github.com/spf13/viper"
 
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	pb "github.com/abchain/fabric/protos"
 )
 
 const DefaultSyncSnapshotTimeout time.Duration = 60 * time.Second

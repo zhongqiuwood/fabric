@@ -27,9 +27,9 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	"github.com/hyperledger/fabric/core/crypto/primitives/ecies"
-	pb "github.com/hyperledger/fabric/membersrvc/protos"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives/ecies"
+	pb "github.com/abchain/fabric/membersrvc/protos"
 	"golang.org/x/net/context"
 )
 

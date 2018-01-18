@@ -19,8 +19,8 @@ package buckettree
 import (
 	"bytes"
 
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 )

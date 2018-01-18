@@ -21,7 +21,7 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/viper"
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/util"
 )
 
 func (node *nodeImpl) initConfiguration(name string) (err error) {

@@ -37,7 +37,7 @@ Feature: Role Based Access Control (RBAC)
 
       # Deploy, in this case Binh is assinging himself as the Admin for the RBAC chaincode.
       When user "binhn" sets metadata to their stored value "TCERT_APP_ADMIN"    
-      And user "binhn" deploys chaincode "github.com/hyperledger/fabric/examples/chaincode/go/rbac_tcerts_no_attrs" aliased as "rbac_tcerts_no_attrs" with ctor "init" and args
+      And user "binhn" deploys chaincode "github.com/abchain/fabric/examples/chaincode/go/rbac_tcerts_no_attrs" aliased as "rbac_tcerts_no_attrs" with ctor "init" and args
             ||
             ||
       Then I should have received a chaincode name
@@ -112,7 +112,7 @@ Feature: Role Based Access Control (RBAC)
       # 
 
       # Deploy, in this case Binh is assinging himself as the Admin for the RBAC chaincode.
-      And user "binhn" deploys chaincode "github.com/hyperledger/fabric/examples/chaincode/go/rbac_tcerts_with_attrs" with ctor "init" to "vp0"
+      And user "binhn" deploys chaincode "github.com/abchain/fabric/examples/chaincode/go/rbac_tcerts_with_attrs" with ctor "init" to "vp0"
             ||
             ||
       Then I should have received a chaincode name
@@ -195,7 +195,7 @@ Feature: Role Based Access Control (RBAC)
       Then I should get a JSON response with "height" = "1"
 
       # Deploy the first chaincode
-      When user "binhn" deploys chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" aliased as "chaincode_example02" with ctor "init" and args
+      When user "binhn" deploys chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" aliased as "chaincode_example02" with ctor "init" and args
                     | arg1 |  arg2 | arg3 | arg4 |
                     |  a   |  100  |  b   |  200 |
       Then I should have received a chaincode name
@@ -204,7 +204,7 @@ Feature: Role Based Access Control (RBAC)
       And "binhn"'s last transaction should have succeeded
 
       # Deploy the second chaincode
-      When user "binhn" deploys chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example05" aliased as "chaincode_example05" with ctor "init" and args
+      When user "binhn" deploys chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example05" aliased as "chaincode_example05" with ctor "init" and args
                     | arg1  |  arg2 |
                     | sum   |   0   |
       Then I should have received a chaincode name

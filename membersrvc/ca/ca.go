@@ -37,10 +37,10 @@ import (
 
 	gp "google/protobuf"
 
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	"github.com/hyperledger/fabric/flogging"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/membersrvc/protos"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/flogging"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/membersrvc/protos"
 	_ "github.com/mattn/go-sqlite3" // This blank import is required to load sqlite3 driver
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"

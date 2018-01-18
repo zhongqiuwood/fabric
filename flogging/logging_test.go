@@ -19,7 +19,7 @@ package flogging_test
 import (
 	"testing"
 
-	"github.com/hyperledger/fabric/flogging"
+	"github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 )

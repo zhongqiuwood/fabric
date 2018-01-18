@@ -24,7 +24,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 
-	"github.com/hyperledger/fabric/core/comm"
+	"github.com/abchain/fabric/core/comm"
 )
 
 func (node *nodeImpl) initTLS() error {

@@ -12,7 +12,7 @@
   "main": "index.js",
   "repository": {
     "type": "github",
-    "url": "https://github.com/hyperledger/fabric"
+    "url": "https://github.com/abchain/fabric"
   },
   "dependencies": {
     "aes-js": "^1.0.0",

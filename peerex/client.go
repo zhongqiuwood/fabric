@@ -12,8 +12,9 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	
-	"github.com/hyperledger/fabric/core/util"
-	"github.com/hyperledger/fabric/flogging"
+	"github.com/abchain/fabric/core"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/flogging"
 )
 
 var logger = logging.MustGetLogger("clientcore")
@@ -64,7 +65,17 @@ func (_ *GlobalConfig) InitFinished() bool{
 	return globalConfigDone
 }
 
-func (g GlobalConfig) InitGlobal(stdlog bool) error{
+func (g GlobalConfig) InitGlobalWrapper(stdlog bool,
+	defaultViperSetting map[string]interface{}) error {
+
+	for k, v := range defaultViperSetting {
+		viper.SetDefault(k, v)
+	}
+
+	return g.InitGlobal()
+}
+
+func (g GlobalConfig) InitGlobal() error{
 	
 	if globalConfigDone {
 		logger.Info("Global initiazation has done ...")
@@ -85,7 +96,7 @@ func (g GlobalConfig) InitGlobal(stdlog bool) error{
 		// Path to look for the config file in based on GOPATH
 		gopath := os.Getenv("GOPATH")
 		for _, p := range filepath.SplitList(gopath) {
-			peerpath := filepath.Join(p, "src/github.com/hyperledger/fabric/peer")
+			peerpath := filepath.Join(p, "src/github.com/abchain/fabric/peer")
 			g.ConfigPath = append(g.ConfigPath, peerpath)
 		}		
 	}

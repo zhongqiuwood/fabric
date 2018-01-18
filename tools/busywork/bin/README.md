@@ -225,13 +225,13 @@ used.
 {
     "cc0"     : {
         "name"     : "a3a4756cd347784d15262a5839838768cd1ef8d6f853893e64651a788c30c409d1a0e645c230c2a3142abed8699f3435ce5a5bacc1282d630866b949f69d6773",
-        "path"     : "github.com/hyperledger/fabric/tools/busywork/counters",
+        "path"     : "github.com/abchain/fabric/tools/busywork/counters",
         "function" : "parms",
         "args"     : ["-id","cc0"]
     },
     "cc1" : {
         "name"     : "52676ae63ebf205f0c9a2dba111a2ac75afaf62075e43b21e04ccbf29ce2e9661a6eb9963cc29cf2f38e9b12fff0c00fcb9b9e98c0fb342bb5a7eb299c6dc938",
-        "path"     : "github.com/hyperledger/fabric/tools/busywork/counters",
+        "path"     : "github.com/abchain/fabric/tools/busywork/counters",
         "function" : "parms",
         "args"     : ["-id","cc1"]
     }

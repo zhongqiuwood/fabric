@@ -19,8 +19,8 @@ package ledger
 import (
 	"testing"
 
-	"github.com/hyperledger/fabric/core/ledger/testutil"
-	"github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/ledger/testutil"
+	"github.com/abchain/fabric/protos"
 )
 
 func TestIndexes_GetBlockByBlockNumber(t *testing.T) {

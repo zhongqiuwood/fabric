@@ -66,7 +66,7 @@ if {[dict get [dict get $dict vp0] height] != 1} {
 
 note {} "Deploying chaincode 0"
 ex deploy vp0 cc0 \
-    github.com/hyperledger/fabric/tools/busywork/counters \
+    github.com/abchain/fabric/tools/busywork/counters \
     parms -id cc0
 
 note {} "Waiting up to 2m for chaincode 0 to 'ping'"
@@ -74,7 +74,7 @@ ex -waitFor 2m ping vp1 cc0
 
 note {} "Deploying chaincode 1 with built-in 2m ping-wait"
 ex -waitFor 2m deploy vp2 cc1 \
-    github.com/hyperledger/fabric/tools/busywork/counters \
+    github.com/abchain/fabric/tools/busywork/counters \
     parms -id cc1
 
 if {[catch {ex ping vp2 cc1}]} {

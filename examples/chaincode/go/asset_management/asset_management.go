@@ -21,8 +21,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/hyperledger/fabric/core/chaincode/shim"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/chaincode/shim"
+	"github.com/abchain/fabric/core/crypto/primitives"
 	"github.com/op/go-logging"
 )
 
@@ -31,7 +31,7 @@ var myLogger = logging.MustGetLogger("asset_mgm")
 // AssetManagementChaincode is simple chaincode implementing a basic Asset Management system
 // with access control enforcement at chaincode level.
 // Look here for more information on how to implement access control at chaincode level:
-// https://github.com/hyperledger/fabric/blob/master/docs/tech/application-ACL.md
+// https://github.com/abchain/fabric/blob/master/docs/tech/application-ACL.md
 // An asset is simply represented by a string.
 type AssetManagementChaincode struct {
 }

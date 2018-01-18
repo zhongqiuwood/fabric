@@ -24,9 +24,9 @@ import (
 	"math/big"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	"github.com/hyperledger/fabric/flogging"
-	pb "github.com/hyperledger/fabric/membersrvc/protos"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/flogging"
+	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"

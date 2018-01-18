@@ -4,11 +4,11 @@ Continuous Integration is a development practice that requires developers to int
 
 **hyperledger** build process is fully automated using **Travis CI** Continuous Integration tool, which helps in building a real time solution for all the code check-ins, perform Unit and Functional Tests. Once the build execution completes, developer will get build result notifications on slack, GitHub and email (Depending on configuration settings provided in .travis.yml file)
 
-**Master Repository** can be found at [**hyperledger**] (https://github.com/hyperledger/fabric.git).
+**Master Repository** can be found at [**hyperledger**] (https://github.com/abchain/fabric.git).
 
 ##Setting up Continuous Integration Process:
 
-- Login to [GitHub] (https://github.com) --> Fork and clone the  [**hyperledger**](https://github.com/hyperledger/fabric.git) project into your *GitHub* account, if you weren't already. If you have a forked repository in your GitHub account, please pull **hyperledger/fabric master repository**. So that, updated .travis.yml (`Configuration file for Travis CI`) file will be copied into your repository.
+- Login to [GitHub] (https://github.com) --> Fork and clone the  [**hyperledger**](https://github.com/abchain/fabric.git) project into your *GitHub* account, if you weren't already. If you have a forked repository in your GitHub account, please pull **hyperledger/fabric master repository**. So that, updated .travis.yml (`Configuration file for Travis CI`) file will be copied into your repository.
 
 ###### Perform **Travis CI** integration in **GitHub**:
 

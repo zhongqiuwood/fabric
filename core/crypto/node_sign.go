@@ -19,7 +19,7 @@ package crypto
 import (
 	"math/big"
 
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives"
 )
 
 func (node *nodeImpl) sign(signKey interface{}, msg []byte) ([]byte, error) {

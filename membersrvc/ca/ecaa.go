@@ -24,8 +24,8 @@ import (
 	"math/big"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	pb "github.com/hyperledger/fabric/membersrvc/protos"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
 )

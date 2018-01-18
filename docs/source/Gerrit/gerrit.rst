@@ -70,7 +70,7 @@ To work on something, whether a new feature or a bugfix:
        git clone ssh://LFID@gerrit.hyperledger.org:29418/fabric && scp -p -P 29418 LFID@gerrit.hyperledger.org:hooks/commit-msg fabric/.git/hooks/
 
 **Note:** if you are cloning the fabric project repository, you will
-want to clone it to the ``$GOPATH/src/github.com/hyperledger`` directory
+want to clone it to the ``$GOPATH/src/github.com/abchain`` directory
 so that it will build, and so that you can use it with the Vagrant
 :doc:`development environment <../dev-setup/devenv>`.
 

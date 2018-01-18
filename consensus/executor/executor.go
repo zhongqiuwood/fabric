@@ -17,10 +17,10 @@ limitations under the License.
 package executor
 
 import (
-	"github.com/hyperledger/fabric/consensus"
-	"github.com/hyperledger/fabric/consensus/util/events"
-	"github.com/hyperledger/fabric/core/peer/statetransfer"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/consensus"
+	"github.com/abchain/fabric/consensus/util/events"
+	"github.com/abchain/fabric/core/peer/statetransfer"
+	pb "github.com/abchain/fabric/protos"
 
 	"github.com/op/go-logging"
 )

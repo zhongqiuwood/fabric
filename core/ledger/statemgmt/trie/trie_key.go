@@ -20,7 +20,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
 )
 
 type trieKeyEncoder interface {

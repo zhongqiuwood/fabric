@@ -1,6 +1,6 @@
 ## Hyperledger fabric-peer
 
-The Hyperledger [fabric](https://github.com/hyperledger/fabric) is an implementation of blockchain technology, that has been collaboratively developed under the Linux Foundation's [Hyperledger Project](http://hyperledger.org). It leverages familiar and proven technologies, and offers a modular architecture that allows pluggable implementations of various function including membership services, consensus, and smart contracts (chaincode) execution. It features powerful container technology to host any mainstream language for smart contracts development.
+The Hyperledger [fabric](https://github.com/abchain/fabric) is an implementation of blockchain technology, that has been collaboratively developed under the Linux Foundation's [Hyperledger Project](http://hyperledger.org). It leverages familiar and proven technologies, and offers a modular architecture that allows pluggable implementations of various function including membership services, consensus, and smart contracts (chaincode) execution. It features powerful container technology to host any mainstream language for smart contracts development.
 
 ## Usage
 
@@ -33,7 +33,7 @@ If running Docker natively on Mac or Windows, the value of ```CORE_VM_ENDPOINT``
 
 ### Using Docker Compose
 
-When running in Vagrant, you can use the docker-compose yaml files in the ```fabric/bddtests``` [directory](https://github.com/hyperledger/fabric/tree/master/bddtests) to start up a network of peers, with or without the membership services.
+When running in Vagrant, you can use the docker-compose yaml files in the ```fabric/bddtests``` [directory](https://github.com/abchain/fabric/tree/master/bddtests) to start up a network of peers, with or without the membership services.
 
 When running natively on Mac or Windows, the following docker-compose.yml can be used to start a peer without the membership service:
 

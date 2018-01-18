@@ -30,12 +30,12 @@ import (
 
 	"strings"
 
-	"github.com/hyperledger/fabric/core/container"
-	"github.com/hyperledger/fabric/core/container/ccintf"
-	"github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/container"
+	"github.com/abchain/fabric/core/container/ccintf"
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 )
 
 // ChainName is the name of the chain to which this chaincode support belongs to.

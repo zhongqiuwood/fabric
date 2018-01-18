@@ -20,9 +20,9 @@ import (
 	"os"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/ledger/testutil"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/tecbot/gorocksdb"
 )
 

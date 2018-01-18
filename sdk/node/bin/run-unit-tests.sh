@@ -5,7 +5,7 @@
 # Any arguments supplied to this script will be interpreted
 # as a *js test file existing in
 #
-#  ${GOPATH}//src/github.com/hyperledger/fabric/sdk/node/test/unit
+#  ${GOPATH}//src/github.com/abchain/fabric/sdk/node/test/unit
 #
 # By default all tests are run. Note that run-unit-tests.sh will
 # only run tests that it knows about, since there are unique
@@ -77,9 +77,9 @@
 #
 export CGO_CFLAGS="-I/opt/rocksdb/include"
 export CGO_LDFLAGS="-L/opt/rocksdb -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy"
-export NODE_PATH="${GOPATH}/src/github.com/hyperledger/fabric/sdk/node:\
-${GOPATH}/src/github.com/hyperledger/fabric/sdk/node/lib:\
-${GOPATH}/src/github.com/hyperledger/fabric/sdk/node/node_modules:\
+export NODE_PATH="${GOPATH}/src/github.com/abchain/fabric/sdk/node:\
+${GOPATH}/src/github.com/abchain/fabric/sdk/node/lib:\
+${GOPATH}/src/github.com/abchain/fabric/sdk/node/node_modules:\
 /usr/local/lib/node_modules:/usr/local/lib/node_modules/hfc"
 
 errorExit() {
@@ -158,7 +158,7 @@ END
 init() {
    # Initialize variables
    NODE_ERR_CODE=0
-   FABRIC=$GOPATH/src/github.com/hyperledger/fabric
+   FABRIC=$GOPATH/src/github.com/abchain/fabric
    LOGDIR=/tmp/node-sdk-unit-test
    MSEXE=$FABRIC/build/bin/membersrvc
    # user did not go through the normal build process, build in place
@@ -168,7 +168,7 @@ init() {
    # user did not go through the normal build process, build in place
    test ! -f "$PEEREXE" && PEEREXE="$FABRIC/peer/peer"
    PEERLOGFILE=$LOGDIR/peer.log
-   UNITTEST=$GOPATH/src/github.com/hyperledger/fabric/sdk/node/test/unit
+   UNITTEST=$GOPATH/src/github.com/abchain/fabric/sdk/node/test/unit
    EXAMPLES=$FABRIC/examples/chaincode/go
    TIMEOUT="15"
 
@@ -403,10 +403,10 @@ prepareExampleForDeployInNetworkMode() {
       cd $DSTDIR
       cp $SRCDIR/${chaincodeSrc}.go .
       test "$SDK_TLS" = "1" && cp "$SDK_CA_CERT_FILE" .
-      mkdir -p vendor/github.com/hyperledger
-      cd vendor/github.com/hyperledger
-      echo "copying github.com/hyperledger/fabric; please wait ..."
-      # git clone https://github.com/hyperledger/fabric > /dev/null
+      mkdir -p vendor/github.com/abchain
+      cd vendor/github.com/abchain
+      echo "copying github.com/abchain/fabric; please wait ..."
+      # git clone https://github.com/abchain/fabric > /dev/null
       cp -r $FABRIC .
       cp -r fabric/vendor/github.com/op ..
       cd ../../..

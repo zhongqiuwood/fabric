@@ -1,8 +1,8 @@
 package peerex
 
 import (
-	
-	"github.com/hyperledger/fabric/core/comm"
+	_ "github.com/abchain/fabric/peer/common"
+	"github.com/abchain/fabric/core/comm"
 	"google.golang.org/grpc"
 	"github.com/spf13/viper"
 )
@@ -30,6 +30,16 @@ func (conn *ClientConn) Dialdefault() error{
 		return err
 	}
 	
+	conn.C = c
+	return nil
+}
+
+func (conn *ClientConn) Dial(server string) error {
+	c, err := newPeerClientConnectionWithAddress(server)
+	if err != nil {
+		return err
+	}
+
 	conn.C = c
 	return nil
 }

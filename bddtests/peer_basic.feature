@@ -30,7 +30,7 @@ Feature: Network of Peers
     Given we compose "docker-compose-1.yml"
       When requesting "/chain" from "vp0"
       Then I should get a JSON response with "height" = "1"
-      When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/map" with ctor "init" to "vp0"
+      When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/map" with ctor "init" to "vp0"
       ||
       ||
 
@@ -89,7 +89,7 @@ Feature: Network of Peers
     Given we compose "docker-compose-1.yml"
       When requesting "/chain" from "vp0"
       Then I should get a JSON response with "height" = "1"
-      When I deploy chaincode "github.com/hyperledger/fabric/bddtests/chaincode/go/table" with ctor "init" to "vp0"
+      When I deploy chaincode "github.com/abchain/fabric/bddtests/chaincode/go/table" with ctor "init" to "vp0"
       ||
       ||
       Then I should have received a chaincode name
@@ -318,7 +318,7 @@ Feature: Network of Peers
 	    Given we compose "docker-compose-1.yml"
 	    When requesting "/chain" from "vp0"
 	    Then I should get a JSON response with "height" = "1"
-	    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example01" with ctor "init" to "vp0"
+	    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example01" with ctor "init" to "vp0"
 		     | arg1 |  arg2 | arg3 | arg4 |
 		     |  a   |  100  |  b   |  200 |
 	    Then I should have received a chaincode name
@@ -355,7 +355,7 @@ Feature: Network of Peers
 	    Given we compose "docker-compose-1.yml"
 	    When requesting "/chain" from "vp0"
 	    Then I should get a JSON response with "height" = "1"
-	    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/map" with ctor "init" to "vp0"
+	    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/map" with ctor "init" to "vp0"
 	      ||
               ||
 	    Then I should have received a chaincode name
@@ -375,7 +375,7 @@ Feature: Network of Peers
 
 	    When requesting "/chain" from "vp0"
 	    Then I should get a JSON response with "height" = "1"
-	    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example01" with ctor "init" to "vp0"
+	    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example01" with ctor "init" to "vp0"
 		     | arg1 |  arg2 | arg3 | arg4 |
 		     |  a   |  100  |  b   |  200 |
 	    Then I should have received a chaincode name
@@ -396,7 +396,7 @@ Feature: Network of Peers
 	    Given we compose "docker-compose-1.yml"
 	    When requesting "/chain" from "vp0"
 	    Then I should get a JSON response with "height" = "1"
-	    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+	    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
 		     | arg1 |  arg2 | arg3 | arg4 |
 		     |  a   |  100  |  b   |  200 |
 	    Then I should have received a chaincode name
@@ -437,7 +437,7 @@ Feature: Network of Peers
 	    When requesting "/chain" from "vp0"
 	    Then I should get a JSON response with "height" = "1"
 
-	    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+	    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
 		     | arg1 |  arg2 | arg3 | arg4 |
 		     |  a   |  100  |  b   |  200 |
 	    Then I should have received a chaincode name
@@ -479,7 +479,7 @@ Feature: Network of Peers
 
         When requesting "/chain" from "vp0"
         Then I should get a JSON response with "height" = "1"
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -529,7 +529,7 @@ Feature: Network of Peers
 
 
             # Deploy
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -605,7 +605,7 @@ Feature: Network of Peers
 
         When requesting "/chain" from "vp0"
         Then I should get a JSON response with "height" = "1"
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -664,7 +664,7 @@ Feature: Network of Peers
         Then I should get a JSON response with "height" = "1"
 
         # Deploy
-         When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+         When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -722,7 +722,7 @@ Feature: Network of Peers
         Then I should get a JSON response with "height" = "1"
 
         # Deploy
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -779,7 +779,7 @@ Feature: Network of Peers
           Then I should get a JSON response with "height" = "1"
 
          # Deploy
-         When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+         When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
           Then I should have received a chaincode name
@@ -823,7 +823,7 @@ Feature: Network of Peers
 
 
       # Deploy
-      When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "nvp0"
+      When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "nvp0"
                     | arg1 |  arg2 | arg3 | arg4 |
                     |  a   |  100  |  b   |  200 |
       Then I should have received a chaincode name
@@ -852,7 +852,7 @@ Feature: Network of Peers
         Then I should get a JSON response with "height" = "1"
 
         # Deploy
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -917,7 +917,7 @@ Feature: Network of Peers
         Then I should get a JSON response with "height" = "1"
 
         # Deploy
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -985,7 +985,7 @@ Feature: Network of Peers
         Given I pause peers:
             | vp3  |
 
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -1025,7 +1025,7 @@ Feature: Network of Peers
         Then I should get a JSON response with "height" = "1"
 
         # Deploy
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
             | arg1 |  arg2 | arg3 | arg4 |
             |  a   |  100  |  b   |  200 |
         Then I should have received a chaincode name
@@ -1096,7 +1096,7 @@ Scenario: chaincode example02 with 4 peers, stop and start alternates, reverse
     When requesting "/chain" from "vp0"
     Then I should get a JSON response with "height" = "1"
 
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
                           | arg1 |  arg2 | arg3 | arg4 |
                           |  a   |  1000 |  b   |   0  |
     Then I should have received a chaincode name
@@ -1158,7 +1158,7 @@ Scenario: chaincode example02 with 4 peers, two stopped
     When requesting "/chain" from "vp0"
     Then I should get a JSON response with "height" = "1"
 
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
         | arg1 |  arg2 | arg3 | arg4 |
         |  a   |  100  |  b   |  200 |
     Then I should have received a chaincode name
@@ -1220,7 +1220,7 @@ Scenario: chaincode example02 with 4 peers, two stopped, bring back vp0
     When requesting "/chain" from "vp0"
     Then I should get a JSON response with "height" = "1"
 
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
         | arg1 |  arg2 | arg3 | arg4 |
         |  a   |  100  |  b   |  200 |
     Then I should have received a chaincode name
@@ -1282,7 +1282,7 @@ Scenario: chaincode example02 with 4 peers, two stopped, bring back both
     When requesting "/chain" from "vp0"
     Then I should get a JSON response with "height" = "1"
 
-    When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
+    When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02" with ctor "init" to "vp0"
         | arg1 |  arg2 | arg3 | arg4 |
         |  a   |  100  |  b   |  200 |
     Then I should have received a chaincode name
@@ -1335,7 +1335,7 @@ Scenario: chaincode example02 with 4 peers, two stopped, bring back both
         When requesting "/chain" from "vp0"
         Then I should get a JSON response with "height" = "1"
 
-        When I deploy chaincode "github.com/hyperledger/fabric/examples/chaincode/go/authorizable_counter" with ctor "init" to "vp0"
+        When I deploy chaincode "github.com/abchain/fabric/examples/chaincode/go/authorizable_counter" with ctor "init" to "vp0"
                 | arg1 |
                 | 0    |
         Then I should have received a chaincode name

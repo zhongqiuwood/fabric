@@ -21,8 +21,8 @@ import (
 	"crypto/x509"
 	"errors"
 
-	"github.com/hyperledger/fabric/core/crypto/attributes"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/attributes"
+	"github.com/abchain/fabric/core/crypto/primitives"
 )
 
 //Attribute defines a name, value pair to be verified.

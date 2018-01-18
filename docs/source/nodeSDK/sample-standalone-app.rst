@@ -13,7 +13,7 @@ application which interacts with a Hyperledger fabric blockchain.
 
 ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric
+       cd /opt/gopath/src/github.com/abchain/fabric
        make node-sdk
 
 -  Start the membership services and peer processes. We run the peer in
@@ -21,7 +21,7 @@ application which interacts with a Hyperledger fabric blockchain.
 
 ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric/build/bin
+       cd /opt/gopath/src/github.com/abchain/fabric/build/bin
        membersrvc > membersrvc.log 2>&1&
        peer node start --peer-chaincodedev > peer.log 2>&1&
 
@@ -29,7 +29,7 @@ application which interacts with a Hyperledger fabric blockchain.
 
 ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02
+       cd /opt/gopath/src/github.com/abchain/fabric/examples/chaincode/go/chaincode_example02
        go build
        CORE_CHAINCODE_ID_NAME=mycc CORE_PEER_ADDRESS=0.0.0.0:7051 ./chaincode_example02 > log 2>&1&
 
@@ -51,7 +51,7 @@ file:
 
    ::
 
-        npm install /opt/gopath/src/github.com/hyperledger/fabric/sdk/node
+        npm install /opt/gopath/src/github.com/abchain/fabric/sdk/node
 
 -  To run the application :
 

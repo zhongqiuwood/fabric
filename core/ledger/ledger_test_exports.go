@@ -19,8 +19,8 @@ package ledger
 import (
 	"testing"
 
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/ledger/testutil"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger/testutil"
 )
 
 var testDBWrapper = db.NewTestDBWrapper()

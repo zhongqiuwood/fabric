@@ -23,9 +23,9 @@ import (
 
 	"github.com/spf13/viper"
 
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	"github.com/hyperledger/fabric/core/ledger"
-	obc "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/ledger"
+	obc "github.com/abchain/fabric/protos"
 )
 
 //We are temporarily disabling the validity period functionality

@@ -24,7 +24,7 @@ import (
 	"strings"
 
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/hyperledger/fabric/core/chaincode/shim/crypto/attr"
+	"github.com/abchain/fabric/core/chaincode/shim/crypto/attr"
 	"github.com/op/go-logging"
 )
 

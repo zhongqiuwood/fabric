@@ -19,7 +19,7 @@ Setting up the Full Hyperledger fabric Developer's Environment
 
 ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric/sdk/node
+       cd /opt/gopath/src/github.com/abchain/fabric/sdk/node
        make all
 
 -  Issue the following command where your Node.js application is located
@@ -28,20 +28,20 @@ Setting up the Full Hyperledger fabric Developer's Environment
 
 ::
 
-      npm install /opt/gopath/src/github.com/hyperledger/fabric/sdk/node
+      npm install /opt/gopath/src/github.com/abchain/fabric/sdk/node
 
 Or point to the HFC directly by using the following ``require()`` in
 your code:
 
 .. code:: javascript
 
-       require("/opt/gopath/src/github.com/hyperledger/fabric/sdk/node");
+       require("/opt/gopath/src/github.com/abchain/fabric/sdk/node");
 
 -  To build the API reference documentation:
 
 ::
 
-       cd /opt/gopath/src/github.com/hyperledger/fabric/sdk/node
+       cd /opt/gopath/src/github.com/abchain/fabric/sdk/node
        make doc
 
 -  To build the reference documentation in the
@@ -50,8 +50,8 @@ your code:
 ::
 
        docker exec -it nodesdk /bin/bash
-       cd /opt/gopath/src/github.com/hyperledger/fabric/sdk/node
+       cd /opt/gopath/src/github.com/abchain/fabric/sdk/node
        make doc
 
 -  The the API reference documentation will be available in:
-   ``/opt/gopath/src/github.com/hyperledger/fabric/sdk/node/doc``
+   ``/opt/gopath/src/github.com/abchain/fabric/sdk/node/doc``

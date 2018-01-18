@@ -20,8 +20,8 @@ import (
 	"flag"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/ledger/testutil"
-	"github.com/hyperledger/fabric/core/util"
+	"github.com/abchain/fabric/core/ledger/testutil"
+	"github.com/abchain/fabric/core/util"
 )
 
 func BenchmarkCryptoHash(b *testing.B) {

@@ -33,15 +33,15 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 
-	"github.com/hyperledger/fabric/core/comm"
-	"github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/discovery"
-	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt/state"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/comm"
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/discovery"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger/statemgmt/state"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 )
 
 // Peer provides interface for a peer

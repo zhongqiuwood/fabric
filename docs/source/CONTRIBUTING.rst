@@ -5,7 +5,7 @@ We welcome contributions to the Hyperledger Project in many forms, and
 there's always plenty to do!
 
 First things first, please review the Hyperledger Project's `Code of
-Conduct <https://github.com/hyperledger/hyperledger/wiki/Hyperledger-Project-Code-of-Conduct>`__
+Conduct <https://github.com/abchain/hyperledger/wiki/Hyperledger-Project-Code-of-Conduct>`__
 before participating. It is important that we keep things civil.
 
 Getting a Linux Foundation account
@@ -43,7 +43,7 @@ Requirements and Use Cases
 --------------------------
 
 We have a `Requirements
-WG <https://github.com/hyperledger/hyperledger/wiki/Requirements-WG>`__
+WG <https://github.com/abchain/hyperledger/wiki/Requirements-WG>`__
 that is documenting use cases and from those use cases deriving
 requirements. If you are interested in contributing to this effort,
 please feel free to join the discussion in
@@ -53,7 +53,7 @@ Reporting bugs
 --------------
 
 If you are a user and you find a bug, please submit an
-`issue <https://github.com/hyperledger/fabric/issues>`__. Please try to
+`issue <https://github.com/abchain/fabric/issues>`__. Please try to
 provide sufficient information for someone else to reproduce the issue.
 One of the project's maintainers should respond to your issue within 24
 hours. If not, please bump the issue and request that it be reviewed.
@@ -62,11 +62,11 @@ Fixing issues and working stories
 ---------------------------------
 
 Review the `issues
-list <https://github.com/hyperledger/fabric/issues>`__ and find
+list <https://github.com/abchain/fabric/issues>`__ and find
 something that interests you. You could also check the `"help
-wanted" <https://github.com/hyperledger/fabric/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22>`__
+wanted" <https://github.com/abchain/fabric/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22>`__
 and `"good first
-bug" <https://github.com/hyperledger/fabric/issues?q=is%3Aissue+is%3Aopen+label%3Agood-first-bug>`__
+bug" <https://github.com/abchain/fabric/issues?q=is%3Aissue+is%3Aopen+label%3Agood-first-bug>`__
 lists. It is wise to start with something relatively straight forward
 and achievable. Usually there will be a comment in the issue that
 indicates whether someone has already self-assigned the issue. If no one
@@ -119,7 +119,7 @@ Legal stuff
 
 **Note:** Each source file must include a license header for the Apache
 Software License 2.0. A template of that header can be found
-`here <https://github.com/hyperledger/fabric/blob/v0.6/docs/dev-setup/headers.txt>`__.
+`here <https://github.com/abchain/fabric/blob/v0.6/docs/dev-setup/headers.txt>`__.
 
 We have tried to make it as easy as possible to make contributions. This
 applies to how we handle the legal aspects of contribution. We use the

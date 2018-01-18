@@ -3913,7 +3913,7 @@ example, the curl command line utility or a browser based client such as
 the Firefox Rest Client or Chrome Postman. You can likewise trigger REST
 requests directly through `Swagger <http://swagger.io/>`__. To obtain
 the REST API Swagger description, click
-`here <https://github.com/hyperledger/fabric/blob/master/core/rest/rest_api.json>`__.
+`here <https://github.com/abchain/fabric/blob/master/core/rest/rest_api.json>`__.
 The currently available APIs are summarized in the following section.
 
 6.2.1 REST Endpoints
@@ -4049,7 +4049,7 @@ Deploy Request:
       "params": {
         "type": "GOLANG",
         "chaincodeID":{
-            "path":"github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+            "path":"github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
         },
         "ctorMsg": {
             "function":"init",
@@ -4088,7 +4088,7 @@ Deploy Request with security enabled:
       "params": {
         "type": "GOLANG",
         "chaincodeID":{
-            "path":"github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+            "path":"github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
         },
         "ctorMsg": {
             "function":"init",
@@ -4642,7 +4642,7 @@ is below.
 
 ::
 
-    peer chaincode deploy -p github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
+    peer chaincode deploy -p github.com/abchain/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
 
 With security enabled, the command must be modified to pass an
 enrollment id of a logged in user with the ``-u`` parameter. An example
@@ -4650,7 +4650,7 @@ is below.
 
 ::
 
-    peer chaincode deploy -u jim -p github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
+    peer chaincode deploy -u jim -p github.com/abchain/fabric/examples/chaincode/go/chaincode_example02 -c '{"Function":"init", "Args": ["a","100", "b", "200"]}'
 
 **Note:** If your GOPATH environment variable contains more than one
 element, the chaincode must be found in the first one or deployment will

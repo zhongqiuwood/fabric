@@ -24,7 +24,7 @@ import (
 
 	"golang.org/x/crypto/sha3"
 
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives"
 )
 
 func getHashSHA2(bitsize int) (hash.Hash, error) {

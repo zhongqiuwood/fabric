@@ -37,13 +37,13 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/golang/protobuf/ptypes/empty"
-	core "github.com/hyperledger/fabric/core"
-	"github.com/hyperledger/fabric/core/chaincode"
-	"github.com/hyperledger/fabric/core/comm"
-	"github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/core/util"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	pb "github.com/hyperledger/fabric/protos"
+	core "github.com/abchain/fabric/core"
+	"github.com/abchain/fabric/core/chaincode"
+	"github.com/abchain/fabric/core/comm"
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	pb "github.com/abchain/fabric/protos"
 )
 
 var restLogger = logging.MustGetLogger("rest")

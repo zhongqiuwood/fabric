@@ -16,11 +16,11 @@ chaincode as a Docker container.
 The following instructions apply to *developing* chaincode in Go or
 Java. They do not apply to running in a production environment. However,
 if *developing* chaincode in Java, please see the :doc:`Java chaincode
-setup <https://github.com/hyperledger/fabric/blob/master/docs/Setup/JAVAChaincode>`
+setup <https://github.com/abchain/fabric/blob/master/docs/Setup/JAVAChaincode>`
 instructions first, to be sure your environment is properly configured.
 
 **Note:** We have added support for :doc:`System
-chaincode <https://github.com/hyperledger/fabric/blob/master/docs/SystemChaincode-noop>`
+chaincode <https://github.com/abchain/fabric/blob/master/docs/SystemChaincode-noop>`
 
 Choices
 -------
@@ -33,7 +33,7 @@ approaches:
 -  `Option 2 <#option-2-docker-toolbox>`__ using Docker toolbox
 -  `Option 3 <#option-3-vagrant-development-environment>`__ using the
    **Vagrant** :doc:`development
-   environment <https://github.com/hyperledger/fabric/blob/master/docs/dev-setup/devenv>`
+   environment <https://github.com/abchain/fabric/blob/master/docs/dev-setup/devenv>`
    that is used for developing the fabric itself
 
 | A Docker approach provides several advantages, highlighted through its
@@ -330,7 +330,7 @@ From the ``devenv`` subdirectory of your fabric workspace environment,
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric/devenv
+    cd $GOPATH/src/github.com/abchain/fabric/devenv
     vagrant ssh
 
 To set up the local development environment with security enabled, you
@@ -338,17 +338,17 @@ must first build and run the **Certificate Authority (CA)** server:
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make membersrvc && membersrvc
 
 Running the above commands builds and runs the CA server with the
 default setup, which is defined in the
-`membersrvc.yaml <https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml>`__
+`membersrvc.yaml <https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml>`__
 configuration file. The default configuration includes multiple users
 who are already registered with the CA; these users are listed in the
 ``eca.users`` section of the configuration file. To register additional
 users with the CA for testing, modify the ``eca.users`` section of the
-`membersrvc.yaml <https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml>`__
+`membersrvc.yaml <https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml>`__
 file to include additional ``enrollmentID`` and ``enrollmentPW`` pairs.
 Note the integer that precedes the ``enrollmentPW``. That integer
 indicates the role of the user, where 1 = client, 2 = non-validating
@@ -358,13 +358,13 @@ Running the validating peer
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 **Note:** To run with security enabled, first modify the
-`core.yaml <https://github.com/hyperledger/fabric/blob/master/peer/core.yaml>`__
+`core.yaml <https://github.com/abchain/fabric/blob/master/peer/core.yaml>`__
 configuration file to set the ``security.enabled`` value to ``true``
 before building the peer executable. Alternatively, you can enable
 security by running the peer with the following environment variable:
 ``CORE_SECURITY_ENABLED=true``. To enable privacy and confidentiality of
 transactions (which requires security to also be enabled), modify the
-`core.yaml <https://github.com/hyperledger/fabric/blob/master/peer/core.yaml>`__
+`core.yaml <https://github.com/abchain/fabric/blob/master/peer/core.yaml>`__
 configuration file to set the ``security.privacy`` value to ``true`` as
 well. Alternatively, you can enable privacy by running the peer with the
 following environment variable: ``CORE_SECURITY_PRIVACY=true``. If you
@@ -378,7 +378,7 @@ fabric workspace environment, ``ssh`` into Vagrant:
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric/devenv
+    cd $GOPATH/src/github.com/abchain/fabric/devenv
     vagrant ssh
 
 Build and run the peer process to enable security and privacy after
@@ -387,7 +387,7 @@ setting ``security.enabled`` and ``security.privacy`` settings to
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make peer
     peer node start --peer-chaincodedev
 
@@ -431,8 +431,8 @@ shim.
 
 ::
 
-    mkdir -p $GOPATH/src/github.com/hyperledger
-    cd $GOPATH/src/github.com/hyperledger
+    mkdir -p $GOPATH/src/github.com/abchain
+    cd $GOPATH/src/github.com/abchain
     git clone http://gerrit.hyperledger.org/r/fabric
 
 Now, you should be able to build your chaincode.
@@ -457,7 +457,7 @@ to Vagrant.
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric/devenv
+    cd $GOPATH/src/github.com/abchain/fabric/devenv
     vagrant ssh
 
 Next, we'll build the **chaincode\_example02** code, which is provided
@@ -467,7 +467,7 @@ do this from your clone of the fabric repository.
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02
+    cd $GOPATH/src/github.com/abchain/fabric/examples/chaincode/go/chaincode_example02
     go build
 
 Starting and registering the chaincode
@@ -510,7 +510,7 @@ enabled <#removing-temporary-files-when-security-is-enabled>`__ to learn
 how to clean up the temporary files.
 
 See the `logging
-control <https://github.com/hyperledger/fabric/blob/master/docs/Setup/logging-control.md>`__
+control <https://github.com/abchain/fabric/blob/master/docs/Setup/logging-control.md>`__
 reference for information on controllinglogging output from the ``peer``
 and chaincodes.
 
@@ -521,10 +521,10 @@ Terminal 3 (CLI or REST API)
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
 The default REST interface port is ``7050``. It can be configured in
-`core.yaml <https://github.com/hyperledger/fabric/blob/master/peer/core.yaml>`__
+`core.yaml <https://github.com/abchain/fabric/blob/master/peer/core.yaml>`__
 using the ``rest.address`` property. If using Vagrant, the REST port
 mapping is defined in
-`Vagrantfile <https://github.com/hyperledger/fabric/blob/master/devenv/Vagrantfile>`__.
+`Vagrantfile <https://github.com/abchain/fabric/blob/master/devenv/Vagrantfile>`__.
 
 **Note on security functionality**
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -554,7 +554,7 @@ logged in through the CLI or the REST API by following the instructions
 below. To log in through the CLI, issue the following commands, where
 ``username`` is one of the ``enrollmentID`` values listed in the
 ``eca.users`` section of the
-`membersrvc.yaml <https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml>`__
+`membersrvc.yaml <https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml>`__
 file.
 
 From your command line terminal, move to the ``devenv`` subdirectory of
@@ -570,20 +570,20 @@ appropriately:
 
 ::
 
-        cd $GOPATH/src/github.com/hyperledger/fabric/peer
+        cd $GOPATH/src/github.com/abchain/fabric/peer
         peer network login <username>
 
 The command will prompt for a password, which must match the
 ``enrollmentPW`` listed for the target user in the ``eca.users`` section
 of the
-`membersrvc.yaml <https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml>`__
+`membersrvc.yaml <https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml>`__
 file. If the password entered does not match the ``enrollmentPW``, an
 error will result.
 
 To log in through the REST API, send a POST request to the
 ``/registrar`` endpoint, containing the ``enrollmentID`` and
 ``enrollmentPW`` listed in the ``eca.users`` section of the
-`membersrvc.yaml <https://github.com/hyperledger/fabric/blob/master/membersrvc/membersrvc.yaml>`__
+`membersrvc.yaml <https://github.com/abchain/fabric/blob/master/membersrvc/membersrvc.yaml>`__
 file.
 
 **REST Request:**
@@ -920,7 +920,7 @@ From your command line terminal, ``ssh`` into Vagrant:
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric/devenv
+    cd $GOPATH/src/github.com/abchain/fabric/devenv
     vagrant ssh
 
 And then run:

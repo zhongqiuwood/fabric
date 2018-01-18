@@ -28,12 +28,12 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/hyperledger/fabric/core/crypto/primitives/ecies"
+	"github.com/abchain/fabric/core/crypto/primitives/ecies"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	pb "github.com/hyperledger/fabric/membersrvc/protos"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"

@@ -1760,7 +1760,7 @@ export class TransactionContext extends events.EventEmitter {
           "from hyperledger/fabric-baseimage" + "\n" +
           "COPY . $GOPATH/src/build-chaincode/" + "\n" +
           "WORKDIR $GOPATH" + "\n\n" +
-          "RUN go install build-chaincode && cp src/build-chaincode/vendor/github.com/hyperledger/fabric/peer/core.yaml $GOPATH/bin && mv $GOPATH/bin/build-chaincode $GOPATH/bin/%s";
+          "RUN go install build-chaincode && cp src/build-chaincode/vendor/github.com/abchain/fabric/peer/core.yaml $GOPATH/bin && mv $GOPATH/bin/build-chaincode $GOPATH/bin/%s";
 
         // Substitute the hashStrHash for the image name
         dockerFileContents = util.format(dockerFileContents, hash);

@@ -72,8 +72,8 @@ little bit of setup needed:
 ::
 
     cd $GOPATH/src
-    mkdir -p github.com/hyperledger
-    cd github.com/hyperledger
+    mkdir -p github.com/abchain
+    cd github.com/abchain
 
 Recall that we are using ``Gerrit`` for source control, which has its
 own internal git repositories. Hence, we will need to :doc:`clone from
@@ -94,7 +94,7 @@ Now you're ready to launch Vagrant.
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric/devenv
+    cd $GOPATH/src/github.com/abchain/fabric/devenv
     vagrant up
 
 Go get coffee... this will take a few minutes. Once complete, you should
@@ -110,14 +110,14 @@ Building the fabric
 Once you have your vagrant development environment established, you can
 proceed to :doc:`build and test <build>` the fabric. Once inside the VM,
 you can find the peer project under
-``$GOPATH/src/github.com/hyperledger/fabric``. It is also mounted as
+``$GOPATH/src/github.com/abchain/fabric``. It is also mounted as
 ``/hyperledger``.
 
 Notes
 ~~~~~
 
 **NOTE:** any time you change any of the files in your local fabric
-directory (under ``$GOPATH/src/github.com/hyperledger/fabric``), the
+directory (under ``$GOPATH/src/github.com/abchain/fabric``), the
 update will be instantly available within the VM fabric directory.
 
 **NOTE:** If you intend to run the development environment behind an

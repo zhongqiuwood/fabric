@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hyperledger/fabric/consensus/util/events"
+	"github.com/abchain/fabric/consensus/util/events"
 
-	pb "github.com/hyperledger/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 
 	"github.com/op/go-logging"
 )

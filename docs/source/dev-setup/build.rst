@@ -9,14 +9,14 @@ of your locally cloned fabric repository.
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric/devenv
+    cd $GOPATH/src/github.com/abchain/fabric/devenv
     vagrant ssh
 
 From within the VM, you can build, run, and test your environment.
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make peer
 
 To see what commands are available, simply execute the following
@@ -77,7 +77,7 @@ Use the following sequence to run all unit tests
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make unit-test
 
 To run a specific test use the ``-run RE`` flag where RE is a regular
@@ -96,7 +96,7 @@ Running Node.js Unit Tests
 You must also run the Node.js unit tests to insure that the Node.js
 client SDK is not broken by your changes. To run the Node.js unit tests,
 follow the instructions
-`here <https://github.com/hyperledger/fabric/tree/v0.6/sdk/node#unit-tests>`__.
+`here <https://github.com/abchain/fabric/tree/v0.6/sdk/node#unit-tests>`__.
 
 Running Behave BDD Tests
 ~~~~~~~~~~~~~~~~~~~~~~~~
@@ -107,7 +107,7 @@ that transactions run properly. To run these tests
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make behave
 
 Some of the Behave tests run inside Docker containers. If a test fails
@@ -125,15 +125,15 @@ with the following parameters:
 
 ::
 
-    go test github.com/hyperledger/fabric/core/container -run=BuildImage_Peer
-    go test github.com/hyperledger/fabric/core/container -run=BuildImage_Obcca
+    go test github.com/abchain/fabric/core/container -run=BuildImage_Peer
+    go test github.com/abchain/fabric/core/container -run=BuildImage_Obcca
 
 Building outside of Vagrant
 ---------------------------
 
 It is possible to build the project and run peers outside of Vagrant.
 Generally speaking, one has to 'translate' the vagrant `setup
-file <https://github.com/hyperledger/fabric/blob/master/devenv/setup.sh>`__
+file <https://github.com/abchain/fabric/blob/master/devenv/setup.sh>`__
 to the platform of your choice.
 
 Prerequisites
@@ -190,9 +190,9 @@ Building on Z
 ~~~~~~~~~~~~~
 
 To make building on Z easier and faster, `this
-script <https://github.com/hyperledger/fabric/tree/v0.6/devenv/setupRHELonZ.sh>`__
+script <https://github.com/abchain/fabric/tree/v0.6/devenv/setupRHELonZ.sh>`__
 is provided (which is similar to the `setup
-file <https://github.com/hyperledger/fabric/blob/v0.6/devenv/setup.sh>`__
+file <https://github.com/abchain/fabric/blob/v0.6/devenv/setup.sh>`__
 provided for vagrant). This script has been tested only on RHEL 7.2 and
 has some assumptions one might want to re-visit (firewall settings,
 development as root user, etc.). It is however sufficient for
@@ -204,8 +204,8 @@ To get started, from a freshly installed OS:
 
     sudo su
     yum install git
-    mkdir -p $HOME/git/src/github.com/hyperledger
-    cd $HOME/git/src/github.com/hyperledger
+    mkdir -p $HOME/git/src/github.com/abchain
+    cd $HOME/git/src/github.com/abchain
     git clone http://gerrit.hyperledger.org/r/fabric
     source fabric/devenv/setupRHELonZ.sh
 
@@ -214,7 +214,7 @@ development environment.
 
 ::
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make peer unit-test behave
 
 Building on Power Platform
@@ -223,7 +223,7 @@ Building on Power Platform
 Development and build on Power (ppc64le) systems is done outside of
 vagrant as outlined `here <#building-outside-of-vagrant->`__. For ease
 of setting up the dev environment on Ubuntu, invoke `this
-script <https://github.com/hyperledger/fabric/tree/v0.6/devenv/setupUbuntuOnPPC64le.sh>`__
+script <https://github.com/abchain/fabric/tree/v0.6/devenv/setupUbuntuOnPPC64le.sh>`__
 as root. This script has been validated on Ubuntu 16.04 and assumes
 certain things (like, development system has OS repositories in place,
 firewall setting etc) and in general can be improvised further.
@@ -235,11 +235,11 @@ the following commands to build the fabric code:
 
 ::
 
-    mkdir -p $GOPATH/src/github.com/hyperledger
-    cd $GOPATH/src/github.com/hyperledger
+    mkdir -p $GOPATH/src/github.com/abchain
+    cd $GOPATH/src/github.com/abchain
     git clone http://gerrit.hyperledger.org/r/fabric
     sudo ./fabric/devenv/setupUbuntuOnPPC64le.sh
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make dist-clean all
 
 Building natively on OSX
@@ -258,7 +258,7 @@ the ``core.yaml`` configuration file, under ``peer.fileSystemPath``.
     eval $(docker-machine env)
     export PATH="/usr/local/opt/gnu-tar/libexec/gnubin:$PATH"
 
-    cd $GOPATH/src/github.com/hyperledger/fabric
+    cd $GOPATH/src/github.com/abchain/fabric
     make peer
 
 Configuration
@@ -287,5 +287,5 @@ The available log levels in order of increasing verbosity are: *CRITICAL
 \| ERROR \| WARNING \| NOTICE \| INFO \| DEBUG*
 
 See `specific logging
-control <https://github.com/hyperledger/fabric/blob/v0.6/docs/Setup/logging-control.md>`__
+control <https://github.com/abchain/fabric/blob/v0.6/docs/Setup/logging-control.md>`__
 instructions when running the peer process.

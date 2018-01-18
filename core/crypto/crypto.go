@@ -17,7 +17,7 @@ limitations under the License.
 package crypto
 
 import (
-	obc "github.com/hyperledger/fabric/protos"
+	obc "github.com/abchain/fabric/protos"
 )
 
 // Public Interfaces

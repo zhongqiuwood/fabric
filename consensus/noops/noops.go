@@ -24,11 +24,11 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
 
-	"github.com/hyperledger/fabric/consensus"
-	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/consensus"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 )
 
 var logger *logging.Logger // package-level logger

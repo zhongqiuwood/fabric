@@ -21,9 +21,9 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
-	"github.com/hyperledger/fabric/core/ledger/testutil"
-	"github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger/testutil"
+	"github.com/abchain/fabric/protos"
 )
 
 func TestLedgerCommit(t *testing.T) {

@@ -24,8 +24,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/hyperledger/fabric/core/ledger"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/ledger"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 )
 

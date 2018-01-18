@@ -15,7 +15,7 @@ limitations under the License.
 */
 
 // This package contains unit-tests for the
-// github.com/hyperledger/fabric/core/crypto/primitives package
+// github.com/abchain/fabric/core/crypto/primitives package
 package primitives_test
 
 import (
@@ -25,7 +25,7 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives"
 )
 
 // TestCBCPKCS7EncryptCBCPKCS7Decrypt encrypts using CBCPKCS7Encrypt and decrypts using CBCPKCS7Decrypt.

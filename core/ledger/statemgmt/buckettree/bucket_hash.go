@@ -18,7 +18,7 @@ package buckettree
 
 import (
 	"github.com/golang/protobuf/proto"
-	openchainUtil "github.com/hyperledger/fabric/core/util"
+	openchainUtil "github.com/abchain/fabric/core/util"
 )
 
 type bucketHashCalculator struct {

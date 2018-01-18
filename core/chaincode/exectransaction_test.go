@@ -28,14 +28,14 @@ import (
 
 	"path/filepath"
 
-	"github.com/hyperledger/fabric/core/container"
-	"github.com/hyperledger/fabric/core/container/ccintf"
-	"github.com/hyperledger/fabric/core/crypto"
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/ledger"
-	"github.com/hyperledger/fabric/core/util"
-	"github.com/hyperledger/fabric/membersrvc/ca"
-	pb "github.com/hyperledger/fabric/protos"
+	"github.com/abchain/fabric/core/container"
+	"github.com/abchain/fabric/core/container/ccintf"
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/membersrvc/ca"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -357,7 +357,7 @@ func executeDeployTransaction(t *testing.T, url string) {
 // Test deploy of a transaction
 func TestExecuteDeployTransaction(t *testing.T) {
 	testDBWrapper.CleanDB(t)
-	executeDeployTransaction(t, "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example01")
+	executeDeployTransaction(t, "github.com/abchain/fabric/examples/chaincode/go/chaincode_example01")
 }
 
 // Test deploy of a transaction with a GOPATH with multiple elements
@@ -367,7 +367,7 @@ func TestGopathExecuteDeployTransaction(t *testing.T) {
 	os.Setenv("GOPATH", os.Getenv("GOPATH")+string(os.PathSeparator)+string(os.PathListSeparator)+"/tmp/foo"+string(os.PathListSeparator)+"/tmp/bar")
 	fmt.Printf("set GOPATH to: \"%s\"\n", os.Getenv("GOPATH"))
 	testDBWrapper.CleanDB(t)
-	executeDeployTransaction(t, "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example01")
+	executeDeployTransaction(t, "github.com/abchain/fabric/examples/chaincode/go/chaincode_example01")
 }
 
 // Test deploy of a transaction with a chaincode over HTTP.
@@ -511,7 +511,7 @@ func TestExecuteInvokeTransaction(t *testing.T) {
 
 	var ctxt = context.Background()
 
-	url := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+	url := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
 	chaincodeID := &pb.ChaincodeID{Path: url}
 
 	args := []string{"a", "b", "10"}
@@ -610,7 +610,7 @@ func TestExecuteQuery(t *testing.T) {
 
 	var ctxt = context.Background()
 
-	url := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+	url := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
 
 	cID := &pb.ChaincodeID{Path: url}
 	f := "init"
@@ -694,7 +694,7 @@ func TestExecuteInvokeInvalidTransaction(t *testing.T) {
 
 	var ctxt = context.Background()
 
-	url := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+	url := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
 	chaincodeID := &pb.ChaincodeID{Path: url}
 
 	//FAIL, FAIL!
@@ -756,7 +756,7 @@ func TestExecuteInvalidQuery(t *testing.T) {
 
 	var ctxt = context.Background()
 
-	url := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example03"
+	url := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example03"
 
 	cID := &pb.ChaincodeID{Path: url}
 	f := "init"
@@ -830,7 +830,7 @@ func TestChaincodeInvokeChaincode(t *testing.T) {
 	var ctxt = context.Background()
 
 	// Deploy first chaincode
-	url1 := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+	url1 := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
 
 	cID1 := &pb.ChaincodeID{Path: url1}
 	f := "init"
@@ -853,7 +853,7 @@ func TestChaincodeInvokeChaincode(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Deploy second chaincode
-	url2 := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example04"
+	url2 := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example04"
 
 	cID2 := &pb.ChaincodeID{Path: url2}
 	f = "init"
@@ -946,7 +946,7 @@ func TestChaincodeInvokeChaincodeErrorCase(t *testing.T) {
 	var ctxt = context.Background()
 
 	// Deploy first chaincode
-	url1 := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+	url1 := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
 
 	cID1 := &pb.ChaincodeID{Path: url1}
 	f := "init"
@@ -967,7 +967,7 @@ func TestChaincodeInvokeChaincodeErrorCase(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Deploy second chaincode
-	url2 := "github.com/hyperledger/fabric/examples/chaincode/go/passthru"
+	url2 := "github.com/abchain/fabric/examples/chaincode/go/passthru"
 
 	cID2 := &pb.ChaincodeID{Path: url2}
 	f = "init"
@@ -1023,7 +1023,7 @@ func chaincodeQueryChaincode(user string) error {
 	var ctxt = context.Background()
 
 	// Deploy first chaincode
-	url1 := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+	url1 := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
 
 	cID1 := &pb.ChaincodeID{Path: url1}
 	f := "init"
@@ -1041,7 +1041,7 @@ func chaincodeQueryChaincode(user string) error {
 	time.Sleep(time.Second)
 
 	// Deploy second chaincode
-	url2 := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example05"
+	url2 := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example05"
 
 	cID2 := &pb.ChaincodeID{Path: url2}
 	f = "init"
@@ -1169,7 +1169,7 @@ func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
 	var ctxt = context.Background()
 
 	// Deploy first chaincode
-	url1 := "github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02"
+	url1 := "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
 
 	cID1 := &pb.ChaincodeID{Path: url1}
 	f := "init"
@@ -1190,7 +1190,7 @@ func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
 	time.Sleep(time.Second)
 
 	// Deploy second chaincode
-	url2 := "github.com/hyperledger/fabric/examples/chaincode/go/passthru"
+	url2 := "github.com/abchain/fabric/examples/chaincode/go/passthru"
 
 	cID2 := &pb.ChaincodeID{Path: url2}
 	f = "init"
@@ -1333,7 +1333,7 @@ func TestRangeQuery(t *testing.T) {
 
 	var ctxt = context.Background()
 
-	url := "github.com/hyperledger/fabric/examples/chaincode/go/map"
+	url := "github.com/abchain/fabric/examples/chaincode/go/map"
 	cID := &pb.ChaincodeID{Path: url}
 
 	f := "init"
@@ -1404,7 +1404,7 @@ func TestGetEvent(t *testing.T) {
 
 	var ctxt = context.Background()
 
-	url := "github.com/hyperledger/fabric/examples/chaincode/go/eventsender"
+	url := "github.com/abchain/fabric/examples/chaincode/go/eventsender"
 
 	cID := &pb.ChaincodeID{Path: url}
 	f := "init"
@@ -1489,7 +1489,7 @@ func TestGetRows(t *testing.T) {
 
 	var ctxt = context.Background()
 
-	url := "github.com/hyperledger/fabric/examples/chaincode/go/largerowsiter"
+	url := "github.com/abchain/fabric/examples/chaincode/go/largerowsiter"
 	cID := &pb.ChaincodeID{Path: url}
 
 	f := "init"

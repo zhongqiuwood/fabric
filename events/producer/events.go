@@ -21,7 +21,7 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/hyperledger/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 )
 
 //---- event hub framework ----

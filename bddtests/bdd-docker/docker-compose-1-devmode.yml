@@ -15,7 +15,7 @@ ccenv:
   # substitution before the value gets to the container
   command: |
     sh -c "
-      go install github.com/hyperledger/fabric/examples/chaincode/go/chaincode_example02
+      go install github.com/abchain/fabric/examples/chaincode/go/chaincode_example02
       exec $$GOPATH/bin/chaincode_example02
     "
   links:

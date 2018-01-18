@@ -24,9 +24,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/hyperledger/fabric/consensus"
-	"github.com/hyperledger/fabric/consensus/util/events"
-	_ "github.com/hyperledger/fabric/core" // Needed for logging format init
+	"github.com/abchain/fabric/consensus"
+	"github.com/abchain/fabric/consensus/util/events"
+	_ "github.com/abchain/fabric/core" // Needed for logging format init
 	"github.com/op/go-logging"
 
 	"github.com/golang/protobuf/proto"
@@ -140,6 +140,7 @@ type pbftCore struct {
 	chkpts        map[uint64]string // state checkpoints; map lastExec to global hash
 	pset          map[uint64]*ViewChange_PQ
 	qset          map[qidx]*ViewChange_PQ
+	oldViewCnt 	  map[vcidx]uint64
 
 	skipInProgress    bool               // Set when we have detected a fall behind scenario until we pick a new starting point
 	stateTransferring bool               // Set when state transfer is executing
@@ -1135,7 +1136,7 @@ func (instance *pbftCore) witnessCheckpointWeakCert(chkpt *Checkpoint) {
 	if instance.skipInProgress {
 		logger.Debugf("Replica %d is catching up and witnessed a weak certificate for checkpoint %d, weak cert attested to by %d of %d (%v)",
 			instance.id, chkpt.SequenceNumber, i, instance.replicaCount, checkpointMembers)
-		// The view should not be set to active, this should be handled by the yet unimplemented SUSPECT, see https://github.com/hyperledger/fabric/issues/1120
+		// The view should not be set to active, this should be handled by the yet unimplemented SUSPECT, see https://github.com/abchain/fabric/issues/1120
 		instance.retryStateTransfer(target)
 	}
 }

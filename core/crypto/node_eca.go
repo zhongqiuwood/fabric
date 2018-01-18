@@ -22,7 +22,7 @@ import (
 	"crypto/x509"
 	"time"
 
-	membersrvc "github.com/hyperledger/fabric/membersrvc/protos"
+	membersrvc "github.com/abchain/fabric/membersrvc/protos"
 
 	"encoding/asn1"
 	"errors"
@@ -30,8 +30,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
-	"github.com/hyperledger/fabric/core/crypto/primitives/ecies"
+	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives/ecies"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )

@@ -17,7 +17,7 @@ limitations under the License.
 package crypto
 
 import (
-	membersrvc "github.com/hyperledger/fabric/membersrvc/protos"
+	membersrvc "github.com/abchain/fabric/membersrvc/protos"
 
 	"bytes"
 	"crypto/ecdsa"
@@ -31,7 +31,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/hyperledger/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives"
 	"golang.org/x/net/context"
 )
 

@@ -21,9 +21,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/hyperledger/fabric/core/db"
-	"github.com/hyperledger/fabric/core/ledger/perfstat"
-	"github.com/hyperledger/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger/perfstat"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
 )
 
 var defaultBucketCacheMaxSize = 100 // MBs

@@ -42,7 +42,7 @@ func loadConfig() (config *viper.Viper) {
 	// Path to look for the config file in based on GOPATH
 	gopath := os.Getenv("GOPATH")
 	for _, p := range filepath.SplitList(gopath) {
-		path := filepath.Join(p, "src/github.com/hyperledger/fabric/consensus/noops")
+		path := filepath.Join(p, "src/github.com/abchain/fabric/consensus/noops")
 		config.AddConfigPath(path)
 	}
 	err := config.ReadInConfig()

@@ -33,9 +33,9 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 
-	cutil "github.com/hyperledger/fabric/core/container/util"
-	"github.com/hyperledger/fabric/core/util"
-	pb "github.com/hyperledger/fabric/protos"
+	cutil "github.com/abchain/fabric/core/container/util"
+	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 )
 
 var logger = logging.MustGetLogger("golang/hash")

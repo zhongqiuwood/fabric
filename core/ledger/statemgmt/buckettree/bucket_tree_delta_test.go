@@ -19,7 +19,7 @@ package buckettree
 import (
 	"testing"
 
-	"github.com/hyperledger/fabric/core/ledger/testutil"
+	"github.com/abchain/fabric/core/ledger/testutil"
 )
 
 func TestBucketTreeDeltaBasic(t *testing.T) {

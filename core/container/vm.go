@@ -21,13 +21,12 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-
 	"golang.org/x/net/context"
 
-	"github.com/fsouza/go-dockerclient"
 	"github.com/abchain/fabric/core/chaincode/platforms"
 	cutil "github.com/abchain/fabric/core/container/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/fsouza/go-dockerclient"
 	"github.com/op/go-logging"
 )
 
@@ -107,7 +106,8 @@ func GetChaincodePackageBytes(spec *pb.ChaincodeSpec) ([]byte, error) {
 	}
 
 	chaincodePkgBytes := inputbuf.Bytes()
-
+	vmLogger.Infof("Generate chaincode package in %d bytes\n", len(chaincodePkgBytes))
+	//	ioutil.WriteFile("chaincode_deployment.tar.gz", inputbuf.Bytes(), 0777)
 	return chaincodePkgBytes, nil
 }
 

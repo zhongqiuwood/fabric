@@ -108,7 +108,7 @@ peer:
     networkId: dev
 
     # For local calling of peer, often the node and node client can both use
-    localaddr: 127.0.0.1:7056
+    localaddr: 127.0.0.1:7051
 
     # The Address this Peer will listen on
     listenAddress: 127.0.0.1:7055
@@ -319,6 +319,11 @@ chaincode:
     id:
         path:
         name:
+
+    # Notify chaincode the peer's address it should contact to, override the 
+    # peer.address, through ENV variables
+    peer:
+        address: 127.0.0.1:27005
 
     golang:
 

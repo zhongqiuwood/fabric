@@ -76,9 +76,13 @@ func writeChaincodePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
 	var zeroTime time.Time
 	tw.WriteHeader(&tar.Header{Name: "Dockerfile", Size: dockerFileSize, ModTime: zeroTime, AccessTime: zeroTime, ChangeTime: zeroTime})
 	tw.Write([]byte(dockerFileContents))
-	err := cutil.WriteGopathSrc(tw, urlLocation)
-	if err != nil {
-		return fmt.Errorf("Error writing Chaincode package contents: %s", err)
+
+	//Do we really need to write the whole GOPATH besides target code? at least we should be able to control it by a switch
+	if viper.GetBool("chaincode.golang.withGOPATH") {
+		err := cutil.WriteGopathSrc(tw, urlLocation)
+		if err != nil {
+			return fmt.Errorf("Error writing Chaincode package contents: %s", err)
+		}
 	}
 	return nil
 }

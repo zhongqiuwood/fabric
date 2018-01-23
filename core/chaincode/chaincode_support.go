@@ -47,6 +47,7 @@ const (
 	// DevModeUserRunsChaincode property allows user to run chaincode in development environment
 	DevModeUserRunsChaincode       string = "dev"
 	chaincodeStartupTimeoutDefault int    = 5000
+	chaincodeExecTimeoutDefault    int    = 30000
 	chaincodeInstallPathDefault    string = "/opt/gopath/bin/"
 	peerAddressDefault             string = "0.0.0.0:7051"
 )
@@ -94,7 +95,7 @@ func (chaincodeSupport *ChaincodeSupport) chaincodeHasBeenLaunched(chaincode str
 }
 
 // NewChaincodeSupport creates a new ChaincodeSupport instance
-func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEndpoint, error), userrunsCC bool, ccstartuptimeout time.Duration, secHelper crypto.Peer) *ChaincodeSupport {
+func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEndpoint, error), userrunsCC bool, secHelper crypto.Peer) *ChaincodeSupport {
 	pnid := viper.GetString("peer.networkId")
 	pid := viper.GetString("peer.id")
 
@@ -103,14 +104,18 @@ func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEn
 	//initialize global chain
 	chains[chainname] = s
 
-	peerEndpoint, err := getPeerEndpoint()
-	if err != nil {
-		chaincodeLogger.Errorf("Error getting PeerEndpoint, using peer.address: %s", err)
-		s.peerAddress = viper.GetString("peer.address")
-	} else {
-		s.peerAddress = peerEndpoint.Address
+	s.peerAddress = viper.GetString("chaincode.peer.address")
+	if s.peerAddress == "" {
+		peerEndpoint, err := getPeerEndpoint()
+		if err != nil {
+			chaincodeLogger.Errorf("Error getting PeerEndpoint, using peer.address: %s", err)
+			s.peerAddress = viper.GetString("peer.address")
+		} else {
+			s.peerAddress = peerEndpoint.Address
+		}
+		chaincodeLogger.Infof("Chaincode support using peerAddress: %s\n", s.peerAddress)
 	}
-	chaincodeLogger.Infof("Chaincode support using peerAddress: %s\n", s.peerAddress)
+
 	//peerAddress = viper.GetString("peer.address")
 	if s.peerAddress == "" {
 		s.peerAddress = peerAddressDefault
@@ -118,7 +123,23 @@ func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEn
 
 	s.userRunsCC = userrunsCC
 
-	s.ccStartupTimeout = ccstartuptimeout
+	//get chaincode startup timeout
+	tOut, err := strconv.Atoi(viper.GetString("chaincode.startuptimeout"))
+	if err != nil { //what went wrong ?
+		tOut = chaincodeStartupTimeoutDefault
+		fmt.Printf("could not retrive startup timeout var...setting to %d secs\n", tOut/1000)
+	}
+
+	s.ccStartupTimeout = time.Duration(tOut) * time.Millisecond
+
+	//get chaincode exec timeout
+	tOut, err = strconv.Atoi(viper.GetString("chaincode.exectimeout"))
+	if err != nil { //what went wrong ?
+		tOut = chaincodeExecTimeoutDefault
+		fmt.Printf("could not retrive exec timeout var...setting to 30 secs\n", tOut/1000)
+	}
+
+	s.ccExecTimeout = time.Duration(tOut) * time.Millisecond
 
 	//TODO I'm not sure if this needs to be on a per chain basis... too lowel and just needs to be a global default ?
 	s.chaincodeInstallPath = viper.GetString("chaincode.installpath")
@@ -129,7 +150,7 @@ func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEn
 	s.peerTLS = viper.GetBool("peer.tls.enabled")
 	if s.peerTLS {
 		s.peerTLSCertFile = util.CanonicalizeFilePath(viper.GetString("peer.tls.rootcert.file"))
-//		s.peerTLSKeyFile = viper.GetString("peer.tls.key.file")
+		//		s.peerTLSKeyFile = viper.GetString("peer.tls.key.file")
 		s.peerTLSSvrHostOrd = viper.GetString("peer.tls.serverhostoverride")
 	}
 
@@ -163,6 +184,7 @@ type ChaincodeSupport struct {
 	runningChaincodes    *runningChaincodes
 	peerAddress          string
 	ccStartupTimeout     time.Duration
+	ccExecTimeout        time.Duration
 	chaincodeInstallPath string
 	userRunsCC           bool
 	secHelper            crypto.Peer
@@ -170,9 +192,9 @@ type ChaincodeSupport struct {
 	peerID               string
 	peerTLS              bool
 	peerTLSCertFile      string
-//	peerTLSKeyFile       string
-	peerTLSSvrHostOrd    string
-	keepalive            time.Duration
+	//	peerTLSKeyFile       string
+	peerTLSSvrHostOrd string
+	keepalive         time.Duration
 }
 
 // DuplicateChaincodeHandlerError returned if attempt to register same chaincodeID while a stream already exists.
@@ -636,7 +658,7 @@ func createQueryMessage(txid string, cMsg *pb.ChaincodeInput) (*pb.ChaincodeMess
 }
 
 // Execute executes a transaction and waits for it to complete until a timeout value.
-func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chaincode string, msg *pb.ChaincodeMessage, timeout time.Duration, tx *pb.Transaction) (*pb.ChaincodeMessage, error) {
+func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chaincode string, msg *pb.ChaincodeMessage, tx *pb.Transaction) (*pb.ChaincodeMessage, error) {
 	chaincodeSupport.runningChaincodes.Lock()
 	//we expect the chaincode to be running... sanity check
 	chrte, ok := chaincodeSupport.chaincodeHasBeenLaunched(chaincode)
@@ -657,7 +679,7 @@ func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chaincod
 	case ccresp = <-notfy:
 		//response is sent to user or calling chaincode. ChaincodeMessage_ERROR and ChaincodeMessage_QUERY_ERROR
 		//are typically treated as error
-	case <-time.After(timeout):
+	case <-time.After(chaincodeSupport.ccExecTimeout):
 		err = fmt.Errorf("Timeout expired while executing transaction")
 	}
 

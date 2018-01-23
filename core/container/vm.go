@@ -22,6 +22,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"golang.org/x/net/context"
+	//	"io/ioutil"
 
 	"github.com/abchain/fabric/core/chaincode/platforms"
 	cutil "github.com/abchain/fabric/core/container/util"

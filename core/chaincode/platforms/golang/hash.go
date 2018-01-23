@@ -89,7 +89,8 @@ func hashFilesInDir(rootDir string, dir string, hash []byte, tw *tar.Writer) ([]
 
 		if tw != nil {
 			is := bytes.NewReader(buf)
-			if err = cutil.WriteStreamToPackage(is, fqp, filepath.Join("src", name), tw); err != nil {
+			//strict the package path under some platform (i.e: windows)
+			if err = cutil.WriteStreamToPackage(is, fqp, filepath.ToSlash(filepath.Join("src", name)), tw); err != nil {
 				return hash, fmt.Errorf("Error adding file to tar %s", err)
 			}
 		}

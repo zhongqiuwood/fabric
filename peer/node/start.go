@@ -23,23 +23,21 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
-	"time"
 
 	"github.com/abchain/fabric/consensus/helper"
 	"github.com/abchain/fabric/core"
 	"github.com/abchain/fabric/core/chaincode"
 	"github.com/abchain/fabric/core/comm"
-	"github.com/abchain/fabric/core/service"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/rest"
-	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/core/service"
 	"github.com/abchain/fabric/core/system_chaincode"
+	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/events/producer"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/cobra"
@@ -122,22 +120,22 @@ func serve(args []string) error {
 	}
 
 	if err := writePid(util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))+"peer.pid",
-		 os.Getpid()); err != nil {
+		os.Getpid()); err != nil {
 		return err
 	}
 
 	db.Start()
 	defer db.Stop()
-	
+
 	var opts []grpc.ServerOption
-	
-	if comm.TLSEnabled(){
-	
+
+	if comm.TLSEnabled() {
+
 		creds, err := service.GetServiceTLSCred()
 		if err != nil {
 			grpclog.Fatalf("Failed to generate credentials %v", err)
 		}
-		opts = []grpc.ServerOption{grpc.Creds(creds)}		
+		opts = []grpc.ServerOption{grpc.Creds(creds)}
 	}
 
 	grpcServer := grpc.NewServer(opts...)
@@ -212,21 +210,21 @@ func serve(args []string) error {
 		fmt.Println(sig)
 		serve <- nil
 	}()
-	
-	fsrv := func(startSrv func(*rest.ServerOpenchain, *core.Devops) error){
+
+	fsrv := func(startSrv func(*rest.ServerOpenchain, *core.Devops) error) {
 		srverr := startSrv(serverOpenchain, serverDevops)
 		if srverr != nil {
 			srverr = fmt.Errorf("fabric service exited with error: %s", srverr)
 		} else {
 			logger.Info("fabric service exited")
 		}
-		serve <- srverr		
+		serve <- srverr
 	}
-	
+
 	if viper.GetBool("service.enabled") {
 		go fsrv(service.StartFabricService)
 	}
-	
+
 	go fsrv(service.StartLocalService)
 
 	go func() {
@@ -267,16 +265,7 @@ func registerChaincodeSupport(chainname chaincode.ChainName, grpcServer *grpc.Se
 		userRunsCC = true
 	}
 
-	//get chaincode startup timeout
-	tOut, err := strconv.Atoi(viper.GetString("chaincode.startuptimeout"))
-	if err != nil { //what went wrong ?
-		fmt.Printf("could not retrive timeout var...setting to 5secs\n")
-		tOut = 5000
-	}
-	ccStartupTimeout := time.Duration(tOut) * time.Millisecond
-
-	ccSrv := chaincode.NewChaincodeSupport(chainname, peer.GetPeerEndpoint, userRunsCC,
-		ccStartupTimeout, secHelper)
+	ccSrv := chaincode.NewChaincodeSupport(chainname, peer.GetPeerEndpoint, userRunsCC, secHelper)
 
 	//Now that chaincode is initialized, register all system chaincodes.
 	system_chaincode.RegisterSysCCs()
@@ -296,13 +285,13 @@ func createEventHubServer() (net.Listener, *grpc.Server, error) {
 
 		//TODO - do we need different SSL material for events ?
 		var opts []grpc.ServerOption
-		
-		if comm.TLSEnabled(){
+
+		if comm.TLSEnabled() {
 			creds, err := service.GetServiceTLSCred()
 			if err != nil {
 				return nil, nil, fmt.Errorf("Failed to generate credentials %v", err)
 			}
-			opts = []grpc.ServerOption{grpc.Creds(creds)}			
+			opts = []grpc.ServerOption{grpc.Creds(creds)}
 		}
 
 		grpcServer = grpc.NewServer(opts...)

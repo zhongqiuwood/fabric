@@ -22,12 +22,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	ccintf "github.com/abchain/fabric/core/container/ccintf"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 	"github.com/looplab/fsm"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
@@ -1074,14 +1074,11 @@ func (handler *Handler) enterBusyState(e *fsm.Event, state string) {
 				return
 			}
 
-			// TODO: Need to handle timeout correctly
-			timeout := time.Duration(30000) * time.Millisecond
-
 			ccMsg, _ := createTransactionMessage(transaction.Txid, chaincodeInput)
 
 			// Execute the chaincode
 			//NOTE: when confidential C-call-C is understood, transaction should have the correct sec context for enc/dec
-			response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, ccMsg, timeout, transaction)
+			response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, ccMsg, transaction)
 
 			//payload is marshalled and send to the calling chaincode's shim which unmarshals and
 			//sends it to chaincode
@@ -1346,14 +1343,11 @@ func (handler *Handler) handleQueryChaincode(msg *pb.ChaincodeMessage) {
 			return
 		}
 
-		// TODO: Need to handle timeout correctly
-		timeout := time.Duration(30000) * time.Millisecond
-
 		ccMsg, _ := createQueryMessage(transaction.Txid, chaincodeInput)
 
 		// Query the chaincode
 		//NOTE: when confidential C-call-C is understood, transaction should have the correct sec context for enc/dec
-		response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, ccMsg, timeout, transaction)
+		response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, ccMsg, transaction)
 
 		if execErr != nil {
 			// Send error msg back to chaincode and trigger event

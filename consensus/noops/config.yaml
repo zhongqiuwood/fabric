@@ -19,4 +19,4 @@ block:
 
     # Time to wait for a block.
     # The default unit of measure is seconds. Otherwise, specify ms (milliseconds), us (microseconds), ns (nanoseconds), m (minutes) or h (hours)
-    wait: 12s
+    wait: 1s

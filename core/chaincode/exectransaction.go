@@ -76,10 +76,6 @@ func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) (
 			return nil, nil, fmt.Errorf("Failed to stablish stream to container %s", chaincode)
 		}
 
-		// TODO: Need to comment next line and uncomment call to getTimeout, when transaction blocks are being created
-		timeout := time.Duration(30000) * time.Millisecond
-		//timeout, err := getTimeout(cID)
-
 		if err != nil {
 			return nil, nil, fmt.Errorf("Failed to retrieve chaincode spec(%s)", err)
 		}
@@ -98,7 +94,7 @@ func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) (
 		}
 
 		markTxBegin(ledger, t)
-		resp, err := chain.Execute(ctxt, chaincode, ccMsg, timeout, t)
+		resp, err := chain.Execute(ctxt, chaincode, ccMsg, t)
 		if err != nil {
 			// Rollback transaction
 			markTxFinish(ledger, t, false)

@@ -95,7 +95,7 @@ func WriteFolderToTarPackage(tw *tar.Writer, srcPath string, excludeDir string, 
 		newPath := fmt.Sprintf("src%s", path[rootDirLen:])
 		//newPath := path[len(rootDirectory):]
 
-		err = WriteFileToPackage(path, newPath, tw)
+		err = WriteFileToPackage(path, filepath.ToSlash(newPath), tw)
 		if err != nil {
 			return fmt.Errorf("Error writing file to package: %s", err)
 		}

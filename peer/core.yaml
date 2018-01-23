@@ -281,8 +281,15 @@ chaincode:
         path:
         name:
 
+    # Notify chaincode the peer's address it should contact to, override the 
+    # peer.address, through ENV variables
+    peer:
+        address: 127.0.0.1:27055
+
     golang:
 
+        # Not include the whole GOPATH into chaincode
+        withGOPATH: false
         # This is the basis for the Golang Dockerfile.  Additional commands will
         # be appended depedendent upon the chaincode specification.
         Dockerfile:  |
@@ -312,6 +319,9 @@ chaincode:
 
     #timeout in millisecs for deploying chaincode from a remote repository.
     deploytimeout: 30000
+
+    #timeout in millisecs for executing chaincode (invoke or query).
+    exectimeout: 30000
 
     #mode - options are "dev", "net"
     #dev - in dev mode, user runs the chaincode after starting validator from

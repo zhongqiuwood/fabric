@@ -27,6 +27,7 @@ var configurationCached = false
 var tlsEnabled bool
 var tlsEnabledForService bool
 var tlsEnabledForLocalSrv bool
+var rpcMessageSize int = 32 * 1024 * 1024 //32MB
 
 // CacheConfiguration computes and caches commonly-used constants and
 // computed constants as package variables. Routines which were previously
@@ -35,6 +36,12 @@ func CacheConfiguration() (err error) {
 	tlsEnabled = viper.GetBool("peer.tls.enabled")
 	tlsEnabledForService = viper.GetBool("peer.tls.serviceenabled")
 	tlsEnabledForLocalSrv = viper.GetBool("peer.tls.localsrvabled")
+
+	size := viper.GetInt("peer.messagesizelimit")
+	if size > 1024*1024*4 {
+		rpcMessageSize = size
+	}
+
 	configurationCached = true
 
 	return
@@ -47,12 +54,20 @@ func cacheConfiguration() {
 	}
 }
 
+func MaxMessageSize() int {
+	if !configurationCached {
+		cacheConfiguration()
+	}
+
+	return rpcMessageSize
+}
+
 // TLSEnabled return cached value for "peer.tls.enabled" configuration value
 func TLSEnabled() bool {
 	if !configurationCached {
 		cacheConfiguration()
 	}
-	
+
 	return tlsEnabled
 }
 
@@ -60,7 +75,7 @@ func TLSEnabledForLocalSrv() bool {
 	if !configurationCached {
 		cacheConfiguration()
 	}
-	
+
 	return tlsEnabledForLocalSrv
 }
 
@@ -68,7 +83,7 @@ func TLSEnabledforService() bool {
 	if !configurationCached {
 		cacheConfiguration()
 	}
-	
+
 	return tlsEnabledForService
 
 }

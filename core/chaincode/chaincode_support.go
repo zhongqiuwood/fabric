@@ -127,7 +127,7 @@ func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEn
 	tOut, err := strconv.Atoi(viper.GetString("chaincode.startuptimeout"))
 	if err != nil { //what went wrong ?
 		tOut = chaincodeStartupTimeoutDefault
-		fmt.Printf("could not retrive startup timeout var...setting to %d secs\n", tOut/1000)
+		chaincodeLogger.Infof("could not retrive startup timeout var...setting to %d secs\n", tOut/1000)
 	}
 
 	s.ccStartupTimeout = time.Duration(tOut) * time.Millisecond
@@ -136,7 +136,7 @@ func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEn
 	tOut, err = strconv.Atoi(viper.GetString("chaincode.exectimeout"))
 	if err != nil { //what went wrong ?
 		tOut = chaincodeExecTimeoutDefault
-		fmt.Printf("could not retrive exec timeout var...setting to 30 secs\n", tOut/1000)
+		chaincodeLogger.Infof("could not retrive exec timeout var...setting to %d secs\n", tOut/1000)
 	}
 
 	s.ccExecTimeout = time.Duration(tOut) * time.Millisecond

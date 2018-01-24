@@ -91,18 +91,6 @@ func serve(args []string) error {
 		return err
 	}
 
-	listenAddr := viper.GetString("peer.listenAddress")
-
-	if "" == listenAddr {
-		logger.Debug("Listen address not specified, using peer endpoint address")
-		listenAddr = peerEndpoint.Address
-	}
-
-	lis, err := net.Listen("tcp", listenAddr)
-	if err != nil {
-		grpclog.Fatalf("Failed to listen: %v", err)
-	}
-
 	ehubLis, ehubGrpcServer, err := createEventHubServer()
 	if err != nil {
 		grpclog.Fatalf("Failed to create ehub server: %v", err)
@@ -127,19 +115,6 @@ func serve(args []string) error {
 	db.Start()
 	defer db.Stop()
 
-	var opts []grpc.ServerOption
-
-	if comm.TLSEnabled() {
-
-		creds, err := service.GetServiceTLSCred()
-		if err != nil {
-			grpclog.Fatalf("Failed to generate credentials %v", err)
-		}
-		opts = []grpc.ServerOption{grpc.Creds(creds)}
-	}
-
-	grpcServer := grpc.NewServer(opts...)
-
 	secHelper, err := getSecHelper()
 	if err != nil {
 		return err
@@ -149,7 +124,9 @@ func serve(args []string) error {
 		return secHelper
 	}
 
-	registerChaincodeSupport(chaincode.DefaultChain, grpcServer, secHelper)
+	srv_chaincode := func(server *grpc.Server) {
+		registerChaincodeSupport(chaincode.DefaultChain, server, secHelper)
+	}
 
 	var peerServer *peer.Impl
 
@@ -176,7 +153,9 @@ func serve(args []string) error {
 	}
 
 	// Register the Peer server
-	pb.RegisterPeerServer(grpcServer, peerServer)
+	srv_peer := func(server *grpc.Server) {
+		pb.RegisterPeerServer(server, peerServer)
+	}
 
 	// Register Devops server
 	serverDevops := core.NewDevopsServer(peerServer)
@@ -189,14 +168,22 @@ func serve(args []string) error {
 		return err
 	}
 
+	srv_devops := func(server *grpc.Server) {
+		pb.RegisterDevopsServer(server, serverDevops)
+	}
+
+	srv_openchain := func(server *grpc.Server) {
+		pb.RegisterOpenchainServer(server, serverOpenchain)
+	}
+
+	srv_admin := func(server *grpc.Server) {
+		pb.RegisterAdminServer(server, core.NewAdminServer())
+	}
+
 	// Create and register the REST service if configured
 	if viper.GetBool("rest.enabled") {
 		go rest.StartOpenchainRESTServer(serverOpenchain, serverDevops)
 	}
-
-	logger.Infof("Starting peer with ID=%s, network ID=%s, address=%s, rootnodes=%v, validator=%v",
-		peerEndpoint.ID, viper.GetString("peer.networkId"), peerEndpoint.Address,
-		viper.GetString("peer.discovery.rootnode"), peer.ValidatorEnabled())
 
 	// Start the grpc server. Done in a goroutine so we can deploy the
 	// genesis block if needed.
@@ -211,8 +198,8 @@ func serve(args []string) error {
 		serve <- nil
 	}()
 
-	fsrv := func(startSrv func(*rest.ServerOpenchain, *core.Devops) error) {
-		srverr := startSrv(serverOpenchain, serverDevops)
+	fsrv := func(addr string, tls bool, serv ...func(*grpc.Server)) {
+		srverr := service.StartService(addr, tls, serv...)
 		if srverr != nil {
 			srverr = fmt.Errorf("fabric service exited with error: %s", srverr)
 		} else {
@@ -221,23 +208,24 @@ func serve(args []string) error {
 		serve <- srverr
 	}
 
+	logger.Infof("Starting peer with ID=%s, network ID=%s, address=%s, rootnodes=%v, validator=%v",
+		peerEndpoint.ID, viper.GetString("peer.networkId"), peerEndpoint.Address,
+		viper.GetString("peer.discovery.rootnode"), peer.ValidatorEnabled())
+
+	//main rpc (peer, chaincode)
+	go fsrv(viper.GetString("peer.listenAddress"), comm.TLSEnabled(), srv_chaincode, srv_peer)
+
+	//local rpc (only work in the same network)
+	logger.Infof("Starting local service")
+	go fsrv(viper.GetString("peer.localaddr"), comm.TLSEnabledForLocalSrv(), srv_admin, srv_devops, srv_openchain)
+
+	//service rpc
 	if viper.GetBool("service.enabled") {
-		go fsrv(service.StartFabricService)
+		logger.Infof("Starting devops service")
+		go fsrv(viper.GetString("service.address"), comm.TLSEnabledforService(), srv_devops)
 	}
 
-	go fsrv(service.StartLocalService)
-
-	go func() {
-		var grpcErr error
-		if grpcErr = grpcServer.Serve(lis); grpcErr != nil {
-			grpcErr = fmt.Errorf("grpc server exited with error: %s", grpcErr)
-		} else {
-			logger.Info("grpc server exited")
-		}
-		serve <- grpcErr
-	}()
-
-	// Start the event hub server
+	// Start the event hub server, still not integrate into service package
 	if ehubGrpcServer != nil && ehubLis != nil {
 		go ehubGrpcServer.Serve(ehubLis)
 	}
@@ -253,7 +241,12 @@ func serve(args []string) error {
 	}
 
 	// Block until grpc server exits
-	return <-serve
+	ret := <-serve
+
+	// TODO: we still not clear other serverice like rest and ehub ...
+	service.StopServices()
+
+	return ret
 }
 
 func registerChaincodeSupport(chainname chaincode.ChainName, grpcServer *grpc.Server,

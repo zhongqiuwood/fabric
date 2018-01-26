@@ -131,7 +131,7 @@ func (chaincodeSupport *ChaincodeSupport) chaincodeHasBeenLaunched(chaincode str
 }
 
 // NewChaincodeSupport creates a new ChaincodeSupport instance
-func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEndpoint, error), userrunsCC bool, secHelper crypto.Peer) *ChaincodeSupport {
+func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEndpoint, error), mode string, secHelper crypto.Peer) *ChaincodeSupport {
 	pnid := viper.GetString("peer.networkId")
 	pid := viper.GetString("peer.id")
 
@@ -157,7 +157,7 @@ func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEn
 		s.peerAddress = peerAddressDefault
 	}
 
-	s.userRunsCC = userrunsCC
+	s.ccmode = mode
 
 	//get chaincode startup timeout
 	tOut, err := strconv.Atoi(viper.GetString("chaincode.startuptimeout"))
@@ -222,7 +222,8 @@ type ChaincodeSupport struct {
 	ccStartupTimeout     time.Duration
 	ccExecTimeout        time.Duration
 	chaincodeInstallPath string
-	userRunsCC           bool
+	ccmode               string  // chain code mode
+	//userRunsCC           bool
 	secHelper            crypto.Peer
 	peerNetworkID        string
 	peerID               string
@@ -537,7 +538,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(context context.Context, t *pb.
 	if t.Type != pb.Transaction_CHAINCODE_DEPLOY {
 		ledger, ledgerErr := ledger.GetLedger()
 
-		if chaincodeSupport.userRunsCC {
+		if chaincodeSupport.ccmode == NetworkModeChaincode {
 			chaincodeLogger.Error("You are attempting to perform an action other than Deploy on Chaincode that is not ready and you are in developer mode. Did you forget to Deploy your chaincode?")
 		}
 
@@ -572,7 +573,8 @@ func (chaincodeSupport *ChaincodeSupport) Launch(context context.Context, t *pb.
 	//from here on : if we launch the container and get an error, we need to stop the container
 
 	//launch container if it is a System container or not in dev mode
-	if (!chaincodeSupport.userRunsCC || cds.ExecEnv == pb.ChaincodeDeploymentSpec_SYSTEM) && (chrte == nil || chrte.handler == nil) {
+	if (chaincodeSupport.ccmode == NetworkModeChaincode ||
+		cds.ExecEnv == pb.ChaincodeDeploymentSpec_SYSTEM) && (chrte == nil || chrte.handler == nil) {
 		var targz io.Reader = bytes.NewBuffer(cds.CodePackage)
 		_, err = chaincodeSupport.launchAndWaitForRegister(context, cds, cID, t.Txid, cLang, targz)
 		if err != nil {
@@ -629,7 +631,7 @@ func (chaincodeSupport *ChaincodeSupport) Deploy(context context.Context, t *pb.
 		return cds, err
 	}
 
-	if chaincodeSupport.userRunsCC {
+	if chaincodeSupport.ccmode != NetworkModeChaincode {
 		chaincodeLogger.Debug("user runs chaincode, not deploying chaincode")
 		return nil, nil
 	}

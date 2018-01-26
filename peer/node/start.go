@@ -265,13 +265,9 @@ func registerChaincodeSupport(chainname chaincode.ChainName, grpcServer *grpc.Se
 	secHelper crypto.Peer) *chaincode.ChaincodeSupport {
 
 	//get user mode
-	userRunsCC := false
 	mode := viper.GetString("chaincode.mode")
-	if mode != chaincode.NetworkModeChaincode {
-		userRunsCC = true
-	}
 
-	ccSrv := chaincode.NewChaincodeSupport(chainname, peer.GetPeerEndpoint, userRunsCC, secHelper)
+	ccSrv := chaincode.NewChaincodeSupport(chainname, peer.GetPeerEndpoint, mode, secHelper)
 
 	//Now that chaincode is initialized, register all system chaincodes.
 	system_chaincode.RegisterSysCCs()

@@ -1,13 +1,12 @@
 package peerex
 
 import (
-	_ "github.com/abchain/fabric/peer/common"
 	"github.com/abchain/fabric/core/comm"
-	"google.golang.org/grpc"
 	"github.com/spf13/viper"
+	"google.golang.org/grpc"
 )
 
-type ClientConn struct{	
+type ClientConn struct {
 	C *grpc.ClientConn
 }
 
@@ -24,12 +23,12 @@ func newPeerClientConnectionWithAddress(peerAddress string) (*grpc.ClientConn, e
 	return comm.NewClientConnectionWithAddress(peerAddress, false, false, nil)
 }
 
-func (conn *ClientConn) Dialdefault() error{
+func (conn *ClientConn) Dialdefault() error {
 	c, err := newPeerClientConnection()
-	if err != nil{
+	if err != nil {
 		return err
 	}
-	
+
 	conn.C = c
 	return nil
 }
@@ -43,5 +42,3 @@ func (conn *ClientConn) Dial(server string) error {
 	conn.C = c
 	return nil
 }
-
-

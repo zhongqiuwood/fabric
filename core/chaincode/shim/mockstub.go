@@ -23,8 +23,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/abchain/fabric/core/chaincode/shim/crypto/attr"
+	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/op/go-logging"
 )
 
@@ -141,7 +141,7 @@ func (stub *MockStub) PutState(key string, value []byte) error {
 	for elem := stub.Keys.Front(); elem != nil; elem = elem.Next() {
 		elemValue := elem.Value.(string)
 		comp := strings.Compare(key, elemValue)
-		mockLogger.Debug("MockStub", stub.Name, "Compared", key, elemValue, " and got ", comp)
+		//		mockLogger.Debug("MockStub", stub.Name, "Compared", key, elemValue, " and got ", comp)
 		if comp < 0 {
 			// key < elem, insert it before elem
 			stub.Keys.InsertBefore(key, elem)

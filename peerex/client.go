@@ -18,6 +18,7 @@ import (
 
 var logger = logging.MustGetLogger("clientcore")
 
+//deprecated: use the local package in peerex/viper
 func InitPeerViper(envprefix string, filename string, configPath ...string) error {
 
 	viper.SetEnvPrefix(envprefix)

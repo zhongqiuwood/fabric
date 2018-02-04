@@ -3,6 +3,7 @@ package logging
 import (
 	"github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
+	"io"
 )
 
 func InitLogger(module string) *logging.Logger {
@@ -29,4 +30,13 @@ func SetLogLevel(defaultrole string) {
 
 	flogging.LoggingInit(defaultrole)
 
+}
+
+func SetBackend(w io.Writer, prefix string, flag int) {
+
+	backend := logging.NewLogBackend(w, prefix, flag)
+
+	backendFormatter := logging.NewBackendFormatter(backend, logging.DefaultFormatter)
+
+	logging.SetBackend(backendFormatter)
 }

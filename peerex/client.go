@@ -35,6 +35,7 @@ func InitPeerViper(envprefix string, filename string, configPath ...string) erro
 
 }
 
+//deprecated: use the local package in peerex/logging
 func InitLogger(module string) *logging.Logger {
 	return logging.MustGetLogger(module)
 }

@@ -30,7 +30,7 @@ func TestMockStateRangeQueryIterator(t *testing.T) {
 	stub.PutState("3", []byte{63})
 	stub.PutState("4", []byte{64})
 	stub.PutState("6", []byte{66})
-	stub.MockTransactionEnd("init")
+	stub.MockTransactionEnd("init", nil)
 
 	expectKeys := []string{"2", "3", "4"}
 	expectValues := [][]byte{{62}, {63}, {64}}

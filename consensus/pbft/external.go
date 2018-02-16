@@ -30,8 +30,8 @@ import (
 
 // Event types
 
-// stateUpdatedEvent is sent when state transfer completes
-type stateUpdatedEvent struct {
+// stateUpdateCompleteEvent is sent when state transfer completes
+type stateUpdateCompleteEvent struct {
 	chkpt  *checkpointMessage
 	target *pb.BlockchainInfo
 }
@@ -80,7 +80,7 @@ func (eer *externalEventReceiver) RolledBack(tag interface{}) {
 
 // StateUpdated is a signal from the stack that it has fast-forwarded its state
 func (eer *externalEventReceiver) StateUpdated(tag interface{}, target *pb.BlockchainInfo) {
-	eer.manager.Queue() <- stateUpdatedEvent{
+	eer.manager.Queue() <- stateUpdateCompleteEvent{
 		chkpt:  tag.(*checkpointMessage),
 		target: target,
 	}

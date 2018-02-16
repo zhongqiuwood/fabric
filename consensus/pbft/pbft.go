@@ -135,7 +135,13 @@ type obcGeneric struct {
 	pbft  *pbftCore
 }
 
+func (op *obcGeneric) onBlockCommitted(height uint64, currentBlockHash []byte, replicas []uint64) {
+	op.stack.NotifyBlockAdded(height, currentBlockHash, replicas) // pbft
+}
+
+// process ledge sync msg from other replicas
 func (op *obcGeneric) skipTo(seqNo uint64, id []byte, replicas []uint64) {
+
 	info := &pb.BlockchainInfo{}
 	err := proto.Unmarshal(id, info)
 	if err != nil {
@@ -155,6 +161,10 @@ func (op *obcGeneric) validateState() {
 
 func (op *obcGeneric) getState() []byte {
 	return op.stack.GetBlockchainInfoBlob()
+}
+
+func (op *obcGeneric) getBlockchainInfo() (uint64, *pb.BlockchainInfo) {
+	return op.stack.GetBlockchainSize(), op.stack.GetBlockchainInfo()
 }
 
 func (op *obcGeneric) getLastSeqNo() (uint64, error) {

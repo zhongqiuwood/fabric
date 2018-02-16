@@ -28,6 +28,7 @@ import (
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
+	"github.com/abchain/fabric/debugger"
 )
 
 type obcBatch struct {
@@ -170,13 +171,13 @@ func (op *obcBatch) unicastMsg(msg *BatchMessage, receiverID uint64) {
 // =============================================================================
 
 // multicast a message to all replicas
-func (op *obcBatch) broadcast(msgPayload []byte) {
-	op.broadcaster.Broadcast(op.wrapMessage(msgPayload))
+func (op *obcBatch) broadcast(msgPayload []byte, payloadType string) {
+	op.broadcaster.Broadcast(op.wrapMessage(msgPayload, payloadType))
 }
 
 // send a message to a specific replica
-func (op *obcBatch) unicast(msgPayload []byte, receiverID uint64) (err error) {
-	return op.broadcaster.Unicast(op.wrapMessage(msgPayload), receiverID)
+func (op *obcBatch) unicast(msgPayload []byte, receiverID uint64, payloadType string) (err error) {
+	return op.broadcaster.Unicast(op.wrapMessage(msgPayload, payloadType), receiverID)
 }
 
 func (op *obcBatch) sign(msg []byte) ([]byte, error) {
@@ -362,8 +363,12 @@ func (op *obcBatch) ProcessEvent(event events.Event) events.Event {
 		op.stack.Commit(nil, et.tag.([]byte))
 	case committedEvent:
 		logger.Debugf("Replica %d received committedEvent", op.pbft.id)
-		return execDoneEvent{}
+		return execDoneEvent{
+			tag: et.tag,
+			target: et.target,
+		}
 	case execDoneEvent:
+		debugger.Log(0, "execDoneEvent <%+v>", et)
 		if res := op.pbft.ProcessEvent(event); res != nil {
 			// This may trigger a view change, if so, process it, we will resubmit on new view
 			return res
@@ -421,7 +426,7 @@ func (op *obcBatch) ProcessEvent(event events.Event) events.Event {
 		}
 
 		return op.resubmitOutstandingReqs()
-	case stateUpdatedEvent:
+	case stateUpdateCompleteEvent:
 		// When the state is updated, clear any outstanding requests, they may have been processed while we were gone
 		op.reqStore = newRequestStore()
 		return op.pbft.ProcessEvent(event)
@@ -446,12 +451,13 @@ func (op *obcBatch) stopBatchTimer() {
 
 // Wraps a payload into a batch message, packs it and wraps it into
 // a Fabric message. Called by broadcast before transmission.
-func (op *obcBatch) wrapMessage(msgPayload []byte) *pb.Message {
+func (op *obcBatch) wrapMessage(msgPayload []byte, payloadType string) *pb.Message {
 	batchMsg := &BatchMessage{Payload: &BatchMessage_PbftMessage{PbftMessage: msgPayload}}
 	packedBatchMsg, _ := proto.Marshal(batchMsg)
 	ocMsg := &pb.Message{
 		Type:    pb.Message_CONSENSUS,
 		Payload: packedBatchMsg,
+		PayloadTypeStr: payloadType,
 	}
 	return ocMsg
 }

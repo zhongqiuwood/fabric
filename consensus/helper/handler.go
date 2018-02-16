@@ -26,6 +26,7 @@ import (
 	"github.com/abchain/fabric/core/peer"
 
 	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/debugger"
 )
 
 var logger *logging.Logger // package-level logger
@@ -77,6 +78,15 @@ func NewConsensusHandler(coord peer.MessageHandlerCoordinator,
 
 // HandleMessage handles the incoming Fabric messages for the Peer
 func (handler *ConsensusHandler) HandleMessage(msg *pb.Message) error {
+
+	if msg.Type != pb.Message_DISC_PEERS &&
+		msg.Type != pb.Message_DISC_GET_PEERS &&
+		msg.Type != pb.Message_DISC_HELLO {
+		senderPE2, _ := handler.To()
+		debugger.Log(debugger.DEBUG,"ConsensusHandler received message from <%s>: <%s>",
+			senderPE2.ID, msg.Type.String())
+	}
+
 	if msg.Type == pb.Message_CONSENSUS {
 		senderPE, _ := handler.To()
 		select {

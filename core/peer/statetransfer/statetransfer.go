@@ -30,6 +30,7 @@ import (
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
+	"github.com/abchain/fabric/debugger"
 )
 
 // =============================================================================
@@ -97,7 +98,10 @@ type coordinatorImpl struct {
 // If the peerIDs are nil, then all peers are assumed to have the given block.
 // If the call returns an error, a boolean is included which indicates if the error may be transient and the caller should retry
 func (sts *coordinatorImpl) SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool) {
-	logger.Infof("Syncing to target %x for block number %d with peers %v", blockHash, blockNumber, peerIDs)
+
+	debugger.Log(debugger.INFO, "in: Syncing_to_block<%d> with peers %v, target %x", blockNumber, peerIDs, blockHash)
+
+	defer debugger.Log(debugger.INFO, "out: Syncing_to_block<%d>", blockNumber)
 
 	if !sts.inProgress {
 		sts.currentStateBlockNumber = sts.stack.GetBlockchainSize() - 1 // The block height is one more than the latest block number
@@ -109,7 +113,12 @@ func (sts *coordinatorImpl) SyncToTarget(blockNumber uint64, blockHash []byte, p
 		sts.inProgress = false
 	}
 
-	logger.Debugf("Sync to target %x for block number %d returned, now at block height %d with err=%v recoverable=%v", blockHash, blockNumber, sts.stack.GetBlockchainSize(), err, recoverable)
+	debugger.Log(debugger.INFO, "Syncing_to_block<%d> returned, now at block height %d with err=%v recoverable=%v, hash<%x>",
+			blockNumber,
+		sts.stack.GetBlockchainSize(), err, recoverable, blockHash)
+
+	sts.stack.DumpBlockChain()
+
 	return err, recoverable
 }
 

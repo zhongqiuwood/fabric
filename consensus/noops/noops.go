@@ -25,10 +25,11 @@ import (
 	"github.com/op/go-logging"
 
 	"github.com/abchain/fabric/consensus"
-	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/ledger/statemgmt"
+	//"github.com/abchain/fabric/core/ledger"
+	//"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/debugger"
 )
 
 var logger *logging.Logger // package-level logger
@@ -100,6 +101,8 @@ func (i *Noops) RecvMsg(msg *pb.Message, senderHandle *pb.PeerID) error {
 		}
 	}
 	if msg.Type == pb.Message_CONSENSUS {
+		debugger.Log(2, "<<<------------------------------------------------- noops recv Message_CONSENSUS")
+
 		tx, err := i.getTxFromMsg(msg)
 		if nil != err {
 			return err
@@ -186,17 +189,14 @@ func (i *Noops) processBlock() error {
 		}
 		return nil
 	}
-	var data *pb.Block
-	var delta *statemgmt.StateDelta
 	var err error
 
 	if err = i.processTransactions(); nil != err {
 		return err
 	}
-	if data, delta, err = i.getBlockData(); nil != err {
-		return err
-	}
-	go i.notifyBlockAdded(data, delta)
+
+	info := i.stack.GetBlockchainInfo()
+	i.stack.NotifyBlockAdded(info.Height, info.CurrentBlockHash, nil) // noops
 	return nil
 }
 
@@ -240,58 +240,6 @@ func (i *Noops) getTxFromMsg(msg *pb.Message) (*pb.Transaction, error) {
 		return nil, err
 	}
 	return txs.GetTransactions()[0], nil
-}
-
-func (i *Noops) getBlockData() (*pb.Block, *statemgmt.StateDelta, error) {
-	ledger, err := ledger.GetLedger()
-	if err != nil {
-		return nil, nil, fmt.Errorf("Fail to get the ledger: %v", err)
-	}
-
-	blockHeight := ledger.GetBlockchainSize()
-	if logger.IsEnabledFor(logging.DEBUG) {
-		logger.Debugf("Preparing to broadcast with block number %v", blockHeight)
-	}
-	block, err := ledger.GetBlockByNumber(blockHeight - 1)
-	if nil != err {
-		return nil, nil, err
-	}
-	//delta, err := ledger.GetStateDeltaBytes(blockHeight)
-	delta, err := ledger.GetStateDelta(blockHeight - 1)
-	if nil != err {
-		return nil, nil, err
-	}
-	if logger.IsEnabledFor(logging.DEBUG) {
-		logger.Debugf("Got the delta state of block number %v", blockHeight)
-	}
-
-	return block, delta, nil
-}
-
-func (i *Noops) notifyBlockAdded(block *pb.Block, delta *statemgmt.StateDelta) error {
-	//make Payload nil to reduce block size..
-	//anything else to remove .. do we need StateDelta ?
-	for _, tx := range block.Transactions {
-		tx.Payload = nil
-	}
-	data, err := proto.Marshal(&pb.BlockState{Block: block, StateDelta: delta.Marshal()})
-	if err != nil {
-		return fmt.Errorf("Fail to marshall BlockState structure: %v", err)
-	}
-	if logger.IsEnabledFor(logging.DEBUG) {
-		logger.Debug("Broadcasting Message_SYNC_BLOCK_ADDED to non-validators")
-	}
-
-	// Broadcast SYNC_BLOCK_ADDED to connected NVPs
-	// VPs already know about this newly added block since they participate
-	// in the execution. That is, they can compare their current block with
-	// the network block
-	msg := &pb.Message{Type: pb.Message_SYNC_BLOCK_ADDED,
-		Payload: data, Timestamp: util.CreateUtcTimestamp()}
-	if errs := i.stack.Broadcast(msg, pb.PeerEndpoint_NON_VALIDATOR); nil != errs {
-		return fmt.Errorf("Failed to broadcast with errors: %v", errs)
-	}
-	return nil
 }
 
 // Executed is called whenever Execute completes, no-op for noops as it uses the legacy synchronous api

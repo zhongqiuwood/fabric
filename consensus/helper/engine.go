@@ -43,6 +43,39 @@ func (eng *EngineImpl) GetHandlerFactory() peer.HandlerFactory {
 	return NewConsensusHandler
 }
 
+//// Returns the peer handle that corresponds to a validator ID (uint64 assigned to it for PBFT)
+//func getPeerHandle(peerType string, id uint64) (handle *pb.PeerID, err error) {
+//	// as requested here: https://github.com/abchain/fabric/issues/462#issuecomment-170785410
+//	name := peerType + strconv.FormatUint(id, 10)
+//	return &pb.PeerID{Name: name}, nil
+//}
+//
+//// Returns the peer handles corresponding to a list of replica ids
+//func getValidatorHandles(ids []uint64) (handles []*pb.PeerID) {
+//	handles = make([]*pb.PeerID, len(ids))
+//	for i, id := range ids {
+//		handles[i], _ = getPeerHandle("vp", id)
+//	}
+//	return
+//}
+
+func (eng *EngineImpl) 	OnNotifyBlockAdded(blockState *pb.BlockState) {
+
+	info := &pb.BlockchainInfo{
+		Height: blockState.Height,
+		CurrentBlockHash: blockState.CurrentBlockHash,
+	}
+
+	//peers := make([]*pb.PeerID, 16)
+	//peers[0], _ = getPeerHandle("vp", 0)
+	//peers[1], _ = getPeerHandle("vp", 1)
+	//peers[2], _ = getPeerHandle("vp", 2)
+	//peers[3], _ = getPeerHandle("vp", 3)
+
+	// TODO: selectively go to peers to ask for blocks
+	eng.helper.UpdateState(nil, info, nil)
+}
+
 // ProcessTransactionMsg processes a Message in context of a Transaction
 func (eng *EngineImpl) ProcessTransactionMsg(msg *pb.Message, tx *pb.Transaction) (response *pb.Response) {
 	//TODO: Do we always verify security, or can we supply a flag on the invoke ot this functions so to bypass check for locally generated transactions?

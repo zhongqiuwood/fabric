@@ -23,6 +23,7 @@ import (
 	pb "github.com/abchain/fabric/protos"
 
 	"github.com/op/go-logging"
+	"github.com/abchain/fabric/debugger"
 )
 
 var logger *logging.Logger // package-level logger
@@ -44,6 +45,7 @@ type coordinatorImpl struct {
 	stc             statetransfer.Coordinator   // State transfer instance
 	batchInProgress bool                        // Are we mid execution batch
 	skipInProgress  bool                        // Are we mid state transfer
+	syncTask	map[uint64]string
 }
 
 // NewCoordinatorImpl creates a new executor.Coordinator
@@ -55,6 +57,8 @@ func NewImpl(consumer consensus.ExecutionConsumer, rawExecutor PartialStack, stp
 		manager:     events.NewManagerImpl(),
 	}
 	co.manager.SetReceiver(co)
+	co.syncTask = make(map[uint64]string)
+
 	return co
 }
 
@@ -116,33 +120,74 @@ func (co *coordinatorImpl) ProcessEvent(event events.Event) events.Event {
 		_ = err // TODO This should probably panic, see issue 752
 
 		co.batchInProgress = false
-
 		co.consumer.RolledBack(et.tag)
+
 	case stateUpdateEvent:
-		logger.Debug("Executor is processing a stateUpdateEvent")
-		if co.batchInProgress {
-			err := co.rawExecutor.RollbackTxBatch(co)
-			_ = err // TODO This should probably panic, see issue 752
-		}
+		if et.tag == nil {
 
-		co.skipInProgress = true
+			co.skipInProgress = true
 
-		info := et.blockchainInfo
-		for {
-			err, recoverable := co.stc.SyncToTarget(info.Height-1, info.CurrentBlockHash, et.peers)
-			if err == nil {
-				logger.Debug("State transfer sync completed, returning")
-				co.skipInProgress = false
-				co.consumer.StateUpdated(et.tag, info)
+			info := et.blockchainInfo
+			blockNumber := info.Height - 1
+
+			_, ok := co.syncTask[blockNumber]
+
+			if ok {
 				return nil
 			}
-			if !recoverable {
-				logger.Warningf("State transfer failed irrecoverably, calling back to consumer: %s", err)
-				co.consumer.StateUpdated(et.tag, nil)
-				return nil
+
+			logger.Debug("Learner peer executor is processing a stateUpdateEvent")
+
+			co.syncTask[blockNumber] = string(info.CurrentBlockHash)
+
+			for retry := 0; retry < 3 ; retry++ {
+				et.peers = nil
+				err, recoverable := co.stc.SyncToTarget(blockNumber, info.CurrentBlockHash, et.peers)
+
+				if err == nil {
+					debugger.Log(debugger.DEBUG,"<<<--- Syncing_to_block<%d>, retry<%d>, completed, returning",
+						blockNumber, retry)
+					co.skipInProgress = false
+					return nil
+				}
+				if !recoverable {
+					debugger.Log(debugger.WARN,"<<<--- Syncing_to_block<%d>, retry<%d>, failed irrecoverably. %s",
+						retry, blockNumber, err)
+					return nil
+				}
+				debugger.Log(debugger.WARN,"<<<--- Syncing_to_block<%d>, retry<%d>, did not complete successfully " +
+					"but is recoverable, trying again. %s",
+					blockNumber, retry, err)
+				et.peers = nil // Broaden the peers included in recover to all connected
 			}
-			logger.Warningf("State transfer did not complete successfully but is recoverable, trying again: %s", err)
-			et.peers = nil // Broaden the peers included in recover to all connected
+
+		} else {
+
+			logger.Debug("Executor is processing a stateUpdateEvent")
+			if co.batchInProgress {
+				err := co.rawExecutor.RollbackTxBatch(co)
+				_ = err // TODO This should probably panic, see issue 752
+			}
+
+			co.skipInProgress = true
+
+			info := et.blockchainInfo
+			for {
+				err, recoverable := co.stc.SyncToTarget(info.Height-1, info.CurrentBlockHash, et.peers)
+				if err == nil {
+					logger.Debug("State transfer sync completed, returning")
+					co.skipInProgress = false
+					co.consumer.StateUpdated(et.tag, info)
+					return nil
+				}
+				if !recoverable {
+					logger.Warningf("State transfer failed irrecoverably, calling back to consumer: %s", err)
+					co.consumer.StateUpdated(et.tag, nil)
+					return nil
+				}
+				logger.Warningf("State transfer did not complete successfully but is recoverable, trying again: %s", err)
+				et.peers = nil // Broaden the peers included in recover to all connected
+			}
 		}
 	default:
 		logger.Errorf("Unknown event type %s", et)

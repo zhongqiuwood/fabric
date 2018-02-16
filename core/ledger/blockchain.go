@@ -26,6 +26,7 @@ import (
 	"github.com/abchain/fabric/protos"
 	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
+	"github.com/abchain/fabric/debugger"
 )
 
 // Blockchain holds basic information in memory. Operations on Blockchain are not thread-safe
@@ -330,4 +331,23 @@ func (blockchain *blockchain) String() string {
 		buffer.WriteString(">----------\n")
 	}
 	return buffer.String()
+}
+
+func (blockchain *blockchain) Dump(level int) {
+	debugger.Log(level, "=======================================================")
+
+	size := blockchain.getSize()
+	for i := uint64(0); i < size; i++ {
+		block, blockErr := blockchain.getBlock(i)
+		if blockErr != nil {
+			return
+		}
+		blockHash, _ := block.GetHash()
+		debugger.Log(level, "high[%s]: curHash<%x> prevHash<%x>, ConsensusMetadata<%x>, " +
+			"StateHash<%x>, timp<%+v>, NonHashData<%+v>, Transactions<%+v>",
+			strconv.FormatUint(i + 1, 10),
+			blockHash, block.PreviousBlockHash, block.ConsensusMetadata, block.StateHash,
+			block.Timestamp, block.NonHashData, block.Transactions)
+	}
+	debugger.Log(level, "=======================================================")
 }

@@ -27,6 +27,7 @@ import (
 
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/debugger"
 )
 
 const DefaultSyncSnapshotTimeout time.Duration = 60 * time.Second
@@ -259,8 +260,23 @@ func (d *Handler) beforeBlockAdded(e *fsm.Event) {
 		e.Cancel(fmt.Errorf("Received unexpected message type"))
 		return
 	}
+
+	blockState := &pb.BlockState{}
+	err := proto.Unmarshal(msg.Payload, blockState)
+
+	if err != nil {
+		debugger.Log(2,"Error unmarshalling BlockState: %s", err)
+		e.Cancel(fmt.Errorf("Error unmarshalling BlockState: %s", err))
+		return
+	}
+
+	debugger.Log(debugger.DEBUG, "Height<%d>, StateDelta<%x>, Block<%+v>",
+		blockState.Height, blockState.StateDelta, blockState.Block)
+
+	d.Coordinator.OnNotifyBlockAdded(blockState)
+
 	// Add the block and any delta state to the ledger
-	_ = msg
+	//_ = msg
 }
 
 func (d *Handler) when(stateToCheck string) bool {
@@ -269,15 +285,24 @@ func (d *Handler) when(stateToCheck string) bool {
 
 // HandleMessage handles the Openchain messages for the Peer.
 func (d *Handler) HandleMessage(msg *pb.Message) error {
-	peerLogger.Debugf("Handling Message of type: %s ", msg.Type)
+
+	if d.ToPeerEndpoint != nil && d.ToPeerEndpoint.ID != nil {
+		if msg.Type != pb.Message_DISC_PEERS && msg.Type != pb.Message_DISC_GET_PEERS {
+			debugger.Log(debugger.DEBUG,"Peer handler received message from <%s>, type: %s ",
+				d.ToPeerEndpoint.ID, msg.Type.String())
+		}
+	}
+
 	if d.FSM.Cannot(msg.Type.String()) {
-		return fmt.Errorf("Peer FSM cannot handle message (%s) with payload size (%d) while in state: %s", msg.Type.String(), len(msg.Payload), d.FSM.Current())
+		return fmt.Errorf("Peer FSM cannot handle message (%s) with payload size (%d) while in state: %s",
+			msg.Type.String(), len(msg.Payload), d.FSM.Current())
 	}
 	err := d.FSM.Event(msg.Type.String(), msg)
 	if err != nil {
 		if _, ok := err.(*fsm.NoTransitionError); !ok {
 			// Only allow NoTransitionError's, all others are considered true error.
-			return fmt.Errorf("Peer FSM failed while handling message (%s): current state: %s, error: %s", msg.Type.String(), d.FSM.Current(), err)
+			return fmt.Errorf("Peer FSM failed while handling message (%s): current state: %s, error: %s",
+				msg.Type.String(), d.FSM.Current(), err)
 			//t.Error("expected only 'NoTransitionError'")
 		}
 	}
@@ -290,7 +315,16 @@ func (d *Handler) SendMessage(msg *pb.Message) error {
 	//instead of calling Send directly on the grpc stream
 	d.chatMutex.Lock()
 	defer d.chatMutex.Unlock()
-	peerLogger.Debugf("Sending message to stream of type: %s ", msg.Type)
+
+	if msg.Type != pb.Message_DISC_PEERS &&
+		msg.Type != pb.Message_DISC_GET_PEERS &&
+		msg.Type != pb.Message_DISC_HELLO  {
+		if d.ToPeerEndpoint != nil && d.ToPeerEndpoint.ID != nil {
+			debugger.Log(debugger.DEBUG,"Sending <%s> <%s> to peer <%s>",
+				msg.Type.String(),	msg.PayloadTypeStr, d.ToPeerEndpoint.ID)
+		}
+	}
+
 	err := d.ChatStream.Send(msg)
 	if err != nil {
 		return fmt.Errorf("Error Sending message through ChatStream: %s", err)
@@ -307,7 +341,8 @@ func (d *Handler) start() error {
 		select {
 		case <-tickChan:
 			if err := d.SendMessage(&pb.Message{Type: pb.Message_DISC_GET_PEERS}); err != nil {
-				peerLogger.Errorf("Error sending %s during handler discovery tick: %s", pb.Message_DISC_GET_PEERS, err)
+				peerLogger.Errorf("Error sending %s during handler discovery tick: %s",
+					pb.Message_DISC_GET_PEERS, err)
 			}
 		case <-d.doneChan:
 			peerLogger.Debug("Stopping discovery service")

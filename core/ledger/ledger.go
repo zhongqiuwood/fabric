@@ -32,6 +32,7 @@ import (
 
 	"github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
+	"github.com/abchain/fabric/debugger"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
@@ -144,6 +145,10 @@ func (ledger *Ledger) GetTXBatchPreviewBlockInfo(id interface{},
 // This function returns successfully iff the transactions details and state changes (that
 // may have happened during execution of this transaction-batch) have been committed to permanent storage
 func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Transaction, transactionResults []*protos.TransactionResult, metadata []byte) error {
+	debugger.Log(debugger.DEBUG,"ws: =================CommitTxBatch========================= in")
+
+	defer debugger.Log(debugger.DEBUG,"ws: =================CommitTxBatch========================= out")
+
 	err := ledger.checkValidIDCommitORRollback(id)
 	if err != nil {
 		return err
@@ -211,6 +216,9 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	if len(transactionResults) != 0 {
 		ledgerLogger.Debug("There were some erroneous transactions. We need to send a 'TX rejected' message here.")
 	}
+
+	ledger.blockchain.Dump(debugger.DEBUG)
+
 	return nil
 }
 
@@ -324,6 +332,11 @@ func (ledger *Ledger) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, 
 		return nil, ErrOutOfBounds
 	}
 	return ledger.state.FetchStateDeltaFromDB(blockNumber)
+}
+
+// GetBlockByNumber return a block by block number
+func (ledger *Ledger) DumpBlockChain() {
+	ledger.blockchain.Dump(debugger.INFO)
 }
 
 // ApplyStateDelta applies a state delta to the current state. This is an

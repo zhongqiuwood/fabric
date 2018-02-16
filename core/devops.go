@@ -100,7 +100,7 @@ func (d *Devops) Login(ctx context.Context, secret *pb.Secret) (*pb.Response, er
 func (*Devops) Build(context context.Context, spec *pb.ChaincodeSpec) (*pb.ChaincodeDeploymentSpec, error) {
 	mode := viper.GetString("chaincode.mode")
 	var codePackageBytes []byte
-	if mode != chaincode.DevModeUserRunsChaincode {
+	if mode == chaincode.NetworkModeChaincode {
 		devopsLogger.Debugf("Received build request for chaincode spec: %v", spec)
 		if err := CheckSpec(spec); err != nil {
 			return nil, err
@@ -125,7 +125,7 @@ func (*Devops) Build(context context.Context, spec *pb.ChaincodeSpec) (*pb.Chain
 func (*Devops) getChaincodeBytes(context context.Context, spec *pb.ChaincodeSpec) (*pb.ChaincodeDeploymentSpec, error) {
 	mode := viper.GetString("chaincode.mode")
 	var codePackageBytes []byte
-	if mode != chaincode.DevModeUserRunsChaincode {
+	if mode == chaincode.NetworkModeChaincode {
 		devopsLogger.Debugf("Received build request for chaincode spec: %v", spec)
 		var err error
 		if err = CheckSpec(spec); err != nil {

@@ -162,6 +162,9 @@ peer:
     validator:
         enabled: true
 
+        # vp|nvp|lvp, vp by default
+        mode: vp
+
         consensus:
             # Consensus plugin to use. The value is the name of the plugin, e.g. pbft, noops ( this value is case-insensitive)
             # if the given value is not recognized, we will default to noops
@@ -242,7 +245,7 @@ peer:
 
         # Should the discovered nodes and their reputations
         # be stored in DB and persisted between restarts
-        persist:    true
+        persist:    false
 
         # the period in seconds with which the discovery
         # tries to reconnect to successful nodes

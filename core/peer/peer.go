@@ -48,6 +48,7 @@ import (
 type Peer interface {
 	GetPeerEndpoint() (*pb.PeerEndpoint, error)
 	NewOpenchainDiscoveryHello() (*pb.Message, error)
+	OnNotifyBlockAdded(*pb.BlockState)
 }
 
 // BlocksRetriever interface for retrieving blocks .
@@ -81,6 +82,7 @@ type BlockChainModifier interface {
 	CommitStateDelta(id interface{}) error
 	EmptyState() error
 	PutBlock(blockNumber uint64, block *pb.Block) error
+	DumpBlockChain()
 }
 
 // BlockChainUtil interface for interrogating the block chain
@@ -114,8 +116,8 @@ type MessageHandlerCoordinator interface {
 	StateAccessor
 	RegisterHandler(messageHandler MessageHandler) error
 	DeregisterHandler(messageHandler MessageHandler) error
-	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
-	Unicast(*pb.Message, *pb.PeerID) error
+	Broadcast2Peers(*pb.Message, pb.PeerEndpoint_Type) []error
+	Unicast2Peer(*pb.Message, *pb.PeerID) error
 	GetPeers() (*pb.PeersMessage, error)
 	GetRemoteLedger(receiver *pb.PeerID) (RemoteLedger, error)
 	PeersDiscovered(*pb.PeersMessage) error
@@ -193,11 +195,13 @@ type Impl struct {
 	reconnectOnce  sync.Once
 	discHelper     discovery.Discovery
 	discPersist    bool
+	mode 		   string
 }
 
 // TransactionProccesor responsible for processing of Transactions
 type TransactionProccesor interface {
 	ProcessTransactionMsg(*pb.Message, *pb.Transaction) *pb.Response
+	OnNotifyBlockAdded(*pb.BlockState)
 }
 
 // Engine Responsible for managing Peer network communications (Handlers) and processing of Transactions
@@ -218,6 +222,7 @@ func NewPeerWithHandler(secHelperFunc func() crypto.Peer, handlerFact HandlerFac
 	}
 	peer.handlerFactory = handlerFact
 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
+	peer.mode = GetMode()
 
 	peer.secHelper = secHelperFunc()
 
@@ -247,6 +252,7 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 
 	peer.isValidator = ValidatorEnabled()
 	peer.secHelper = secHelperFunc()
+	peer.mode = GetMode()
 
 	// Install security object for peer
 	if SecurityEnabled() {
@@ -423,7 +429,8 @@ func (p *Impl) cloneHandlerMap(typ pb.PeerEndpoint_Type) map[pb.PeerID]MessageHa
 
 // Broadcast broadcast a message to each of the currently registered PeerEndpoints of given type
 // Broadcast will broadcast to all registered PeerEndpoints if the type is PeerEndpoint_UNDEFINED
-func (p *Impl) Broadcast(msg *pb.Message, typ pb.PeerEndpoint_Type) []error {
+func (p *Impl) Broadcast2Peers(msg *pb.Message, typ pb.PeerEndpoint_Type) []error {
+
 	cloneMap := p.cloneHandlerMap(typ)
 	errorsFromHandlers := make(chan error, len(cloneMap))
 	var bcWG sync.WaitGroup
@@ -469,12 +476,15 @@ func (p *Impl) getMessageHandler(receiverHandle *pb.PeerID) (MessageHandler, err
 	return msgHandler, nil
 }
 
+
 // Unicast sends a message to a specific peer.
-func (p *Impl) Unicast(msg *pb.Message, receiverHandle *pb.PeerID) error {
+func (p *Impl) Unicast2Peer(msg *pb.Message, receiverHandle *pb.PeerID) error {
+
 	msgHandler, err := p.getMessageHandler(receiverHandle)
 	if err != nil {
 		return err
 	}
+
 	err = msgHandler.SendMessage(msg)
 	if err != nil {
 		toPeerEndpoint, _ := msgHandler.To()
@@ -543,6 +553,12 @@ func (p *Impl) ensureConnected() {
 		peerLogger.Debugf("Discovery knows about: %v", allNodes)
 	}
 
+}
+
+func (p *Impl) OnNotifyBlockAdded(blockState *pb.BlockState)  {
+	if p.engine != nil {
+		p.engine.OnNotifyBlockAdded(blockState)
+	}
 }
 
 // chatWithSomePeers initiates chat with 1 or all peers according to whether the node is a validator or not
@@ -615,7 +631,10 @@ func (p *Impl) handleChat(ctx context.Context, stream ChatStream, initiatedStrea
 		}
 		err = handler.HandleMessage(in)
 		if err != nil {
-			peerLogger.Errorf("Error handling message: %s", err)
+			if in.GetType() != pb.Message_DISC_GET_PEERS &&
+				in.GetType() != pb.Message_DISC_HELLO {
+				peerLogger.Errorf("Error handling message: %s", err)
+			}
 			//return err
 		}
 	}
@@ -658,6 +677,12 @@ func (p *Impl) newHelloMessage() (*pb.HelloMessage, error) {
 }
 
 // GetBlockByNumber return a block by block number
+func (p *Impl) DumpBlockChain()  {
+	p.ledgerWrapper.RLock()
+	defer p.ledgerWrapper.RUnlock()
+	p.ledgerWrapper.ledger.DumpBlockChain()
+}
+
 func (p *Impl) GetBlockByNumber(blockNumber uint64) (*pb.Block, error) {
 	p.ledgerWrapper.RLock()
 	defer p.ledgerWrapper.RUnlock()

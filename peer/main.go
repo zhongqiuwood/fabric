@@ -36,6 +36,7 @@ import (
 	"github.com/abchain/fabric/peer/network"
 	"github.com/abchain/fabric/peer/node"
 	"github.com/abchain/fabric/peer/version"
+	"github.com/abchain/fabric/debugger"
 )
 
 var logger = logging.MustGetLogger("main")
@@ -105,6 +106,7 @@ func main() {
 		panic(fmt.Errorf("Fatal error when reading %s config file: %s\n", cfgFileName, err))
 	}
 
+	debugger.Init()
 	mainCmd.AddCommand(version.Cmd())
 	mainCmd.AddCommand(node.Cmd())
 	mainCmd.AddCommand(network.Cmd())

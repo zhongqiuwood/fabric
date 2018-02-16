@@ -26,10 +26,13 @@ It has these top-level messages:
 */
 package pbft
 
-import proto "github.com/golang/protobuf/proto"
-import fmt "fmt"
-import math "math"
-import google_protobuf "github.com/golang/protobuf/ptypes/timestamp"
+import "github.com/golang/protobuf/proto"
+import "fmt"
+import "math"
+import (
+	google_protobuf "github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/abchain/fabric/debugger"
+)
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
@@ -41,6 +44,31 @@ var _ = math.Inf
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
+
+
+const (
+	Message_RequestBatch_Value int = 1
+	Message_PrePrepare_Value int = 2
+	Message_Prepare_Value    int = 3
+	Message_Commit_Value     int = 4
+	Message_Checkpoint_Value int = 5
+	Message_ViewChange_Value int = 6
+	Message_NewView_Value    int = 7
+	Message_FetchRequestBatch_Value  int = 8
+	Message_ReturnRequestBatch_Value int = 9
+)
+
+var PBFT_Message_Type_name = map[int]string{
+	1: "[1]Message_RequestBatch",
+	2: "[2]Message_PrePrepare",
+	3: "[3]Message_Prepare",
+	4: "[4]Message_Commit",
+	5: "[5]Message_Checkpoint",
+	6: "[6]Message_ViewChange",
+	7: "[7]Message_NewView",
+	8: "[8]Message_FetchRequestBatch",
+	9: "[9]Message_ReturnRequestBatch",
+}
 
 type Message struct {
 	// Types that are valid to be assigned to Payload:
@@ -54,7 +82,9 @@ type Message struct {
 	//	*Message_FetchRequestBatch
 	//	*Message_ReturnRequestBatch
 	Payload isMessage_Payload `protobuf_oneof:"payload"`
-}
+	PayloadType int
+	PayloadTypeStr string
+	}
 
 func (m *Message) Reset()                    { *m = Message{} }
 func (m *Message) String() string            { return proto.CompactTextString(m) }
@@ -174,7 +204,11 @@ func (m *Message) GetReturnRequestBatch() *RequestBatch {
 }
 
 // XXX_OneofFuncs is for the internal use of the proto package.
-func (*Message) XXX_OneofFuncs() (func(msg proto.Message, b *proto.Buffer) error, func(msg proto.Message, tag, wire int, b *proto.Buffer) (bool, error), func(msg proto.Message) (n int), []interface{}) {
+func (*Message) XXX_OneofFuncs() (
+	func(msg proto.Message, b *proto.Buffer) error,
+	func(msg proto.Message, tag, wire int, b *proto.Buffer) (bool, error),
+	func(msg proto.Message) (n int),
+	[]interface{}) {
 	return _Message_OneofMarshaler, _Message_OneofUnmarshaler, _Message_OneofSizer, []interface{}{
 		(*Message_RequestBatch)(nil),
 		(*Message_PrePrepare)(nil),
@@ -193,46 +227,56 @@ func _Message_OneofMarshaler(msg proto.Message, b *proto.Buffer) error {
 	// payload
 	switch x := m.Payload.(type) {
 	case *Message_RequestBatch:
+		//m.Payload
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_RequestBatch_Value]
 		b.EncodeVarint(1<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.RequestBatch); err != nil {
 			return err
 		}
 	case *Message_PrePrepare:
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_PrePrepare_Value]
 		b.EncodeVarint(2<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.PrePrepare); err != nil {
 			return err
 		}
 	case *Message_Prepare:
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_Prepare_Value]
 		b.EncodeVarint(3<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Prepare); err != nil {
 			return err
 		}
 	case *Message_Commit:
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_Commit_Value]
 		b.EncodeVarint(4<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Commit); err != nil {
 			return err
 		}
 	case *Message_Checkpoint:
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_Checkpoint_Value]
 		b.EncodeVarint(5<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Checkpoint); err != nil {
 			return err
 		}
 	case *Message_ViewChange:
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_ViewChange_Value]
 		b.EncodeVarint(6<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.ViewChange); err != nil {
 			return err
 		}
 	case *Message_NewView:
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_NewView_Value]
 		b.EncodeVarint(7<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.NewView); err != nil {
 			return err
 		}
 	case *Message_FetchRequestBatch:
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_FetchRequestBatch_Value]
 		b.EncodeVarint(8<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.FetchRequestBatch); err != nil {
 			return err
 		}
 	case *Message_ReturnRequestBatch:
+		m.PayloadTypeStr = PBFT_Message_Type_name[Message_ReturnRequestBatch_Value]
 		b.EncodeVarint(9<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.ReturnRequestBatch); err != nil {
 			return err
@@ -241,11 +285,14 @@ func _Message_OneofMarshaler(msg proto.Message, b *proto.Buffer) error {
 	default:
 		return fmt.Errorf("Message.Payload has unexpected type %T", x)
 	}
+
 	return nil
 }
 
 func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer) (bool, error) {
+
 	m := msg.(*Message)
+
 	switch tag {
 	case 1: // payload.request_batch
 		if wire != proto.WireBytes {
@@ -254,6 +301,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(RequestBatch)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_RequestBatch{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	case 2: // payload.pre_prepare
 		if wire != proto.WireBytes {
@@ -262,6 +311,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(PrePrepare)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_PrePrepare{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	case 3: // payload.prepare
 		if wire != proto.WireBytes {
@@ -270,6 +321,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(Prepare)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_Prepare{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	case 4: // payload.commit
 		if wire != proto.WireBytes {
@@ -278,6 +331,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(Commit)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_Commit{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	case 5: // payload.checkpoint
 		if wire != proto.WireBytes {
@@ -286,6 +341,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(Checkpoint)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_Checkpoint{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	case 6: // payload.view_change
 		if wire != proto.WireBytes {
@@ -294,6 +351,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(ViewChange)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_ViewChange{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	case 7: // payload.new_view
 		if wire != proto.WireBytes {
@@ -302,6 +361,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(NewView)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_NewView{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	case 8: // payload.fetch_request_batch
 		if wire != proto.WireBytes {
@@ -310,6 +371,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(FetchRequestBatch)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_FetchRequestBatch{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	case 9: // payload.return_request_batch
 		if wire != proto.WireBytes {
@@ -318,6 +381,8 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(RequestBatch)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_ReturnRequestBatch{msg}
+		m.PayloadType = tag
+		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
 		return true, err
 	default:
 		return false, nil
@@ -391,6 +456,7 @@ func (m *Request) Reset()                    { *m = Request{} }
 func (m *Request) String() string            { return proto.CompactTextString(m) }
 func (*Request) ProtoMessage()               {}
 func (*Request) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{1} }
+func (m *Request) Dump(context string)  { debugger.Log(2, "%s [1]Message_RequestBatch: from<vp%d>, <%+v>", context, m.ReplicaId, m) }
 
 func (m *Request) GetTimestamp() *google_protobuf.Timestamp {
 	if m != nil {
@@ -411,6 +477,8 @@ func (m *PrePrepare) Reset()                    { *m = PrePrepare{} }
 func (m *PrePrepare) String() string            { return proto.CompactTextString(m) }
 func (*PrePrepare) ProtoMessage()               {}
 func (*PrePrepare) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{2} }
+func (m *PrePrepare) Dump(context string)  { debugger.Log(2, "%s [2]Message_PrePrepare: from<vp%d>, <%+v>", context, m.ReplicaId, m) }
+
 
 func (m *PrePrepare) GetRequestBatch() *RequestBatch {
 	if m != nil {
@@ -430,18 +498,23 @@ func (m *Prepare) Reset()                    { *m = Prepare{} }
 func (m *Prepare) String() string            { return proto.CompactTextString(m) }
 func (*Prepare) ProtoMessage()               {}
 func (*Prepare) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{3} }
+func (m *Prepare) Dump(context string)  { debugger.Log(2, "%s [3]Message_Prepare: from<vp%d>, <%+v>", context, m.ReplicaId, m) }
 
 type Commit struct {
 	View           uint64 `protobuf:"varint,1,opt,name=view" json:"view,omitempty"`
 	SequenceNumber uint64 `protobuf:"varint,2,opt,name=sequence_number,json=sequenceNumber" json:"sequence_number,omitempty"`
 	BatchDigest    string `protobuf:"bytes,3,opt,name=batch_digest,json=batchDigest" json:"batch_digest,omitempty"`
 	ReplicaId      uint64 `protobuf:"varint,4,opt,name=replica_id,json=replicaId" json:"replica_id,omitempty"`
+	BlockHeigth    uint64 `protobuf:"varint,5,opt,name=block_heigth,json=blockHeigth" json:"block_heigth,omitempty"`
+	CurBlockHash   []byte `protobuf:"bytes,6,opt,name=curblockhash,proto3" json:"curblockhash,omitempty"`
 }
 
 func (m *Commit) Reset()                    { *m = Commit{} }
 func (m *Commit) String() string            { return proto.CompactTextString(m) }
 func (*Commit) ProtoMessage()               {}
 func (*Commit) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{4} }
+func (m *Commit) Dump(context string)  { debugger.Log(2, "%s [4]Message_Commit: from<vp%d>, bh<%d>",
+	context, m.ReplicaId, m.BlockHeigth) }
 
 type BlockInfo struct {
 	BlockNumber uint64 `protobuf:"varint,1,opt,name=block_number,json=blockNumber" json:"block_number,omitempty"`
@@ -463,6 +536,7 @@ func (m *Checkpoint) Reset()                    { *m = Checkpoint{} }
 func (m *Checkpoint) String() string            { return proto.CompactTextString(m) }
 func (*Checkpoint) ProtoMessage()               {}
 func (*Checkpoint) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{6} }
+func (m *Checkpoint) Dump(context string)  { debugger.Log(2, "%s [5]Message_Checkpoint: from<vp%d>, <%+v>", context, m.ReplicaId, m) }
 
 type ViewChange struct {
 	View      uint64           `protobuf:"varint,1,opt,name=view" json:"view,omitempty"`
@@ -478,6 +552,7 @@ func (m *ViewChange) Reset()                    { *m = ViewChange{} }
 func (m *ViewChange) String() string            { return proto.CompactTextString(m) }
 func (*ViewChange) ProtoMessage()               {}
 func (*ViewChange) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{7} }
+func (m *ViewChange) Dump(context string)  { debugger.Log(2, "%s [6]Message_ViewChange: from<vp%d>, <%+v>", context, m.ReplicaId, m) }
 
 func (m *ViewChange) GetCset() []*ViewChange_C {
 	if m != nil {
@@ -549,6 +624,7 @@ func (m *NewView) Reset()                    { *m = NewView{} }
 func (m *NewView) String() string            { return proto.CompactTextString(m) }
 func (*NewView) ProtoMessage()               {}
 func (*NewView) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{9} }
+func (m *NewView) Dump(context string)  { debugger.Log(2, "%s [7]Message_NewView: from<vp%d>, <%+v>", context, m.ReplicaId, m) }
 
 func (m *NewView) GetVset() []*ViewChange {
 	if m != nil {
@@ -573,6 +649,7 @@ func (m *FetchRequestBatch) Reset()                    { *m = FetchRequestBatch{
 func (m *FetchRequestBatch) String() string            { return proto.CompactTextString(m) }
 func (*FetchRequestBatch) ProtoMessage()               {}
 func (*FetchRequestBatch) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{10} }
+func (m *FetchRequestBatch) Dump(context string)  { debugger.Log(2, "%s [8]Message_FetchRequestBatch: from<vp%d>, <%+v>", context, m.ReplicaId, m) }
 
 type RequestBatch struct {
 	Batch []*Request `protobuf:"bytes,1,rep,name=batch" json:"batch,omitempty"`
@@ -582,6 +659,7 @@ func (m *RequestBatch) Reset()                    { *m = RequestBatch{} }
 func (m *RequestBatch) String() string            { return proto.CompactTextString(m) }
 func (*RequestBatch) ProtoMessage()               {}
 func (*RequestBatch) Descriptor() ([]byte, []int) { return fileDescriptor0, []int{11} }
+func (m *RequestBatch) Dump(context string)  { debugger.Log(2, "%s [9]Message_ReturnRequestBatch: from<vp%d>, <%+v>", context, -1, m) }
 
 func (m *RequestBatch) GetBatch() []*Request {
 	if m != nil {

@@ -152,26 +152,47 @@ func serve(args []string) error {
 	ccSrv := registerChaincodeSupport(chaincode.DefaultChain, grpcServer, secHelper)
 
 	var peerServer *peer.Impl
+	peerMode := peer.GetMode()
 
 	// Create the peerServer
-	if peer.ValidatorEnabled() {
-		logger.Debug("Running as validating peer - making genesis block if needed")
-		makeGenesisError := genesis.MakeGenesis()
-		if makeGenesisError != nil {
-			return makeGenesisError
-		}
-		logger.Debugf("Running as validating peer - installing consensus %s",
-			viper.GetString("peer.validator.consensus"))
+	if len(peerMode) == 0 {
+		// keep backward compatibility for peer.validate.enabled
+		if peer.ValidatorEnabled() {
+			logger.Debug("Running as validating peer - making genesis block if needed")
+			makeGenesisError := genesis.MakeGenesis()
+			if makeGenesisError != nil {
+				return makeGenesisError
+			}
+			logger.Debugf("Running as validating peer - installing consensus %s",
+				viper.GetString("peer.validator.consensus"))
 
-		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, helper.GetEngine)
+			peerServer, err = peer.NewPeerWithEngine(secHelperFunc, helper.GetEngine)
+		} else {
+			logger.Debug("Running as non-validating peer")
+			peerServer, err = peer.NewPeerWithHandler(secHelperFunc, peer.NewPeerHandler)
+		}
 	} else {
-		logger.Debug("Running as non-validating peer")
-		peerServer, err = peer.NewPeerWithHandler(secHelperFunc, peer.NewPeerHandler)
+
+		if peerMode == "vp" || peerMode == "lvp" {
+			logger.Debugf("Running as a %s - making genesis block if needed", peerMode)
+			makeGenesisError := genesis.MakeGenesis()
+			if makeGenesisError != nil {
+				return makeGenesisError
+			}
+			logger.Debugf("Running as a %s - installing consensus %s", peerMode,
+				viper.GetString("peer.validator.consensus"))
+
+			peerServer, err = peer.NewPeerWithEngine(secHelperFunc, helper.GetEngine)
+		}
+
+		if peerMode == "nvp" {
+			logger.Debug("Running as non-validating peer")
+			peerServer, err = peer.NewPeerWithHandler(secHelperFunc, peer.NewPeerHandler)
+		}
 	}
 
 	if err != nil {
 		logger.Fatalf("Failed creating new peer with handler %v", err)
-
 		return err
 	}
 

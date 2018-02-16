@@ -34,6 +34,7 @@ type broadcaster struct {
 	comm communicator
 
 	f                int
+	N                int
 	broadcastTimeout time.Duration
 	msgChans         map[uint64]chan *sendRequest
 	closed           sync.WaitGroup
@@ -52,6 +53,7 @@ func newBroadcaster(self uint64, N int, f int, broadcastTimeout time.Duration, c
 	b := &broadcaster{
 		comm:             c,
 		f:                f,
+		N:                N,
 		broadcastTimeout: broadcastTimeout,
 		msgChans:         chans,
 		closedCh:         make(chan struct{}),
@@ -83,7 +85,7 @@ func (b *broadcaster) Wait() {
 	b.closed.Wait()
 }
 
-func (b *broadcaster) drainerSend(dest uint64, send *sendRequest, successLastTime bool) bool {
+func (b *broadcaster) drainerSend(peerType string, dest uint64, send *sendRequest, successLastTime bool) bool {
 	// Note, successLastTime is purely used to avoid flooding the log with unnecessary warning messages when a network problem is encountered
 	defer func() {
 		b.closed.Done()
@@ -97,6 +99,7 @@ func (b *broadcaster) drainerSend(dest uint64, send *sendRequest, successLastTim
 		return false
 	}
 
+	// call peer Unicast3
 	err = b.comm.Unicast(send.msg, h)
 	if err != nil {
 		if successLastTime {
@@ -122,7 +125,7 @@ func (b *broadcaster) drainer(dest uint64) {
 	for {
 		select {
 		case send := <-destChan:
-			successLastTime = b.drainerSend(dest, send, successLastTime)
+			successLastTime = b.drainerSend("vp", dest, send, successLastTime)
 		case <-b.closedCh:
 			for {
 				// Drain the message channel to free calling waiters before we shut down

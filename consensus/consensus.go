@@ -47,6 +47,11 @@ type Communicator interface {
 	Unicast(msg *pb.Message, receiverHandle *pb.PeerID) error
 }
 
+// Communicator is used to send messages to other validators
+type Learner interface {
+	NotifyBlockAdded(height uint64, currentBlockHash []byte, replicas []uint64) error
+}
+
 // NetworkStack is used to retrieve network info and send messages
 type NetworkStack interface {
 	Communicator
@@ -83,7 +88,7 @@ type LegacyExecutor interface {
 type Executor interface {
 	Start()                                                                     // Bring up the resources needed to use this interface
 	Halt()                                                                      // Tear down the resources needed to use this interface
-	Execute(tag interface{}, txs []*pb.Transaction)                             // Executes a set of transactions, this may be called in succession
+	Execute(tag interface{}, txs []*pb.Transaction)                           // Executes a set of transactions, this may be called in succession
 	Commit(tag interface{}, metadata []byte)                                    // Commits whatever transactions have been executed
 	Rollback(tag interface{})                                                   // Rolls back whatever transactions have been executed
 	UpdateState(tag interface{}, target *pb.BlockchainInfo, peers []*pb.PeerID) // Attempts to synchronize state to a particular target, implicitly calls rollback if needed
@@ -112,4 +117,5 @@ type Stack interface {
 	LedgerManager
 	ReadOnlyLedger
 	StatePersistor
+	Learner
 }

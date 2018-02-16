@@ -11,6 +11,7 @@ import (
 	"errors"
 	"strconv"
 	"sync"
+	"runtime/debug"
 )
 
 var logger *logging.Logger
@@ -21,28 +22,58 @@ func Init() {
 }
 
 
-func Enter()  {
+func Foo() {}
 
+const (
+	EXIT  int = -1
+	ENTER int = 0
+	INFO  int = 1
+	DEBUG int = 2
+	WARN  int = 3
+	ERROR int = 4
+)
+
+func Log(level int, format string, args ...interface{}) {
 	if logger == nil {
 		return
+	}
+
+	action := ""
+	if level == ENTER {
+		action = "[Enter]"
+		format = format + " in"
+	} else if level == EXIT {
+		action = "[Exit]"
+		format = format + " out"
 	}
 
 	pc, _, _, _ := runtime.Caller(1)
 	f := runtime.FuncForPC(pc)
 
-	logger.Warningf("[%d] %s", curGoroutineID(), f.Name())
+	format = "[gid_" + goidstr() + "] " + action + "" + f.Name() + " :" + format
+
+	switch level {
+	case ENTER:
+	case EXIT:
+	case INFO:
+		logger.Infof(format, args...)
+	case DEBUG:
+		logger.Debugf(format, args...)
+	case WARN:
+		logger.Warningf(format, args...)
+	case ERROR:
+		logger.Errorf(format, args...)
+	}
 }
 
-func Exit()  {
+// dump call stack
+func DumpStack() {
+	logger.Infof("%s", debug.Stack())
+}
 
-	if logger == nil {
-		return
-	}
-
-	pc, _, _, _ := runtime.Caller(1)
-	f := runtime.FuncForPC(pc)
-
-	logger.Warningf("[%d] %s", curGoroutineID(), f.Name())
+// return go routine id
+func goidstr() string {
+	return strconv.FormatUint(getGoroutineID(), 10)
 }
 
 var littleBuf = sync.Pool{
@@ -52,7 +83,7 @@ var littleBuf = sync.Pool{
 	},
 }
 
-func curGoroutineID() uint64 {
+func getGoroutineID() uint64 {
 	bp := littleBuf.Get().(*[]byte)
 	defer littleBuf.Put(bp)
 	b := *bp

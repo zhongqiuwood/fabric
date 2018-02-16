@@ -53,6 +53,7 @@ var syncStateSnapshotChannelSize int
 var syncStateDeltasChannelSize int
 var syncBlocksChannelSize int
 var validatorEnabled bool
+var mode string
 
 // Note: There is some kind of circular import issue that prevents us from
 // importing the "core" package into the "peer" package. The
@@ -92,9 +93,23 @@ func CacheConfiguration() (err error) {
 		}
 		if viper.GetBool("peer.validator.enabled") {
 			peerType = pb.PeerEndpoint_VALIDATOR
+
 		} else {
 			peerType = pb.PeerEndpoint_NON_VALIDATOR
 		}
+
+		if viper.GetString("peer.validator.mode") == "vp" {
+			peerType = pb.PeerEndpoint_VALIDATOR
+		}
+
+		if viper.GetString("peer.validator.mode") == "nvp" {
+			peerType = pb.PeerEndpoint_NON_VALIDATOR
+		}
+
+		if viper.GetString("peer.validator.mode") == "lvp" {
+			peerType = pb.PeerEndpoint_LEARNER_VALIDATOR
+		}
+
 		return &pb.PeerEndpoint{ID: &pb.PeerID{Name: viper.GetString("peer.id")}, Address: peerAddress, Type: peerType}, nil
 	}
 
@@ -105,6 +120,7 @@ func CacheConfiguration() (err error) {
 	syncStateDeltasChannelSize = viper.GetInt("peer.sync.state.deltas.channelSize")
 	syncBlocksChannelSize = viper.GetInt("peer.sync.blocks.channelSize")
 	validatorEnabled = viper.GetBool("peer.validator.enabled")
+	mode = viper.GetString("peer.validator.mode")
 
 	securityEnabled = viper.GetBool("security.enabled")
 
@@ -173,6 +189,14 @@ func ValidatorEnabled() bool {
 		cacheConfiguration()
 	}
 	return validatorEnabled
+}
+
+// ValidatorEnabled returns the peer.validator.enabled property
+func GetMode() string {
+	if !configurationCached {
+		cacheConfiguration()
+	}
+	return mode
 }
 
 // SecurityEnabled returns the securityEnabled property from cached configuration

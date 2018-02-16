@@ -31,6 +31,9 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/op/go-logging"
+	"github.com/abchain/fabric/core/util"
 )
 
 // Helper contains the reference to the peer's MessageHandlerCoordinator
@@ -105,9 +108,92 @@ func (h *Helper) GetNetworkHandles() (self *pb.PeerID, network []*pb.PeerID, err
 	return
 }
 
+
+func (i *Helper) getBlockData() (*pb.Block, *statemgmt.StateDelta, error) {
+
+	ledger, err := ledger.GetLedger()
+	if err != nil {
+		return nil, nil, fmt.Errorf("Fail to get the ledger: %v", err)
+	}
+
+	blockHeight := ledger.GetBlockchainSize()
+	if logger.IsEnabledFor(logging.DEBUG) {
+		logger.Debugf("Preparing to broadcast with block number %v", blockHeight)
+	}
+	block, err := ledger.GetBlockByNumber(blockHeight - 1)
+	if nil != err {
+		return nil, nil, err
+	}
+	//delta, err := ledger.GetStateDeltaBytes(blockHeight)
+	delta, err := ledger.GetStateDelta(blockHeight - 1)
+	if nil != err {
+		return nil, nil, err
+	}
+	if logger.IsEnabledFor(logging.DEBUG) {
+		logger.Debugf("Got the delta state of block number %v", blockHeight)
+	}
+
+	return block, delta, nil
+}
+
+
+func (i *Helper) notifyBlockAdded(block *pb.Block, delta *statemgmt.StateDelta,
+	height uint64, currentBlockHash []byte, replicas []uint64) error {
+
+	//make Payload nil to reduce block size..
+	//anything else to remove .. do we need StateDelta ?
+	for _, tx := range block.Transactions {
+		tx.Payload = nil
+	}
+	data, err := proto.Marshal(
+		&pb.BlockState{
+			Block: block,
+			StateDelta: delta.Marshal(),
+			Height: height,
+			CurrentBlockHash: currentBlockHash,
+			})
+	if err != nil {
+		return fmt.Errorf("Fail to marshall BlockState structure: %v", err)
+	}
+	if logger.IsEnabledFor(logging.DEBUG) {
+		logger.Debug("Broadcasting Message_SYNC_BLOCK_ADDED to non-validators")
+	}
+
+	// Broadcast SYNC_BLOCK_ADDED to connected NVPs and LVPs
+	// VPs already know about this newly added block since they participate
+	// in the execution. That is, they can compare their current block with
+	// the network block
+	msg := &pb.Message{Type: pb.Message_SYNC_BLOCK_ADDED,
+		Payload: data, Timestamp: util.CreateUtcTimestamp()}
+
+	if errs := i.Broadcast(msg, pb.PeerEndpoint_NON_VALIDATOR); nil != errs {
+		logger.Errorf("Failed to broadcast to nvp with errors: %v", errs)
+	}
+
+	if errs := i.Broadcast(msg, pb.PeerEndpoint_LEARNER_VALIDATOR); nil != errs {
+		logger.Errorf("Failed to broadcast to lvp with errors: %v", errs)
+	}
+	return nil
+}
+
+func (h *Helper) NotifyBlockAdded(height uint64, currentBlockHash []byte, replicas []uint64) error {
+
+	var data *pb.Block
+	var delta *statemgmt.StateDelta
+	var err error
+
+	if data, delta, err = h.getBlockData(); nil != err {
+		return err
+	}
+
+	go h.notifyBlockAdded(data, delta, height, currentBlockHash, replicas)
+	return nil
+}
+
 // Broadcast sends a message to all validating peers
 func (h *Helper) Broadcast(msg *pb.Message, peerType pb.PeerEndpoint_Type) error {
-	errors := h.coordinator.Broadcast(msg, peerType)
+
+	errors := h.coordinator.Broadcast2Peers(msg, peerType)
 	if len(errors) > 0 {
 		return fmt.Errorf("Couldn't broadcast successfully")
 	}
@@ -116,7 +202,7 @@ func (h *Helper) Broadcast(msg *pb.Message, peerType pb.PeerEndpoint_Type) error
 
 // Unicast sends a message to a specified receiver
 func (h *Helper) Unicast(msg *pb.Message, receiverHandle *pb.PeerID) error {
-	return h.coordinator.Unicast(msg, receiverHandle)
+	return h.coordinator.Unicast2Peer(msg, receiverHandle)
 }
 
 // Sign a message with this validator's signing key
@@ -346,9 +432,9 @@ func (h *Helper) Rollback(tag interface{}) {
 
 // UpdateState attempts to synchronize state to a particular target, implicitly calls rollback if needed
 func (h *Helper) UpdateState(tag interface{}, target *pb.BlockchainInfo, peers []*pb.PeerID) {
-	if h.valid {
-		logger.Warning("State transfer is being called for, but the state has not been invalidated")
-	}
+	//if h.valid {
+	//	logger.Warning("State transfer is being called for, but the state has not been invalidated")
+	//}
 
 	h.executor.UpdateState(tag, target, peers)
 }

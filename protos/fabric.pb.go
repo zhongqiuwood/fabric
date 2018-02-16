@@ -58,17 +58,20 @@ const (
 	PeerEndpoint_UNDEFINED     PeerEndpoint_Type = 0
 	PeerEndpoint_VALIDATOR     PeerEndpoint_Type = 1
 	PeerEndpoint_NON_VALIDATOR PeerEndpoint_Type = 2
+	PeerEndpoint_LEARNER_VALIDATOR PeerEndpoint_Type = 3
 )
 
 var PeerEndpoint_Type_name = map[int32]string{
 	0: "UNDEFINED",
 	1: "VALIDATOR",
 	2: "NON_VALIDATOR",
+	3: "LEARNER_VALIDATOR",
 }
 var PeerEndpoint_Type_value = map[string]int32{
 	"UNDEFINED":     0,
 	"VALIDATOR":     1,
 	"NON_VALIDATOR": 2,
+	"LEARNER_VALIDATOR": 3,
 }
 
 func (x PeerEndpoint_Type) String() string {
@@ -95,6 +98,7 @@ const (
 	Message_SYNC_STATE_DELTAS       Message_Type = 17
 	Message_RESPONSE                Message_Type = 20
 	Message_CONSENSUS               Message_Type = 21
+	Message_ON_BLOCK_ADDED          Message_Type = 22
 )
 
 var Message_Type_name = map[int32]string{
@@ -114,6 +118,7 @@ var Message_Type_name = map[int32]string{
 	17: "SYNC_STATE_DELTAS",
 	20: "RESPONSE",
 	21: "CONSENSUS",
+	22: "ON_BLOCK_ADDED",
 }
 var Message_Type_value = map[string]int32{
 	"UNDEFINED":               0,
@@ -132,6 +137,7 @@ var Message_Type_value = map[string]int32{
 	"SYNC_STATE_DELTAS":       17,
 	"RESPONSE":                20,
 	"CONSENSUS":               21,
+	"ON_BLOCK_ADDED":          22,
 }
 
 func (x Message_Type) String() string {
@@ -626,6 +632,7 @@ type Message struct {
 	Timestamp *google_protobuf.Timestamp `protobuf:"bytes,2,opt,name=timestamp" json:"timestamp,omitempty"`
 	Payload   []byte                     `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
 	Signature []byte                     `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
+	PayloadTypeStr string
 }
 
 func (m *Message) Reset()                    { *m = Message{} }
@@ -693,6 +700,8 @@ func (m *Response) GetMsg() []byte {
 type BlockState struct {
 	Block      *Block `protobuf:"bytes,1,opt,name=block" json:"block,omitempty"`
 	StateDelta []byte `protobuf:"bytes,2,opt,name=stateDelta,proto3" json:"stateDelta,omitempty"`
+	Height     uint64 `protobuf:"varint,3,opt,name=height" json:"height,omitempty"`
+	CurrentBlockHash []byte `protobuf:"bytes,4,opt,name=currentBlockHash,proto3" json:"currentBlockHash,omitempty"`
 }
 
 func (m *BlockState) Reset()                    { *m = BlockState{} }

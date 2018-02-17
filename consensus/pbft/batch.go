@@ -28,7 +28,7 @@ import (
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
-	"github.com/abchain/fabric/debugger"
+	//"github.com/abchain/fabric/debugger"
 )
 
 type obcBatch struct {
@@ -369,7 +369,6 @@ func (op *obcBatch) ProcessEvent(event events.Event) events.Event {
 			target: et.target,
 		}
 	case execDoneEvent:
-		debugger.Log(0, "execDoneEvent <%+v>", et)
 		if res := op.pbft.ProcessEvent(event); res != nil {
 			// This may trigger a view change, if so, process it, we will resubmit on new view
 			return res

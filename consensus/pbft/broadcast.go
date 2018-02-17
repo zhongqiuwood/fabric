@@ -99,7 +99,6 @@ func (b *broadcaster) drainerSend(peerType string, dest uint64, send *sendReques
 		return false
 	}
 
-	// call peer Unicast3
 	err = b.comm.Unicast(send.msg, h)
 	if err != nil {
 		if successLastTime {

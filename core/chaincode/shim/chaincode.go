@@ -163,18 +163,6 @@ func StartInProc(env []string, args []string, cc Chaincode, recv <-chan *pb.Chai
 	return err
 }
 
-//func getPeerAddress() string {
-//	if peerAddress != "" {
-//		return peerAddress
-//	}
-//
-//	if peerAddress = viper.GetString("peer.address"); peerAddress == "" {
-//		chaincodeLogger.Fatalf("peer.address not configured, can't connect to peer")
-//	}
-//
-//	return peerAddress
-//}
-
 func newPeerClientConnection(peerAddress string) (*grpc.ClientConn, error) {
 	if comm.TLSEnabled() {
 		return comm.NewClientConnectionWithAddress(peerAddress, true, true, comm.InitTLSForPeer())

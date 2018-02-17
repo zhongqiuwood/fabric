@@ -45,11 +45,7 @@ var nativeCcMap map[string]shim.Chaincode
 func (ccs *ChaincodeSupport) LoadNativeChaincode() {
 
 	nativeCcMap = make(map[string]shim.Chaincode)
-	//nativeCcMap["native_chaincode01"] = &native_chaincode01.SimpleChaincode{}
-	//nativeCcMap["native_chaincode02"] = &native_chaincode02.SimpleChaincode{}
-	//nativeCcMap["native_chaincode02"] = &native_chaincode02.SimpleChaincode{}
 	nativeCcMap["mycc"] = &native_chaincode03.SimpleChaincode{}
-
 	ccs.startNativeChaincode()
 }
 
@@ -58,9 +54,6 @@ func (ccs *ChaincodeSupport) startNativeChaincode() {
 
 	shim.Init(false)
 	go ccs.startNcc("mycc")
-	//go ccs.startNcc("native_chaincode01")
-	//go ccs.startNcc("native_chaincode02")
-	//go ccs.startNcc("native_chaincode03")
 }
 
 
@@ -223,7 +216,6 @@ type ChaincodeSupport struct {
 	ccExecTimeout        time.Duration
 	chaincodeInstallPath string
 	ccmode               string  // chain code mode
-	//userRunsCC           bool
 	secHelper            crypto.Peer
 	peerNetworkID        string
 	peerID               string

@@ -319,7 +319,7 @@ func newPbftCore(id uint64, config *viper.Viper, consumer innerStack, etf events
 	instance.missingReqBatches = make(map[string]bool)
 
 	instance.restoreState()
-	instance.dump()
+	instance.dump(debugger.DEBUG)
 
 	instance.viewChangeSeqNo = ^uint64(0) // infinity
 	instance.updateViewChangeSeqNo()
@@ -327,52 +327,29 @@ func newPbftCore(id uint64, config *viper.Viper, consumer innerStack, etf events
 	return instance
 }
 
-
-func (instance *pbftCore) dumpv()  {
+func (instance *pbftCore) dump(level int)  {
 	return
-
-	debugger.Log(0, "==========================================")
-
-	debugger.Log(2, "replica<%d>, activeView<%t>, " +
-		"view<%d>, oldViewCnt<%+v>, checkpointStore<%+v>, newViewStore<%+v>," +
-		"hChkpts<%+v>, viewChangeStore<%+v>",
-		instance.id,
-		instance.activeView,
-		instance.view,
-		instance.oldViewCnt,
-		instance.checkpointStore,
-		instance.newViewStore,
-		instance.hChkpts,
-		instance.viewChangeStore)
-
-	defer debugger.Log(1, "==========================================")
-}
-
-
-
-func (instance *pbftCore) dump()  {
-	return
-	debugger.Log(0, "======================================================================================= in")
+	debugger.Log(level, "======================================================================================= in")
 
 	i := 0
 	for k, v := range instance.chkpts {
 		i++
-		debugger.Log(2, "[%d]: instance.chkpts[%d]: [%+v]", i, k, v)
+		debugger.Log(level, "[%d]: instance.chkpts[%d]: [%+v]", i, k, v)
 	}
-	debugger.Log(2, "------------------------------------------------------")
+	debugger.Log(level, "------------------------------------------------------")
 
 	i = 0
 	for k, v := range instance.pset {
 		i++
-		debugger.Log(2, "[%d]: instance.pset[%d]: [%+v]", i, k, *v)
+		debugger.Log(level, "[%d]: instance.pset[%d]: [%+v]", i, k, *v)
 	}
 
-	debugger.Log(2, "------------------------------------------------------")
+	debugger.Log(level, "------------------------------------------------------")
 
 	i = 0
 	for k, v := range instance.qset {
 		i++
-		debugger.Log(2, "[%d]: instance.qset[%+v]: [%+v]", i, k, *v)
+		debugger.Log(level, "[%d]: instance.qset[%+v]: [%+v]", i, k, *v)
 	}
 
 	debugger.Log(2, "------------------------------------------------------")
@@ -380,10 +357,10 @@ func (instance *pbftCore) dump()  {
 	i = 0
 	for k, v := range instance.reqBatchStore {
 		i++
-		debugger.Log(2, "[%d]: instance.reqBatchStore[%s]: [%+v]", i, k, *v)
+		debugger.Log(level, "[%d]: instance.reqBatchStore[%s]: [%+v]", i, k, *v)
 	}
 
-	defer debugger.Log(1, "======================================================================================= out")
+	defer debugger.Log(level, "======================================================================================= out")
 }
 
 

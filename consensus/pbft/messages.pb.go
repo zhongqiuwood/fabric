@@ -59,7 +59,6 @@ type Message struct {
 	//	*Message_ReturnRequestBatch
 	Payload isMessage_Payload `protobuf_oneof:"payload"`
 	PayloadType int32
-	//PayloadTypeName string
 }
 
 func (m *Message) Reset()                    { *m = Message{} }
@@ -203,56 +202,46 @@ func _Message_OneofMarshaler(msg proto.Message, b *proto.Buffer) error {
 	// payload
 	switch x := m.Payload.(type) {
 	case *Message_RequestBatch:
-		//m.Payload
-		//m.PayloadTypeName = Message_RequestBatch_Value.String()
 		b.EncodeVarint(1<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.RequestBatch); err != nil {
 			return err
 		}
 	case *Message_PrePrepare:
-		//m.PayloadTypeName = Message_PrePrepare_Value.String()
 		b.EncodeVarint(2<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.PrePrepare); err != nil {
 			return err
 		}
 	case *Message_Prepare:
-		//m.PayloadTypeName = Message_Prepare_Value.String()
 		b.EncodeVarint(3<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Prepare); err != nil {
 			return err
 		}
 	case *Message_Commit:
-		//m.PayloadTypeName = Message_Commit_Value.String()
 		b.EncodeVarint(4<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Commit); err != nil {
 			return err
 		}
 	case *Message_Checkpoint:
-		//m.PayloadTypeName = Message_Checkpoint_Value.String()
 		b.EncodeVarint(5<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Checkpoint); err != nil {
 			return err
 		}
 	case *Message_ViewChange:
-		//m.PayloadTypeName = Message_ViewChange_Value.String()
 		b.EncodeVarint(6<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.ViewChange); err != nil {
 			return err
 		}
 	case *Message_NewView:
-		//m.PayloadTypeName = Message_NewView_Value.String()
 		b.EncodeVarint(7<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.NewView); err != nil {
 			return err
 		}
 	case *Message_FetchRequestBatch:
-		//m.PayloadTypeName = Message_FetchRequestBatch_Value.String()
 		b.EncodeVarint(8<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.FetchRequestBatch); err != nil {
 			return err
 		}
 	case *Message_ReturnRequestBatch:
-		//m.PayloadTypeName = Message_ReturnRequestBatch_Value.String()
 		b.EncodeVarint(9<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.ReturnRequestBatch); err != nil {
 			return err

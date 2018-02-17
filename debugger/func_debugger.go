@@ -31,6 +31,7 @@ const (
 	DEBUG int = 2
 	WARN  int = 3
 	ERROR int = 4
+	NOTICE int = 5
 )
 
 func Log(level int, format string, args ...interface{}) {
@@ -55,6 +56,8 @@ func Log(level int, format string, args ...interface{}) {
 	switch level {
 	case ENTER:
 	case EXIT:
+	case NOTICE:
+		logger.Debugf(format, args...)
 	case INFO:
 		logger.Infof(format, args...)
 	case DEBUG:

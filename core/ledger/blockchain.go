@@ -334,9 +334,11 @@ func (blockchain *blockchain) String() string {
 }
 
 func (blockchain *blockchain) Dump(level int) {
-	debugger.Log(level, "=======================================================")
 
 	size := blockchain.getSize()
+
+	debugger.Log(level, "========================blockchain height: %d=============================", size)
+
 	for i := uint64(0); i < size; i++ {
 		block, blockErr := blockchain.getBlock(i)
 		if blockErr != nil {
@@ -349,5 +351,5 @@ func (blockchain *blockchain) Dump(level int) {
 			blockHash, block.PreviousBlockHash, block.ConsensusMetadata, block.StateHash,
 			block.Timestamp, block.NonHashData, block.Transactions)
 	}
-	debugger.Log(level, "=======================================================")
+	debugger.Log(level, "==========================================================================")
 }

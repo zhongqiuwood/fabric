@@ -79,11 +79,10 @@ func NewConsensusHandler(coord peer.MessageHandlerCoordinator,
 // HandleMessage handles the incoming Fabric messages for the Peer
 func (handler *ConsensusHandler) HandleMessage(msg *pb.Message) error {
 
-	if msg.Type != pb.Message_DISC_PEERS &&
-		msg.Type != pb.Message_DISC_GET_PEERS &&
+	if msg.Type != pb.Message_DISC_PEERS && msg.Type != pb.Message_DISC_GET_PEERS &&
 		msg.Type != pb.Message_DISC_HELLO {
 		senderPE2, _ := handler.To()
-		debugger.Log(debugger.DEBUG,"ConsensusHandler received message from <%s>: <%s>",
+		debugger.Log(debugger.NOTICE,"ConsensusHandler received message from <%s>: <%s>",
 			senderPE2.ID, msg.Type.String())
 	}
 

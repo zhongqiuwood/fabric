@@ -47,9 +47,9 @@ type Communicator interface {
 	Unicast(msg *pb.Message, receiverHandle *pb.PeerID) error
 }
 
-// Communicator is used to send messages to other validators
+// Communicator is used to send messages to learner validators
 type Learner interface {
-	NotifyBlockAdded(height uint64, currentBlockHash []byte, replicas []uint64) error
+	NotifyBlockAdded(height uint64, currentBlockHash []byte) error
 }
 
 // NetworkStack is used to retrieve network info and send messages

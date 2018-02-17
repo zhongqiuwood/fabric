@@ -46,30 +46,6 @@ var _ = math.Inf
 const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
 
 
-const (
-	Message_RequestBatch_Value int = 1
-	Message_PrePrepare_Value int = 2
-	Message_Prepare_Value    int = 3
-	Message_Commit_Value     int = 4
-	Message_Checkpoint_Value int = 5
-	Message_ViewChange_Value int = 6
-	Message_NewView_Value    int = 7
-	Message_FetchRequestBatch_Value  int = 8
-	Message_ReturnRequestBatch_Value int = 9
-)
-
-var PBFT_Message_Type_name = map[int]string{
-	1: "[1]Message_RequestBatch",
-	2: "[2]Message_PrePrepare",
-	3: "[3]Message_Prepare",
-	4: "[4]Message_Commit",
-	5: "[5]Message_Checkpoint",
-	6: "[6]Message_ViewChange",
-	7: "[7]Message_NewView",
-	8: "[8]Message_FetchRequestBatch",
-	9: "[9]Message_ReturnRequestBatch",
-}
-
 type Message struct {
 	// Types that are valid to be assigned to Payload:
 	//	*Message_RequestBatch
@@ -82,9 +58,9 @@ type Message struct {
 	//	*Message_FetchRequestBatch
 	//	*Message_ReturnRequestBatch
 	Payload isMessage_Payload `protobuf_oneof:"payload"`
-	PayloadType int
-	PayloadTypeStr string
-	}
+	PayloadType int32
+	//PayloadTypeName string
+}
 
 func (m *Message) Reset()                    { *m = Message{} }
 func (m *Message) String() string            { return proto.CompactTextString(m) }
@@ -228,55 +204,55 @@ func _Message_OneofMarshaler(msg proto.Message, b *proto.Buffer) error {
 	switch x := m.Payload.(type) {
 	case *Message_RequestBatch:
 		//m.Payload
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_RequestBatch_Value]
+		//m.PayloadTypeName = Message_RequestBatch_Value.String()
 		b.EncodeVarint(1<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.RequestBatch); err != nil {
 			return err
 		}
 	case *Message_PrePrepare:
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_PrePrepare_Value]
+		//m.PayloadTypeName = Message_PrePrepare_Value.String()
 		b.EncodeVarint(2<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.PrePrepare); err != nil {
 			return err
 		}
 	case *Message_Prepare:
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_Prepare_Value]
+		//m.PayloadTypeName = Message_Prepare_Value.String()
 		b.EncodeVarint(3<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Prepare); err != nil {
 			return err
 		}
 	case *Message_Commit:
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_Commit_Value]
+		//m.PayloadTypeName = Message_Commit_Value.String()
 		b.EncodeVarint(4<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Commit); err != nil {
 			return err
 		}
 	case *Message_Checkpoint:
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_Checkpoint_Value]
+		//m.PayloadTypeName = Message_Checkpoint_Value.String()
 		b.EncodeVarint(5<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.Checkpoint); err != nil {
 			return err
 		}
 	case *Message_ViewChange:
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_ViewChange_Value]
+		//m.PayloadTypeName = Message_ViewChange_Value.String()
 		b.EncodeVarint(6<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.ViewChange); err != nil {
 			return err
 		}
 	case *Message_NewView:
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_NewView_Value]
+		//m.PayloadTypeName = Message_NewView_Value.String()
 		b.EncodeVarint(7<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.NewView); err != nil {
 			return err
 		}
 	case *Message_FetchRequestBatch:
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_FetchRequestBatch_Value]
+		//m.PayloadTypeName = Message_FetchRequestBatch_Value.String()
 		b.EncodeVarint(8<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.FetchRequestBatch); err != nil {
 			return err
 		}
 	case *Message_ReturnRequestBatch:
-		m.PayloadTypeStr = PBFT_Message_Type_name[Message_ReturnRequestBatch_Value]
+		//m.PayloadTypeName = Message_ReturnRequestBatch_Value.String()
 		b.EncodeVarint(9<<3 | proto.WireBytes)
 		if err := b.EncodeMessage(x.ReturnRequestBatch); err != nil {
 			return err
@@ -301,8 +277,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(RequestBatch)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_RequestBatch{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	case 2: // payload.pre_prepare
 		if wire != proto.WireBytes {
@@ -311,8 +286,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(PrePrepare)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_PrePrepare{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	case 3: // payload.prepare
 		if wire != proto.WireBytes {
@@ -321,8 +295,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(Prepare)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_Prepare{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	case 4: // payload.commit
 		if wire != proto.WireBytes {
@@ -331,8 +304,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(Commit)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_Commit{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	case 5: // payload.checkpoint
 		if wire != proto.WireBytes {
@@ -341,8 +313,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(Checkpoint)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_Checkpoint{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	case 6: // payload.view_change
 		if wire != proto.WireBytes {
@@ -351,8 +322,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(ViewChange)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_ViewChange{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	case 7: // payload.new_view
 		if wire != proto.WireBytes {
@@ -361,8 +331,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(NewView)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_NewView{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	case 8: // payload.fetch_request_batch
 		if wire != proto.WireBytes {
@@ -371,8 +340,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(FetchRequestBatch)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_FetchRequestBatch{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	case 9: // payload.return_request_batch
 		if wire != proto.WireBytes {
@@ -381,8 +349,7 @@ func _Message_OneofUnmarshaler(msg proto.Message, tag, wire int, b *proto.Buffer
 		msg := new(RequestBatch)
 		err := b.DecodeMessage(msg)
 		m.Payload = &Message_ReturnRequestBatch{msg}
-		m.PayloadType = tag
-		m.PayloadTypeStr = PBFT_Message_Type_name[tag]
+		m.PayloadType = int32(tag)
 		return true, err
 	default:
 		return false, nil

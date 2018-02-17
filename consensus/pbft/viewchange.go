@@ -20,7 +20,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
-
+	pb "github.com/abchain/fabric/protos"
 	"github.com/abchain/fabric/consensus/util/events"
 )
 
@@ -176,7 +176,8 @@ func (instance *pbftCore) sendViewChange() events.Event {
 	logger.Infof("Replica %d sending view-change, v:%d, h:%d, |C|:%d, |P|:%d, |Q|:%d",
 		instance.id, vc.View, vc.H, len(vc.Cset), len(vc.Pset), len(vc.Qset))
 
-	instance.innerBroadcast(&Message{Payload: &Message_ViewChange{ViewChange: vc}})
+	instance.innerBroadcast(&Message{
+		Payload: &Message_ViewChange{ViewChange: vc},PayloadType: int32(pb.Message_ViewChange_Value),})
 
 	instance.vcResendTimer.Reset(instance.vcResendTimeout, viewChangeResendTimerEvent{})
 
@@ -317,7 +318,8 @@ func (instance *pbftCore) sendNewView() events.Event {
 	logger.Infof("Replica %d is new primary, sending new-view, v:%d, X:%+v",
 		instance.id, nv.View, nv.Xset)
 
-	instance.innerBroadcast(&Message{Payload: &Message_NewView{NewView: nv}})
+	instance.innerBroadcast(&Message{
+		Payload: &Message_NewView{NewView: nv},PayloadType:int32(pb.Message_NewView_Value),})
 	instance.newViewStore[instance.view] = nv
 	return instance.processNewView()
 }
@@ -536,7 +538,8 @@ func (instance *pbftCore) processNewView2(nv *NewView) events.Event {
 				cert.sentPrepare = true
 				instance.recvPrepare(prep)
 			}
-			instance.innerBroadcast(&Message{Payload: &Message_Prepare{Prepare: prep}})
+			instance.innerBroadcast(&Message{
+				Payload: &Message_Prepare{Prepare: prep},PayloadType: int32(pb.Message_Prepare_Value),})
 		}
 	} else {
 		logger.Debugf("Replica %d is now primary, attempting to resubmit requests", instance.id)

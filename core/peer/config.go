@@ -36,6 +36,7 @@ import (
 	"github.com/spf13/viper"
 
 	pb "github.com/abchain/fabric/protos"
+	"strings"
 )
 
 // Is the configuration cached?
@@ -54,6 +55,7 @@ var syncStateDeltasChannelSize int
 var syncBlocksChannelSize int
 var validatorEnabled bool
 var mode string
+var trustedValidators []*pb.PeerID
 
 // Note: There is some kind of circular import issue that prevents us from
 // importing the "core" package into the "peer" package. The
@@ -93,20 +95,17 @@ func CacheConfiguration() (err error) {
 		}
 		if viper.GetBool("peer.validator.enabled") {
 			peerType = pb.PeerEndpoint_VALIDATOR
-
 		} else {
 			peerType = pb.PeerEndpoint_NON_VALIDATOR
 		}
 
-		if viper.GetString("peer.validator.mode") == "vp" {
+		peerMode := viper.GetString("peer.validator.mode")
+
+		if peerMode == "vp" {
 			peerType = pb.PeerEndpoint_VALIDATOR
-		}
-
-		if viper.GetString("peer.validator.mode") == "nvp" {
+		} else if peerMode == "nvp" {
 			peerType = pb.PeerEndpoint_NON_VALIDATOR
-		}
-
-		if viper.GetString("peer.validator.mode") == "lvp" {
+		} else if peerMode == "lvp" {
 			peerType = pb.PeerEndpoint_LEARNER_VALIDATOR
 		}
 
@@ -121,6 +120,15 @@ func CacheConfiguration() (err error) {
 	syncBlocksChannelSize = viper.GetInt("peer.sync.blocks.channelSize")
 	validatorEnabled = viper.GetBool("peer.validator.enabled")
 	mode = viper.GetString("peer.validator.mode")
+
+	trustedPeers := viper.GetString("peer.validator.trustedValidators")
+	if len(trustedPeers) > 0 {
+		trustedValidators = make([]*pb.PeerID, 0)
+		trustedPeerList := strings.Split(trustedPeers, ",")
+		for _, item := range trustedPeerList {
+			trustedValidators = append(trustedValidators, &pb.PeerID{item})
+		}
+	}
 
 	securityEnabled = viper.GetBool("security.enabled")
 
@@ -198,6 +206,14 @@ func GetMode() string {
 	}
 	return mode
 }
+
+func GetTrustedValidators() []*pb.PeerID {
+	if !configurationCached {
+		cacheConfiguration()
+	}
+	return trustedValidators
+}
+
 
 // SecurityEnabled returns the securityEnabled property from cached configuration
 func SecurityEnabled() bool {

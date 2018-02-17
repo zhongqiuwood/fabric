@@ -99,9 +99,9 @@ type coordinatorImpl struct {
 // If the call returns an error, a boolean is included which indicates if the error may be transient and the caller should retry
 func (sts *coordinatorImpl) SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool) {
 
-	debugger.Log(debugger.INFO, "in: Syncing_to_block<%d> with peers %v, target %x", blockNumber, peerIDs, blockHash)
+	debugger.Log(debugger.NOTICE, "in: Syncing_to_block<%d> with peers %v, target %x", blockNumber, peerIDs, blockHash)
 
-	defer debugger.Log(debugger.INFO, "out: Syncing_to_block<%d>", blockNumber)
+	defer debugger.Log(debugger.NOTICE, "out: Syncing_to_block<%d>", blockNumber)
 
 	if !sts.inProgress {
 		sts.currentStateBlockNumber = sts.stack.GetBlockchainSize() - 1 // The block height is one more than the latest block number
@@ -113,9 +113,9 @@ func (sts *coordinatorImpl) SyncToTarget(blockNumber uint64, blockHash []byte, p
 		sts.inProgress = false
 	}
 
-	debugger.Log(debugger.INFO, "Syncing_to_block<%d> returned, now at block height %d with err=%v recoverable=%v, hash<%x>",
-			blockNumber,
-		sts.stack.GetBlockchainSize(), err, recoverable, blockHash)
+	debugger.Log(debugger.INFO, "Syncing to block<%d>, target peers<%+v> returned, " +
+		"now at block height %d with err=%v recoverable=%v", blockNumber, peerIDs,
+		sts.stack.GetBlockchainSize(), err, recoverable)
 
 	sts.stack.DumpBlockChain()
 
@@ -459,7 +459,9 @@ func (sts *coordinatorImpl) syncBlockchainToTarget(blockSyncReq *blockSyncReq) {
 		}
 
 		if blockCursor+1 <= blockSyncReq.blockNumber {
-			logger.Debugf("Skipped remote syncing of block %d through %d because they were already present and valid", blockSyncReq.blockNumber, blockCursor+1)
+			debugger.Log(debugger.INFO,
+				"Skipped remote syncing to <%+v> for block %d through %d because they were already present and valid",
+					blockSyncReq.peerIDs, blockSyncReq.blockNumber, blockCursor+1)
 		}
 
 		var err error

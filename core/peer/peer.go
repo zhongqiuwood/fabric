@@ -42,13 +42,14 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/debugger"
 )
 
 // Peer provides interface for a peer
 type Peer interface {
 	GetPeerEndpoint() (*pb.PeerEndpoint, error)
 	NewOpenchainDiscoveryHello() (*pb.Message, error)
-	OnNotifyBlockAdded(*pb.BlockState)
+	OnNotifyBlockAdded(*pb.BlockState, *pb.PeerID)
 }
 
 // BlocksRetriever interface for retrieving blocks .
@@ -178,6 +179,11 @@ type handlerMap struct {
 	m map[pb.PeerID]MessageHandler
 }
 
+type syncTaskMap struct {
+	sync.RWMutex
+	peerListMap map[uint64][]*pb.PeerID
+}
+
 // HandlerFactory for creating new MessageHandlers
 type HandlerFactory func(MessageHandlerCoordinator, ChatStream, bool) (MessageHandler, error)
 
@@ -196,12 +202,14 @@ type Impl struct {
 	discHelper     discovery.Discovery
 	discPersist    bool
 	mode 		   string
+	trustedValidators []*pb.PeerID
+	syncTaskMap    *syncTaskMap
 }
 
 // TransactionProccesor responsible for processing of Transactions
 type TransactionProccesor interface {
 	ProcessTransactionMsg(*pb.Message, *pb.Transaction) *pb.Response
-	OnNotifyBlockAdded(*pb.BlockState)
+	SyncBlockState(*pb.BlockState, []*pb.PeerID)
 }
 
 // Engine Responsible for managing Peer network communications (Handlers) and processing of Transactions
@@ -222,8 +230,11 @@ func NewPeerWithHandler(secHelperFunc func() crypto.Peer, handlerFact HandlerFac
 	}
 	peer.handlerFactory = handlerFact
 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
+	peer.syncTaskMap = &syncTaskMap{peerListMap: make(map[uint64][]*pb.PeerID)}
 	peer.mode = GetMode()
-
+	if peer.mode == "lvp" {
+		peer.trustedValidators = GetTrustedValidators()
+	}
 	peer.secHelper = secHelperFunc()
 
 	// Install security object for peer
@@ -249,10 +260,15 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	peerNodes := peer.initDiscovery()
 
 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
+	peer.syncTaskMap = &syncTaskMap{peerListMap: make(map[uint64][]*pb.PeerID)}
 
 	peer.isValidator = ValidatorEnabled()
 	peer.secHelper = secHelperFunc()
 	peer.mode = GetMode()
+
+	if peer.mode == "lvp" {
+		peer.trustedValidators = GetTrustedValidators()
+	}
 
 	// Install security object for peer
 	if SecurityEnabled() {
@@ -427,6 +443,26 @@ func (p *Impl) cloneHandlerMap(typ pb.PeerEndpoint_Type) map[pb.PeerID]MessageHa
 	return clone
 }
 
+
+func (p *Impl) getPeerNumber(typ pb.PeerEndpoint_Type) int {
+	p.handlerMap.RLock()
+	defer p.handlerMap.RUnlock()
+	num := int(0)
+	for _, msgHandler := range p.handlerMap.m {
+		//pb.PeerEndpoint_UNDEFINED collects all peers
+		if typ != pb.PeerEndpoint_UNDEFINED {
+			toPeerEndpoint, _ := msgHandler.To()
+			//ignore endpoints that don't match type filter
+			if typ == toPeerEndpoint.Type {
+				num++
+			}
+		} else {
+			num++
+		}
+	}
+	return num
+}
+
 // Broadcast broadcast a message to each of the currently registered PeerEndpoints of given type
 // Broadcast will broadcast to all registered PeerEndpoints if the type is PeerEndpoint_UNDEFINED
 func (p *Impl) Broadcast2Peers(msg *pb.Message, typ pb.PeerEndpoint_Type) []error {
@@ -519,7 +555,8 @@ func (p *Impl) sendTransactionsToLocalEngine(transaction *pb.Transaction) *pb.Re
 	}
 
 	var response *pb.Response
-	msg := &pb.Message{Type: pb.Message_CHAIN_TRANSACTION, Payload: data, Timestamp: util.CreateUtcTimestamp()}
+	msg := &pb.Message{Type: pb.Message_CHAIN_TRANSACTION, Payload: data,
+		Timestamp: util.CreateUtcTimestamp(), PayloadType: int32(pb.Message_Transaction_Value)}
 	peerLogger.Debugf("Sending message %s with timestamp %v to local engine", msg.Type, msg.Timestamp)
 	response = p.engine.ProcessTransactionMsg(msg, transaction)
 
@@ -555,9 +592,71 @@ func (p *Impl) ensureConnected() {
 
 }
 
-func (p *Impl) OnNotifyBlockAdded(blockState *pb.BlockState)  {
-	if p.engine != nil {
-		p.engine.OnNotifyBlockAdded(blockState)
+func (p *Impl) clearSyncTaskMap(height uint64, highWaterMark uint64, lowWaterMark uint64) {
+	if height <= highWaterMark || len(p.syncTaskMap.peerListMap) <= int(highWaterMark) {
+		return
+	}
+
+	for k := range p.syncTaskMap.peerListMap {
+		if height - lowWaterMark > k {
+			delete(p.syncTaskMap.peerListMap, k)
+			debugger.Log(debugger.NOTICE,
+				"remove p.syncTaskMap.peerListMap[%d], peerListMap size<%d>",
+					k, len(p.syncTaskMap.peerListMap))
+		}
+	}
+}
+
+func (p *Impl) getTargetPeers(blockState *pb.BlockState, from *pb.PeerID) []*pb.PeerID {
+
+	var targetPeers []*pb.PeerID
+
+	if len(p.trustedValidators) == 0 {
+		// do sync after at least 2f+1 notifications come in case of
+		// no peer.validator.trustedValidators specified
+		vpNum := p.getPeerNumber(pb.PeerEndpoint_VALIDATOR)
+		p.syncTaskMap.Lock()
+		defer p.syncTaskMap.Unlock()
+
+		peerList, _ := p.syncTaskMap.peerListMap[blockState.Height]
+		peerList = append(peerList, from)
+		p.syncTaskMap.peerListMap[blockState.Height] = peerList
+
+		if len(peerList) >= 2 * vpNum / 3 + 1 {
+			// time to trigger the sync task
+			targetPeers = peerList
+			debugger.Log(debugger.DEBUG, "peerList<%+v>, 2f+1=<%d>", peerList, 2 * vpNum / 3 + 1)
+
+			delete(p.syncTaskMap.peerListMap, blockState.Height)
+
+			// keep 100 of most recent tasks
+			p.clearSyncTaskMap(blockState.Height, 200, 100)
+		}
+
+	} else if len(p.trustedValidators) > 0 {
+		for _, trustedPeer := range p.trustedValidators {
+			if from.Name == trustedPeer.Name {
+				// do sync only if notification comes from one of trusted peers
+				targetPeers = append(targetPeers, from)
+				break
+			}
+		}
+	}
+
+	return targetPeers
+}
+
+
+func (p *Impl) OnNotifyBlockAdded(blockState *pb.BlockState, from *pb.PeerID)  {
+
+	if p.engine == nil {
+		return
+	}
+
+	targetPeers := p.getTargetPeers(blockState, from)
+
+	if len(targetPeers) > 0 {
+		p.engine.SyncBlockState(blockState, targetPeers)
 	}
 }
 

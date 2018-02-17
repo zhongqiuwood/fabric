@@ -116,6 +116,7 @@ func NewPeerHandler(coord MessageHandlerCoordinator, stream ChatStream, initiate
 
 func (d *Handler) enterState(e *fsm.Event) {
 	peerLogger.Debugf("The Peer's bi-directional stream to %s is %s, from event %s\n", d.ToPeerEndpoint, e.Dst, e.Event)
+	debugger.Log(debugger.INFO,"Bi-directional to <%s> is %s, from event %s\n", d.ToPeerEndpoint, e.Dst, e.Event)
 }
 
 func (d *Handler) deregister() error {
@@ -260,12 +261,16 @@ func (d *Handler) beforeBlockAdded(e *fsm.Event) {
 		e.Cancel(fmt.Errorf("Received unexpected message type"))
 		return
 	}
+	from, err := d.To()
+	if err != nil {
+		return
+	}
 
 	blockState := &pb.BlockState{}
-	err := proto.Unmarshal(msg.Payload, blockState)
+	err = proto.Unmarshal(msg.Payload, blockState)
 
 	if err != nil {
-		debugger.Log(2,"Error unmarshalling BlockState: %s", err)
+		debugger.Log(debugger.ERROR,"Error unmarshalling BlockState: %s", err)
 		e.Cancel(fmt.Errorf("Error unmarshalling BlockState: %s", err))
 		return
 	}
@@ -273,9 +278,9 @@ func (d *Handler) beforeBlockAdded(e *fsm.Event) {
 	debugger.Log(debugger.DEBUG, "Height<%d>, StateDelta<%x>, Block<%+v>",
 		blockState.Height, blockState.StateDelta, blockState.Block)
 
-	d.Coordinator.OnNotifyBlockAdded(blockState)
+	d.Coordinator.OnNotifyBlockAdded(blockState, from.ID)
 
-	// Add the block and any delta state to the ledger
+	// TODO: For nvp, add the block and any delta state to the ledger
 	//_ = msg
 }
 
@@ -288,12 +293,14 @@ func (d *Handler) HandleMessage(msg *pb.Message) error {
 
 	if d.ToPeerEndpoint != nil && d.ToPeerEndpoint.ID != nil {
 		if msg.Type != pb.Message_DISC_PEERS && msg.Type != pb.Message_DISC_GET_PEERS {
-			debugger.Log(debugger.DEBUG,"Peer handler received message from <%s>, type: %s ",
-				d.ToPeerEndpoint.ID, msg.Type.String())
+			debugger.Log(debugger.NOTICE,"Peer handler received message<%s> from <%s>",
+				msg.Type.String(), d.ToPeerEndpoint.ID)
 		}
 	}
 
 	if d.FSM.Cannot(msg.Type.String()) {
+		//debugger.Log(debugger.ERROR,"Peer<%s> FSM cannot handle message (%s) with size (%d) while in state: %s",
+		//	d.ToPeerEndpoint.ID, msg.Type.String(), len(msg.Payload), d.FSM.Current())
 		return fmt.Errorf("Peer FSM cannot handle message (%s) with payload size (%d) while in state: %s",
 			msg.Type.String(), len(msg.Payload), d.FSM.Current())
 	}
@@ -320,8 +327,8 @@ func (d *Handler) SendMessage(msg *pb.Message) error {
 		msg.Type != pb.Message_DISC_GET_PEERS &&
 		msg.Type != pb.Message_DISC_HELLO  {
 		if d.ToPeerEndpoint != nil && d.ToPeerEndpoint.ID != nil {
-			debugger.Log(debugger.DEBUG,"Sending <%s> <%s> to peer <%s>",
-				msg.Type.String(),	msg.PayloadTypeStr, d.ToPeerEndpoint.ID)
+			debugger.Log(debugger.NOTICE,"Sending msg<%s> payload<%s> to peer <%s>",
+				msg.Type.String(),	pb.Consensus_Payload_Type(msg.PayloadType).String(), d.ToPeerEndpoint.ID)
 		}
 	}
 

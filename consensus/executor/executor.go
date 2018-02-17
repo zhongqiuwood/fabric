@@ -45,7 +45,6 @@ type coordinatorImpl struct {
 	stc             statetransfer.Coordinator   // State transfer instance
 	batchInProgress bool                        // Are we mid execution batch
 	skipInProgress  bool                        // Are we mid state transfer
-	syncTask	map[uint64]string
 }
 
 // NewCoordinatorImpl creates a new executor.Coordinator
@@ -57,8 +56,6 @@ func NewImpl(consumer consensus.ExecutionConsumer, rawExecutor PartialStack, stp
 		manager:     events.NewManagerImpl(),
 	}
 	co.manager.SetReceiver(co)
-	co.syncTask = make(map[uint64]string)
-
 	return co
 }
 
@@ -124,45 +121,8 @@ func (co *coordinatorImpl) ProcessEvent(event events.Event) events.Event {
 
 	case stateUpdateEvent:
 		if et.tag == nil {
-
-			co.skipInProgress = true
-
-			info := et.blockchainInfo
-			blockNumber := info.Height - 1
-
-			_, ok := co.syncTask[blockNumber]
-
-			if ok {
-				return nil
-			}
-
-			logger.Debug("Learner peer executor is processing a stateUpdateEvent")
-
-			co.syncTask[blockNumber] = string(info.CurrentBlockHash)
-
-			for retry := 0; retry < 3 ; retry++ {
-				et.peers = nil
-				err, recoverable := co.stc.SyncToTarget(blockNumber, info.CurrentBlockHash, et.peers)
-
-				if err == nil {
-					debugger.Log(debugger.DEBUG,"<<<--- Syncing_to_block<%d>, retry<%d>, completed, returning",
-						blockNumber, retry)
-					co.skipInProgress = false
-					return nil
-				}
-				if !recoverable {
-					debugger.Log(debugger.WARN,"<<<--- Syncing_to_block<%d>, retry<%d>, failed irrecoverably. %s",
-						retry, blockNumber, err)
-					return nil
-				}
-				debugger.Log(debugger.WARN,"<<<--- Syncing_to_block<%d>, retry<%d>, did not complete successfully " +
-					"but is recoverable, trying again. %s",
-					blockNumber, retry, err)
-				et.peers = nil // Broaden the peers included in recover to all connected
-			}
-
+			co.processStateUpdateEvent(et.blockchainInfo, et.peers)
 		} else {
-
 			logger.Debug("Executor is processing a stateUpdateEvent")
 			if co.batchInProgress {
 				err := co.rawExecutor.RollbackTxBatch(co)
@@ -194,6 +154,30 @@ func (co *coordinatorImpl) ProcessEvent(event events.Event) events.Event {
 	}
 
 	return nil
+}
+
+func (co *coordinatorImpl) processStateUpdateEvent(info *pb.BlockchainInfo, peers []*pb.PeerID) {
+
+	blockNumber := info.Height - 1
+	logger.Debug("Learner peer executor is processing a stateUpdateEvent")
+
+	for retry := 0; retry <= 3 ; retry++ {
+		err, recoverable := co.stc.SyncToTarget(blockNumber, info.CurrentBlockHash, peers)
+
+		if err == nil {
+			debugger.Log(debugger.NOTICE,"Syncing to block <%d> completed successfully. retry<%d>",
+				blockNumber, retry)
+			break
+		}
+		if !recoverable {
+			debugger.Log(debugger.ERROR,"Syncing to block <%d>, retry<%d>, failed irrecoverably. %s",
+				retry, blockNumber, err)
+			break
+		}
+		debugger.Log(debugger.WARN,"Syncing to block <%d>, retry<%d>, did not complete successfully, " +
+			"but is recoverable, trying again. %s",
+			blockNumber, retry, err)
+	}
 }
 
 // Commit commits whatever outstanding requests have been executed, it is an error to call this without pending executions

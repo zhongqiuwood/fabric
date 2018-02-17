@@ -135,8 +135,8 @@ type obcGeneric struct {
 	pbft  *pbftCore
 }
 
-func (op *obcGeneric) onBlockCommitted(height uint64, currentBlockHash []byte, replicas []uint64) {
-	op.stack.NotifyBlockAdded(height, currentBlockHash, replicas) // pbft
+func (op *obcGeneric) onBlockCommitted(height uint64, currentBlockHash []byte) {
+	op.stack.NotifyBlockAdded(height, currentBlockHash) // pbft
 }
 
 // process ledge sync msg from other replicas

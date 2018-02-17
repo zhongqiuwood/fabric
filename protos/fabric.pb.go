@@ -18,6 +18,39 @@ var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
+type Consensus_Payload_Type int32
+
+const (
+	Message_RequestBatch_Value Consensus_Payload_Type = 1
+	Message_PrePrepare_Value Consensus_Payload_Type = 2
+	Message_Prepare_Value    Consensus_Payload_Type = 3
+	Message_Commit_Value     Consensus_Payload_Type = 4
+	Message_Checkpoint_Value Consensus_Payload_Type = 5
+	Message_ViewChange_Value Consensus_Payload_Type = 6
+	Message_NewView_Value    Consensus_Payload_Type = 7
+	Message_FetchRequestBatch_Value  Consensus_Payload_Type = 8
+	Message_ReturnRequestBatch_Value Consensus_Payload_Type = 9
+	Message_Transaction_Value  Consensus_Payload_Type = 10
+)
+
+var Consensus_Payload_Type_Name = map[int32]string{
+	0: "unknown",
+	1: "[1]Message_RequestBatch",
+	2: "[2]Message_PrePrepare",
+	3: "[3]Message_Prepare",
+	4: "[4]Message_Commit",
+	5: "[5]Message_Checkpoint",
+	6: "[6]Message_ViewChange",
+	7: "[7]Message_NewView",
+	8: "[8]Message_FetchRequestBatch",
+	9: "[9]Message_ReturnRequestBatch",
+	10: "[10]Message_Transaction",
+}
+
+func (x Consensus_Payload_Type) String() string {
+	return proto.EnumName(Consensus_Payload_Type_Name, int32(x))
+}
+
 type Transaction_Type int32
 
 const (
@@ -632,7 +665,7 @@ type Message struct {
 	Timestamp *google_protobuf.Timestamp `protobuf:"bytes,2,opt,name=timestamp" json:"timestamp,omitempty"`
 	Payload   []byte                     `protobuf:"bytes,3,opt,name=payload,proto3" json:"payload,omitempty"`
 	Signature []byte                     `protobuf:"bytes,4,opt,name=signature,proto3" json:"signature,omitempty"`
-	PayloadTypeStr string
+	PayloadType int32                    `protobuf:"varint,5,opt,name=payloadtype" json:"payloadtype,omitempty"`
 }
 
 func (m *Message) Reset()                    { *m = Message{} }

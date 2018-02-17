@@ -137,7 +137,7 @@ func (op *obcBatch) Close() {
 
 func (op *obcBatch) submitToLeader(req *Request) events.Event {
 	// Broadcast the request to the network, in case we're in the wrong view
-	op.broadcastMsg(&BatchMessage{Payload: &BatchMessage_Request{Request: req}})
+	op.broadcastMsg(&BatchMessage{Payload: &BatchMessage_Request{Request: req}}, int32(pb.Message_RequestBatch_Value))
 	op.logAddTxFromRequest(req)
 	op.reqStore.storeOutstanding(req)
 	op.startTimerIfOutstandingRequests()
@@ -147,11 +147,12 @@ func (op *obcBatch) submitToLeader(req *Request) events.Event {
 	return nil
 }
 
-func (op *obcBatch) broadcastMsg(msg *BatchMessage) {
+func (op *obcBatch) broadcastMsg(msg *BatchMessage, payloadType int32) {
 	msgPayload, _ := proto.Marshal(msg)
 	ocMsg := &pb.Message{
 		Type:    pb.Message_CONSENSUS,
 		Payload: msgPayload,
+		PayloadType: payloadType,
 	}
 	op.broadcaster.Broadcast(ocMsg)
 }
@@ -171,12 +172,12 @@ func (op *obcBatch) unicastMsg(msg *BatchMessage, receiverID uint64) {
 // =============================================================================
 
 // multicast a message to all replicas
-func (op *obcBatch) broadcast(msgPayload []byte, payloadType string) {
+func (op *obcBatch) broadcast(msgPayload []byte, payloadType int32) {
 	op.broadcaster.Broadcast(op.wrapMessage(msgPayload, payloadType))
 }
 
 // send a message to a specific replica
-func (op *obcBatch) unicast(msgPayload []byte, receiverID uint64, payloadType string) (err error) {
+func (op *obcBatch) unicast(msgPayload []byte, receiverID uint64, payloadType int32) (err error) {
 	return op.broadcaster.Unicast(op.wrapMessage(msgPayload, payloadType), receiverID)
 }
 
@@ -451,13 +452,13 @@ func (op *obcBatch) stopBatchTimer() {
 
 // Wraps a payload into a batch message, packs it and wraps it into
 // a Fabric message. Called by broadcast before transmission.
-func (op *obcBatch) wrapMessage(msgPayload []byte, payloadType string) *pb.Message {
+func (op *obcBatch) wrapMessage(msgPayload []byte, payloadType int32) *pb.Message {
 	batchMsg := &BatchMessage{Payload: &BatchMessage_PbftMessage{PbftMessage: msgPayload}}
 	packedBatchMsg, _ := proto.Marshal(batchMsg)
 	ocMsg := &pb.Message{
 		Type:    pb.Message_CONSENSUS,
 		Payload: packedBatchMsg,
-		PayloadTypeStr: payloadType,
+		PayloadType: payloadType,
 	}
 	return ocMsg
 }

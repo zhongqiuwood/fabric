@@ -336,7 +336,7 @@ func (ledger *Ledger) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, 
 
 // GetBlockByNumber return a block by block number
 func (ledger *Ledger) DumpBlockChain() {
-	ledger.blockchain.Dump(debugger.INFO)
+	ledger.blockchain.Dump(debugger.DEBUG)
 }
 
 // ApplyStateDelta applies a state delta to the current state. This is an

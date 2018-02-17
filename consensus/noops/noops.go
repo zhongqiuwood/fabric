@@ -101,7 +101,7 @@ func (i *Noops) RecvMsg(msg *pb.Message, senderHandle *pb.PeerID) error {
 		}
 	}
 	if msg.Type == pb.Message_CONSENSUS {
-		debugger.Log(2, "<<<------------------------------------------------- noops recv Message_CONSENSUS")
+		debugger.Log(debugger.NOTICE, "<<<-------------- noops recv Message_CONSENSUS")
 
 		tx, err := i.getTxFromMsg(msg)
 		if nil != err {
@@ -133,6 +133,7 @@ func (i *Noops) broadcastConsensusMsg(msg *pb.Message) error {
 		return err
 	}
 	msg.Payload = payload
+	//msg.PayloadType = int32(pb.Message_Transaction_Value)
 	if errs := i.stack.Broadcast(msg, pb.PeerEndpoint_VALIDATOR); nil != errs {
 		return fmt.Errorf("Failed to broadcast with errors: %v", errs)
 	}
@@ -196,7 +197,7 @@ func (i *Noops) processBlock() error {
 	}
 
 	info := i.stack.GetBlockchainInfo()
-	i.stack.NotifyBlockAdded(info.Height, info.CurrentBlockHash, nil) // noops
+	i.stack.NotifyBlockAdded(info.Height, info.CurrentBlockHash) // noops
 	return nil
 }
 

@@ -138,7 +138,7 @@ func (i *Helper) getBlockData() (*pb.Block, *statemgmt.StateDelta, error) {
 
 
 func (i *Helper) notifyBlockAdded(block *pb.Block, delta *statemgmt.StateDelta,
-	height uint64, currentBlockHash []byte, replicas []uint64) error {
+	height uint64, currentBlockHash []byte) error {
 
 	//make Payload nil to reduce block size..
 	//anything else to remove .. do we need StateDelta ?
@@ -176,7 +176,7 @@ func (i *Helper) notifyBlockAdded(block *pb.Block, delta *statemgmt.StateDelta,
 	return nil
 }
 
-func (h *Helper) NotifyBlockAdded(height uint64, currentBlockHash []byte, replicas []uint64) error {
+func (h *Helper) NotifyBlockAdded(height uint64, currentBlockHash []byte) error {
 
 	var data *pb.Block
 	var delta *statemgmt.StateDelta
@@ -186,7 +186,7 @@ func (h *Helper) NotifyBlockAdded(height uint64, currentBlockHash []byte, replic
 		return err
 	}
 
-	go h.notifyBlockAdded(data, delta, height, currentBlockHash, replicas)
+	go h.notifyBlockAdded(data, delta, height, currentBlockHash)
 	return nil
 }
 

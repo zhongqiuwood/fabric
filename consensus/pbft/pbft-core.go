@@ -87,8 +87,8 @@ type nullRequestEvent struct{}
 // Unless otherwise noted, all methods consume the PBFT thread, and should therefore
 // not rely on PBFT accomplishing any work while that thread is being held
 type innerStack interface {
-	broadcast(msgPayload []byte, payloadType string)
-	unicast(msgPayload []byte, receiverID uint64, payloadType string) (err error)
+	broadcast(msgPayload []byte, payloadType int32)
+	unicast(msgPayload []byte, receiverID uint64, payloadType int32) (err error)
 	execute(seqNo uint64, reqBatch *RequestBatch) // This is invoked on a separate thread
 	getState() []byte
 	getLastSeqNo() (uint64, error)
@@ -99,7 +99,7 @@ type innerStack interface {
 
 	invalidateState()
 	validateState()
-    onBlockCommitted(uint64, []byte, []uint64)
+    onBlockCommitted(uint64, []byte)
 	consensus.StatePersistor
 }
 
@@ -466,7 +466,7 @@ func (instance *pbftCore) ProcessEvent(e events.Event) events.Event {
 			info.CurrentBlockHash,
 			info.PreviousBlockHash)
 
-		instance.consumer.onBlockCommitted(info.Height, info.CurrentBlockHash, nil)
+		instance.consumer.onBlockCommitted(info.Height, info.CurrentBlockHash)
 
 		instance.execDoneSync()
 		if instance.skipInProgress {
@@ -752,10 +752,7 @@ func (instance *pbftCore) sendPrePrepare(reqBatch *RequestBatch, digest string) 
 	cert.digest = digest
 	instance.persistQSet()
 	instance.innerBroadcast(&Message{
-		Payload: &Message_PrePrepare{PrePrepare: preprep},
-		PayloadType: Message_PrePrepare_Value,
-		PayloadTypeStr: PBFT_Message_Type_name[Message_PrePrepare_Value],
-		})
+		Payload: &Message_PrePrepare{PrePrepare: preprep},PayloadType: int32(pb.Message_PrePrepare_Value),})
 	instance.maybeSendCommit(digest, instance.view, n)
 }
 
@@ -859,7 +856,7 @@ func (instance *pbftCore) recvPrePrepare(preprep *PrePrepare) error {
 		cert.sentPrepare = true
 		instance.persistQSet()
 		instance.recvPrepare(prep)
-		return instance.innerBroadcast(&Message{Payload: &Message_Prepare{Prepare: prep}})
+		return instance.innerBroadcast(&Message{Payload: &Message_Prepare{Prepare: prep},PayloadType: int32(pb.Message_Prepare_Value),})
 	}
 
 	return nil
@@ -920,9 +917,7 @@ func (instance *pbftCore) maybeSendCommit(digest string, v uint64, n uint64) err
 		cert.sentCommit = true
 		instance.recvCommit(commit)
 		return instance.innerBroadcast(&Message {
-			&Message_Commit{commit},
-			Message_Commit_Value,
-			PBFT_Message_Type_name[Message_Commit_Value]})
+			&Message_Commit{commit},int32(pb.Message_Commit_Value)})
 	}
 	return nil
 }
@@ -1092,9 +1087,7 @@ func (instance *pbftCore) Checkpoint(seqNo uint64, id []byte) {
 	instance.recvCheckpoint(chkpt)
 	instance.innerBroadcast(&Message{
 		Payload: &Message_Checkpoint{Checkpoint: chkpt},
-		PayloadType: Message_Checkpoint_Value,
-		PayloadTypeStr: PBFT_Message_Type_name[Message_Checkpoint_Value],
-	})
+		PayloadType: int32(pb.Message_Checkpoint_Value),})
 }
 
 func (instance *pbftCore) execDoneSync() {
@@ -1347,9 +1340,7 @@ func (instance *pbftCore) fetchRequestBatches() (err error) {
 	for digest := range instance.missingReqBatches {
 		msg = &Message{
 			Payload: &Message_FetchRequestBatch{FetchRequestBatch: &FetchRequestBatch{BatchDigest: digest,ReplicaId:   instance.id}},
-			PayloadType: Message_FetchRequestBatch_Value,
-			PayloadTypeStr: PBFT_Message_Type_name[Message_FetchRequestBatch_Value],
-			}
+			PayloadType: int32(pb.Message_FetchRequestBatch_Value),}
 		instance.innerBroadcast(msg)
 	}
 
@@ -1363,7 +1354,9 @@ func (instance *pbftCore) recvFetchRequestBatch(fr *FetchRequestBatch) (err erro
 	}
 
 	reqBatch := instance.reqBatchStore[digest]
-	msg := &Message{Payload: &Message_ReturnRequestBatch{ReturnRequestBatch: reqBatch}}
+	msg := &Message{
+		Payload: &Message_ReturnRequestBatch{ReturnRequestBatch: reqBatch},
+		PayloadType: int32(pb.Message_ReturnRequestBatch_Value)}
 	msgPacked, err := proto.Marshal(msg)
 	if err != nil {
 		return fmt.Errorf("Error marshalling return-request-batch message: %v", err)
@@ -1371,7 +1364,7 @@ func (instance *pbftCore) recvFetchRequestBatch(fr *FetchRequestBatch) (err erro
 
 	receiver := fr.ReplicaId
 
-	err = instance.consumer.unicast(msgPacked, receiver, msg.PayloadTypeStr)
+	err = instance.consumer.unicast(msgPacked, receiver, msg.PayloadType)
 
 	return
 }
@@ -1414,14 +1407,14 @@ func (instance *pbftCore) innerBroadcast(msg *Message) error {
 		ignoreidx := rand2.Intn(instance.N)
 		for i := 0; i < instance.N; i++ {
 			if i != ignoreidx && uint64(i) != instance.id { //Pick a random replica and do not send message
-				instance.consumer.unicast(msgRaw, uint64(i), msg.PayloadTypeStr)
+				instance.consumer.unicast(msgRaw, uint64(i), msg.PayloadType)
 			} else {
 				logger.Debugf("PBFT byzantine: not broadcasting to replica %v", i)
 			}
 		}
 	} else {
-		//debugger.Log(2, "broadcast to all")
-		instance.consumer.broadcast(msgRaw, msg.PayloadTypeStr)
+		//debugger.Log(debugger.INFO, "broadcast: %d", msg.PayloadType)
+		instance.consumer.broadcast(msgRaw, msg.PayloadType)
 	}
 	return nil
 }

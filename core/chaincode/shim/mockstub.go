@@ -82,8 +82,31 @@ func (stub *MockStub) MockTransactionStart(txid string) {
 	stub.TxID = txid
 }
 
+type stateEntry struct {
+	key   string
+	value []byte
+}
+
 // End a mocked transaction, clearing the UUID.
-func (stub *MockStub) MockTransactionEnd(uuid string) {
+func (stub *MockStub) MockTransactionEnd(uuid string, e error) {
+	if e == nil {
+		//done and clear
+		stub.Keys = stub.Keys.Init()
+	} else {
+		mockLogger.Debug("MockStub", stub.Name, "rerolling tx", stub.TxID)
+
+		for elem := stub.Keys.Front(); elem != nil; elem = elem.Next() {
+			elemValue := elem.Value.(*stateEntry)
+
+			if elemValue.value == nil {
+				delete(stub.State, elemValue.key)
+			} else {
+				stub.State[elemValue.key] = elemValue.value
+			}
+
+		}
+
+	}
 	stub.TxID = ""
 }
 
@@ -99,7 +122,7 @@ func (stub *MockStub) MockInit(uuid string, function string, args []string) ([]b
 	stub.args = getBytes(function, args)
 	stub.MockTransactionStart(uuid)
 	bytes, err := stub.cc.Init(stub, function, args)
-	stub.MockTransactionEnd(uuid)
+	stub.MockTransactionEnd(uuid, err)
 	return bytes, err
 }
 
@@ -108,7 +131,7 @@ func (stub *MockStub) MockInvoke(uuid string, function string, args []string) ([
 	stub.args = getBytes(function, args)
 	stub.MockTransactionStart(uuid)
 	bytes, err := stub.cc.Invoke(stub, function, args)
-	stub.MockTransactionEnd(uuid)
+	stub.MockTransactionEnd(uuid, err)
 	return bytes, err
 }
 
@@ -135,16 +158,22 @@ func (stub *MockStub) PutState(key string, value []byte) error {
 	}
 
 	mockLogger.Debug("MockStub", stub.Name, "Putting", key, value)
-	stub.State[key] = value
 
+	val, ok := stub.State[key]
+	updatedEntry := &stateEntry{key: key}
+	if ok {
+		updatedEntry.value = val
+	}
+
+	stub.State[key] = value
 	// insert key into ordered list of keys
 	for elem := stub.Keys.Front(); elem != nil; elem = elem.Next() {
-		elemValue := elem.Value.(string)
-		comp := strings.Compare(key, elemValue)
+		elemValue := elem.Value.(*stateEntry)
+		comp := strings.Compare(key, elemValue.key)
 		//		mockLogger.Debug("MockStub", stub.Name, "Compared", key, elemValue, " and got ", comp)
 		if comp < 0 {
 			// key < elem, insert it before elem
-			stub.Keys.InsertBefore(key, elem)
+			stub.Keys.InsertBefore(updatedEntry, elem)
 			mockLogger.Debug("MockStub", stub.Name, "Key", key, " inserted before", elem.Value)
 			break
 		} else if comp == 0 {
@@ -154,7 +183,7 @@ func (stub *MockStub) PutState(key string, value []byte) error {
 		} else { // comp > 0
 			// key > elem, keep looking unless this is the end of the list
 			if elem.Next() == nil {
-				stub.Keys.PushBack(key)
+				stub.Keys.PushBack(updatedEntry)
 				mockLogger.Debug("MockStub", stub.Name, "Key", key, "appended")
 				break
 			}
@@ -163,7 +192,7 @@ func (stub *MockStub) PutState(key string, value []byte) error {
 
 	// special case for empty Keys list
 	if stub.Keys.Len() == 0 {
-		stub.Keys.PushFront(key)
+		stub.Keys.PushFront(updatedEntry)
 		mockLogger.Debug("MockStub", stub.Name, "Key", key, "is first element in list")
 	}
 
@@ -175,11 +204,11 @@ func (stub *MockStub) DelState(key string) error {
 	mockLogger.Debug("MockStub", stub.Name, "Deleting", key, stub.State[key])
 	delete(stub.State, key)
 
-	for elem := stub.Keys.Front(); elem != nil; elem = elem.Next() {
-		if strings.Compare(key, elem.Value.(string)) == 0 {
-			stub.Keys.Remove(elem)
-		}
-	}
+	// for elem := stub.Keys.Front(); elem != nil; elem = elem.Next() {
+	// 	if strings.Compare(key, elem.Value.(string)) == 0 {
+	// 		stub.Keys.Remove(elem)
+	// 	}
+	// }
 
 	return nil
 }

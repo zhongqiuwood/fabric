@@ -47,6 +47,7 @@ type GlobalConfig struct {
 	EnvPrefix      string
 	ConfigFileName string
 	ConfigPath     []string
+	SkipConfigFile bool
 
 	LogRole string //peer, node, network, chaincode, version, can apply different log level from config file
 }
@@ -102,7 +103,7 @@ func (g GlobalConfig) InitGlobal(stdlog bool) error {
 	}
 
 	err := InitPeerViper(g.EnvPrefix, g.ConfigFileName, g.ConfigPath...)
-	if err != nil {
+	if !g.SkipConfigFile && err != nil {
 		return err
 	}
 

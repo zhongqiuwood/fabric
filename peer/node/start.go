@@ -258,7 +258,12 @@ func registerChaincodeSupport(chainname chaincode.ChainName, grpcServer *grpc.Se
 		userRunsCC = true
 	}
 
-	ccSrv := chaincode.NewChaincodeSupport(chainname, peer.GetPeerEndpoint, userRunsCC, secHelper)
+	//check duplicated creation for same chain
+	//it is safe to bind a implement to differnt server (it is thread-safe)
+	ccSrv := chaincode.GetChain(chainname)
+	if ccSrv == nil {
+		ccSrv = chaincode.NewChaincodeSupport(chainname, peer.GetPeerEndpoint, userRunsCC, secHelper)
+	}
 
 	//Now that chaincode is initialized, register all system chaincodes.
 	system_chaincode.RegisterSysCCs()

@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 	"github.com/looplab/fsm"
 )
 
@@ -223,6 +223,7 @@ func (handler *Handler) handleInit(msg *pb.ChaincodeMessage) {
 		// Create the ChaincodeStub which the chaincode can use to callback
 		stub := new(ChaincodeStub)
 		stub.init(msg.Txid, msg.SecurityContext)
+		stub.handler = handler
 		function, params := getFunctionAndParams(stub)
 		res, err := handler.cc.Init(stub, function, params)
 
@@ -290,6 +291,7 @@ func (handler *Handler) handleTransaction(msg *pb.ChaincodeMessage) {
 		// Call chaincode's Run
 		// Create the ChaincodeStub which the chaincode can use to callback
 		stub := new(ChaincodeStub)
+		stub.handler = handler
 		stub.init(msg.Txid, msg.SecurityContext)
 		function, params := getFunctionAndParams(stub)
 		res, err := handler.cc.Invoke(stub, function, params)
@@ -338,6 +340,7 @@ func (handler *Handler) handleQuery(msg *pb.ChaincodeMessage) {
 		// Call chaincode's Query
 		// Create the ChaincodeStub which the chaincode can use to callback
 		stub := new(ChaincodeStub)
+		stub.handler = handler
 		stub.init(msg.Txid, msg.SecurityContext)
 		function, params := getFunctionAndParams(stub)
 		res, err := handler.cc.Query(stub, function, params)

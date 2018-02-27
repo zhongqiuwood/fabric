@@ -29,7 +29,6 @@ import (
 	"encoding/base64"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/chaincode"
 	"github.com/abchain/fabric/core/chaincode/platforms"
 	"github.com/abchain/fabric/core/container"
@@ -37,6 +36,7 @@ import (
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 )
 
 var devopsLogger = logging.MustGetLogger("devops")
@@ -87,7 +87,7 @@ func (b *bindingMap) getTxHandlerForBinding(binding []byte) (crypto.TransactionH
 }
 
 // Login establishes the security context with the Devops service
-func (d *Devops) Login(ctx context.Context, secret *pb.Secret) (*pb.Response, error) {
+func (*Devops) Login(ctx context.Context, secret *pb.Secret) (*pb.Response, error) {
 	if err := crypto.RegisterClient(secret.EnrollId, nil, secret.EnrollId, secret.EnrollSecret); nil != err {
 		return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(err.Error())}, nil
 	}
@@ -97,35 +97,46 @@ func (d *Devops) Login(ctx context.Context, secret *pb.Secret) (*pb.Response, er
 }
 
 // Build builds the supplied chaincode image
-func (*Devops) Build(context context.Context, spec *pb.ChaincodeSpec) (*pb.ChaincodeDeploymentSpec, error) {
-	mode := viper.GetString("chaincode.mode")
-	var codePackageBytes []byte
-	if mode != chaincode.DevModeUserRunsChaincode {
-		devopsLogger.Debugf("Received build request for chaincode spec: %v", spec)
-		if err := CheckSpec(spec); err != nil {
-			return nil, err
-		}
+func (d *Devops) Build(context context.Context, spec *pb.ChaincodeSpec) (*pb.ChaincodeDeploymentSpec, error) {
 
-		vm, err := container.NewVM()
-		if err != nil {
-			return nil, fmt.Errorf("Error getting vm")
-		}
-
-		codePackageBytes, err = vm.BuildChaincodeContainer(spec)
-		if err != nil {
-			devopsLogger.Error(fmt.Sprintf("%s", err))
-			return nil, err
-		}
+	chaincodeDeploymentSpec, err := d.getChaincodeBytes(ctx, spec)
+	if err != nil {
+		devopsLogger.Error(fmt.Sprintf("Error build chaincode spec: %v\n\n error: %s", spec, err))
+		return nil, err
 	}
-	chaincodeDeploymentSpec := &pb.ChaincodeDeploymentSpec{ChaincodeSpec: spec, CodePackage: codePackageBytes}
+
+	var codePackageBytes []byte
+	codePackageBytes = chaincodeDeploymentSpec.CodePackage
+	if codePackageBytes == nil {
+		return nil, fmt.Errorf("No codepackage under this mode")
+	}
+
+	vm, err := container.NewVM()
+	if err != nil {
+		return nil, fmt.Errorf("Error getting vm")
+	}
+
+	err = vm.BuildChaincodeContainer(spec, codePackageBytes)
+	if err != nil {
+		devopsLogger.Error(fmt.Sprintf("%s", err))
+		return nil, err
+	}
+
 	return chaincodeDeploymentSpec, nil
+
 }
 
 // get chaincode bytes
 func (*Devops) getChaincodeBytes(context context.Context, spec *pb.ChaincodeSpec) (*pb.ChaincodeDeploymentSpec, error) {
-	mode := viper.GetString("chaincode.mode")
+
+	chainName := chaincode.DefaultChain
+	chain := chaincode.GetChain(chainName)
+	if chain == nil {
+		return nil, fmt.Errorf("No corresponding chain:", chainName)
+	}
+
 	var codePackageBytes []byte
-	if mode != chaincode.DevModeUserRunsChaincode {
+	if !chain.UserRunsCC() {
 		devopsLogger.Debugf("Received build request for chaincode spec: %v", spec)
 		var err error
 		if err = CheckSpec(spec); err != nil {

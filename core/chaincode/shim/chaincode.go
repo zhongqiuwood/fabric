@@ -28,12 +28,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/abchain/fabric/core/chaincode/shim/crypto/attr"
 	"github.com/abchain/fabric/core/chaincode/shim/crypto/ecdsa"
 	"github.com/abchain/fabric/core/comm"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
@@ -44,7 +44,8 @@ import (
 var chaincodeLogger = logging.MustGetLogger("shim")
 
 // Handler to shim that handles all control logic.
-var handler *Handler
+
+var peerAddress string
 
 // ChaincodeStub is an object passed to chaincode for shim side handling of
 // APIs.
@@ -53,6 +54,7 @@ type ChaincodeStub struct {
 	securityContext *pb.ChaincodeSecurityContext
 	chaincodeEvent  *pb.ChaincodeEvent
 	args            [][]byte
+	handler         *Handler
 }
 
 // Peer address derived from command line or env var
@@ -161,7 +163,8 @@ func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode
 		return fmt.Errorf("Error marshalling chaincodeID during chaincode registration: %s", err)
 	}
 	// Register on the stream
-	chaincodeLogger.Debugf("Registering.. sending %s", pb.ChaincodeMessage_REGISTER)
+	chaincodeLogger.Debugf("[%s] Registering.. sending %s",
+		chaincodename, pb.ChaincodeMessage_REGISTER)
 	handler.serialSend(&pb.ChaincodeMessage{Type: pb.ChaincodeMessage_REGISTER, Payload: payload})
 	waitc := make(chan struct{})
 	go func() {
@@ -195,14 +198,16 @@ func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode
 					chaincodeLogger.Debug("Received nil message, ending chaincode stream")
 					return
 				}
-				chaincodeLogger.Debugf("[%s]Received message %s from shim", shorttxid(in.Txid), in.Type.String())
+				chaincodeLogger.Debugf("[%s][%s]Received message %s from shim", chaincodename,
+					shorttxid(in.Txid), in.Type.String())
 				recv = true
 			case nsInfo = <-handler.nextState:
 				in = nsInfo.msg
 				if in == nil {
 					panic("nil msg")
 				}
-				chaincodeLogger.Debugf("[%s]Move state message %s", shorttxid(in.Txid), in.Type.String())
+				chaincodeLogger.Debugf("[%s][%s]Move state message %s",
+					chaincodename, shorttxid(in.Txid), in.Type.String())
 			}
 
 			// Call FSM.handleMessage()
@@ -215,9 +220,10 @@ func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode
 			//keepalive messages are PONGs to the fabric's PINGs
 			if (nsInfo != nil && nsInfo.sendToCC) || (in.Type == pb.ChaincodeMessage_KEEPALIVE) {
 				if in.Type == pb.ChaincodeMessage_KEEPALIVE {
-					chaincodeLogger.Debug("Sending KEEPALIVE response")
+					chaincodeLogger.Debug("[%s]Sending KEEPALIVE response", chaincodename)
 				} else {
-					chaincodeLogger.Debugf("[%s]send state message %s", shorttxid(in.Txid), in.Type.String())
+					chaincodeLogger.Debugf("[%s][%s]send state message %s",
+						chaincodename, shorttxid(in.Txid), in.Type.String())
 				}
 				if err = handler.serialSend(in); err != nil {
 					err = fmt.Errorf("Error sending %s: %s", in.Type.String(), err)
@@ -259,31 +265,31 @@ func (stub *ChaincodeStub) GetTxID() string {
 // same transaction context; that is, chaincode calling chaincode doesn't
 // create a new transaction message.
 func (stub *ChaincodeStub) InvokeChaincode(chaincodeName string, args [][]byte) ([]byte, error) {
-	return handler.handleInvokeChaincode(chaincodeName, args, stub.TxID)
+	return stub.handler.handleInvokeChaincode(chaincodeName, args, stub.TxID)
 }
 
 // QueryChaincode locally calls the specified chaincode `Query` using the
 // same transaction context; that is, chaincode calling chaincode doesn't
 // create a new transaction message.
 func (stub *ChaincodeStub) QueryChaincode(chaincodeName string, args [][]byte) ([]byte, error) {
-	return handler.handleQueryChaincode(chaincodeName, args, stub.TxID)
+	return stub.handler.handleQueryChaincode(chaincodeName, args, stub.TxID)
 }
 
 // --------- State functions ----------
 
 // GetState returns the byte array value specified by the `key`.
 func (stub *ChaincodeStub) GetState(key string) ([]byte, error) {
-	return handler.handleGetState(key, stub.TxID)
+	return stub.handler.handleGetState(key, stub.TxID)
 }
 
 // PutState writes the specified `value` and `key` into the ledger.
 func (stub *ChaincodeStub) PutState(key string, value []byte) error {
-	return handler.handlePutState(key, value, stub.TxID)
+	return stub.handler.handlePutState(key, value, stub.TxID)
 }
 
 // DelState removes the specified `key` and its value from the ledger.
 func (stub *ChaincodeStub) DelState(key string) error {
-	return handler.handleDelState(key, stub.TxID)
+	return stub.handler.handleDelState(key, stub.TxID)
 }
 
 //ReadCertAttribute is used to read an specific attribute from the transaction certificate, *attributeName* is passed as input parameter to this function.
@@ -334,11 +340,11 @@ type StateRangeQueryIterator struct {
 // between the startKey and endKey, inclusive. The order in which keys are
 // returned by the iterator is random.
 func (stub *ChaincodeStub) RangeQueryState(startKey, endKey string) (StateRangeQueryIteratorInterface, error) {
-	response, err := handler.handleRangeQueryState(startKey, endKey, stub.TxID)
+	response, err := stub.handler.handleRangeQueryState(startKey, endKey, stub.TxID)
 	if err != nil {
 		return nil, err
 	}
-	return &StateRangeQueryIterator{handler, stub.TxID, response, 0}, nil
+	return &StateRangeQueryIterator{stub.handler, stub.TxID, response, 0}, nil
 }
 
 // HasNext returns true if the range query iterator contains additional keys

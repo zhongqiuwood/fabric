@@ -67,16 +67,20 @@ func (vm *VM) ListImages(context context.Context) error {
 }
 
 // BuildChaincodeContainer builds the container for the supplied chaincode specification
-func (vm *VM) BuildChaincodeContainer(spec *pb.ChaincodeSpec) ([]byte, error) {
-	chaincodePkgBytes, err := GetChaincodePackageBytes(spec)
-	if err != nil {
-		return nil, fmt.Errorf("Error getting chaincode package bytes: %s", err)
+func (vm *VM) BuildChaincodeContainer(spec *pb.ChaincodeSpec, chaincodePkgBytes []byte) error {
+	if chaincodePkgBytes == nil {
+		b, err := GetChaincodePackageBytes(spec)
+		if err != nil {
+			return fmt.Errorf("Error getting chaincode package bytes: %s", err)
+		}
+		chaincodePkgBytes = b
 	}
-	err = vm.buildChaincodeContainerUsingDockerfilePackageBytes(spec, chaincodePkgBytes)
+
+	err := vm.buildChaincodeContainerUsingDockerfilePackageBytes(spec, chaincodePkgBytes)
 	if err != nil {
-		return nil, fmt.Errorf("Error building Chaincode container: %s", err)
+		return fmt.Errorf("Error building Chaincode container: %s", err)
 	}
-	return chaincodePkgBytes, nil
+	return nil
 }
 
 // GetChaincodePackageBytes creates bytes for docker container generation using the supplied chaincode specification

@@ -46,6 +46,7 @@ const (
 	DefaultChain ChainName = "default"
 	// DevModeUserRunsChaincode property allows user to run chaincode in development environment
 	DevModeUserRunsChaincode       string = "dev"
+	NetworkModeChaincode           string = "net"
 	chaincodeStartupTimeoutDefault int    = 5000
 	chaincodeExecTimeoutDefault    int    = 30000
 	chaincodeInstallPathDefault    string = "/opt/gopath/bin/"
@@ -210,6 +211,10 @@ func newDuplicateChaincodeHandlerError(chaincodeHandler *Handler) error {
 	return &DuplicateChaincodeHandlerError{ChaincodeID: chaincodeHandler.ChaincodeID}
 }
 
+func (chaincodeSupport *ChaincodeSupport) UserRunsCC() {
+	return chaincodeSupport.userRunsCC
+}
+
 func (chaincodeSupport *ChaincodeSupport) registerHandler(chaincodehandler *Handler) error {
 	key := chaincodehandler.ChaincodeID.Name
 
@@ -228,6 +233,10 @@ func (chaincodeSupport *ChaincodeSupport) registerHandler(chaincodehandler *Hand
 		chaincodehandler.readyNotify = chrte2.handler.readyNotify
 		chrte2.handler = chaincodehandler
 	} else {
+		//should not allow register in "NET" mode
+		if !chaincodeSupport.userRunsCC {
+			return fmt.Errorf("Can't register chaincode without invoking deploy tx")
+		}
 		chaincodeSupport.runningChaincodes.chaincodeMap[key] = &chaincodeRTEnv{handler: chaincodehandler}
 	}
 

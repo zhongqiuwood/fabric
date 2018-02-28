@@ -14,28 +14,28 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package system_chaincode
+package embedded_chaincode
 
 import (
-	"github.com/abchain/fabric/core/system_chaincode/api"
-	//import system chain codes here
-	"github.com/abchain/fabric/bddtests/syschaincode/noop"
+	"github.com/abchain/fabric/core/embedded_chaincode/api"
 )
 
-//see systemchaincode_test.go for an example using "sample_syscc"
-var systemChaincodes = []*api.SystemChaincode{
-	{
-		Enabled:   true,
-		Name:      "noop",
-		Path:      "github.com/abchain/fabric/bddtests/syschaincode/noop",
-		InitArgs:  [][]byte{},
-		Chaincode: &noop.SystemChaincode{},
-	}}
+//we devided embedded chaincode into system and embedded
+
+var systemChaincodes = []*api.SystemChaincode{}
+
+// {
+// 	Enabled:  true,
+// 	Name:     "noop",
+// 	Path:     "github.com/abchain/fabric/bddtests/syschaincode/noop",
+// 	InitArgs: [][]byte{},
+// 	//		Chaincode: &noop.SystemChaincode{},
+// }
 
 //RegisterSysCCs is the hook for system chaincodes where system chaincodes are registered with the fabric
 //note the chaincode must still be deployed and launched like a user chaincode will be
 func RegisterSysCCs() {
 	for _, sysCC := range systemChaincodes {
-		api.RegisterSysCC(sysCC)
+		deploySysCC(sysCC)
 	}
 }

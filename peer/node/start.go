@@ -32,11 +32,11 @@ import (
 	"github.com/abchain/fabric/core/comm"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/embedded_chaincode"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/rest"
 	"github.com/abchain/fabric/core/service"
-	"github.com/abchain/fabric/core/system_chaincode"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/events/producer"
 	pb "github.com/abchain/fabric/protos"
@@ -279,10 +279,9 @@ func registerChaincodeSupport(chainname chaincode.ChainName, grpcServer *grpc.Se
 	ccSrv := chaincode.GetChain(chainname)
 	if ccSrv == nil {
 		ccSrv = chaincode.NewChaincodeSupport(chainname, peer.GetPeerEndpoint, userRunsCC, secHelper)
+		//Now that chaincode is initialized, register all system chaincodes.
+		embedded_chaincode.RegisterSysCCs()
 	}
-
-	//Now that chaincode is initialized, register all system chaincodes.
-	system_chaincode.RegisterSysCCs()
 
 	pb.RegisterChaincodeSupportServer(grpcServer, ccSrv)
 }

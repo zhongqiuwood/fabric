@@ -33,6 +33,7 @@ import (
 	"github.com/abchain/fabric/core/chaincode/platforms"
 	"github.com/abchain/fabric/core/container"
 	crypto "github.com/abchain/fabric/core/crypto"
+	ecc "github.com/abchain/fabric/core/embedded_chaincode/api"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
@@ -133,6 +134,11 @@ func (*Devops) getChaincodeBytes(context context.Context, spec *pb.ChaincodeSpec
 	chain := chaincode.GetChain(chainName)
 	if chain == nil {
 		return nil, fmt.Errorf("No corresponding chain:", chainName)
+	}
+
+	//handling embedded chaincode
+	if ecc.IsEmbedded(spec.ChaincodeID.Name) {
+		return ecc.BuildEmbeddedCC(context, spec)
 	}
 
 	var codePackageBytes []byte

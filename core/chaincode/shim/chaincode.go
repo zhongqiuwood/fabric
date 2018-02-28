@@ -57,9 +57,6 @@ type ChaincodeStub struct {
 	handler         *Handler
 }
 
-// Peer address derived from command line or env var
-var peerAddress string
-
 // Start is the entry point for chaincodes bootstrap. It is not an API for
 // chaincodes.
 func Start(cc Chaincode) error {
@@ -153,7 +150,7 @@ func newPeerClientConnection() (*grpc.ClientConn, error) {
 func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode) error {
 
 	// Create the shim handler responsible for all control logic
-	handler = newChaincodeHandler(stream, cc)
+	handler := newChaincodeHandler(stream, cc)
 
 	defer stream.CloseSend()
 	// Send the ChaincodeID during register.

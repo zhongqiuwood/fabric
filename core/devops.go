@@ -99,7 +99,7 @@ func (*Devops) Login(ctx context.Context, secret *pb.Secret) (*pb.Response, erro
 // Build builds the supplied chaincode image
 func (d *Devops) Build(context context.Context, spec *pb.ChaincodeSpec) (*pb.ChaincodeDeploymentSpec, error) {
 
-	chaincodeDeploymentSpec, err := d.getChaincodeBytes(ctx, spec)
+	chaincodeDeploymentSpec, err := d.getChaincodeBytes(context, spec)
 	if err != nil {
 		devopsLogger.Error(fmt.Sprintf("Error build chaincode spec: %v\n\n error: %s", spec, err))
 		return nil, err

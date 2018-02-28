@@ -211,7 +211,7 @@ func newDuplicateChaincodeHandlerError(chaincodeHandler *Handler) error {
 	return &DuplicateChaincodeHandlerError{ChaincodeID: chaincodeHandler.ChaincodeID}
 }
 
-func (chaincodeSupport *ChaincodeSupport) UserRunsCC() {
+func (chaincodeSupport *ChaincodeSupport) UserRunsCC() bool {
 	return chaincodeSupport.userRunsCC
 }
 

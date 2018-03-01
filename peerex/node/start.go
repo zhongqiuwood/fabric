@@ -5,7 +5,6 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/peer/node"
 	"github.com/abchain/fabric/peerex"
-	"github.com/abchain/fabric/peerex/logging"
 	"github.com/spf13/viper"
 	"runtime"
 )
@@ -14,8 +13,6 @@ type NodeConfig struct {
 	Settings map[string]interface{}
 	PostRun  func() error
 }
-
-var logger = logging.InitLogger("node")
 
 //mimic peer.main()
 func RunNode(cfg *NodeConfig) {
@@ -39,20 +36,6 @@ func RunNode(cfg *NodeConfig) {
 	}
 
 	// run serve
-	err, ret := node.StartNode()
-	if err == nil {
+	node.StartNode(cfg.PostRun)
 
-		if cfg.PostRun != nil {
-			err = cfg.PostRun()
-		}
-
-		if err != nil {
-			logger.Error("Post run fail, exit ...", err)
-		} else {
-			err = <-ret
-			logger.Info("Normal exiting ....", err)
-		}
-
-		node.ClearNodeService()
-	}
 }

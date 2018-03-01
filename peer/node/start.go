@@ -63,27 +63,11 @@ var nodeStartCmd = &cobra.Command{
 	Short: "Starts the node.",
 	Long:  `Starts a node that interacts with the network.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return serve(args)
+		return StartNode(nil)
 	},
 }
 
-func serve(args []string) error {
-
-	// Block until grpc server exits
-	err, ret := StartNode()
-
-	if err != nil {
-		return err
-	}
-
-	err = <-ret
-
-	ClearNodeService()
-
-	return err
-}
-
-func StartNode() (error, chan error) {
+func StartNode(postrun func() error) error {
 	// Parameter overrides must be processed before any paramaters are
 	// cached. Failures to cache cause the server to terminate immediately.
 	if chaincodeDevMode {
@@ -98,13 +82,13 @@ func StartNode() (error, chan error) {
 	}
 
 	if err := peer.CacheConfiguration(); err != nil {
-		return err, nil
+		return err
 	}
 
 	peerEndpoint, err := peer.GetPeerEndpoint()
 	if err != nil {
 		err = fmt.Errorf("Failed to get Peer Endpoint: %s", err)
-		return err, nil
+		return err
 	}
 
 	ehubLis, ehubGrpcServer, err := createEventHubServer()
@@ -125,7 +109,7 @@ func StartNode() (error, chan error) {
 
 	if err := writePid(util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))+"peer.pid",
 		os.Getpid()); err != nil {
-		return err, nil
+		return err
 	}
 
 	db.Start()
@@ -133,7 +117,7 @@ func StartNode() (error, chan error) {
 
 	secHelper, err := getSecHelper()
 	if err != nil {
-		return err, nil
+		return err
 	}
 
 	secHelperFunc := func() crypto.Peer {
@@ -151,7 +135,7 @@ func StartNode() (error, chan error) {
 		logger.Debug("Running as validating peer - making genesis block if needed")
 		makeGenesisError := genesis.MakeGenesis()
 		if makeGenesisError != nil {
-			return makeGenesisError, nil
+			return makeGenesisError
 		}
 		logger.Debugf("Running as validating peer - installing consensus %s",
 			viper.GetString("peer.validator.consensus"))
@@ -165,7 +149,7 @@ func StartNode() (error, chan error) {
 	if err != nil {
 		logger.Fatalf("Failed creating new peer with handler %v", err)
 
-		return err, nil
+		return err
 	}
 
 	// Register the Peer server
@@ -181,7 +165,7 @@ func StartNode() (error, chan error) {
 	serverOpenchain, err := rest.NewOpenchainServerWithPeerInfo(peerServer)
 	if err != nil {
 		err = fmt.Errorf("Error creating OpenchainServer: %s", err)
-		return err, nil
+		return err
 	}
 
 	srv_devops := func(server *grpc.Server) {
@@ -256,13 +240,22 @@ func StartNode() (error, chan error) {
 		}()
 	}
 
-	return nil, serve
-}
+	if postrun != nil {
+		err = postrun()
+		if err != nil {
+			logger.Info("Post run fail, exit immediately ...", err)
+		}
+	}
 
-func ClearNodeService() {
+	// Block until grpc server exits
+	if err == nil {
+		err = <-serve
+	}
 
 	// TODO: we still not clear other serverice like rest and ehub ...
 	service.StopServices()
+
+	return err
 }
 
 func registerChaincodeSupport(chainname chaincode.ChainName, grpcServer *grpc.Server,

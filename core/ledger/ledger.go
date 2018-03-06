@@ -307,11 +307,11 @@ func (ledger *Ledger) GetStateSnapshot() (*state.StateSnapshot, error) {
 	dbSnapshot := db.GetDBHandle().GetSnapshot()
 	blockHeight, err := fetchBlockchainSizeFromSnapshot(dbSnapshot)
 	if err != nil {
-		dbSnapshot.Release()
+		db.GetDBHandle().ReleaseSnapshot(dbSnapshot)
 		return nil, err
 	}
 	if 0 == blockHeight {
-		dbSnapshot.Release()
+		db.GetDBHandle().ReleaseSnapshot(dbSnapshot)
 		return nil, fmt.Errorf("Blockchain has no blocks, cannot determine block number")
 	}
 	return ledger.state.GetSnapshot(blockHeight-1, dbSnapshot)

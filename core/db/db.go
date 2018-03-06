@@ -135,6 +135,10 @@ func (openchainDB *OpenchainDB) GetSnapshot() *gorocksdb.Snapshot {
 	return openchainDB.DB.NewSnapshot()
 }
 
+func (openchainDB *OpenchainDB) ReleaseSnapshot(snapshot *gorocksdb.Snapshot) {
+	openchainDB.DB.ReleaseSnapshot(snapshot)
+}
+
 func getDBPath() string {
 	dbPath := viper.GetString("peer.fileSystemPath")
 	if dbPath == "" {

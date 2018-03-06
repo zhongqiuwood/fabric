@@ -17,6 +17,7 @@ limitations under the License.
 package state
 
 import (
+	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/tecbot/gorocksdb"
 )
@@ -41,7 +42,7 @@ func newStateSnapshot(blockNumber uint64, dbSnapshot *gorocksdb.Snapshot) (*Stat
 // Release the snapshot. This MUST be called when you are done with this resouce.
 func (ss *StateSnapshot) Release() {
 	ss.stateImplItr.Close()
-	ss.dbSnapshot.Release()
+	db.GetDBHandle().ReleaseSnapshot(ss.dbSnapshot)
 }
 
 // Next moves the iterator to the next key/value pair in the state

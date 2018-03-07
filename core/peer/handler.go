@@ -188,6 +188,27 @@ func (d *Handler) beforeHello(e *fsm.Event) {
 			return
 		}
 	}
+}
+
+func (d *Handler) beforeGetPeers(e *fsm.Event) {
+	peersMessage, err := d.Coordinator.GetPeers()
+	if err != nil {
+		e.Cancel(fmt.Errorf("Error Getting Peers: %s", err))
+		return
+	}
+	data, err := proto.Marshal(peersMessage)
+	if err != nil {
+		e.Cancel(fmt.Errorf("Error Marshalling PeersMessage: %s", err))
+		return
+	}
+	peerLogger.Debugf("Sending back %s", pb.Message_DISC_PEERS.String())
+	if err := d.SendMessage(&pb.Message{Type: pb.Message_DISC_PEERS, Payload: data}); err != nil {
+		e.Cancel(err)
+		return
+	}
+
+	// modified by erwin @20180307
+	// move from beforeHello
 	// Register
 	err = d.Coordinator.RegisterHandler(d)
 	if err != nil {
@@ -205,29 +226,21 @@ func (d *Handler) beforeHello(e *fsm.Event) {
 				peerLogger.Error(err)
 			}
 		}
-		go d.start()
-	}
-}
 
-func (d *Handler) beforeGetPeers(e *fsm.Event) {
-	peersMessage, err := d.Coordinator.GetPeers()
-	if err != nil {
-		e.Cancel(fmt.Errorf("Error Getting Peers: %s", err))
-		return
-	}
-	data, err := proto.Marshal(peersMessage)
-	if err != nil {
-		e.Cancel(fmt.Errorf("Error Marshalling PeersMessage: %s", err))
-		return
-	}
-	peerLogger.Debugf("Sending back %s", pb.Message_DISC_PEERS.String())
-	if err := d.SendMessage(&pb.Message{Type: pb.Message_DISC_PEERS, Payload: data}); err != nil {
-		e.Cancel(err)
+		if viper.GetBool("peer.discovery.hidden") {
+			return
+		}
+		go d.start()
 	}
 }
 
 func (d *Handler) beforePeers(e *fsm.Event) {
 	peerLogger.Debugf("Received %s, grabbing peers message", e.Event)
+	if viper.GetBool("peer.discovery.hidden") {
+		peerLogger.Debug("Ingore to process disc peers in hidden mode")
+		return
+	}
+
 	// Parse out the PeerEndpoint information
 	if _, ok := e.Args[0].(*pb.Message); !ok {
 		e.Cancel(fmt.Errorf("Received unexpected message type"))

@@ -16,6 +16,22 @@ The original readme can be found [here](https://github.com/hyperledger/fabric/bl
 
 * More consensus modules
 
+## Building
+
+You need to build rocksdb 5.10
+
+* For windows, build with following FLAGS:
+```
+    set CGO_CFLAGS "-g -O2 -I<Your rocksdb project path>\\include"
+```
+```
+    set CGO_LDFLAGS "<The fullpath of librocksdb.a> -lrpcrt4"
+```
+
+* For other OS you should make and "install-shared", and make sure following libs availiable
+```
+    -lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy
+```
 
 ## License <a name="license"></a>
 The Hyperledger Project uses the [Apache License Version 2.0](LICENSE) software

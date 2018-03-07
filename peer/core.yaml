@@ -255,6 +255,10 @@ peer:
         # -1 for unlimited
         touchMaxNodes: 100
 
+        # Running in hidden mode for node discovery
+        # Node will connect to root nodes only
+        hidden: false
+
     # Path on the file system where peer will store data
     fileSystemPath: /var/hyperledger/production
     # rocksdb configurations

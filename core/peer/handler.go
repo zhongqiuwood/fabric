@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/abchain/fabric/core/comm"
+
 	"github.com/golang/protobuf/proto"
 	"github.com/looplab/fsm"
 	"github.com/spf13/viper"
@@ -227,7 +229,7 @@ func (d *Handler) beforeGetPeers(e *fsm.Event) {
 			}
 		}
 
-		if viper.GetBool("peer.discovery.hidden") {
+		if comm.DiscoveryHidden() {
 			return
 		}
 		go d.start()
@@ -236,7 +238,7 @@ func (d *Handler) beforeGetPeers(e *fsm.Event) {
 
 func (d *Handler) beforePeers(e *fsm.Event) {
 	peerLogger.Debugf("Received %s, grabbing peers message", e.Event)
-	if viper.GetBool("peer.discovery.hidden") {
+	if comm.DiscoveryHidden() {
 		peerLogger.Debug("Ingore to process disc peers in hidden mode")
 		return
 	}

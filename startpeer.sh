@@ -1,0 +1,80 @@
+#!/bin/bash
+
+
+
+
+PEER_MODE="$1"
+PEER_ID="$2"
+CONSENSUS=$3
+
+TAG_LVP="lvp"
+TAG_PBFT="pbft"
+PORT_PREFIX=7
+
+
+if [ $# -eq 0 ]; then
+    echo "startpeer.sh <PEER_MODE> <#PEER_ID> <pbft | noops> <N> <f>"
+    exit
+fi
+
+
+echo "======================================================"
+
+FULL_PEER_ID=${PEER_MODE}${PEER_ID}
+
+if [ "$PEER_MODE" = "$TAG_LVP" ];then
+FULL_PEER_ID=${PEER_MODE}${PEER_ID}
+fi
+
+if [ $PEER_ID -gt 0 ];then
+export CORE_PEER_DISCOVERY_ROOTNODE=127.0.0.1:7055
+echo "This is the <$FULL_PEER_ID> with $CONSENSUS. CORE_PEER_DISCOVERY_ROOTNODE=$CORE_PEER_DISCOVERY_ROOTNODE"
+else
+echo "This is the lead <$FULL_PEER_ID>. with $CONSENSUS" 
+fi
+
+
+if [ "$CONSENSUS" = "$TAG_PBFT" ];then
+export CORE_PBFT_GENERAL_N=$4
+export CORE_PBFT_GENERAL_F=$5
+echo "CORE_PBFT_GENERAL_N=$CORE_PBFT_GENERAL_N, CORE_PBFT_GENERAL_F=$CORE_PBFT_GENERAL_F"
+fi
+
+export CORE_PEER_VALIDATOR_CONSENSUS_PLUGIN=$CONSENSUS
+
+#export CORE_LOGGING_OUTPUT_FILE=peer${PEER_ID}.log
+export CORE_LOGGING_OUTPUTFILE=${FULL_PEER_ID}.log
+
+export CORE_CLI_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}52
+
+export CORE_REST_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}50
+
+export CORE_SERVICE_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}51
+export CORE_SERVICE_CLIADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}51
+
+export CORE_PEER_ID=${FULL_PEER_ID}
+export CORE_PEER_LOCALADDR=127.0.0.1:${PORT_PREFIX}${PEER_ID}56
+export CORE_PEER_LISTENADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}55
+export CORE_PEER_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}55
+export CORE_PEER_CLIADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}51
+
+export CORE_PEER_VALIDATOR_EVENTS_ADDRESS=0.0.0.0:${PORT_PREFIX}${PEER_ID}53
+export CORE_PEER_VALIDATOR_MODE=${PEER_MODE}
+
+export CORE_PEER_VALIDATOR_EVENTS_ADDRESS=0.0.0.0:${PORT_PREFIX}${PEER_ID}53
+export CORE_PEER_PKI_ECA_PADDR=localhost:${PORT_PREFIX}${PEER_ID}54
+export CORE_PEER_PKI_TCA_PADDR=localhost:${PORT_PREFIX}${PEER_ID}54
+export CORE_PEER_PKI_TLSCA_PADDR=localhost:${PORT_PREFIX}${PEER_ID}54
+export CORE_PEER_PROFILE_LISTENADDRESS=0.0.0.0:${PORT_PREFIX}${PEER_ID}60
+
+export CORE_PEER_FILESYSTEMPATH=/var/hyperledger/production${PEER_ID}
+
+if [ ! -f build/bin/peer_fabric_${PEER_ID} ]; then
+    cd build/bin
+    ln -s peer peer_fabric_${PEER_ID}
+    cd ../..
+fi
+
+nohup build/bin/peer_fabric_${PEER_ID} node start > nohup_peer${PEER_ID}.log 2>&1 &
+
+

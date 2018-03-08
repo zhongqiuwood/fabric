@@ -48,15 +48,12 @@ import (
 )
 
 var chaincodeDevMode bool
-var peerDiscoveryHidden bool
 
 func startCmd() *cobra.Command {
 	// Set the flags on the node start command.
 	flags := nodeStartCmd.Flags()
 	flags.BoolVarP(&chaincodeDevMode, "peer-chaincodedev", "", false,
 		"Whether peer in chaincode development mode")
-	flags.BoolVarP(&peerDiscoveryHidden, "peer-discovery-hidden", "", false, 
-		"Change node discovery behavior hidden")
 
 	return nodeStartCmd
 }
@@ -82,13 +79,6 @@ func StartNode(postrun func() error) error {
 		viper.Set("peer.validator.consensus", "noops")
 		viper.Set("chaincode.mode", chaincode.DevModeUserRunsChaincode)
 
-	}
-
-	if peerDiscoveryHidden {
-		logger.Info("Running in hidden mode for node discovery")
-		logger.Info("Node will connect to root nodes only")
-
-		viper.Set("peer.discovery.hidden", "true")
 	}
 
 	if err := peer.CacheConfiguration(); err != nil {
@@ -218,6 +208,7 @@ func StartNode(postrun func() error) error {
 		serve <- srverr
 	}
 
+	logger.Infof("Discovery hidden mode: %t", comm.DiscoveryHidden())
 	logger.Infof("Starting peer with ID=%s, network ID=%s, address=%s, rootnodes=%v, validator=%v",
 		peerEndpoint.ID, viper.GetString("peer.networkId"), peerEndpoint.Address,
 		viper.GetString("peer.discovery.rootnode"), peer.ValidatorEnabled())

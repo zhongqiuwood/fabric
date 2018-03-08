@@ -1,19 +1,19 @@
 #!/bin/bash
 
 
-
-
 PEER_MODE="$1"
 PEER_ID="$2"
 CONSENSUS=$3
 
 TAG_LVP="lvp"
 TAG_PBFT="pbft"
-PORT_PREFIX=7
+PORT_PREFIX=2
 
+NUM_F=$4
+let NUM_N=$NUM_F*3+1
 
 if [ $# -eq 0 ]; then
-    echo "startpeer.sh <PEER_MODE> <#PEER_ID> <pbft | noops> <N> <f>"
+    echo "startpeer.sh <PEER_MODE> <#PEER_ID> <pbft | noops> <f>"
     exit
 fi
 
@@ -27,7 +27,7 @@ FULL_PEER_ID=${PEER_MODE}${PEER_ID}
 fi
 
 if [ $PEER_ID -gt 0 ];then
-export CORE_PEER_DISCOVERY_ROOTNODE=127.0.0.1:7055
+export CORE_PEER_DISCOVERY_ROOTNODE=127.0.0.1:${PORT_PREFIX}055
 echo "This is the <$FULL_PEER_ID> with $CONSENSUS. CORE_PEER_DISCOVERY_ROOTNODE=$CORE_PEER_DISCOVERY_ROOTNODE"
 else
 echo "This is the lead <$FULL_PEER_ID>. with $CONSENSUS" 
@@ -35,15 +35,15 @@ fi
 
 
 if [ "$CONSENSUS" = "$TAG_PBFT" ];then
-export CORE_PBFT_GENERAL_N=$4
-export CORE_PBFT_GENERAL_F=$5
+export CORE_PBFT_GENERAL_N=$NUM_N
+export CORE_PBFT_GENERAL_F=$NUM_F
 echo "CORE_PBFT_GENERAL_N=$CORE_PBFT_GENERAL_N, CORE_PBFT_GENERAL_F=$CORE_PBFT_GENERAL_F"
 fi
 
 export CORE_PEER_VALIDATOR_CONSENSUS_PLUGIN=$CONSENSUS
 
 #export CORE_LOGGING_OUTPUT_FILE=peer${PEER_ID}.log
-export CORE_LOGGING_OUTPUTFILE=${FULL_PEER_ID}.log
+export CORE_LOGGING_OUTPUTFILE=${FULL_PEER_ID}.json
 
 export CORE_CLI_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}52
 
@@ -75,6 +75,7 @@ if [ ! -f build/bin/peer_fabric_${PEER_ID} ]; then
     cd ../..
 fi
 
-nohup build/bin/peer_fabric_${PEER_ID} node start > nohup_peer${PEER_ID}.log 2>&1 &
+nohup build/bin/peer_fabric_${PEER_ID} node start > /dev/null 2>&1 &
+#nohup build/bin/peer_fabric_${PEER_ID} node start > nohup_peer${PEER_ID}.log 2>&1 &
 
 

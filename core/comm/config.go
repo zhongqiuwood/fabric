@@ -29,6 +29,7 @@ var tlsEnabledForService bool
 var tlsEnabledForLocalSrv bool
 var rpcMessageSize int = 32 * 1024 * 1024 //32MB
 var discoveryHidden = false
+var discoveryDisable = false
 
 // CacheConfiguration computes and caches commonly-used constants and
 // computed constants as package variables. Routines which were previously
@@ -38,6 +39,7 @@ func CacheConfiguration() (err error) {
 	tlsEnabledForService = viper.GetBool("peer.tls.serviceenabled")
 	tlsEnabledForLocalSrv = viper.GetBool("peer.tls.localsrvabled")
 	discoveryHidden = viper.GetBool("peer.discovery.hidden")
+	discoveryDisable = viper.GetBool("peer.discovery.disable")
 
 	size := viper.GetInt("peer.messagesizelimit")
 	if size > 1024*1024*4 {
@@ -97,4 +99,12 @@ func DiscoveryHidden() bool {
 	}
 
 	return discoveryHidden
+}
+
+func DiscoveryDisable() bool{
+	if !configurationCached {
+		cacheConfiguration()
+	}
+
+	return discoveryDisable
 }

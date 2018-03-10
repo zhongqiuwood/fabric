@@ -32,7 +32,9 @@ package peer
 import (
 	"fmt"
 	"net"
+	"strings"
 
+	"github.com/abchain/fabric/core/comm"
 	"github.com/spf13/viper"
 
 	pb "github.com/abchain/fabric/protos"
@@ -95,7 +97,30 @@ func CacheConfiguration() (err error) {
 		} else {
 			peerType = pb.PeerEndpoint_NON_VALIDATOR
 		}
-		return &pb.PeerEndpoint{ID: &pb.PeerID{Name: viper.GetString("peer.id")}, Address: peerAddress, Type: peerType}, nil
+
+		// automatic correction for the ID prefix
+		var peerPrefix = ""
+		var peerID = viper.GetString("peer.id")
+		if comm.DiscoveryHidden() {
+			if comm.DiscoveryDisable() {
+				peerPrefix = "NVP" // Non-validator peer
+			} else {
+				peerPrefix = "NSP" // name service peer
+			}
+		} else {
+			if comm.DiscoveryDisable() {
+				peerPrefix = "BRP" // bridge peer
+			} else {
+				peerPrefix = "" // normal peer
+			}
+		}
+		if len(peerPrefix) > 0 {
+			if strings.Compare(peerPrefix, peerID[0:3]) != 0 {
+				peerID = peerPrefix + peerID
+			}
+		}
+
+		return &pb.PeerEndpoint{ID: &pb.PeerID{Name: peerID}, Address: peerAddress, Type: peerType}, nil
 	}
 
 	localAddress, localAddressError = getLocalAddress()

@@ -198,6 +198,9 @@ func (d *Handler) beforeGetPeers(e *fsm.Event) {
 		e.Cancel(fmt.Errorf("Error Getting Peers: %s", err))
 		return
 	}
+	if comm.DiscoveryDisable() {
+		peersMessage.Reset()
+	}
 	data, err := proto.Marshal(peersMessage)
 	if err != nil {
 		e.Cancel(fmt.Errorf("Error Marshalling PeersMessage: %s", err))

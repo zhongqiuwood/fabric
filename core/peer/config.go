@@ -114,10 +114,8 @@ func CacheConfiguration() (err error) {
 				peerPrefix = "" // normal peer
 			}
 		}
-		if len(peerPrefix) > 0 {
-			if strings.Compare(peerPrefix, peerID[0:3]) != 0 {
-				peerID = peerPrefix + peerID
-			}
+		if len(peerPrefix) > 0 && strings.Compare(peerPrefix, peerID[0:3]) != 0 {
+			peerID = peerPrefix + peerID
 		}
 
 		return &pb.PeerEndpoint{ID: &pb.PeerID{Name: peerID}, Address: peerAddress, Type: peerType}, nil

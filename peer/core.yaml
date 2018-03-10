@@ -260,8 +260,7 @@ peer:
         hidden: false
 
         #Abolished the discovered function of the node and retained the function of detecting other nodes
-        disable: false
-
+        disable: true
 
     # Path on the file system where peer will store data
     fileSystemPath: /var/hyperledger/production

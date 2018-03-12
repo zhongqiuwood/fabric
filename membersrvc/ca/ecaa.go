@@ -60,7 +60,7 @@ func (ecaa *ECAA) RegisterUser(ctx context.Context, in *pb.RegisterUserReq) (*pb
 	}
 	jsonStr := string(json)
 	ecaaLogger.Debugf("gRPC ECAA:RegisterUser: json=%s", jsonStr)
-	tok, err := ecaa.eca.registerUser(in.Id.Id, in.Affiliation, in.Role, in.Attributes, ecaa.eca.aca, registrarID, jsonStr)
+	tok, err := ecaa.eca.registerUser(in.Id.Id, in.Affiliation, in.Role, in.Attributes, registrarID, jsonStr)
 
 	// Return the one-time password
 	return &pb.Token{Tok: []byte(tok)}, err
@@ -78,7 +78,7 @@ func (ecaa *ECAA) checkRegistrarSignature(in *pb.RegisterUserReq) error {
 
 	// Get the raw cert for the registrar
 	registrar := in.Registrar.Id.Id
-	raw, err := ecaa.eca.readCertificateByKeyUsage(registrar, x509.KeyUsageDigitalSignature)
+	raw, err := ecaa.eca.cadb.readCertificateByKeyUsage(registrar, x509.KeyUsageDigitalSignature)
 	if err != nil {
 		return err
 	}
@@ -120,11 +120,11 @@ func (ecaa *ECAA) ReadUserSet(ctx context.Context, in *pb.ReadUserSetReq) (*pb.U
 	ecaaLogger.Debug("gRPC ECAA:ReadUserSet")
 
 	req := in.Req.Id
-	if ecaa.eca.readRole(req)&int(pb.Role_AUDITOR) == 0 {
+	if ecaa.eca.cadb.readRole(req)&int(pb.Role_AUDITOR) == 0 {
 		return nil, errors.New("Access denied.")
 	}
 
-	raw, err := ecaa.eca.readCertificateByKeyUsage(req, x509.KeyUsageDigitalSignature)
+	raw, err := ecaa.eca.cadb.readCertificateByKeyUsage(req, x509.KeyUsageDigitalSignature)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +147,7 @@ func (ecaa *ECAA) ReadUserSet(ctx context.Context, in *pb.ReadUserSetReq) (*pb.U
 		return nil, errors.New("Signature verification failed.")
 	}
 
-	rows, err := ecaa.eca.readUsers(int(in.Role))
+	rows, err := ecaa.eca.cadb.readUsers(int(in.Role))
 	if err != nil {
 		return nil, err
 	}

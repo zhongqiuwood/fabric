@@ -109,7 +109,7 @@ func (ecap *ECAP) CreateCertificatePair(ctx context.Context, in *pb.ECertCreateR
 	var enrollID string
 
 	id := in.Id.Id
-	err := ecap.eca.readUser(id).Scan(&role, &tok, &state, &prev, &enrollID)
+	err := ecap.eca.cadb.readUser(id).Scan(&role, &tok, &state, &prev, &enrollID)
 
 	if err != nil {
 		errMsg := "Identity lookup error: " + err.Error()
@@ -133,7 +133,8 @@ func (ecap *ECAP) CreateCertificatePair(ctx context.Context, in *pb.ECertCreateR
 		tok = []byte(randomString(12))
 
 		mutex.Lock()
-		_, err = ecap.eca.db.Exec("UPDATE Users SET token=?, state=?, key=? WHERE id=?", tok, 1, in.Enc.Key, id)
+		// TODO DB
+		_, err = ecap.eca.cadb.db.Exec("UPDATE Users SET token=?, state=?, key=? WHERE id=?", tok, 1, in.Enc.Key, id)
 		mutex.Unlock()
 
 		if err != nil {
@@ -188,7 +189,7 @@ func (ecap *ECAP) CreateCertificatePair(ctx context.Context, in *pb.ECertCreateR
 		// create new certificate pair
 		ts := time.Now().Add(-1 * time.Minute).UnixNano()
 
-		spec := NewDefaultCertificateSpecWithCommonName(id, enrollID, skey.(*ecdsa.PublicKey), x509.KeyUsageDigitalSignature, pkix.Extension{Id: ECertSubjectRole, Critical: true, Value: []byte(strconv.Itoa(ecap.eca.readRole(id)))})
+		spec := NewDefaultCertificateSpecWithCommonName(id, enrollID, skey.(*ecdsa.PublicKey), x509.KeyUsageDigitalSignature, pkix.Extension{Id: ECertSubjectRole, Critical: true, Value: []byte(strconv.Itoa(ecap.eca.cadb.readRole(id)))})
 		sraw, err := ecap.eca.createCertificateFromSpec(spec, ts, nil, true)
 		if err != nil {
 			ecapLogger.Error(err)
@@ -197,22 +198,22 @@ func (ecap *ECAP) CreateCertificatePair(ctx context.Context, in *pb.ECertCreateR
 
 		_ = ioutil.WriteFile("/tmp/ecert_"+id, sraw, 0644)
 
-		spec = NewDefaultCertificateSpecWithCommonName(id, enrollID, ekey.(*ecdsa.PublicKey), x509.KeyUsageDataEncipherment, pkix.Extension{Id: ECertSubjectRole, Critical: true, Value: []byte(strconv.Itoa(ecap.eca.readRole(id)))})
+		spec = NewDefaultCertificateSpecWithCommonName(id, enrollID, ekey.(*ecdsa.PublicKey), x509.KeyUsageDataEncipherment, pkix.Extension{Id: ECertSubjectRole, Critical: true, Value: []byte(strconv.Itoa(ecap.eca.cadb.readRole(id)))})
 		eraw, err := ecap.eca.createCertificateFromSpec(spec, ts, nil, true)
 		if err != nil {
 			mutex.Lock()
-			ecap.eca.db.Exec("DELETE FROM Certificates Where id=?", id)
+			ecap.eca.cadb.db.Exec("DELETE FROM Certificates Where id=?", id)
 			mutex.Unlock()
 			ecapLogger.Error(err)
 			return nil, err
 		}
 
 		mutex.Lock()
-		_, err = ecap.eca.db.Exec("UPDATE Users SET state=? WHERE id=?", 2, id)
+		_, err = ecap.eca.cadb.db.Exec("UPDATE Users SET state=? WHERE id=?", 2, id)
 		mutex.Unlock()
 		if err != nil {
 			mutex.Lock()
-			ecap.eca.db.Exec("DELETE FROM Certificates Where id=?", id)
+			ecap.eca.cadb.db.Exec("DELETE FROM Certificates Where id=?", id)
 			mutex.Unlock()
 			ecapLogger.Error(err)
 			return nil, err
@@ -246,7 +247,7 @@ func (ecap *ECAP) CreateCertificatePair(ctx context.Context, in *pb.ECertCreateR
 func (ecap *ECAP) ReadCertificatePair(ctx context.Context, in *pb.ECertReadReq) (*pb.CertPair, error) {
 	ecapLogger.Debug("gRPC ECAP:ReadCertificate")
 
-	rows, err := ecap.eca.readCertificates(in.Id.Id)
+	rows, err := ecap.eca.cadb.readCertificates(in.Id.Id)
 	defer rows.Close()
 
 	hasResults := false
@@ -272,7 +273,7 @@ func (ecap *ECAP) ReadCertificatePair(ctx context.Context, in *pb.ECertReadReq) 
 func (ecap *ECAP) ReadCertificateByHash(ctx context.Context, hash *pb.Hash) (*pb.Cert, error) {
 	ecapLogger.Debug("gRPC ECAP:ReadCertificateByHash")
 
-	raw, err := ecap.eca.readCertificateByHash(hash.Hash)
+	raw, err := ecap.eca.cadb.readCertificateByHash(hash.Hash)
 	return &pb.Cert{Cert: raw}, err
 }
 

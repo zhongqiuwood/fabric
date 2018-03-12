@@ -19,6 +19,7 @@ package ca
 import (
 	"crypto/ecdsa"
 	"crypto/rand"
+	"crypto/elliptic"
 	"crypto/x509"
 	"database/sql"
 	"encoding/asn1"
@@ -27,8 +28,6 @@ import (
 	"io/ioutil"
 	"strconv"
 	"strings"
-
-	"github.com/abchain/fabric/core/crypto/primitives"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
@@ -48,7 +47,7 @@ var (
 //
 type ECA struct {
 	*CA
-	aca             *ACA
+	// aca             *ACA
 	obcKey          []byte
 	obcPriv, obcPub []byte
 	gRPCServer      *grpc.Server
@@ -59,9 +58,9 @@ func initializeECATables(db *sql.DB) error {
 }
 
 // NewECA sets up a new ECA.
-//
-func NewECA(aca *ACA) *ECA {
-	eca := &ECA{CA: NewCA("eca", initializeECATables), aca: aca}
+// remove aca *ACA param from NewECA
+func NewECA() *ECA {
+	eca := &ECA{CA: NewCA("eca", initializeECATables)}
 	flogging.LoggingInit("eca")
 
 	{
@@ -101,7 +100,7 @@ func NewECA(aca *ACA) *ECA {
 				ecaLogger.Panic(err)
 			}
 		} else {
-			priv, err = ecdsa.GenerateKey(primitives.GetDefaultCurve(), rand.Reader)
+			priv, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 			if err != nil {
 				ecaLogger.Panic(err)
 			}
@@ -132,10 +131,12 @@ func NewECA(aca *ACA) *ECA {
 	return eca
 }
 
+// *** populate action read object from yml file and write to db
+
 // populateUsersTable populates the users table.
 //
 func (eca *ECA) populateUsersTable() {
-	// populate user table
+	// populate user table, read from config yml file and  wrtie to ca db
 	users := viper.GetStringMapString("eca.users")
 	for id, flds := range users {
 		vals := strings.Fields(flds)
@@ -153,13 +154,13 @@ func (eca *ECA) populateUsersTable() {
 				}
 			}
 		}
-		eca.registerUser(id, affiliation, pb.Role(role), nil, eca.aca, registrar, memberMetadata, vals[1])
+		eca.registerUser(id, affiliation, pb.Role(role), nil, registrar, memberMetadata, vals[1])
 	}
 }
 
 // populateAffiliationGroup populates the affiliation groups table.
 //
-func (eca *ECA) populateAffiliationGroup(name, parent, key string, level int) {
+func (eca *ECA) _populateAffiliationGroup(name, parent, key string, level int) {
 	eca.registerAffiliationGroup(name, parent)
 	newKey := key + "." + name
 
@@ -171,7 +172,7 @@ func (eca *ECA) populateAffiliationGroup(name, parent, key string, level int) {
 	} else {
 		affiliationGroups := viper.GetStringMapString(newKey)
 		for childName := range affiliationGroups {
-			eca.populateAffiliationGroup(childName, name, newKey, level-1)
+			eca._populateAffiliationGroup(childName, name, newKey, level-1)
 		}
 	}
 }
@@ -182,7 +183,7 @@ func (eca *ECA) populateAffiliationGroupsTable() {
 	key := "eca.affiliations"
 	affiliationGroups := viper.GetStringMapString(key)
 	for name := range affiliationGroups {
-		eca.populateAffiliationGroup(name, "", key, 1)
+		eca._populateAffiliationGroup(name, "", key, 1)
 	}
 }
 

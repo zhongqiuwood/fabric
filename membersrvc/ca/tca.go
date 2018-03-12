@@ -70,20 +70,6 @@ type TCertSet struct {
 	Key          []byte
 }
 
-func initializeTCATables(db *sql.DB) error {
-	var err error
-
-	err = initializeCommonTables(db)
-	if err != nil {
-		return err
-	}
-
-	if _, err = db.Exec("CREATE TABLE IF NOT EXISTS TCertificateSets (row INTEGER PRIMARY KEY, enrollmentID VARCHAR(64), timestamp INTEGER, nonce BLOB, kdfkey BLOB)"); err != nil {
-		return err
-	}
-
-	return err
-}
 
 // NewTCA sets up a new TCA.
 func NewTCA(eca *ECA) *TCA {
@@ -179,7 +165,7 @@ func (tca *TCA) initializePreKeyGroup(group *AffiliationGroup) error {
 
 func (tca *TCA) initializePreKeyTree() error {
 	tcaLogger.Debug("Initializing PreKeys.")
-	groups, err := tca.eca.readAffiliationGroups()
+	groups, err := tca.eca.cadb.readAffiliationGroups()
 	if err != nil {
 		return err
 	}
@@ -277,17 +263,9 @@ func (tca *TCA) getCertificateSets(enrollmentID string) ([]*TCertSet, error) {
 }
 
 func (tca *TCA) persistCertificateSet(enrollmentID string, timestamp int64, nonce []byte, kdfKey []byte) error {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	var err error
-
-	if _, err = tca.db.Exec("INSERT INTO TCertificateSets (enrollmentID, timestamp, nonce, kdfkey) VALUES (?, ?, ?, ?)", enrollmentID, timestamp, nonce, kdfKey); err != nil {
-		tcaLogger.Error(err)
-	}
-	return err
+	return tca.cadb.persistCertificateSet(enrollmentID, timestamp, nonce, kdfKey)
 }
 
 func (tca *TCA) retrieveCertificateSets(enrollmentID string) (*sql.Rows, error) {
-	return tca.db.Query("SELECT enrollmentID, timestamp, nonce, kdfkey FROM TCertificateSets WHERE enrollmentID=?", enrollmentID)
+	return tca.cadb.retrieveCertificateSets(enrollmentID)
 }

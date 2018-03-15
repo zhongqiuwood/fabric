@@ -184,6 +184,7 @@ type EngineFactory func(MessageHandlerCoordinator) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
+	sync.RWMutex
 	handlerFactory HandlerFactory
 	handlerMap     *handlerMap
 	ledgerWrapper  *ledgerWrapper
@@ -193,6 +194,7 @@ type Impl struct {
 	reconnectOnce  sync.Once
 	discHelper     discovery.Discovery
 	discPersist    bool
+	cachedPeerList []*pb.PeerEndpoint
 }
 
 // TransactionProccesor responsible for processing of Transactions
@@ -300,20 +302,49 @@ func (p *Impl) ProcessTransaction(ctx context.Context, tx *pb.Transaction) (resp
 	return p.ExecuteTransaction(tx), err
 }
 
-// GetPeers returns the currently registered PeerEndpoints
+// GetPeers returns the currently registered PeerEndpoints which are also in peer discovery list
 func (p *Impl) GetPeers() (*pb.PeersMessage, error) {
+
+	p.RLock()
+	defer p.RUnlock()
+
+	if p.cachedPeerList == nil {
+
+		peers, err := p.genPeersList()
+		if err != nil {
+			return nil, err
+		}
+
+		//upgrading rlock to wlock
+		p.RUnlock()
+		p.Lock()
+
+		p.cachedPeerList = peers
+
+		p.Unlock()
+		p.RLock()
+	}
+
+	return &pb.PeersMessage{Peers: p.cachedPeerList}, nil
+}
+
+func (p *Impl) genPeersList() ([]*pb.PeerEndpoint, error) {
+
 	p.handlerMap.RLock()
 	defer p.handlerMap.RUnlock()
+
 	peers := []*pb.PeerEndpoint{}
 	for _, msgHandler := range p.handlerMap.m {
 		peerEndpoint, err := msgHandler.To()
 		if err != nil {
 			return nil, fmt.Errorf("Error getting peers: %s", err)
 		}
-		peers = append(peers, &peerEndpoint)
+
+		if p.discHelper.FindNode(peerEndpoint.Address) {
+			peers = append(peers, &peerEndpoint)
+		}
 	}
-	peersMessage := &pb.PeersMessage{Peers: peers}
-	return peersMessage, nil
+	return peers, nil
 }
 
 func getPeerAddresses(peersMsg *pb.PeersMessage) []string {

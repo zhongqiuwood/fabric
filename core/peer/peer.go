@@ -173,7 +173,8 @@ type ledgerWrapper struct {
 
 type handlerMap struct {
 	sync.RWMutex
-	m map[pb.PeerID]MessageHandler
+	m              map[pb.PeerID]MessageHandler
+	cachedPeerList []*pb.PeerEndpoint
 }
 
 // HandlerFactory for creating new MessageHandlers
@@ -184,7 +185,6 @@ type EngineFactory func(MessageHandlerCoordinator) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
-	sync.RWMutex
 	handlerFactory HandlerFactory
 	handlerMap     *handlerMap
 	ledgerWrapper  *ledgerWrapper
@@ -194,7 +194,6 @@ type Impl struct {
 	reconnectOnce  sync.Once
 	discHelper     discovery.Discovery
 	discPersist    bool
-	cachedPeerList []*pb.PeerEndpoint
 }
 
 // TransactionProccesor responsible for processing of Transactions
@@ -305,10 +304,10 @@ func (p *Impl) ProcessTransaction(ctx context.Context, tx *pb.Transaction) (resp
 // GetPeers returns the currently registered PeerEndpoints which are also in peer discovery list
 func (p *Impl) GetPeers() (*pb.PeersMessage, error) {
 
-	p.RLock()
-	defer p.RUnlock()
+	p.handlerMap.RLock()
+	defer p.handlerMap.RUnlock()
 
-	if p.cachedPeerList == nil {
+	if p.handlerMap.cachedPeerList == nil {
 
 		peers, err := p.genPeersList()
 		if err != nil {
@@ -316,22 +315,20 @@ func (p *Impl) GetPeers() (*pb.PeersMessage, error) {
 		}
 
 		//upgrading rlock to wlock
-		p.RUnlock()
-		p.Lock()
+		p.handlerMap.RUnlock()
+		p.handlerMap.Lock()
 
-		p.cachedPeerList = peers
+		p.handlerMap.cachedPeerList = peers
 
-		p.Unlock()
-		p.RLock()
+		p.handlerMap.Unlock()
+		p.handlerMap.RLock()
 	}
 
-	return &pb.PeersMessage{Peers: p.cachedPeerList}, nil
+	return &pb.PeersMessage{Peers: p.handlerMap.cachedPeerList}, nil
 }
 
+//requier rlock to handlerMap
 func (p *Impl) genPeersList() ([]*pb.PeerEndpoint, error) {
-
-	p.handlerMap.RLock()
-	defer p.handlerMap.RUnlock()
 
 	peers := []*pb.PeerEndpoint{}
 	for _, msgHandler := range p.handlerMap.m {
@@ -344,6 +341,7 @@ func (p *Impl) genPeersList() ([]*pb.PeerEndpoint, error) {
 			peers = append(peers, &peerEndpoint)
 		}
 	}
+
 	return peers, nil
 }
 
@@ -412,6 +410,7 @@ func (p *Impl) RegisterHandler(messageHandler MessageHandler) error {
 		return newDuplicateHandlerError(messageHandler)
 	}
 	p.handlerMap.m[*key] = messageHandler
+	p.handlerMap.cachedPeerList = nil
 	peerLogger.Debugf("registered handler with key: %s", key)
 	return nil
 }
@@ -429,6 +428,7 @@ func (p *Impl) DeregisterHandler(messageHandler MessageHandler) error {
 		return fmt.Errorf("Error deregistering handler, could not find handler with key: %s", key)
 	}
 	delete(p.handlerMap.m, *key)
+	p.handlerMap.cachedPeerList = nil
 	peerLogger.Debugf("Deregistered handler with key: %s", key)
 	return nil
 }

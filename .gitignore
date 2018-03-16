@@ -1,11 +1,17 @@
 # Local build binaries
+# rocksdb
+tmp
 node-cli/node-cli
 *.pyc
+*.json
 /build/*
 /gotools/build/*
 /bin
 .idea
 *.iml
+
+*.txt
+*.yaml
 .DS_Store
 tags
 .tags

@@ -109,7 +109,7 @@ peer:
     networkId: dev
 
     # For local calling of peer, often the node and node client can both use
-    localaddr: 127.0.0.1:7056
+    localaddr: 127.0.0.1:2056
 
     # The Address this Peer will listen on
     listenAddress: 127.0.0.1:7055
@@ -164,6 +164,7 @@ peer:
 
         # vp|nvp|lvp, vp by default
         mode: vp
+        trustedValidators2: vp3
 
         consensus:
             # Consensus plugin to use. The value is the name of the plugin, e.g. pbft, noops ( this value is case-insensitive)
@@ -511,10 +512,10 @@ statetransfer:
     timeout:
 
         # How long may returning a single block take
-        singleblock: 2s
+        singleblock: 3s
 
         # How long may returning a single state delta take
-        singlestatedelta: 2s
+        singlestatedelta: 3s
 
         # How long may transferring the complete state take
-        fullstate: 60s
+        fullstate: 6s

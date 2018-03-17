@@ -74,7 +74,7 @@ if [ ! -f build/bin/peer_fabric_${PEER_ID} ]; then
 fi
 
 # build/bin/peer_fabric_${PEER_ID} node start
-#nohup build/bin/peer_fabric_${PEER_ID} node start > /dev/null 2>&1 &
-nohup build/bin/peer_fabric_${PEER_ID} node start > nohup_peer${PEER_ID}.log 2>&1 &
+nohup build/bin/peer_fabric_${PEER_ID} node start > /dev/null 2>&1 &
+#nohup build/bin/peer_fabric_${PEER_ID} node start > nohup_peer${PEER_ID}.log 2>&1 &
 
 

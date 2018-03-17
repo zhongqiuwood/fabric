@@ -14,3 +14,8 @@ CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
     GOBIN=${GOPATH}/src/github.com/abchain/fabric/${BUILD_BIN} go install -ldflags \
     "-X github.com/abchain/fabric/metadata.Version=0.6.2-preview-snapshot-7b14b750" github.com/abchain/fabric/peer
 
+
+if [ ! -f ${BUILD_BIN}/peer ]; then
+    echo 'Failed to build peer!'
+    exit -1
+fi

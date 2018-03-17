@@ -57,7 +57,7 @@ func Log(level int, format string, args ...interface{}) {
 	case ENTER:
 	case EXIT:
 	case NOTICE:
-		logger.Debugf(format, args...)
+		logger.Infof(format, args...)
 	case INFO:
 		logger.Infof(format, args...)
 	case DEBUG:
@@ -199,4 +199,16 @@ func cutoff64(base int) uint64 {
 		return 0
 	}
 	return (1<<64-1)/uint64(base) + 1
+}
+
+
+
+func Byte2int(value []byte) int {
+
+	res, err := strconv.Atoi(string(value))
+	if err != nil {
+		Log(ENTER, "Error: ",  err.Error())
+		return -999999999
+	}
+	return res
 }

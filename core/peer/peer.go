@@ -173,7 +173,8 @@ type ledgerWrapper struct {
 
 type handlerMap struct {
 	sync.RWMutex
-	m map[pb.PeerID]MessageHandler
+	m              map[pb.PeerID]MessageHandler
+	cachedPeerList []*pb.PeerEndpoint
 }
 
 // HandlerFactory for creating new MessageHandlers
@@ -300,20 +301,48 @@ func (p *Impl) ProcessTransaction(ctx context.Context, tx *pb.Transaction) (resp
 	return p.ExecuteTransaction(tx), err
 }
 
-// GetPeers returns the currently registered PeerEndpoints
+// GetPeers returns the currently registered PeerEndpoints which are also in peer discovery list
 func (p *Impl) GetPeers() (*pb.PeersMessage, error) {
+
 	p.handlerMap.RLock()
 	defer p.handlerMap.RUnlock()
+
+	if p.handlerMap.cachedPeerList == nil {
+
+		peers, err := p.genPeersList()
+		if err != nil {
+			return nil, err
+		}
+
+		//upgrading rlock to wlock
+		p.handlerMap.RUnlock()
+		p.handlerMap.Lock()
+
+		p.handlerMap.cachedPeerList = peers
+
+		p.handlerMap.Unlock()
+		p.handlerMap.RLock()
+	}
+
+	return &pb.PeersMessage{Peers: p.handlerMap.cachedPeerList}, nil
+}
+
+//requier rlock to handlerMap
+func (p *Impl) genPeersList() ([]*pb.PeerEndpoint, error) {
+
 	peers := []*pb.PeerEndpoint{}
 	for _, msgHandler := range p.handlerMap.m {
 		peerEndpoint, err := msgHandler.To()
 		if err != nil {
 			return nil, fmt.Errorf("Error getting peers: %s", err)
 		}
-		peers = append(peers, &peerEndpoint)
+
+		if p.discHelper.FindNode(peerEndpoint.Address) {
+			peers = append(peers, &peerEndpoint)
+		}
 	}
-	peersMessage := &pb.PeersMessage{Peers: peers}
-	return peersMessage, nil
+
+	return peers, nil
 }
 
 func getPeerAddresses(peersMsg *pb.PeersMessage) []string {
@@ -381,6 +410,7 @@ func (p *Impl) RegisterHandler(messageHandler MessageHandler) error {
 		return newDuplicateHandlerError(messageHandler)
 	}
 	p.handlerMap.m[*key] = messageHandler
+	p.handlerMap.cachedPeerList = nil
 	peerLogger.Debugf("registered handler with key: %s", key)
 	return nil
 }
@@ -398,6 +428,7 @@ func (p *Impl) DeregisterHandler(messageHandler MessageHandler) error {
 		return fmt.Errorf("Error deregistering handler, could not find handler with key: %s", key)
 	}
 	delete(p.handlerMap.m, *key)
+	p.handlerMap.cachedPeerList = nil
 	peerLogger.Debugf("Deregistered handler with key: %s", key)
 	return nil
 }

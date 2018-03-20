@@ -190,16 +190,40 @@ func (d *Handler) beforeHello(e *fsm.Event) {
 			return
 		}
 	}
+
+	// Register
+	err = d.Coordinator.RegisterHandler(d)
+	if err != nil {
+		e.Cancel(fmt.Errorf("Error registering Handler: %s", err))
+	} else {
+		// Registered successfully
+		d.registered = true
+
+		// We must clean the node from discovery list first, add it had been back
+		// until it sent GET_PEERS
+		d.Coordinator.GetDiscHelper().RemoveNode(d.ToPeerEndpoint.Address)
+
+		// if I am a hidden node, I will never send GET_PEERS
+		if !comm.DiscoveryHidden() {
+			go d.start()
+		}
+	}
 }
 
 func (d *Handler) beforeGetPeers(e *fsm.Event) {
-	peersMessage, err := d.Coordinator.GetPeers()
-	if err != nil {
-		e.Cancel(fmt.Errorf("Error Getting Peers: %s", err))
-		return
-	}
-	if comm.DiscoveryDisable() {
-		peersMessage.Reset()
+
+	var peersMessage *pb.PeersMessage
+
+	if !comm.DiscoveryDisable() {
+		msg, err := d.Coordinator.GetPeers()
+		if err != nil {
+			e.Cancel(fmt.Errorf("Error Getting Peers: %s", err))
+			return
+		}
+
+		peersMessage = msg
+	} else {
+		peersMessage = &pb.PeersMessage{}
 	}
 	data, err := proto.Marshal(peersMessage)
 	if err != nil {
@@ -212,30 +236,17 @@ func (d *Handler) beforeGetPeers(e *fsm.Event) {
 		return
 	}
 
-	// modified by erwin @20180307
-	// move from beforeHello
-	// Register
-	err = d.Coordinator.RegisterHandler(d)
-	if err != nil {
-		e.Cancel(fmt.Errorf("Error registering Handler: %s", err))
-	} else {
-		// Registered successfully
-		d.registered = true
-		otherPeer := d.ToPeerEndpoint.Address
-		if !d.Coordinator.GetDiscHelper().FindNode(otherPeer) {
-			if ok := d.Coordinator.GetDiscHelper().AddNode(otherPeer); !ok {
-				peerLogger.Warningf("Unable to add peer %v to discovery list", otherPeer)
-			}
-			err = d.Coordinator.StoreDiscoveryList()
-			if err != nil {
-				peerLogger.Error(err)
-			}
+	//modified @20180315
+	//add a node into discovery list unless it also require peer
+	otherPeer := d.ToPeerEndpoint.Address
+	if !d.Coordinator.GetDiscHelper().FindNode(otherPeer) {
+		if ok := d.Coordinator.GetDiscHelper().AddNode(otherPeer); !ok {
+			peerLogger.Warningf("Unable to add peer %v to discovery list", otherPeer)
 		}
-
-		if comm.DiscoveryHidden() {
-			return
+		err = d.Coordinator.StoreDiscoveryList()
+		if err != nil {
+			peerLogger.Error(err)
 		}
-		go d.start()
 	}
 }
 
@@ -318,6 +329,12 @@ func (d *Handler) SendMessage(msg *pb.Message) error {
 
 // start starts the Peer server function
 func (d *Handler) start() error {
+
+	//send GET_PEERS as soon as possible
+	if err := d.SendMessage(&pb.Message{Type: pb.Message_DISC_GET_PEERS}); err != nil {
+		peerLogger.Errorf("Error sending %s during handler discovery tick: %s", pb.Message_DISC_GET_PEERS, err)
+	}
+
 	discPeriod := viper.GetDuration("peer.discovery.period")
 	tickChan := time.NewTicker(discPeriod).C
 	peerLogger.Debug("Starting Peer discovery service")

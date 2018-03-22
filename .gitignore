@@ -28,3 +28,4 @@ go-carpet-coverage*
 sdk/node/lib/protos/*
 report.xml
 build/
+vendor/

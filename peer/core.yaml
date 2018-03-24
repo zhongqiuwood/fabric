@@ -244,7 +244,7 @@ peer:
 
         # Should the discovered nodes and their reputations
         # be stored in DB and persisted between restarts
-        persist:    true
+        persist:    false
 
         # the period in seconds with which the discovery
         # tries to reconnect to successful nodes

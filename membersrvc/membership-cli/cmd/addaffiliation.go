@@ -44,6 +44,7 @@ var addAffiliationCmd = &cobra.Command{
 func init() {
 	addAffiliationCmd.Flags().StringVarP(&Name, "name", "n", "", "name of affiliation")
 	addAffiliationCmd.Flags().StringVarP(&Parent, "parent", "p", "", "parent name of affiliation")
+	addAffiliationCmd.MarkFlagRequired("name")
 	rootCmd.AddCommand(addAffiliationCmd)
 }
 

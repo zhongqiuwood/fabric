@@ -16,7 +16,7 @@ package cmd
 
 import (
 	"time"
-
+	"errors"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	pb "github.com/abchain/fabric/membersrvc/protos"
@@ -45,6 +45,9 @@ func rpcFetchAllAffiliations(address string) ([]string, error) {
 }
 
 func rpcAddAffiliation(address,  affiliationName, parentName string) error {
+	if affiliationName == "" {
+		return errors.New("Error param name empty")
+	}
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -110,6 +113,15 @@ func rpcFetchAllUsers(address, affiliation, roleNum string) ([]string, error) {
 
 func rpcAddUser(address, id, affiliation, psw, role string) error {
 	// Set up a connection to the server.
+	if id == "" {
+		return errors.New("Error param id empty")
+	}
+	if affiliation == "" {
+		return errors.New("Error param affiliation empty")
+	}
+	if psw == "" {
+		return errors.New("Error param psw empty")
+	}
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		// log.Fatalf("rpcAddUser did not connect: %v", err)
@@ -180,6 +192,19 @@ func rpcFetchUserAllAttributes(address, id, affiliation string) ([]string, error
 
 func rpcAddOrUpdateUserAttribute(address, id, affiliation, name, value, validFrom, validTo string) error {
 	// Set up a connection to the server.
+	if id == "" {
+		return errors.New("Error param userid empty")
+	}
+	if affiliation == "" {
+		return errors.New("Error param useraffiliation empty")
+	}
+	if name == "" {
+		return errors.New("Error param attributename empty")
+	}
+	if value == "" {
+		return errors.New("Error param attributevalue empty")
+	}
+
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
 		// log.Fatalf("rpcAddOrUpdateUserAttribute did not connect: %v", err)

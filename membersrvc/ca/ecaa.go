@@ -38,9 +38,9 @@ type ECAA struct {
 	eca *ECA
 }
 
+
 // RegisterUser registers a new user with the ECA.  If the user had been registered before
 // an error is returned.
-//
 func (ecaa *ECAA) RegisterUser(ctx context.Context, in *pb.RegisterUserReq) (*pb.Token, error) {
 	ecaaLogger.Debug("gRPC ECAA:RegisterUser")
 

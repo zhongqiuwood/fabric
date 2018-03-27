@@ -20,6 +20,78 @@ package protos;
 
 import "google/protobuf/timestamp.proto";
 
+service Admin {  // public service
+	rpc AddAffiliation(AddAffiliationReq) returns (AddAffiliationResp);
+	rpc FetchAllAffiliation(Empty) returns (FatchAllAffiliationResp);
+	rpc DeleteAffiliation(DeleteAffiliationReq) returns (Empty);
+
+	rpc FetchUserAllAttributes(FatchUserAllAttributesReq) returns (FatchUserAllAttributesResp);
+	rpc AddOrUpdateUserAttribute(AddOrUpdateUserAttributeReq) returns (Empty);
+	rpc DeleteAttribute(DeleteAttributeReq) returns (Empty);
+
+	rpc AddUser(AddUserReq) returns (Empty);
+	rpc FetchAllUsers(FatchAllUsersReq) returns (FatchAllUsersResp);
+	rpc DeleteUser(DeleteUserReq) returns (Empty);
+}
+message AddAffiliationReq {
+    string name = 1;
+	string parent = 2;
+}
+
+message AddAffiliationResp {
+    string message = 1;
+}
+
+message FatchAllAffiliationResp {
+	repeated string affiliations = 1;
+}
+
+message FatchUserAllAttributesReq {
+    string id = 1;
+	string affiliation = 2;
+}
+
+message FatchUserAllAttributesResp {
+	repeated string attributes = 1;
+}
+
+message DeleteAttributeReq {
+	string id = 1;
+	string attributeName = 2;
+}
+
+message DeleteUserReq {
+	string id = 1;
+}
+
+message DeleteAffiliationReq {
+	string name = 1;
+}
+
+message AddOrUpdateUserAttributeReq {
+	string id = 1;
+	string affiliation = 2;
+	string name = 3;
+	string value = 4;
+	string validFrom = 5;
+	string validTo = 6;
+}
+
+message AddUserReq {
+	string id = 1;
+	string affiliation = 2;
+	string role = 3;
+	string password = 4;
+}
+
+message FatchAllUsersReq {
+	string affiliation = 1;
+	string role = 2;
+}
+
+message FatchAllUsersResp {
+	repeated string users = 1;
+}
 
 // Enrollment Certificate Authority (ECA).
 //
@@ -156,8 +228,8 @@ message RegisterUserReq {
 message Attribute {
     string name = 1;
     string value = 2;
-	 string notBefore = 3;
-	 string notAfter = 4;
+	string notBefore = 3;
+	string notAfter = 4;
 }
 
 message ReadUserSetReq {

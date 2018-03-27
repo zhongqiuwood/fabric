@@ -267,39 +267,41 @@ eca:
                 test_nvp9: 2 VlEsBsiyXSjw institution_a
 
 tca:
-          # Enabling/disabling attributes encryption, currently false is unique possible value due attributes encryption is not yet implemented.
-          attribute-encryption:
-                 enabled: false
+    # Enabling/disabling attributes encryption, currently false is unique possible value due attributes encryption is not yet implemented.
+    attribute-encryption:
+        enabled: false
 aca:
-          # Attributes is a list of the valid attributes to each user, attribute certificate authority is emulated temporarily using this file entries.
-          # In the future an external attribute certificate authority will be invoked. The format to each entry is:
-          #
-          #     attribute-entry-#:{userid};{affiliation};{attributeName};{attributeValue};{valid from};{valid to}
-          #
-          # If valid to is empty the attribute never expire, if the valid from is empty the attribute is valid from the time zero.
-          attributes:
-              attribute-entry-0: diego;institution_a;company;ACompany;2015-01-01T00:00:00-03:00;;
-              attribute-entry-1: diego;institution_a;position;Software Staff;2015-01-01T00:00:00-03:00;2015-07-12T23:59:59-03:00;
-              attribute-entry-2: diego;institution_a;position;Software Engineer;2015-07-13T00:00:00-03:00;;
-              attribute-entry-3: jim,;institution_a;company;ACompany;2001-02-02T00:00:00-03:00;;
-              attribute-entry-4: jim;institution_a;position;Project Manager;2001-02-02T00:00:00-03:00;;
-              attribute-entry-5: binhn,;institution_a;company;ACompany;2015-01-01T00:00:00-03:00;;
-              attribute-entry-6: binhn;institution_a;position;Technical Leader;2015-01-01T00:00:00-03:00;;
+    # Attributes is a list of the valid attributes to each user, attribute certificate authority is emulated temporarily using this file entries.
+    # In the future an external attribute certificate authority will be invoked. The format to each entry is:
+    #
+    #     attribute-entry-#:{userid};{affiliation};{attributeName};{attributeValue};{valid from};{valid to}
+    #
+    # If valid to is empty the attribute never expire, if the valid from is empty the attribute is valid from the time zero.
+    attributes:
+        attribute-entry-0: diego;institution_a;company;ACompany;2015-01-01T00:00:00-03:00;;
+        attribute-entry-1: diego;institution_a;position;Software Staff;2015-01-01T00:00:00-03:00;2015-07-12T23:59:59-03:00;
+        attribute-entry-2: diego;institution_a;position;Software Engineer;2015-07-13T00:00:00-03:00;;
+        attribute-entry-3: jim,;institution_a;company;ACompany;2001-02-02T00:00:00-03:00;;
+        attribute-entry-4: jim;institution_a;position;Project Manager;2001-02-02T00:00:00-03:00;;
+        attribute-entry-5: binhn,;institution_a;company;ACompany;2015-01-01T00:00:00-03:00;;
+        attribute-entry-6: binhn;institution_a;position;Technical Leader;2015-01-01T00:00:00-03:00;;
 
-              # User attributes for asset transfer with roles test located at
-              #sdk/node/test/unit/asset-mgmt-with-roles.js
-              attribute-entry-7: alice;bank_a;role;client;2016-01-01T00:00:00-03:00;;
-              attribute-entry-8: alice;bank_a;account;12345-56789;2016-01-01T00:00:00-03:00;;
-              attribute-entry-9: bob;bank_a;role;client;2015-02-02T00:00:00-03:00;;
-              attribute-entry-10: bob;bank_a;account;23456-67890;2015-02-02T00:00:00-03:00;;
-              attribute-entry-11: assigner;bank_a;role;assigner;2015-01-01T00:00:00-03:00;;
+        # User attributes for asset transfer with roles test located at
+        #sdk/node/test/unit/asset-mgmt-with-roles.js
+        attribute-entry-7: alice;bank_a;role;client;2016-01-01T00:00:00-03:00;;
+        attribute-entry-8: alice;bank_a;account;12345-56789;2016-01-01T00:00:00-03:00;;
+        attribute-entry-9: bob;bank_a;role;client;2015-02-02T00:00:00-03:00;;
+        attribute-entry-10: bob;bank_a;account;23456-67890;2015-02-02T00:00:00-03:00;;
+        attribute-entry-11: assigner;bank_a;role;assigner;2015-01-01T00:00:00-03:00;;
 
-          address: localhost:7054
-          server-name: acap
-          # Enabling/disabling Attribute Certificate Authority, if ACA is enabled attributes will be added into the TCert.
-          enabled: true
+    address: localhost:7054
+    server-name: acap
+    # Enabling/disabling Attribute Certificate Authority, if ACA is enabled attributes will be added into the TCert.
+    enabled: true
 pki:
-          ca:
-                 subject:
-                         organization: Gamepai Fund.
-                         country: CN
+    ca:
+        subject:
+            organization: Gamepai Fund.
+            country: CN
+admin:
+    enabled: true

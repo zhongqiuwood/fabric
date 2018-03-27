@@ -45,6 +45,8 @@ type CA struct {
 }
 
 // NewCA sets up a new CA.
+// @parameter name is name of this CA instance
+// @parameter initTables create table when it not exist
 func NewCA(name string, initTables TableInitializer) *CA {
 	ca := new(CA)
 	flogging.LoggingInit("ca")
@@ -57,7 +59,7 @@ func NewCA(name string, initTables TableInitializer) *CA {
 			caLogger.Panic(err)
 		}
 	}
-	ca.cadb = NewCADB(ca.path+"/"+name+".db", initTables)
+	ca.cadb = NewCADB(ca.path+"/ca.db", initTables)
 	// read or create signing key pair
 	priv, err := readCAPrivateKeyFile(ca.path, name)
 	if err != nil {
@@ -111,13 +113,12 @@ func (ca *CA) _createCACertificateWriteFile(name string, pub *ecdsa.PublicKey) [
 
 
 // registerUser registers a new member with the CA
-//
 func (ca *CA) registerUser(id, affiliation string, role pb.Role, attrs []*pb.Attribute, registrar, memberMetadata string, opt ...string) (string, error) {
 	memberMetadata = removeQuotes(memberMetadata)
 	roleStr, _ := MemberRoleToString(role)
 	caLogger.Debugf("Received request to register user with id: %s, affiliation: %s, role: %s, attrs: %+v, registrar: %s, memberMetadata: %s\n",
 		id, affiliation, roleStr, attrs, registrar, memberMetadata)
-
+	// fmt.Printf("registerUser user %s affiliation %s \n", id, affiliation)	
 	var enrollID, tok string
 	var err error
 
@@ -132,39 +133,133 @@ func (ca *CA) registerUser(id, affiliation string, role pb.Role, attrs []*pb.Att
 		// Check the permission of member named 'registrar' to perform this registration
 		err = ca._canRegister(registrar, role2String(int(role)), memberMetadata)
 		if err != nil {
+			caLogger.Error(err)
 			return "", err
 		}
 	}
-
 	enrollID, err = ca._validateAndGenerateEnrollID(id, affiliation, role)
 	if err != nil {
+		// caLogger.Error(err)
 		return "", err
 	}
-
 	tok, err = ca._registerUserWithEnrollID(id, enrollID, role, memberMetadata, opt...)
 	if err != nil {
+		// caLogger.Error(err)
 		return "", err
 	}
-
 	if attrs != nil {
 		var pairs []*AttributePair
 		pairs, err = toAttributePairs(id, affiliation, attrs)
 		if err == nil {
-			err = ca.cadb.PopulateAttributes(pairs)
+			err = ca.cadb.InsertAttributes(pairs)
+		}
+	}
+	return tok, err
+}
+
+
+func (ca *CA) initAllAttributesFromFile() {
+	// TODO this attributes should be readed from the outside world in place of configuration file.
+	var attributes = make([]*AttributePair, 0)
+	attrs := viper.GetStringMapString("aca.attributes")
+
+	for _, flds := range attrs {
+		vals := strings.Fields(flds)
+		if len(vals) >= 1 {
+			val := ""
+			for _, eachVal := range vals {
+				val = val + " " + eachVal
+			}
+			attributeVals := strings.Split(val, ";")
+			if len(attributeVals) >= 6 {
+				attrPair, err := NewAttributePair(attributeVals, nil)
+				if err != nil {
+					cadbLogger.Errorf("Invalid attribute entry " + val + " " + err.Error())
+				}
+				attributes = append(attributes, attrPair)
+				
+			} else {
+				cadbLogger.Errorf("Invalid attribute entry '%v'", vals[0])
+			}
+		}
+	}
+	ca.cadb.InsertAttributes(attributes)
+}
+
+func (ca *CA) readAttributesFromFile(id, affiliation string) ([]*AttributePair, error) {
+	// TODO this attributes should be readed from the outside world in place of configuration file.
+	var attributes = make([]*AttributePair, 0)
+	attrs := viper.GetStringMapString("aca.attributes")
+
+	for _, flds := range attrs {
+		vals := strings.Fields(flds)
+		if len(vals) >= 1 {
+			val := ""
+			for _, eachVal := range vals {
+				val = val + " " + eachVal
+			}
+			attributeVals := strings.Split(val, ";")
+			if len(attributeVals) >= 6 {
+				attrPair, err := NewAttributePair(attributeVals, nil)
+				if err != nil {
+					return nil, errors.New("Invalid attribute entry " + val + " " + err.Error())
+				}
+				if attrPair.GetID() != id || attrPair.GetAffiliation() != affiliation {
+					continue
+				}
+				attributes = append(attributes, attrPair)
+			} else {
+				cadbLogger.Errorf("Invalid attribute entry '%v'", vals[0])
+			}
 		}
 	}
 
+	cadbLogger.Debugf("%v %v", id, attributes)
+
+	return attributes, nil
+}
+
+func (ca *CA) initAttributes(id, affiliation string) error {
+	var attrs []*AttributePair
+	attrs, err := ca.readAttributesFromFile(id, affiliation)
+	if err != nil {
+		return err
+	}
+	err = ca.cadb.InsertAttributes(attrs)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// registerUser registers a new member with the CA
+func (ca *CA) registerUserWithoutRegistar(id, affiliation string, role pb.Role, memberMetadata string, pwd string) (string, error) {
+	memberMetadata = removeQuotes(memberMetadata)
+	// roleStr, _ := MemberRoleToString(role)
+
+	// fmt.Printf("registerUser id: %s affiliation: %s role: %s \n", id, affiliation, roleStr)	
+	var enrollID, tok string
+	var err error
+	enrollID, err = ca._validateAndGenerateEnrollID(id, affiliation, role)
+	if err != nil {
+		caLogger.Error(err)
+		return "", err
+	}
+	tok, err = ca._registerUserWithEnrollID(id, enrollID, role, memberMetadata, pwd)
+	if err != nil {
+		caLogger.Error(err)
+		return "", err
+	}
 	return tok, err
 }
 
 // registerUserWithEnrollID registers a new user and its enrollmentID, role and state
-//
 func (ca *CA) _registerUserWithEnrollID(id string, enrollID string, role pb.Role, memberMetadata string, opt ...string) (string, error) {
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	roleStr, _ := MemberRoleToString(role)
-	caLogger.Debugf("Registering user %s as %s with memberMetadata %s\n", id, roleStr, memberMetadata)
+	caLogger.Infof("Registering user %s as %s with memberMetadata %s\n", id, roleStr, memberMetadata)
 
 	var tok string
 	if len(opt) > 0 && len(opt[0]) > 0 {
@@ -179,14 +274,13 @@ func (ca *CA) _registerUserWithEnrollID(id string, enrollID string, role pb.Role
 }
 
 // registerAffiliationGroup registers a new affiliation group
-//
 func (ca *CA) registerAffiliationGroup(name string, parentName string) error {
 	mutex.Lock()
 	defer mutex.Unlock()
 
 	caLogger.Debug("Registering affiliation group " + name + " parent " + parentName + ".")
 	var err error
-	if err = ca.cadb.checkAffiliationGroup(name, parentName); err != nil {
+	if err = ca.cadb.CheckAndAddAffiliationGroup(name, parentName); err != nil {
 		caLogger.Error(err)
 	}
 
@@ -231,14 +325,11 @@ func (ca *CA) _validateAndGenerateEnrollID(id, affiliation string, role pb.Role)
 	return "", nil
 }
 
-//
 // Determine if affiliation is required for a given registration request.
 //
 // Affiliation is required if the role is client or peer.
 // Affiliation is not required if the role is validator or auditor.
 // 1: client, 2: peer, 4: validator, 8: auditor
-//
-
 func requireAffiliation(role pb.Role) bool {
 	roleStr, _ := MemberRoleToString(role)
 	caLogger.Debug("Assigned role is: " + roleStr + ".")

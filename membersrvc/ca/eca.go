@@ -17,6 +17,7 @@ limitations under the License.
 package ca
 
 import (
+	"fmt"
 	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/elliptic"
@@ -134,7 +135,6 @@ func NewECA() *ECA {
 // *** populate action read object from yml file and write to db
 
 // populateUsersTable populates the users table.
-//
 func (eca *ECA) populateUsersTable() {
 	// populate user table, read from config yml file and  wrtie to ca db
 	users := viper.GetStringMapString("eca.users")
@@ -154,12 +154,14 @@ func (eca *ECA) populateUsersTable() {
 				}
 			}
 		}
-		eca.registerUser(id, affiliation, pb.Role(role), nil, registrar, memberMetadata, vals[1])
+		_, err = eca.registerUser(id, affiliation, pb.Role(role), nil, registrar, memberMetadata, vals[1])
+		if err != nil {
+			fmt.Errorf("error when registerUser: %s %s \n", id, err)
+		}
 	}
 }
 
 // populateAffiliationGroup populates the affiliation groups table.
-//
 func (eca *ECA) _populateAffiliationGroup(name, parent, key string, level int) {
 	eca.registerAffiliationGroup(name, parent)
 	newKey := key + "." + name
@@ -178,7 +180,6 @@ func (eca *ECA) _populateAffiliationGroup(name, parent, key string, level int) {
 }
 
 // populateAffiliationGroupsTable populates affiliation groups table.
-//
 func (eca *ECA) populateAffiliationGroupsTable() {
 	key := "eca.affiliations"
 	affiliationGroups := viper.GetStringMapString(key)
@@ -188,7 +189,6 @@ func (eca *ECA) populateAffiliationGroupsTable() {
 }
 
 // Start starts the ECA.
-//
 func (eca *ECA) Start(srv *grpc.Server) {
 	ecaLogger.Info("Starting ECA...")
 

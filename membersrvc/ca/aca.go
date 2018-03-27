@@ -43,6 +43,7 @@ type ACAA struct {
 // NewACA sets up a new ACA.
 func NewACA() *ACA {
 	aca := &ACA{CA: NewCA("aca", initializeACATables)}
+	aca.initAllAttributesFromFile()
 	flogging.LoggingInit("aca")
 	return aca
 }

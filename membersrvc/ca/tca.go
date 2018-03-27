@@ -86,10 +86,10 @@ func NewTCA(eca *ECA) *TCA {
 		tcaLogger.Panic(err)
 	}
 
-	err = tca.initializePreKeyTree()
-	if err != nil {
-		tcaLogger.Panic(err)
-	}
+	// err = tca.initializePreKeyTree()
+	// if err != nil {
+	// 	tcaLogger.Panic(err)
+	// }
 	return tca
 }
 
@@ -165,7 +165,7 @@ func (tca *TCA) initializePreKeyGroup(group *AffiliationGroup) error {
 
 func (tca *TCA) initializePreKeyTree() error {
 	tcaLogger.Debug("Initializing PreKeys.")
-	groups, err := tca.eca.cadb.readAffiliationGroups()
+	groups, err := tca.cadb.ReadAffiliationGroups()
 	if err != nil {
 		return err
 	}

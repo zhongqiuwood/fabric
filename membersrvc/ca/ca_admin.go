@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 	"strings"
-	"sort"
 	"database/sql"
 	"strconv"
 	"github.com/abchain/fabric/flogging"
@@ -34,52 +33,58 @@ func NewAdmin() *Admin {
 }
 
 // ********************************* Affiliation *************************************
-func (admin *Admin) FetchAllAffiliation(ctx context.Context, in *pb.Empty) (*pb.FatchAllAffiliationResp, error) {
+
+func (admin *Admin) AffiliationsFetch(ctx context.Context, in *pb.Empty) (*pb.AffiliationsFetchResp, error) {
 	adminLogger.Info("gRPC Admin:FetchAllAffiliation")
 	groupList, err := admin.cadb.ReadAffiliationGroups()
 	if err != nil {
 		adminLogger.Errorf("error from db sql %+v", err)
-		return &pb.FatchAllAffiliationResp{}, err
+		return &pb.AffiliationsFetchResp{}, err
 	}
-	groups := make([]string, 0)
+	// groups := make([]string, 0)
+	groups := make([]*pb.AdminAffiliation, 0)
 	for _, aff := range groupList {
-		// fmt.Printf("affiliation %+v \n", aff)
-		// fmt.Printf("affiliation parent %+v \n", aff.parent)
-		affiliation := parentsName(aff)
-		groups = append(groups, affiliation)
+		// affiliation := parentsName(aff)
+		parentName := ""
+		if aff.parent != nil {
+			parentName = aff.parent.name
+		}
+		groups = append(groups, &pb.AdminAffiliation{Name: aff.name, Parent: parentName})
 	}
-	sort.Strings(groups)
-	// Return the one-time password
-	return &pb.FatchAllAffiliationResp{Affiliations: groups}, nil
+	// sort.Strings(groups)
+	return &pb.AffiliationsFetchResp{Affiliations: groups}, nil
 }
 
-func (admin *Admin) AddAffiliation(ctx context.Context, in *pb.AddAffiliationReq) (*pb.AddAffiliationResp, error) {
+func (admin *Admin) AffiliationsAdd(ctx context.Context, in *pb.AffiliationsAddReq) (*pb.Empty, error) {
 	adminLogger.Debug("gRPC Admin:AddAffiliation")
-
-	// Check the signature
-	// err := ecaa.checkRegistrarSignature(in)
-	// if err != nil {
-	// 	return err
-	// }
 	name := in.Name
 	parent := in.Parent
 	adminLogger.Infof("affiliation %s, %s", name, parent)	
 	err := admin.cadb.CheckAndAddAffiliationGroup(name, parent)
 	if err != nil {
-		return &pb.AddAffiliationResp{Message: "error"}, err 
+		return &pb.Empty{}, err 
 	}
-	// Return the one-time password
-	return &pb.AddAffiliationResp{Message: "ok"}, nil
+	return &pb.Empty{}, nil
 }
 
-func (admin *Admin) DeleteAffiliation(ctx context.Context, in *pb.DeleteAffiliationReq) (*pb.Empty, error) {
+func (admin *Admin) AffiliationsDel(ctx context.Context, in *pb.AffiliationsDelReq) (*pb.Empty, error) {
 	err := admin.cadb.deleteAffiliation(in.Name)
 	return &pb.Empty{}, err
 }
 
+func parentsName(aff *AffiliationGroup) string {
+	str := aff.name
+	if aff.parent != nil {
+		parent := parentsName(aff.parent)
+		str = fmt.Sprintf("%s.%s", parent, str) 
+	}
+	return str
+}
 
-func (admin *Admin) FetchAllUsers(ctx context.Context, in *pb.FatchAllUsersReq) (*pb.FatchAllUsersResp, error) {
-	adminLogger.Info("gRPC Admin:FetchAllUser")
+// ********************************* User *************************************
+
+func (admin *Admin) UsersFetch(ctx context.Context, in *pb.UsersFetchReq) (*pb.UsersFetchResp, error) {
+	adminLogger.Info("gRPC Admin:UsersFetch")
 
 	rule := ""
 
@@ -98,10 +103,10 @@ func (admin *Admin) FetchAllUsers(ctx context.Context, in *pb.FatchAllUsersReq) 
 	}
 	users, err := admin.cadb.fetchAllUsers(rule)
 	if err != nil {
-		adminLogger.Errorf("FetchAllUser error from db sql %+v", err)
-		return &pb.FatchAllUsersResp{}, err
+		adminLogger.Errorf("UsersFetch error from db sql %+v", err)
+		return &pb.UsersFetchResp{}, err
 	}
-	us := make([]string, 0)
+	us := make([]*pb.AdminUser, 0)
 	for _, u := range users {
 		// str := attr.ToString()
 		var aff string
@@ -120,74 +125,75 @@ func (admin *Admin) FetchAllUsers(ctx context.Context, in *pb.FatchAllUsersReq) 
 				aff = ss[1]
 			}
 		}
-		str := fmt.Sprintf("%30s %20s %10d", u.Id, aff, u.Role)
-		us = append(us, str)
+		// str := fmt.Sprintf("%30s %20s %10d", u.Id, aff, u.Role)
+		u := &pb.AdminUser{
+			Id: u.Id,
+			Affiliation: aff,
+			Role: strconv.FormatInt(int64(u.Role), 10),
+		}
+		us = append(us, u)
 	}
-	sort.Strings(us)
-	return &pb.FatchAllUsersResp{Users: us}, nil
+	// sort.Strings(us)
+	return &pb.UsersFetchResp{Users: us}, nil
 }
 
-func (admin *Admin) AddUser(ctx context.Context, in *pb.AddUserReq) (*pb.Empty, error) {
-	adminLogger.Infof("gRPC Admin:AddUser %+v", in)
-	role, _ := strconv.ParseInt(in.Role, 10, 32)
-	token, err := admin.registerUserWithoutRegistar(in.Id, in.Affiliation, pb.Role(role), "", in.Password)
+func (admin *Admin) UsersAdd(ctx context.Context, in *pb.UsersAddReq) (*pb.Empty, error) {
+	adminLogger.Infof("gRPC Admin:UsersAdd %+v", in)
+	role, _ := strconv.ParseInt(in.User.Role, 10, 32)
+	token, err := admin.registerUserWithoutRegistar(in.User.Id, in.User.Affiliation, pb.Role(role), "", in.User.Password)
 	
 	if err != nil {
-		adminLogger.Errorf("AddUser error from db sql %+v", err)
+		adminLogger.Errorf("UsersAdd error from db sql %+v", err)
 		return &pb.Empty{}, err
 	}
 	adminLogger.Info("gRPC token:", token)
 	return &pb.Empty{}, nil
 }
 
-func (admin *Admin) DeleteUser(ctx context.Context, in *pb.DeleteUserReq) (*pb.Empty, error) {
+func (admin *Admin) UsersDel(ctx context.Context, in *pb.UsersDelReq) (*pb.Empty, error) {
 	err := admin.cadb.deleteUser(in.Id)
 	return &pb.Empty{}, err
 }
 
-func parentsName(aff *AffiliationGroup) string {
-	str := aff.name
-	if aff.parent != nil {
-		parent := parentsName(aff.parent)
-		str = fmt.Sprintf("%s.%s", parent, str) 
-	}
-	return str
-}
+// ********************************* Attribute *************************************
 
-
-func (admin *Admin) FetchUserAllAttributes(ctx context.Context, in *pb.FatchUserAllAttributesReq) (*pb.FatchUserAllAttributesResp, error) {
-	adminLogger.Info("gRPC Admin:FetchAllAttributes")
-
-	id := in.Id
-	// affiliation := in.Affiliation
-	// rule := fmt.Sprintf(" WHERE id=%s and affiliation=%s", id, affiliation)
-	// rule := fmt.Sprintf(" WHERE id=%s ", id)
-	// fmt.Println(rule)
-	attrList, err := admin.cadb.fetchAttributes(id)
+func (admin *Admin) AttributesFetch(ctx context.Context, in *pb.AttributesFetchReq) (*pb.AttributesFetchResp, error) {
+	adminLogger.Info("gRPC Admin:AttributesFetch")
+	
+	attrList, err := admin.cadb.fetchAttributes(in.Id)
 	if err != nil {
-		adminLogger.Errorf("FetchAllAttributes error from db sql %+v", err)
-		return &pb.FatchUserAllAttributesResp{}, err
+		adminLogger.Errorf("AttributesFetch error from db sql %+v", err)
+		return &pb.AttributesFetchResp{}, err
 	}
-	attrs := make([]string, 0)
+	attrs := make([]*pb.AdminAttribute, 0)
 	for _, attr := range attrList {
-		// str := attr.ToString()
-		str := fmt.Sprintf("%15s %40s %s to %s", attr.GetID(), fmt.Sprintf("%s:%s", attr.attributeName, attr.attributeValue), attr.validFrom, attr.validTo)
-		attrs = append(attrs, str)
+		// str := fmt.Sprintf("%15s %40s %s to %s", attr.GetID(), fmt.Sprintf("%s:%s", attr.attributeName, attr.attributeValue), attr.validFrom, attr.validTo)
+		a := &pb.AdminAttribute{
+			Owner: &pb.AdminUser{
+				Id: attr.GetID(),
+				Affiliation: attr.GetAffiliation(),
+			},
+			Name: attr.attributeName,
+			Value: string(attr.attributeValue),
+			ValidFrom: attr.validFrom.String(),
+			ValidTo: attr.validTo.String(),
+		}
+		attrs = append(attrs, a)
 	}
-	sort.Strings(attrs)
-	return &pb.FatchUserAllAttributesResp{Attributes: attrs}, nil
+	// sort.Strings(attrs)
+	return &pb.AttributesFetchResp{Attributes: attrs}, nil
 }
 
-func (admin *Admin) AddOrUpdateUserAttribute(ctx context.Context, in *pb.AddOrUpdateUserAttributeReq) (*pb.Empty, error) {
-	adminLogger.Info("gRPC Admin:AddOrUpdateUserAttribute")
-
+func (admin *Admin) AttributesAdd(ctx context.Context, in *pb.AttributesAddReq) (*pb.Empty, error) {
+	adminLogger.Info("gRPC Admin:AttributesAdd")
+	fmt.Println(in)
 	owner := &AttributeOwner{
-		id: in.Id,
-		affiliation: in.Affiliation,
+		id: in.Attribute.Owner.Id,
+		affiliation: in.Attribute.Owner.Affiliation,
 	}
 	vf := time.Now()
-	if in.ValidFrom != "" {
-		i, err := strconv.ParseInt(in.ValidFrom, 10, 64)
+	if in.Attribute != nil && in.Attribute.ValidFrom != "" {
+		i, err := strconv.ParseInt(in.Attribute.ValidFrom, 10, 64)
 		if err != nil {
 			panic(err)
 		}
@@ -195,8 +201,8 @@ func (admin *Admin) AddOrUpdateUserAttribute(ctx context.Context, in *pb.AddOrUp
 	}
 
 	vt := vf.Add(time.Hour * 24 * 365)
-	if in.ValidFrom != "" {
-		i, err := strconv.ParseInt(in.ValidFrom, 10, 64)
+	if in.Attribute != nil && in.Attribute.ValidFrom != "" {
+		i, err := strconv.ParseInt(in.Attribute.ValidFrom, 10, 64)
 		if err != nil {
 			panic(err)
 		}
@@ -204,18 +210,18 @@ func (admin *Admin) AddOrUpdateUserAttribute(ctx context.Context, in *pb.AddOrUp
 	}
 	
 	
-	attr := []string{in.Id, in.Affiliation, in.Name, in.Value, vf.Format(time.RFC3339), vt.Format(time.RFC3339)}
+	attr := []string{in.Attribute.Owner.Id, in.Attribute.Owner.Affiliation, in.Attribute.Name, in.Attribute.Value, vf.Format(time.RFC3339), vt.Format(time.RFC3339)}
 	attrPair, _ := NewAttributePair(attr, owner)
 
 	 err := admin.cadb.addOrUpdateUserAttribute(attrPair)
 	if err != nil {
-		adminLogger.Errorf("AddOrUpdateUserAttribute error from db sql %+v", err)
+		adminLogger.Errorf("AttributesAdd error from db sql %+v", err)
 		return &pb.Empty{}, err
 	}
 	return &pb.Empty{}, nil
 }
 
-func (admin *Admin) DeleteAttribute(ctx context.Context, in *pb.DeleteAttributeReq) (*pb.Empty, error) {
+func (admin *Admin) AttributesDel(ctx context.Context, in *pb.AttributesDelReq) (*pb.Empty, error) {
 	err := admin.cadb.deleteAttribute(in.Id, in.AttributeName)
 	return &pb.Empty{}, err
 }

@@ -15,6 +15,8 @@
 package cmd
 
 import (
+	"fmt"
+	"sort"
 	"time"
 	"errors"
 	"golang.org/x/net/context"
@@ -24,7 +26,7 @@ import (
 
 // ********************************* Affiliation *************************************
 
-func rpcFetchAllAffiliations(address string) ([]string, error) {
+func rpcAffiliationsFetch(address string) ([]string, error) {
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -36,15 +38,21 @@ func rpcFetchAllAffiliations(address string) ([]string, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	r, err := c.FetchAllAffiliation(ctx, &pb.Empty{})
+	r, err := c.AffiliationsFetch(ctx, &pb.Empty{})
 	if err != nil {
 		// fmt.Fatalf("error when request: %v", err)
 		return nil, err
 	}
-	return r.Affiliations, nil
+	strs := make([]string, 0)
+	for _, aff := range r.Affiliations {
+		str := fmt.Sprintf("%30s | %30s |", aff.Name, aff.Parent)
+		strs = append(strs, str)
+	}
+	sort.Strings(strs)
+	return strs, nil
 }
 
-func rpcAddAffiliation(address,  affiliationName, parentName string) error {
+func rpcAffiliationsAdd(address,  affiliationName, parentName string) error {
 	if affiliationName == "" {
 		return errors.New("Error param name empty")
 	}
@@ -59,7 +67,7 @@ func rpcAddAffiliation(address,  affiliationName, parentName string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = c.AddAffiliation(ctx, &pb.AddAffiliationReq{Name: affiliationName, Parent: parentName})
+	_, err = c.AffiliationsAdd(ctx, &pb.AffiliationsAddReq{Name: affiliationName, Parent: parentName})
 	if err != nil {
 		// log.Fatalf("could not greet: %v", err)
 		return err
@@ -67,7 +75,10 @@ func rpcAddAffiliation(address,  affiliationName, parentName string) error {
 	return nil
 }
 
-func rpcDeleteAffiliation(address, name string) error {
+func rpcAffiliationsDel(address, name string) error {
+	if name == "" {
+		return errors.New("Error param name empty")
+	}
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -79,7 +90,7 @@ func rpcDeleteAffiliation(address, name string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = c.DeleteAffiliation(ctx, &pb.DeleteAffiliationReq{Name: name})
+	_, err = c.AffiliationsDel(ctx, &pb.AffiliationsDelReq{Name: name})
 	if err != nil {
 		// log.Fatalf("rpcDeleteUser error when request: %v", err)
 		return err
@@ -90,7 +101,7 @@ func rpcDeleteAffiliation(address, name string) error {
 
 // ********************************* User *************************************
 
-func rpcFetchAllUsers(address, affiliation, roleNum string) ([]string, error) {
+func rpcUsersFetch(address, affiliation, roleNum string) ([]string, error) {
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -102,16 +113,21 @@ func rpcFetchAllUsers(address, affiliation, roleNum string) ([]string, error) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	r, err := c.FetchAllUsers(ctx, &pb.FatchAllUsersReq{Affiliation: affiliation, Role: roleNum})
+	r, err := c.UsersFetch(ctx, &pb.UsersFetchReq{Affiliation: affiliation, Role: roleNum})
 	if err != nil {
 		// log.Fatalf("rpcFetchAllUsers error when request: %v", err)
 		return nil, err
 	}
-	
-	return r.Users, nil
+	strs := make([]string, 0)
+	for _, u := range r.Users {
+		str := fmt.Sprintf("%30s | %30s | %10s", u.Id, u.Affiliation, u.Role)
+		strs = append(strs, str)
+	}
+	sort.Strings(strs)
+	return strs, nil
 }
 
-func rpcAddUser(address, id, affiliation, psw, role string) error {
+func rpcUsersAdd(address, id, affiliation, psw, role string) error {
 	// Set up a connection to the server.
 	if id == "" {
 		return errors.New("Error param id empty")
@@ -120,7 +136,7 @@ func rpcAddUser(address, id, affiliation, psw, role string) error {
 		return errors.New("Error param affiliation empty")
 	}
 	if psw == "" {
-		return errors.New("Error param psw empty")
+		return errors.New("Error param password empty")
 	}
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -134,11 +150,13 @@ func rpcAddUser(address, id, affiliation, psw, role string) error {
 	defer cancel()
 
 
-	_, err = c.AddUser(ctx, &pb.AddUserReq{
-		Id: id, 
-		Affiliation: affiliation,
-		Role: role,
-		Password: psw,
+	_, err = c.UsersAdd(ctx, &pb.UsersAddReq{
+		User: &pb.AdminUser{
+			Id: id, 
+			Affiliation: affiliation,
+			Role: role,
+			Password: psw,
+		},
 	})
 	if err != nil {
 		// log.Fatalf("rpcAddUser error when request: %v", err)
@@ -147,7 +165,10 @@ func rpcAddUser(address, id, affiliation, psw, role string) error {
 	return nil
 }
 
-func rpcDeleteUser(address, userId string) error {
+func rpcUsersDel(address, userId string) error {
+	if userId == "" {
+		return errors.New("Error param id empty")
+	}
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -159,7 +180,7 @@ func rpcDeleteUser(address, userId string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = c.DeleteUser(ctx, &pb.DeleteUserReq{Id: userId})
+	_, err = c.UsersDel(ctx, &pb.UsersDelReq{Id: userId})
 	if err != nil {
 		// log.Fatalf("rpcDeleteUser error when request: %v", err)
 		return err
@@ -169,7 +190,7 @@ func rpcDeleteUser(address, userId string) error {
 
 // ********************************* Attribute *************************************
 
-func rpcFetchUserAllAttributes(address, id, affiliation string) ([]string, error) {
+func rpcAttributesFetch(address, id, affiliation string) ([]string, error) {
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -181,16 +202,20 @@ func rpcFetchUserAllAttributes(address, id, affiliation string) ([]string, error
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	r, err := c.FetchUserAllAttributes(ctx, &pb.FatchUserAllAttributesReq{Id: id, Affiliation: affiliation})
+	r, err := c.AttributesFetch(ctx, &pb.AttributesFetchReq{Id: id})
 	if err != nil {
 		// log.Fatalf("rpcFetchUserAllAttributes error when request: %v", err)
 		return nil, err
 	}
-	
-	return r.Attributes, nil
+	strs := make([]string, 0)
+	for _, attr := range r.Attributes {
+		str := fmt.Sprintf("%15s | %40s |    %s to %s", attr.Owner.Id, fmt.Sprintf("%s:%s", attr.Name, attr.Value), attr.ValidFrom, attr.ValidTo)
+		strs = append(strs, str)
+	}
+	return strs, nil
 }
 
-func rpcAddOrUpdateUserAttribute(address, id, affiliation, name, value, validFrom, validTo string) error {
+func rpcAttributesAdd(address, id, affiliation, name, value, validFrom, validTo string) error {
 	// Set up a connection to the server.
 	if id == "" {
 		return errors.New("Error param userid empty")
@@ -199,10 +224,10 @@ func rpcAddOrUpdateUserAttribute(address, id, affiliation, name, value, validFro
 		return errors.New("Error param useraffiliation empty")
 	}
 	if name == "" {
-		return errors.New("Error param attributename empty")
+		return errors.New("Error param name empty")
 	}
 	if value == "" {
-		return errors.New("Error param attributevalue empty")
+		return errors.New("Error param value empty")
 	}
 
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
@@ -217,13 +242,17 @@ func rpcAddOrUpdateUserAttribute(address, id, affiliation, name, value, validFro
 	defer cancel()
 
 
-	_, err = c.AddOrUpdateUserAttribute(ctx, &pb.AddOrUpdateUserAttributeReq{
-		Id: id, 
-		Affiliation: affiliation,
-		Name: name,
-		Value: value,
-		ValidFrom: validFrom,
-		ValidTo: validTo,
+	_, err = c.AttributesAdd(ctx, &pb.AttributesAddReq{
+		Attribute: &pb.AdminAttribute{
+			Owner: &pb.AdminUser{
+				Id: id, 
+				Affiliation: affiliation,
+			},
+			Name: name,
+			Value: value,
+			ValidFrom: validFrom,
+			ValidTo: validTo,
+		},
 	})
 	if err != nil {
 		// log.Fatalf("rpcFetchUserAllAttributes error when request: %v", err)
@@ -233,7 +262,13 @@ func rpcAddOrUpdateUserAttribute(address, id, affiliation, name, value, validFro
 	return nil
 }
 
-func rpcDeleteAttribute(address, userId, attrName string) error {
+func rpcAttributesDel(address, userId, attrName string) error {
+	if userId == "" {
+		return errors.New("Error param userid empty")
+	}
+	if attrName == "" {
+		return errors.New("Error param name empty")
+	}
 	// Set up a connection to the server.
 	conn, err := grpc.Dial(address, grpc.WithInsecure())
 	if err != nil {
@@ -245,7 +280,7 @@ func rpcDeleteAttribute(address, userId, attrName string) error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = c.DeleteAttribute(ctx, &pb.DeleteAttributeReq{Id: userId, AttributeName: attrName})
+	_, err = c.AttributesDel(ctx, &pb.AttributesDelReq{Id: userId, AttributeName: attrName})
 	if err != nil {
 		// log.Fatalf("rpcDeleteAttribute error when request: %v", err)
 		return err

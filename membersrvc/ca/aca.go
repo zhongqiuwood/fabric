@@ -48,6 +48,7 @@ func NewACA() *ACA {
 	return aca
 }
 
+// is it usefull ?
 func (aca *ACA) getECACertificate() (*x509.Certificate, error) {
 	raw, err := aca.readCACertificate("eca") // inherit from CA
 	if err != nil {

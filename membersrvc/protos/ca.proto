@@ -21,77 +21,100 @@ package protos;
 import "google/protobuf/timestamp.proto";
 
 service Admin {  // public service
-	rpc AddAffiliation(AddAffiliationReq) returns (AddAffiliationResp);
-	rpc FetchAllAffiliation(Empty) returns (FatchAllAffiliationResp);
-	rpc DeleteAffiliation(DeleteAffiliationReq) returns (Empty);
+	rpc AffiliationsFetch(Empty) returns (AffiliationsFetchResp);
+	rpc AffiliationsAdd(AffiliationsAddReq) returns (Empty);
+	rpc AffiliationsDel(AffiliationsDelReq) returns (Empty);
 
-	rpc FetchUserAllAttributes(FatchUserAllAttributesReq) returns (FatchUserAllAttributesResp);
-	rpc AddOrUpdateUserAttribute(AddOrUpdateUserAttributeReq) returns (Empty);
-	rpc DeleteAttribute(DeleteAttributeReq) returns (Empty);
+	rpc UsersFetch(UsersFetchReq) returns (UsersFetchResp);
+	rpc UsersAdd(UsersAddReq) returns (Empty);
+	rpc UsersDel(UsersDelReq) returns (Empty);
 
-	rpc AddUser(AddUserReq) returns (Empty);
-	rpc FetchAllUsers(FatchAllUsersReq) returns (FatchAllUsersResp);
-	rpc DeleteUser(DeleteUserReq) returns (Empty);
-}
-message AddAffiliationReq {
-    string name = 1;
-	string parent = 2;
+	rpc AttributesFetch (AttributesFetchReq) returns (AttributesFetchResp);
+	rpc AttributesAdd(AttributesAddReq) returns (Empty);
+	rpc AttributesDel(AttributesDelReq) returns (Empty);
 }
 
-message AddAffiliationResp {
-    string message = 1;
+
+message AdminAttribute {
+	AdminUser owner = 1;
+    string name = 2;
+    string value = 3;
+	string validFrom = 4;
+	string validTo = 5;
 }
 
-message FatchAllAffiliationResp {
-	repeated string affiliations = 1;
-}
-
-message FatchUserAllAttributesReq {
-    string id = 1;
-	string affiliation = 2;
-}
-
-message FatchUserAllAttributesResp {
-	repeated string attributes = 1;
-}
-
-message DeleteAttributeReq {
-	string id = 1;
-	string attributeName = 2;
-}
-
-message DeleteUserReq {
-	string id = 1;
-}
-
-message DeleteAffiliationReq {
-	string name = 1;
-}
-
-message AddOrUpdateUserAttributeReq {
-	string id = 1;
-	string affiliation = 2;
-	string name = 3;
-	string value = 4;
-	string validFrom = 5;
-	string validTo = 6;
-}
-
-message AddUserReq {
+message AdminUser {
 	string id = 1;
 	string affiliation = 2;
 	string role = 3;
 	string password = 4;
 }
 
-message FatchAllUsersReq {
+message AdminAffiliation {
+	string name = 1;
+	string parent = 2;
+}
+
+// Affiliation
+
+message AffiliationsFetchResp {
+	// repeated string affiliations = 1;
+	repeated AdminAffiliation affiliations = 1;
+}
+
+message AffiliationsAddReq {
+    string name = 1;
+	string parent = 2;
+}
+
+message AffiliationsDelReq {
+	string name = 1;
+}
+
+
+// User
+
+message UsersFetchReq {
 	string affiliation = 1;
 	string role = 2;
 }
 
-message FatchAllUsersResp {
-	repeated string users = 1;
+message UsersFetchResp {
+	// repeated string users = 1;
+	repeated AdminUser users = 1;
 }
+
+message UsersAddReq {
+	AdminUser user = 1;
+}
+
+message UsersDelReq {
+	string id = 1;
+}
+
+// Attribute
+
+
+message AttributesFetchReq {
+	string id = 1;
+}
+
+message AttributesFetchResp {
+	// repeated string attributes = 1;
+	repeated AdminAttribute attributes = 1;
+}
+
+message AttributesAddReq {
+	AdminAttribute attribute = 2;
+}
+
+message AttributesDelReq {
+	string id = 1;
+	string attributeName = 2;
+}
+
+
+
 
 // Enrollment Certificate Authority (ECA).
 //

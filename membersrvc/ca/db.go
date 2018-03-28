@@ -526,8 +526,13 @@ func (cadb *CADB) addOrUpdateUserAttribute(attr *AttributePair) error {
 }
 
 func (cadb *CADB) fetchAttributes(id string) ([]*AttributePair, error) {
-	
-	rows, err := cadb.db.Query("SELECT id, affiliation, attributeName, attributeValue, validFrom, validTo FROM Attributes WHERE id=?", id)
+	var rows *sql.Rows
+	var err error
+	if id != "" {
+		rows, err = cadb.db.Query("SELECT id, affiliation, attributeName, attributeValue, validFrom, validTo FROM Attributes WHERE id=?", id)
+	} else {
+		rows, err = cadb.db.Query("SELECT id, affiliation, attributeName, attributeValue, validFrom, validTo FROM Attributes ")
+	}
 	if err != nil {
 		return nil, err
 	}

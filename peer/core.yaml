@@ -244,7 +244,7 @@ peer:
 
         # Should the discovered nodes and their reputations
         # be stored in DB and persisted between restarts
-        persist:    true
+        persist:    false
 
         # the period in seconds with which the discovery
         # tries to reconnect to successful nodes
@@ -260,7 +260,7 @@ peer:
         hidden: false
 
         #Abolished the discovered function of the node and retained the function of detecting other nodes
-        disable: true
+        disable: false
 
     # Path on the file system where peer will store data
     fileSystemPath: /var/hyperledger/production

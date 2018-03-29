@@ -205,12 +205,29 @@ func (d *Handler) beforeHello(e *fsm.Event) {
 
 		// if I am a hidden node, I will never send GET_PEERS
 		if !comm.DiscoveryHidden() {
+			//send GET_PEERS as soon as possible
+			if err := d.SendMessage(&pb.Message{Type: pb.Message_DISC_GET_PEERS}); err != nil {
+				peerLogger.Errorf("Error sending %s during handler discovery tick: %s", pb.Message_DISC_GET_PEERS, err)
+			}
 			go d.start()
 		}
 	}
 }
 
 func (d *Handler) beforeGetPeers(e *fsm.Event) {
+
+	//modified @20180315
+	//add a node into discovery list unless it also require peer
+	otherPeer := d.ToPeerEndpoint.Address
+	if !d.Coordinator.GetDiscHelper().FindNode(otherPeer) {
+		if ok := d.Coordinator.GetDiscHelper().AddNode(otherPeer); !ok {
+			peerLogger.Warningf("Unable to add peer %v to discovery list", otherPeer)
+		}
+		err := d.Coordinator.StoreDiscoveryList()
+		if err != nil {
+			peerLogger.Error(err)
+		}
+	}
 
 	var peersMessage *pb.PeersMessage
 
@@ -234,19 +251,6 @@ func (d *Handler) beforeGetPeers(e *fsm.Event) {
 	if err := d.SendMessage(&pb.Message{Type: pb.Message_DISC_PEERS, Payload: data}); err != nil {
 		e.Cancel(err)
 		return
-	}
-
-	//modified @20180315
-	//add a node into discovery list unless it also require peer
-	otherPeer := d.ToPeerEndpoint.Address
-	if !d.Coordinator.GetDiscHelper().FindNode(otherPeer) {
-		if ok := d.Coordinator.GetDiscHelper().AddNode(otherPeer); !ok {
-			peerLogger.Warningf("Unable to add peer %v to discovery list", otherPeer)
-		}
-		err = d.Coordinator.StoreDiscoveryList()
-		if err != nil {
-			peerLogger.Error(err)
-		}
 	}
 }
 
@@ -329,11 +333,6 @@ func (d *Handler) SendMessage(msg *pb.Message) error {
 
 // start starts the Peer server function
 func (d *Handler) start() error {
-
-	//send GET_PEERS as soon as possible
-	if err := d.SendMessage(&pb.Message{Type: pb.Message_DISC_GET_PEERS}); err != nil {
-		peerLogger.Errorf("Error sending %s during handler discovery tick: %s", pb.Message_DISC_GET_PEERS, err)
-	}
 
 	discPeriod := viper.GetDuration("peer.discovery.period")
 	tickChan := time.NewTicker(discPeriod).C

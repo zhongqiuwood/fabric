@@ -63,7 +63,7 @@ func initializeECATables(db *sql.DB) error {
 // NewECA sets up a new ECA.
 // remove aca *ACA param from NewECA
 func NewECA() *ECA {
-	eca := &ECA{CA: NewCA("eca", initializeECATables)}
+	eca := &ECA{CA: NewCA("eca", initializeECATables, false)}
 	// flogging.LoggingInit("eca")
 
 	{

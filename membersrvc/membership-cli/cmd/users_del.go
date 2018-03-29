@@ -35,7 +35,7 @@ var usersDelCmd = &cobra.Command{
 
 func init() {
 	usersDelCmd.Flags().StringVarP(&Id, "id", "", "", "user id of user")
-	usersCmd.AddCommand(usersDelCmd)
+	// usersCmd.AddCommand(usersDelCmd)
 }
 
 func runUsersDelCmd() {

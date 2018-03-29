@@ -33,7 +33,7 @@ var affiliationsDelCmd = &cobra.Command{
 
 func init() {
 	affiliationsDelCmd.Flags().StringVarP(&Name, "name", "", "", "name id of affiliation")
-	affiliationsCmd.AddCommand(affiliationsDelCmd)
+	// affiliationsCmd.AddCommand(affiliationsDelCmd)
 }
 
 func runAffiliationsDelCmd() {

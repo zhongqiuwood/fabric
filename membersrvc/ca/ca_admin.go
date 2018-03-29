@@ -27,7 +27,7 @@ func initializeNoTables(db *sql.DB) error {
 
 // NewAdmin sets up a new ADMIN.
 func NewAdmin() *Admin {
-	caadmin := &Admin{CA: NewCA("caadmin", initializeNoTables)}
+	caadmin := &Admin{CA: NewCA("caadmin", initializeNoTables, false)}
 	flogging.LoggingInit("ca admin")
 	return caadmin
 }

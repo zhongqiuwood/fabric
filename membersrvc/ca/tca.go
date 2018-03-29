@@ -70,7 +70,7 @@ type TCertSet struct {
 
 // NewTCA sets up a new TCA.
 func NewTCA(eca *ECA) *TCA {
-	tca := &TCA{NewCA("tca", initializeTCATables), eca, nil, nil, nil, nil}
+	tca := &TCA{NewCA("tca", initializeTCATables, true), eca, nil, nil, nil, nil}
 	// flogging.LoggingInit("tca")
 	
 	var err error
@@ -122,7 +122,7 @@ func (tca *TCA) initializePreKeyGroup(group *AffiliationGroup) error {
 
 func (tca *TCA) initializePreKeyTree() error {
 	tcaLogger.Debug("Initializing PreKeys.")
-	groups, err := tca.cadb.ReadAffiliationGroups()
+	groups, err := tca.eca.cadb.ReadAffiliationGroups()
 	if err != nil {
 		return err
 	}

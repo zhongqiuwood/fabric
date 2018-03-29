@@ -61,7 +61,7 @@ func initializeTLSCATables(db *sql.DB) error {
 // NewTLSCA sets up a new TLSCA.
 //
 func NewTLSCA(eca *ECA) *TLSCA {
-	tlsca := &TLSCA{NewCA("tlsca", initializeTLSCATables), eca, nil}
+	tlsca := &TLSCA{NewCA("tlsca", initializeTLSCATables, true), eca, nil}
 	// flogging.LoggingInit("tlsca")
 
 	return tlsca

@@ -50,7 +50,7 @@ type CA struct {
 // NewCA sets up a new CA.
 // @parameter name is name of this CA instance
 // @parameter initTables create table when it not exist
-func NewCA(name string, initTables TableInitializer) *CA {
+func NewCA(name string, initTables TableInitializer, isNewDB bool) *CA {
 	ca := new(CA)
 	// flogging.LoggingInit("ca")
 	ca.path = filepath.Join(rootPath, caDir)
@@ -61,7 +61,12 @@ func NewCA(name string, initTables TableInitializer) *CA {
 			caLogger.Panic(err)
 		}
 	}
-	ca.cadb = NewCADB(ca.path+"/ca.db", initTables)
+	if isNewDB {
+		ca.cadb = NewCADB(fmt.Sprintf("%s/%s.db", ca.path, name), initTables)
+	} else {
+		ca.cadb = NewCADB(ca.path+"/ca.db", initTables)
+	}
+	
 	// read or create signing key pair
 	priv, err := readCAPrivateKeyFile(ca.path, name)
 	if err != nil {

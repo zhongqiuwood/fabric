@@ -69,10 +69,7 @@ func main() {
 
 	logger.Infof("CA Server (" + metadata.Version + ")")
 
-	aca := ca.NewACA()
-	defer aca.Stop()
-
-	eca := ca.NewECA(aca)
+	eca := ca.NewECA()
 	defer eca.Stop()
 
 	tca := ca.NewTCA(eca)
@@ -99,11 +96,19 @@ func main() {
 	}
 
 	srv := grpc.NewServer(opts...)
-
 	if viper.GetBool("aca.enabled") {
-		logger.Debug("ACA was enabled [aca.enabled == true]")
+		logger.Info("ACA was enabled [aca.enabled == true]")
+	 	aca := ca.NewACA()
+	 	defer aca.Stop()
 		aca.Start(srv)
 	}
+	if viper.GetBool("admin.enabled") {
+		logger.Info("Admin was enabled [admin.enabled == true]")
+		admin := ca.NewAdmin()
+		defer admin.Stop()
+		admin.Start(srv)
+	}
+
 	eca.Start(srv)
 	tca.Start(srv)
 	tlsca.Start(srv)

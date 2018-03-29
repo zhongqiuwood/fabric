@@ -1,28 +1,71 @@
-/*
-Copyright IBM Corp. 2016 All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-		 http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package ca
 
 import (
-	"errors"
 	mrand "math/rand"
+	"strings"
 	"time"
 
+	gp "google/protobuf"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 )
+
+
+// Return true if 'str' is in 'strs'; otherwise return false
+func strContained(str string, strs []string) bool {
+	for _, s := range strs {
+		if s == str {
+			return true
+		}
+	}
+	return false
+}
+
+// Return true if 'str' is prefixed by any string in 'strs'; otherwise return false
+func isPrefixed(str string, strs []string) bool {
+	for _, s := range strs {
+		if strings.HasPrefix(str, s) {
+			return true
+		}
+	}
+	return false
+}
+
+// convert a role to a string
+func role2String(role int) string {
+	if role == int(pb.Role_CLIENT) {
+		return "client"
+	} else if role == int(pb.Role_PEER) {
+		return "peer"
+	} else if role == int(pb.Role_VALIDATOR) {
+		return "validator"
+	} else if role == int(pb.Role_AUDITOR) {
+		return "auditor"
+	}
+	return ""
+}
+
+// Remove outer quotes from a string if necessary
+func removeQuotes(str string) string {
+	if str == "" {
+		return str
+	}
+	if (strings.HasPrefix(str, "'") && strings.HasSuffix(str, "'")) ||
+		(strings.HasPrefix(str, "\"") && strings.HasSuffix(str, "\"")) {
+		str = str[1 : len(str)-1]
+	}
+	caLogger.Debugf("removeQuotes: %s\n", str)
+	return str
+}
+
+func convertTime(ts *gp.Timestamp) time.Time {
+	var t time.Time
+	if ts == nil {
+		t = time.Unix(0, 0).UTC()
+	} else {
+		t = time.Unix(ts.Seconds, int64(ts.Nanos)).UTC()
+	}
+	return t
+}
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 const (
@@ -49,19 +92,4 @@ func randomString(n int) string {
 	}
 
 	return string(b)
-}
-
-//
-// MemberRoleToString converts a member role representation from int32 to a string,
-// according to the Role enum defined in ca.proto.
-//
-func MemberRoleToString(role pb.Role) (string, error) {
-	roleMap := pb.Role_name
-
-	roleStr := roleMap[int32(role)]
-	if roleStr == "" {
-		return "", errors.New("Undefined user role passed.")
-	}
-
-	return roleStr, nil
 }

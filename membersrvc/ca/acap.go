@@ -80,7 +80,7 @@ func (acap *ACAP) FetchAttributes(ctx context.Context, in *pb.ACAFetchAttrReq) (
 		return &pb.ACAFetchAttrResp{Status: pb.ACAFetchAttrResp_FAILURE}, err
 	}
 
-	err = acap.aca.fetchAndPopulateAttributes(id, affiliation)
+	err = acap.aca.initAttributes(id, affiliation)
 	if err != nil {
 		return &pb.ACAFetchAttrResp{Status: pb.ACAFetchAttrResp_FAILURE}, err
 	}
@@ -169,7 +169,7 @@ func (acap *ACAP) RequestAttributes(ctx context.Context, in *pb.ACAAttrReq) (*pb
 		return acap.createRequestAttributeResponse(pb.ACAAttrResp_FAILURE, nil), err
 	}
 	//Before continue with the request we perform a refresh of the attributes.
-	err = acap.aca.fetchAndPopulateAttributes(id, affiliation)
+	err = acap.aca.initAttributes(id, affiliation)
 	if err != nil {
 		return acap.createRequestAttributeResponse(pb.ACAAttrResp_FAILURE, nil), err
 	}
@@ -178,7 +178,7 @@ func (acap *ACAP) RequestAttributes(ctx context.Context, in *pb.ACAAttrReq) (*pb
 	var attributes = make([]AttributePair, 0)
 	owner := &AttributeOwner{id, affiliation}
 	for _, attrPair := range in.Attributes {
-		verifiedPair, _ := acap.aca.findAttribute(owner, attrPair.AttributeName)
+		verifiedPair, _ := acap.aca.cadb.findAttribute(owner, attrPair.AttributeName)
 		if verifiedPair != nil {
 			verifyCounter++
 			attributes = append(attributes, *verifiedPair)

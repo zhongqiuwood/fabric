@@ -20,6 +20,101 @@ package protos;
 
 import "google/protobuf/timestamp.proto";
 
+service Admin {  // public service
+	rpc AffiliationsFetch(Empty) returns (AffiliationsFetchResp);
+	rpc AffiliationsAdd(AffiliationsAddReq) returns (Empty);
+	rpc AffiliationsDel(AffiliationsDelReq) returns (Empty);
+
+	rpc UsersFetch(UsersFetchReq) returns (UsersFetchResp);
+	rpc UsersAdd(UsersAddReq) returns (Empty);
+	rpc UsersDel(UsersDelReq) returns (Empty);
+
+	rpc AttributesFetch (AttributesFetchReq) returns (AttributesFetchResp);
+	rpc AttributesAdd(AttributesAddReq) returns (Empty);
+	rpc AttributesDel(AttributesDelReq) returns (Empty);
+}
+
+
+message AdminAttribute {
+	AdminUser owner = 1;
+    string name = 2;
+    string value = 3;
+	string validFrom = 4;
+	string validTo = 5;
+}
+
+message AdminUser {
+	string id = 1;
+	string affiliation = 2;
+	string role = 3;
+	string password = 4;
+}
+
+message AdminAffiliation {
+	string name = 1;
+	string parent = 2;
+}
+
+// Affiliation
+
+message AffiliationsFetchResp {
+	// repeated string affiliations = 1;
+	repeated AdminAffiliation affiliations = 1;
+}
+
+message AffiliationsAddReq {
+    string name = 1;
+	string parent = 2;
+}
+
+message AffiliationsDelReq {
+	string name = 1;
+}
+
+
+// User
+
+message UsersFetchReq {
+	string affiliation = 1;
+	string role = 2;
+}
+
+message UsersFetchResp {
+	// repeated string users = 1;
+	repeated AdminUser users = 1;
+}
+
+message UsersAddReq {
+	AdminUser user = 1;
+}
+
+message UsersDelReq {
+	string id = 1;
+}
+
+// Attribute
+
+
+message AttributesFetchReq {
+	string id = 1;
+}
+
+message AttributesFetchResp {
+	// repeated string attributes = 1;
+	repeated AdminAttribute attributes = 1;
+}
+
+message AttributesAddReq {
+	AdminAttribute attribute = 2;
+}
+
+message AttributesDelReq {
+	string id = 1;
+	string attributeName = 2;
+}
+
+
+
 
 // Enrollment Certificate Authority (ECA).
 //
@@ -156,8 +251,8 @@ message RegisterUserReq {
 message Attribute {
     string name = 1;
     string value = 2;
-	 string notBefore = 3;
-	 string notAfter = 4;
+	string notBefore = 3;
+	string notAfter = 4;
 }
 
 message ReadUserSetReq {

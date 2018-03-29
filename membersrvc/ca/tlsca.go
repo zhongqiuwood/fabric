@@ -25,7 +25,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/flogging"
+	// "github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
@@ -61,8 +61,8 @@ func initializeTLSCATables(db *sql.DB) error {
 // NewTLSCA sets up a new TLSCA.
 //
 func NewTLSCA(eca *ECA) *TLSCA {
-	tlsca := &TLSCA{NewCA("tlsca", initializeTLSCATables), eca, nil}
-	flogging.LoggingInit("tlsca")
+	tlsca := &TLSCA{NewCA("tlsca", initializeTLSCATables, true), eca, nil}
+	// flogging.LoggingInit("tlsca")
 
 	return tlsca
 }
@@ -150,7 +150,7 @@ func (tlscap *TLSCAP) CreateCertificate(ctx context.Context, in *pb.TLSCertCreat
 func (tlscap *TLSCAP) ReadCertificate(ctx context.Context, in *pb.TLSCertReadReq) (*pb.Cert, error) {
 	tlscaLogger.Debug("grpc TLSCAP:ReadCertificate")
 
-	raw, err := tlscap.tlsca.readCertificateByKeyUsage(in.Id.Id, x509.KeyUsageKeyAgreement)
+	raw, err := tlscap.tlsca.cadb.readCertificateByKeyUsage(in.Id.Id, x509.KeyUsageKeyAgreement)
 	if err != nil {
 		return nil, err
 	}

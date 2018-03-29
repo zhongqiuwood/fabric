@@ -153,7 +153,7 @@ func (tcap *TCAP) CreateCertificateSet(ctx context.Context, in *pb.TCertCreateSe
 	tcapLogger.Debugf("grpc TCAP:CreateCertificateSet")
 
 	id := in.Id.Id
-	raw, err := tcap.tca.eca.readCertificateByKeyUsage(id, x509.KeyUsageDigitalSignature)
+	raw, err := tcap.tca.cadb.readCertificateByKeyUsage(id, x509.KeyUsageDigitalSignature)
 	if err != nil {
 		return nil, err
 	}

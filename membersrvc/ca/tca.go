@@ -18,16 +18,13 @@ package ca
 
 import (
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/x509"
 	"database/sql"
 	"encoding/asn1"
-	"encoding/base64"
 	"errors"
-	"io/ioutil"
 
 	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/flogging"
+	// "github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"google.golang.org/grpc"
@@ -70,32 +67,19 @@ type TCertSet struct {
 	Key          []byte
 }
 
-func initializeTCATables(db *sql.DB) error {
-	var err error
-
-	err = initializeCommonTables(db)
-	if err != nil {
-		return err
-	}
-
-	if _, err = db.Exec("CREATE TABLE IF NOT EXISTS TCertificateSets (row INTEGER PRIMARY KEY, enrollmentID VARCHAR(64), timestamp INTEGER, nonce BLOB, kdfkey BLOB)"); err != nil {
-		return err
-	}
-
-	return err
-}
 
 // NewTCA sets up a new TCA.
 func NewTCA(eca *ECA) *TCA {
-	tca := &TCA{NewCA("tca", initializeTCATables), eca, nil, nil, nil, nil}
-	flogging.LoggingInit("tca")
-
-	err := tca.readHmacKey()
+	tca := &TCA{NewCA("tca", initializeTCATables, true), eca, nil, nil, nil, nil}
+	// flogging.LoggingInit("tca")
+	
+	var err error
+	tca.hmacKey, err = readHmacKey(tca.path)
 	if err != nil {
 		tcaLogger.Panic(err)
 	}
 
-	err = tca.readRootPreKey()
+	tca.rootPreKey, err = readRootPreKey(tca.path)
 	if err != nil {
 		tcaLogger.Panic(err)
 	}
@@ -107,47 +91,6 @@ func NewTCA(eca *ECA) *TCA {
 	return tca
 }
 
-// Read the hcmac key from the file system.
-func (tca *TCA) readHmacKey() error {
-	var cooked string
-	raw, err := ioutil.ReadFile(tca.path + "/tca.hmac")
-	if err != nil {
-		key := make([]byte, 49)
-		rand.Reader.Read(key)
-		cooked = base64.StdEncoding.EncodeToString(key)
-
-		err = ioutil.WriteFile(tca.path+"/tca.hmac", []byte(cooked), 0644)
-		if err != nil {
-			tcaLogger.Panic(err)
-		}
-	} else {
-		cooked = string(raw)
-	}
-
-	tca.hmacKey, err = base64.StdEncoding.DecodeString(cooked)
-	return err
-}
-
-// Read the root pre key from the file system.
-func (tca *TCA) readRootPreKey() error {
-	var cooked string
-	raw, err := ioutil.ReadFile(tca.path + "/root_pk.hmac")
-	if err != nil {
-		key := make([]byte, RootPreKeySize)
-		rand.Reader.Read(key)
-		cooked = base64.StdEncoding.EncodeToString(key)
-
-		err = ioutil.WriteFile(tca.path+"/root_pk.hmac", []byte(cooked), 0644)
-		if err != nil {
-			tcaLogger.Panic(err)
-		}
-	} else {
-		cooked = string(raw)
-	}
-
-	tca.rootPreKey, err = base64.StdEncoding.DecodeString(cooked)
-	return err
-}
 
 func (tca *TCA) calculatePreKey(variant []byte, preKey []byte) ([]byte, error) {
 	mac := hmac.New(primitives.GetDefaultHash(), preKey)
@@ -179,7 +122,7 @@ func (tca *TCA) initializePreKeyGroup(group *AffiliationGroup) error {
 
 func (tca *TCA) initializePreKeyTree() error {
 	tcaLogger.Debug("Initializing PreKeys.")
-	groups, err := tca.eca.readAffiliationGroups()
+	groups, err := tca.eca.cadb.ReadAffiliationGroups()
 	if err != nil {
 		return err
 	}
@@ -277,17 +220,9 @@ func (tca *TCA) getCertificateSets(enrollmentID string) ([]*TCertSet, error) {
 }
 
 func (tca *TCA) persistCertificateSet(enrollmentID string, timestamp int64, nonce []byte, kdfKey []byte) error {
-	mutex.Lock()
-	defer mutex.Unlock()
-
-	var err error
-
-	if _, err = tca.db.Exec("INSERT INTO TCertificateSets (enrollmentID, timestamp, nonce, kdfkey) VALUES (?, ?, ?, ?)", enrollmentID, timestamp, nonce, kdfKey); err != nil {
-		tcaLogger.Error(err)
-	}
-	return err
+	return tca.cadb.persistCertificateSet(enrollmentID, timestamp, nonce, kdfKey)
 }
 
 func (tca *TCA) retrieveCertificateSets(enrollmentID string) (*sql.Rows, error) {
-	return tca.db.Query("SELECT enrollmentID, timestamp, nonce, kdfkey FROM TCertificateSets WHERE enrollmentID=?", enrollmentID)
+	return tca.cadb.retrieveCertificateSets(enrollmentID)
 }

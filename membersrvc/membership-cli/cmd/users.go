@@ -26,9 +26,9 @@ var usersCmd = &cobra.Command{
 	Short: "fetch, add or del a user",
 	Long: `fetch, add or del a user:
 
-	'membership-cli user fetch'  return all affiliations.
-	'membership-cli user add --name aff1'  add affiliation aff1.
-	'membership-cli user del --name aff1'  del affiliaiton aff1.
+	'membership-cli users fetch'  return all users.
+	'membership-cli users add --id zx --affiliation test --role 1 --password zxsss'  add user zx.
+	'membership-cli users del --id zx'  del affiliaiton aff1.
 	
 	`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -41,14 +41,4 @@ func init() {
 	usersCmd.Flags().StringVarP(&Affiliation, "affiliation", "", "", "affiliation of user")
 	usersCmd.Flags().StringVarP(&Role, "role", "", "", "role of user to fetch")
 	rootCmd.AddCommand(usersCmd)
-
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// usersCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// usersCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 }

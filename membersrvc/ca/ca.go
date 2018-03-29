@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/abchain/fabric/core/util"
+	"github.com/op/go-logging"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/spf13/viper" // TODO del it
@@ -33,6 +34,8 @@ func CacheConfiguration() {
 	caDir = viper.GetString("server.cadir")
 }
 
+var caLogger = logging.MustGetLogger("ca")
+
 // CA is the base certificate authority.
 type CA struct {
 	cadb *CADB
@@ -51,7 +54,6 @@ func NewCA(name string, initTables TableInitializer) *CA {
 	ca := new(CA)
 	flogging.LoggingInit("ca")
 	ca.path = filepath.Join(rootPath, caDir)
-
 	if _, err := os.Stat(ca.path); err != nil {
 		caLogger.Info("Fresh start; creating databases, key pairs, and certificates.")
 
@@ -470,4 +472,15 @@ func (ca *CA) createCertificateFromSpec(spec *CertificateSpec, timestamp int64, 
 
 func (ca *CA) readCACertificate(name string) ([]byte, error) {
 	return readCACertificateFile(ca.path, name)
+}
+
+func MemberRoleToString(role pb.Role) (string, error) {
+	roleMap := pb.Role_name
+
+	roleStr := roleMap[int32(role)]
+	if roleStr == "" {
+		return "", errors.New("Undefined user role passed.")
+	}
+
+	return roleStr, nil
 }

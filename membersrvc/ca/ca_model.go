@@ -233,6 +233,23 @@ type AttributePair struct {
 	validTo        time.Time
 }
 
+// Convert the protobuf array of attributes to the AttributePair array format
+// as required by the ACA code to populate the table
+func toAttributePairs(id, affiliation string, attrs []*pb.Attribute) ([]*AttributePair, error) {
+	var pairs = make([]*AttributePair, 0)
+	for _, attr := range attrs {
+		vals := []string{id, affiliation, attr.Name, attr.Value, attr.NotBefore, attr.NotAfter}
+		pair, err := NewAttributePair(vals, nil)
+		if err != nil {
+			return nil, err
+		}
+		pairs = append(pairs, pair)
+	}
+	caLogger.Debugf("toAttributePairs: id=%s, affiliation=%s, attrs=%v, pairs=%v\n",
+		id, affiliation, attrs, pairs)
+	return pairs, nil
+}
+
 //NewAttributePair creates a new attribute pair associated with <attrOwner>.
 func NewAttributePair(attributeVals []string, attrOwner *AttributeOwner) (*AttributePair, error) {
 	if len(attributeVals) < 6 {

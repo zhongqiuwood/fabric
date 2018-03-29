@@ -24,7 +24,7 @@ import (
 
 	"strings"
 
-	// "github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/membersrvc/ca"
@@ -60,9 +60,9 @@ func main() {
 	flogging.LoggingInit("server")
 
 	// Init the crypto layer
-	// if err := ca.Init(); err != nil {
-	// 	logger.Panicf("Failed initializing the crypto layer [%s]", err)
-	// }
+	if err := crypto.Init(); err != nil {
+		logger.Panicf("Failed initializing the crypto layer [%s]", err)
+	}
 
 	// cache configure
 	ca.CacheConfiguration()

@@ -25,8 +25,8 @@ var attributesCmd = &cobra.Command{
 	Long: `fetch attributes, add or del a attribute:
 
 	'membership-cli attributes fetch'  return all attributes.
-	'membership-cli attributes add --userid jim --useraffiliation bank_a --attributename an1 --attributevalue av1'  add one attribute to user jim.
-	'membership-cli attributes del --userid jim --attributename an1'  del one attribute.
+	'membership-cli attributes add --userid jim --useraffiliation bank_a --name an1 --value av1'  add one attribute to user jim.
+	'membership-cli attributes del --userid jim --name an1'  del one attribute.
 	
 	`,
 	Run: func(cmd *cobra.Command, args []string) {

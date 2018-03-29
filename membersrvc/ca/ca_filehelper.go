@@ -3,26 +3,21 @@ package ca
 import (
 	_ "crypto"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
 	"encoding/pem"
 	"io/ioutil"
 
-	// "github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/crypto/primitives"
 )
 
-
-// GetDefaultCurve returns the default elliptic curve used by the crypto layer
-func GetDefaultCurve() elliptic.Curve {
-	return elliptic.P256()
-}
 
 func createCAKeyPair(path, name string) *ecdsa.PrivateKey {
 	caLogger.Debug("function createCAKeyPair")
 
-	curve := GetDefaultCurve() // primitives.GetDefaultCurve()
+	curve := primitives.GetDefaultCurve()
 
 	priv, err := ecdsa.GenerateKey(curve, rand.Reader)
 	if err == nil {
@@ -137,4 +132,46 @@ func newCertificateFromSpec(spec *CertificateSpec, parentCert *x509.Certificate,
 	}
 
 	return raw, err
+}
+
+// ********************************** TCA ************************************
+
+// Read the hcmac key from the file system.
+func readHmacKey(path string) ([]byte, error) {
+	var cooked string
+	raw, err := ioutil.ReadFile(path + "/tca.hmac")
+	if err != nil {
+		key := make([]byte, 49)
+		rand.Reader.Read(key)
+		cooked = base64.StdEncoding.EncodeToString(key)
+
+		err = ioutil.WriteFile(path+"/tca.hmac", []byte(cooked), 0644)
+		if err != nil {
+			tcaLogger.Panic(err)
+		}
+	} else {
+		cooked = string(raw)
+	}
+
+	return base64.StdEncoding.DecodeString(cooked)
+}
+
+// Read the root pre key from the file system.
+func readRootPreKey(path string) ([]byte, error) {
+	var cooked string
+	raw, err := ioutil.ReadFile(path + "/root_pk.hmac")
+	if err != nil {
+		key := make([]byte, RootPreKeySize)
+		rand.Reader.Read(key)
+		cooked = base64.StdEncoding.EncodeToString(key)
+
+		err = ioutil.WriteFile(path+"/root_pk.hmac", []byte(cooked), 0644)
+		if err != nil {
+			tcaLogger.Panic(err)
+		}
+	} else {
+		cooked = string(raw)
+	}
+
+	return base64.StdEncoding.DecodeString(cooked)
 }

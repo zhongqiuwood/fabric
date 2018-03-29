@@ -1,17 +1,14 @@
 package ca
 
 import (
-	"errors"
 	mrand "math/rand"
 	"strings"
 	"time"
 
 	gp "google/protobuf"
-	"github.com/op/go-logging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 )
 
-var caLogger = logging.MustGetLogger("ca")
 
 // Return true if 'str' is in 'strs'; otherwise return false
 func strContained(str string, strs []string) bool {
@@ -60,23 +57,6 @@ func removeQuotes(str string) string {
 	return str
 }
 
-// Convert the protobuf array of attributes to the AttributePair array format
-// as required by the ACA code to populate the table
-func toAttributePairs(id, affiliation string, attrs []*pb.Attribute) ([]*AttributePair, error) {
-	var pairs = make([]*AttributePair, 0)
-	for _, attr := range attrs {
-		vals := []string{id, affiliation, attr.Name, attr.Value, attr.NotBefore, attr.NotAfter}
-		pair, err := NewAttributePair(vals, nil)
-		if err != nil {
-			return nil, err
-		}
-		pairs = append(pairs, pair)
-	}
-	caLogger.Debugf("toAttributePairs: id=%s, affiliation=%s, attrs=%v, pairs=%v\n",
-		id, affiliation, attrs, pairs)
-	return pairs, nil
-}
-
 func convertTime(ts *gp.Timestamp) time.Time {
 	var t time.Time
 	if ts == nil {
@@ -85,19 +65,6 @@ func convertTime(ts *gp.Timestamp) time.Time {
 		t = time.Unix(ts.Seconds, int64(ts.Nanos)).UTC()
 	}
 	return t
-}
-
-// Return an error if all strings in 'strs1' are not contained in 'strs2'
-func checkDelegateRoles(strs1 []string, strs2 []string, registrar string) error {
-	caLogger.Debugf("CA.checkDelegateRoles: registrar=%s, strs1=%+v, strs2=%+v\n", registrar, strs1, strs2)
-	for _, s := range strs1 {
-		if !strContained(s, strs2) {
-			caLogger.Debugf("CA.checkDelegateRoles: no: %s not in %+v\n", s, strs2)
-			return errors.New("user " + registrar + " may not register delegateRoles " + s)
-		}
-	}
-	caLogger.Debug("CA.checkDelegateRoles: ok")
-	return nil
 }
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -125,19 +92,4 @@ func randomString(n int) string {
 	}
 
 	return string(b)
-}
-
-//
-// MemberRoleToString converts a member role representation from int32 to a string,
-// according to the Role enum defined in ca.proto.
-//
-func MemberRoleToString(role pb.Role) (string, error) {
-	roleMap := pb.Role_name
-
-	roleStr := roleMap[int32(role)]
-	if roleStr == "" {
-		return "", errors.New("Undefined user role passed.")
-	}
-
-	return roleStr, nil
 }

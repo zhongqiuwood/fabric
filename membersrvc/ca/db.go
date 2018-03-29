@@ -71,6 +71,9 @@ var (
 
 type TableInitializer func(*sql.DB) error
 
+func initNoneTable(*sql.DB) error {
+	return nil
+}
 
 // CADB is the database component for ca
 type CADB struct {
@@ -279,7 +282,6 @@ func (cadb *CADB) ReadAffiliationGroups() ([]*AffiliationGroup, error) {
 		}
 		groups[id] = group
 	}
-
 	groupList := make([]*AffiliationGroup, len(groups))
 	idx := 0
 	for _, eachGroup := range groups {
@@ -292,7 +294,7 @@ func (cadb *CADB) ReadAffiliationGroups() ([]*AffiliationGroup, error) {
 }
 
 func (cadb *CADB) deleteAffiliation(name string) error {
-	fmt.Println("deleteAffiliation " + name)
+	cadbLogger.Debug("deleteAffiliation " + name)
 
 	mutex.Lock()
 	defer mutex.Unlock()
@@ -309,13 +311,11 @@ func (cadb *CADB) deleteAffiliation(name string) error {
 	// 	return  err
 	// }
 	
-	v, err := cadb.db.Exec("DELETE FROM AffiliationGroups WHERE name=?", name)
+	_, err := cadb.db.Exec("DELETE FROM AffiliationGroups WHERE name=?", name)
 	if err != nil {
-		// fmt.Println(err)
 		cadbLogger.Error(err)
 	}
-	fmt.Println(v)
-	
+
 	return err
 }
 // ******************************* User **********************************
@@ -470,11 +470,12 @@ func (cadb *CADB) insertAttribute(tx *sql.Tx, attr *AttributePair) error {
 	}
 
 	if count > 0 {
-		_, err = tx.Exec("UPDATE Attributes SET validFrom = ?, validTo = ?,  attributeValue = ? WHERE  id=? AND affiliation =? AND attributeName =? AND validFrom < ?",
-			attr.GetValidFrom(), attr.GetValidTo(), attr.GetAttributeValue(), attr.GetID(), attr.GetAffiliation(), attr.GetAttributeName(), attr.GetValidFrom())
-		if err != nil {
-			return err
-		}
+		// _, err = tx.Exec("UPDATE Attributes SET validFrom = ?, validTo = ?,  attributeValue = ? WHERE  id=? AND affiliation =? AND attributeName =? AND validFrom < ?",
+		// 	attr.GetValidFrom(), attr.GetValidTo(), attr.GetAttributeValue(), attr.GetID(), attr.GetAffiliation(), attr.GetAttributeName(), attr.GetValidFrom())
+		// if err != nil {
+		// 	return err
+		// }
+		cadbLogger.Error(fmt.Sprintf("attr userid: %s attr name: %s existed", attr.GetID(), attr.GetAttributeName()))
 	} else {
 		_, err = tx.Exec("INSERT INTO Attributes (validFrom , validTo,  attributeValue, id, affiliation, attributeName) VALUES (?,?,?,?,?,?)",
 			attr.GetValidFrom(), attr.GetValidTo(), attr.GetAttributeValue(), attr.GetID(), attr.GetAffiliation(), attr.GetAttributeName())
@@ -600,14 +601,11 @@ func (cadb *CADB) deleteAttributeOfUser(userId string) error {
 
 // deleteAttribute delete attribute
 func (cadb *CADB) deleteAttribute(userId, attrName string) error {
-	fmt.Println("deleteAttribute " + userId + "." + attrName)
-
 	mutex.Lock()
 	defer mutex.Unlock()
 	
 	_, err := cadb.db.Exec("DELETE FROM Attributes WHERE id=? and attributeName=?", userId, attrName)
 	if err != nil {
-		fmt.Println(err)
 		cadbLogger.Error(err)
 	}
 	return err

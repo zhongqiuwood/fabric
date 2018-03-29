@@ -18,13 +18,10 @@ package ca
 
 import (
 	"crypto/hmac"
-	"crypto/rand"
 	"crypto/x509"
 	"database/sql"
 	"encoding/asn1"
-	"encoding/base64"
 	"errors"
-	"io/ioutil"
 
 	"github.com/abchain/fabric/core/crypto/primitives"
 	"github.com/abchain/fabric/flogging"
@@ -75,65 +72,25 @@ type TCertSet struct {
 func NewTCA(eca *ECA) *TCA {
 	tca := &TCA{NewCA("tca", initializeTCATables), eca, nil, nil, nil, nil}
 	flogging.LoggingInit("tca")
-
-	err := tca.readHmacKey()
+	
+	var err error
+	tca.hmacKey, err = readHmacKey(tca.path)
 	if err != nil {
 		tcaLogger.Panic(err)
 	}
 
-	err = tca.readRootPreKey()
+	tca.rootPreKey, err = readRootPreKey(tca.path)
 	if err != nil {
 		tcaLogger.Panic(err)
 	}
 
-	// err = tca.initializePreKeyTree()
-	// if err != nil {
-	// 	tcaLogger.Panic(err)
-	// }
+	err = tca.initializePreKeyTree()
+	if err != nil {
+		tcaLogger.Panic(err)
+	}
 	return tca
 }
 
-// Read the hcmac key from the file system.
-func (tca *TCA) readHmacKey() error {
-	var cooked string
-	raw, err := ioutil.ReadFile(tca.path + "/tca.hmac")
-	if err != nil {
-		key := make([]byte, 49)
-		rand.Reader.Read(key)
-		cooked = base64.StdEncoding.EncodeToString(key)
-
-		err = ioutil.WriteFile(tca.path+"/tca.hmac", []byte(cooked), 0644)
-		if err != nil {
-			tcaLogger.Panic(err)
-		}
-	} else {
-		cooked = string(raw)
-	}
-
-	tca.hmacKey, err = base64.StdEncoding.DecodeString(cooked)
-	return err
-}
-
-// Read the root pre key from the file system.
-func (tca *TCA) readRootPreKey() error {
-	var cooked string
-	raw, err := ioutil.ReadFile(tca.path + "/root_pk.hmac")
-	if err != nil {
-		key := make([]byte, RootPreKeySize)
-		rand.Reader.Read(key)
-		cooked = base64.StdEncoding.EncodeToString(key)
-
-		err = ioutil.WriteFile(tca.path+"/root_pk.hmac", []byte(cooked), 0644)
-		if err != nil {
-			tcaLogger.Panic(err)
-		}
-	} else {
-		cooked = string(raw)
-	}
-
-	tca.rootPreKey, err = base64.StdEncoding.DecodeString(cooked)
-	return err
-}
 
 func (tca *TCA) calculatePreKey(variant []byte, preKey []byte) ([]byte, error) {
 	mac := hmac.New(primitives.GetDefaultHash(), preKey)

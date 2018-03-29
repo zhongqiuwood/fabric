@@ -18,12 +18,13 @@ package ca
 
 import (
 	"crypto/x509"
-
+	"os"
 
 	"github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"google.golang.org/grpc"
+	"github.com/spf13/viper"
 )
 
 var acaLogger = logging.MustGetLogger("aca")
@@ -43,9 +44,29 @@ type ACAA struct {
 // NewACA sets up a new ACA.
 func NewACA() *ACA {
 	aca := &ACA{CA: NewCA("aca", initializeACATables)}
-	aca.initAllAttributesFromFile()
+	
+	aca.init();
 	flogging.LoggingInit("aca")
 	return aca
+}
+
+func (aca *ACA) init() {
+	if viper.GetBool("aca.enabled") && viper.GetBool("aca.initData") {
+		if _, err := os.Stat(aca.path + "/aca.db"); err != nil {
+			// aca.db is use by old ca version for db
+			oldAcaDb := NewCADB(aca.path + "/aca.db", initNoneTable)
+			attrs, err := oldAcaDb.fetchAttributes("")
+			if err != nil {
+				panic("found old aca.db but read old aca db error")
+			}
+			acaLogger.Info("found old aca.db and has attrs ", len(attrs))
+			aca.cadb.InsertAttributes(attrs)
+	
+		} else {
+			// init attributes from yaml file to db
+			aca.initAllAttributesFromFile()
+		}
+	}
 }
 
 // is it usefull ?

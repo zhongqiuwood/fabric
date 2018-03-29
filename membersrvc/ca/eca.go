@@ -29,6 +29,8 @@ import (
 	"io/ioutil"
 	"strconv"
 	"strings"
+	"errors"
+	
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
@@ -221,4 +223,17 @@ func (eca *ECA) startECAP(srv *grpc.Server) {
 func (eca *ECA) startECAA(srv *grpc.Server) {
 	pb.RegisterECAAServer(srv, &ECAA{eca})
 	ecaLogger.Info("ECA ADMIN gRPC API server started")
+}
+
+// Return an error if all strings in 'strs1' are not contained in 'strs2'
+func checkDelegateRoles(strs1 []string, strs2 []string, registrar string) error {
+	caLogger.Debugf("CA.checkDelegateRoles: registrar=%s, strs1=%+v, strs2=%+v\n", registrar, strs1, strs2)
+	for _, s := range strs1 {
+		if !strContained(s, strs2) {
+			caLogger.Debugf("CA.checkDelegateRoles: no: %s not in %+v\n", s, strs2)
+			return errors.New("user " + registrar + " may not register delegateRoles " + s)
+		}
+	}
+	caLogger.Debug("CA.checkDelegateRoles: ok")
+	return nil
 }

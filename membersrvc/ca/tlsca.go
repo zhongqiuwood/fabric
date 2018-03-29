@@ -25,7 +25,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/flogging"
+	// "github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
@@ -62,7 +62,7 @@ func initializeTLSCATables(db *sql.DB) error {
 //
 func NewTLSCA(eca *ECA) *TLSCA {
 	tlsca := &TLSCA{NewCA("tlsca", initializeTLSCATables), eca, nil}
-	flogging.LoggingInit("tlsca")
+	// flogging.LoggingInit("tlsca")
 
 	return tlsca
 }

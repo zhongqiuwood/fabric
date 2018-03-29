@@ -53,19 +53,10 @@ security:
 logging:
 
 # Please see fabric/docs/Setup/logging-control.md for more
+# info;server=debug;ca=warning;eca=warning;ecap=warning;ecaa=warning;aca=warning;acap=warning;tca=warning;tcap=warning;tcaa=warning;tlsca=warning
 # options.
-    server: warning
-    ca: warning
-    eca: warning
-    ecap: warning
-    ecaa: warning
-    aca: warning
-    acap: warning
-    tca: warning
-    tcap: warning
-    tcaa: warning
-    tlsca: warning
-
+    server: info;server=debug
+    
 # Default users to be registered with the CA on first launch.  The role is a binary OR
 # of the different roles a user can have:
 #
@@ -305,7 +296,7 @@ aca:
     server-name: acap
     # Enabling/disabling Attribute Certificate Authority, if ACA is enabled attributes will be added into the TCert.
     enabled: true
-    initData: false
+    initData: true
 pki:
     ca:
         subject:

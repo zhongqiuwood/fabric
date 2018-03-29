@@ -96,7 +96,6 @@ func main() {
 	}
 
 	srv := grpc.NewServer(opts...)
-
 	if viper.GetBool("aca.enabled") {
 		logger.Info("ACA was enabled [aca.enabled == true]")
 	 	aca := ca.NewACA()

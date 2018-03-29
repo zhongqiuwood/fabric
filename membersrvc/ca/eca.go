@@ -31,7 +31,7 @@ import (
 	"strings"
 	"errors"
 	
-	"github.com/abchain/fabric/flogging"
+	// "github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
@@ -64,7 +64,7 @@ func initializeECATables(db *sql.DB) error {
 // remove aca *ACA param from NewECA
 func NewECA() *ECA {
 	eca := &ECA{CA: NewCA("eca", initializeECATables)}
-	flogging.LoggingInit("eca")
+	// flogging.LoggingInit("eca")
 
 	{
 		// read or create global symmetric encryption key

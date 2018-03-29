@@ -20,7 +20,7 @@ import (
 	"crypto/x509"
 	"os"
 
-	"github.com/abchain/fabric/flogging"
+	// "github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"google.golang.org/grpc"
@@ -46,7 +46,7 @@ func NewACA() *ACA {
 	aca := &ACA{CA: NewCA("aca", initializeACATables)}
 	
 	aca.init();
-	flogging.LoggingInit("aca")
+	// flogging.LoggingInit("aca")
 	return aca
 }
 
@@ -59,7 +59,7 @@ func (aca *ACA) init() {
 			if err != nil {
 				panic("found old aca.db but read old aca db error")
 			}
-			acaLogger.Info("found old aca.db and has attrs ", len(attrs))
+			acaLogger.Error("found old aca.db and has attrs ", len(attrs))
 			aca.cadb.InsertAttributes(attrs)
 	
 		} else {

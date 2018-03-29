@@ -24,7 +24,7 @@ import (
 	"errors"
 
 	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/flogging"
+	// "github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/op/go-logging"
 	"google.golang.org/grpc"
@@ -71,7 +71,7 @@ type TCertSet struct {
 // NewTCA sets up a new TCA.
 func NewTCA(eca *ECA) *TCA {
 	tca := &TCA{NewCA("tca", initializeTCATables), eca, nil, nil, nil, nil}
-	flogging.LoggingInit("tca")
+	// flogging.LoggingInit("tca")
 	
 	var err error
 	tca.hmacKey, err = readHmacKey(tca.path)

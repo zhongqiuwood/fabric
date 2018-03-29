@@ -13,7 +13,7 @@ import (
 
 	"github.com/abchain/fabric/core/util"
 	"github.com/op/go-logging"
-	"github.com/abchain/fabric/flogging"
+	// "github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/membersrvc/protos"
 	"github.com/spf13/viper" // TODO del it
 )
@@ -52,7 +52,7 @@ type CA struct {
 // @parameter initTables create table when it not exist
 func NewCA(name string, initTables TableInitializer) *CA {
 	ca := new(CA)
-	flogging.LoggingInit("ca")
+	// flogging.LoggingInit("ca")
 	ca.path = filepath.Join(rootPath, caDir)
 	if _, err := os.Stat(ca.path); err != nil {
 		caLogger.Info("Fresh start; creating databases, key pairs, and certificates.")

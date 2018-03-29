@@ -22,10 +22,10 @@ import (
 	"os"
 	"path"
 
+	"github.com/abchain/fabric/core/util"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
-	"github.com/abchain/fabric/core/util"
 )
 
 var dbLogger = logging.MustGetLogger("db")
@@ -209,6 +209,8 @@ func (openchainDB *OpenchainDB) open() {
 	openchainDB.StateDeltaCF = cfHandlers[3]
 	openchainDB.IndexesCF = cfHandlers[4]
 	openchainDB.PersistCF = cfHandlers[5]
+	//we do not use "default" CF so clear it here
+	cfHandlers[0].Destroy()
 }
 
 // Close releases all column family handles and closes rocksdb

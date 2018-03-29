@@ -4,6 +4,24 @@ This is purposed to be another future of fabric 0.6, keeping the original archit
 
 The original readme can be found [here](https://github.com/hyperledger/fabric/blob/v0.6/README.md)
 
+## Installation
+
+### Rocksdb
+
+* Use rocksdb 5.10
+
+## Release of 0.7
+
+* Many bug fixes since fabric 0.6, ready to production
+
+* Membersrvc is dynamically configurable
+
+* "Embedded" mode enable developer to bundle their chaincode with fabric peer
+
+* More roles in p2p network are induced
+
+* Core depedencies to vendor packages (protobuf, grpc, rocksdb) are up-to-date now
+
 ## Our plans
 
 * A "real" impelemnt for production, including some security and applicating consideration

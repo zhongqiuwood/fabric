@@ -11,7 +11,7 @@ server:
     cadir: ".membersrvc"
 
     # port the CA services are listening on
-    port: ":7056"
+    port: ":7054"
 
     # TLS certificate and key file paths
     tls:

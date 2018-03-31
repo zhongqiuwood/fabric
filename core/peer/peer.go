@@ -647,7 +647,7 @@ func (p *Impl) handleChat(ctx context.Context, stream ChatStream, initiatedStrea
 		err = handler.HandleMessage(in)
 		if err != nil {
 			peerLogger.Errorf("Error handling message: %s", err)
-			//return err
+			return err
 		}
 	}
 }

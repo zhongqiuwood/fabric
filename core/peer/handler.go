@@ -234,7 +234,9 @@ func (d *Handler) beforeGetPeers(e *fsm.Event) {
 	if !comm.DiscoveryDisable() {
 		msg, err := d.Coordinator.GetPeers()
 		if err != nil {
-			e.Cancel(fmt.Errorf("Error Getting Peers: %s", err))
+			lerr := fmt.Errorf("Error Getting Peers: %s", err)
+			peerLogger.Info(lerr.Error())
+			e.Cancel(&fsm.NoTransitionError{Err: lerr})
 			return
 		}
 
@@ -244,7 +246,9 @@ func (d *Handler) beforeGetPeers(e *fsm.Event) {
 	}
 	data, err := proto.Marshal(peersMessage)
 	if err != nil {
-		e.Cancel(fmt.Errorf("Error Marshalling PeersMessage: %s", err))
+		lerr := fmt.Errorf("Error Marshalling PeersMessage: %s", err)
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 	peerLogger.Debugf("Sending back %s", pb.Message_DISC_PEERS.String())
@@ -263,7 +267,9 @@ func (d *Handler) beforePeers(e *fsm.Event) {
 
 	// Parse out the PeerEndpoint information
 	if _, ok := e.Args[0].(*pb.Message); !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
+		lerr := fmt.Errorf("Received unexpected message type")
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 	msg := e.Args[0].(*pb.Message)
@@ -271,7 +277,9 @@ func (d *Handler) beforePeers(e *fsm.Event) {
 	peersMessage := &pb.PeersMessage{}
 	err := proto.Unmarshal(msg.Payload, peersMessage)
 	if err != nil {
-		e.Cancel(fmt.Errorf("Error unmarshalling PeersMessage: %s", err))
+		lerr := fmt.Errorf("Error unmarshalling PeersMessage: %s", err)
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 
@@ -375,14 +383,18 @@ func (d *Handler) beforeSyncGetBlocks(e *fsm.Event) {
 	peerLogger.Debugf("Received message: %s", e.Event)
 	msg, ok := e.Args[0].(*pb.Message)
 	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
+		lerr := fmt.Errorf("Received unexpected message type")
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 	// Start a separate go FUNC to send the blocks per the SyncBlockRange payload
 	syncBlockRange := &pb.SyncBlockRange{}
 	err := proto.Unmarshal(msg.Payload, syncBlockRange)
 	if err != nil {
-		e.Cancel(fmt.Errorf("Error unmarshalling SyncBlockRange in GetBlocks: %s", err))
+		lerr := fmt.Errorf("Error unmarshalling SyncBlockRange in GetBlocks: %s", err)
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 
@@ -501,14 +513,18 @@ func (d *Handler) beforeSyncStateGetSnapshot(e *fsm.Event) {
 	peerLogger.Debugf("Received message: %s", e.Event)
 	msg, ok := e.Args[0].(*pb.Message)
 	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
+		lerr := fmt.Errorf("Received unexpected message type")
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 	// Unmarshall the sync State snapshot request
 	syncStateSnapshotRequest := &pb.SyncStateSnapshotRequest{}
 	err := proto.Unmarshal(msg.Payload, syncStateSnapshotRequest)
 	if err != nil {
-		e.Cancel(fmt.Errorf("Error unmarshalling SyncStateSnapshotRequest in beforeSyncStateGetSnapshot: %s", err))
+		lerr := fmt.Errorf("Error unmarshalling SyncStateSnapshotRequest in beforeSyncStateGetSnapshot: %s", err)
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 
@@ -647,14 +663,18 @@ func (d *Handler) beforeSyncStateGetDeltas(e *fsm.Event) {
 	peerLogger.Debugf("Received message: %s", e.Event)
 	msg, ok := e.Args[0].(*pb.Message)
 	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
+		lerr := fmt.Errorf("Received unexpected message type")
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 	// Unmarshall the sync State deltas request
 	syncStateDeltasRequest := &pb.SyncStateDeltasRequest{}
 	err := proto.Unmarshal(msg.Payload, syncStateDeltasRequest)
 	if err != nil {
-		e.Cancel(fmt.Errorf("Error unmarshalling SyncStateDeltasRequest in beforeSyncStateGetDeltas: %s", err))
+		lerr := fmt.Errorf("Error unmarshalling SyncStateDeltasRequest in beforeSyncStateGetDeltas: %s", err)
+		peerLogger.Info(lerr.Error())
+		e.Cancel(&fsm.NoTransitionError{Err: lerr})
 		return
 	}
 

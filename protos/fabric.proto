@@ -162,6 +162,29 @@ message HelloMessage {
   BlockchainInfo blockchainInfo = 2;
 }
 
+message Gossip {
+
+    message Digest{
+        message Ver{
+            bytes state = 1;
+            uint32 num  = 2;
+        }
+/*string is used to represent peerID*/        
+        map<string, Ver> data = 1;
+    }
+
+    message Update{
+        bytes payload = 1; 
+    }
+
+    uint64 seq = 1;
+    string catalog = 2;
+    oneof m{
+        Digest digest = 5;
+        Update update = 6;
+    }
+}
+
 message Message {
     enum Type {
         UNDEFINED = 0;

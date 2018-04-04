@@ -661,28 +661,46 @@ func (p *Impl) ExecuteTransaction(transaction *pb.Transaction) (response *pb.Res
 	if p.isValidator {
 		response = p.sendTransactionsToLocalEngine(transaction)
 	} else {
+
+		peerAddress := ""
 		//peerAddresses := p.discHelper.GetRandomNodes(1)
 		//response = p.SendTransactionsToPeer(peerAddresses[0], transaction)
-		peerAddress := ""
-		currentIndex := 0
-		randomIndex := p.random.Intn(len(p.handlerMap.m))
-		for _, msgHandler := range p.handlerMap.m {
-			peerEndpoint, err := msgHandler.To()
-			if err != nil {
-				continue
+		if len(p.handlerMap.m) > 0 {
+			p.handlerMap.RLock()
+			defer p.handlerMap.RUnlock()
+
+			currentIndex := 0
+			randomIndex := p.random.Intn(len(p.handlerMap.m))
+			for _, msgHandler := range p.handlerMap.m {
+
+				if currentIndex == randomIndex {
+					peerEndpoint, err := msgHandler.To()
+					if err != nil {
+						continue
+					}
+
+					peerAddress = peerEndpoint.Address
+					break
+				}
+
+				currentIndex++
 			}
-			if currentIndex == randomIndex {
-				peerAddress = peerEndpoint.Address
-				break
-			}
-			currentIndex++
+			peerLogger.Debugf("ExecuteTransaction send tx to %s, index: %d/%d", peerAddress, currentIndex, len(p.handlerMap.m))
 		}
-		peerLogger.Debugf("ExecuteTransaction send tx to %s, index: %d/%d", peerAddress, currentIndex, len(p.handlerMap.m))
+
 		if peerAddress == "" {
 			peerAddresses := p.discHelper.GetRandomNodes(1)
-			peerAddress = peerAddresses[0]
+			if len(peerAddresses) > 0 {
+				peerAddress = peerAddresses[0]
+			}
+
 		}
-		response = p.SendTransactionsToPeer(peerAddress, transaction)
+
+		if peerAddress == "" {
+			response = &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("No endpoint availiable")}
+		} else {
+			response = p.SendTransactionsToPeer(peerAddress, transaction)
+		}
 	}
 	return response
 }

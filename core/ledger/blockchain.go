@@ -18,7 +18,6 @@ package ledger
 
 import (
 	"bytes"
-	"encoding/binary"
 	"strconv"
 
 	"github.com/abchain/fabric/core/db"
@@ -26,6 +25,7 @@ import (
 	"github.com/abchain/fabric/protos"
 	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
+	"github.com/abchain/fabric/dbg"
 )
 
 // Blockchain holds basic information in memory. Operations on Blockchain are not thread-safe
@@ -45,15 +45,15 @@ type lastProcessedBlock struct {
 
 var indexBlockDataSynchronously = true
 
-func newBlockchain() (*blockchain, error) {
-	size, err := fetchBlockchainSizeFromDB()
+func newBlockchain(currentDbVersion uint32) (*blockchain, error) {
+	size, err := db.GetDBHandle().FetchBlockchainSizeFromDB()
 	if err != nil {
 		return nil, err
 	}
 	blockchain := &blockchain{0, nil, nil, nil}
 	blockchain.size = size
 	if size > 0 {
-		previousBlock, err := fetchBlockFromDB(size - 1)
+		previousBlock, err := db.GetDBHandle().FetchBlockFromDB(size - 1, currentDbVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -94,9 +94,63 @@ func (blockchain *blockchain) getSize() uint64 {
 	return blockchain.size
 }
 
+// move txs to txdb
+func (blockchain *blockchain) reorganize() error {
+
+	size := blockchain.getSize()
+	if size == 0 {
+		return nil
+	}
+
+	gs := protos.NewGlobalState()
+
+	for i := uint64(0); i < size; i++ {
+		block, blockErr := blockchain.getBlockByOldMode(i)
+		if blockErr != nil {
+			return blockErr
+		}
+
+		if i > 0 {
+			blockHashV0, err := block.GetHashV0()
+			if err != nil {
+				return err
+			}
+
+			err = db.GetDBHandle().DeleteKey(db.IndexesCF, encodeBlockHashKey(blockHashV0))
+			dbg.Infof("%d: DeleteKey in <%s>: <%x>. err: %s", i, db.IndexesCF, encodeBlockHashKey(blockHashV0), err)
+		}
+
+		block.FeedTranscationIds()
+
+		commitGlobalState(block.Transactions, block.StateHash, i, gs)
+
+		if block.Transactions == nil {
+			dbg.Infof("%d: block.Transactions == nil", i)
+			continue
+		}
+
+		blockchain.persistUpdatedRawBlock(block, i)
+	}
+
+	//dbg.Infof("===========================after shrink==============================")
+	//for i := uint64(0); i < size; i++ {
+	//	block, blockErr := blockchain.getBlock(i)
+	//	if blockErr != nil {
+	//		return blockErr
+	//	}
+	//	//block.Dump()
+	//}
+	return nil
+}
+
 // getBlock get block at arbitrary height in block chain
 func (blockchain *blockchain) getBlock(blockNumber uint64) (*protos.Block, error) {
-	return fetchBlockFromDB(blockNumber)
+	return db.GetDBHandle().FetchBlockFromDB(blockNumber, protos.CurrentDbVersion)
+}
+
+// getBlock get block at arbitrary height in block chain
+func (blockchain *blockchain) getBlockByOldMode(blockNumber uint64) (*protos.Block, error) {
+	return db.GetDBHandle().FetchBlockFromDB(blockNumber, 0)
 }
 
 // getBlockByHash get block by block hash
@@ -113,12 +167,8 @@ func (blockchain *blockchain) getTransactionByID(txID string) (*protos.Transacti
 	if err != nil {
 		return nil, err
 	}
-	block, err := blockchain.getBlock(blockNumber)
-	if err != nil {
-		return nil, err
-	}
-	transaction := block.GetTransactions()[txIndex]
-	return transaction, nil
+
+	return blockchain.getTransaction(blockNumber, txIndex)
 }
 
 // getTransactions get all transactions in a block identified by block number
@@ -141,20 +191,26 @@ func (blockchain *blockchain) getTransactionsByBlockHash(blockHash []byte) ([]*p
 
 // getTransaction get a transaction identified by block number and index within the block
 func (blockchain *blockchain) getTransaction(blockNumber uint64, txIndex uint64) (*protos.Transaction, error) {
-	block, err := blockchain.getBlock(blockNumber)
+
+	transactions, err := blockchain.getTransactions(blockNumber)
+
 	if err != nil {
 		return nil, err
 	}
-	return block.GetTransactions()[txIndex], nil
+
+	dbg.Infof("tx[%+v], txIndex[%d]", transactions, txIndex)
+	return transactions[txIndex], nil
 }
 
 // getTransactionByBlockHash get a transaction identified by block hash and index within the block
 func (blockchain *blockchain) getTransactionByBlockHash(blockHash []byte, txIndex uint64) (*protos.Transaction, error) {
-	block, err := blockchain.getBlockByHash(blockHash)
+
+	transactions, err := blockchain.getTransactionsByBlockHash(blockHash)
+
 	if err != nil {
 		return nil, err
 	}
-	return block.GetTransactions()[txIndex], nil
+	return transactions[txIndex], nil
 }
 
 func (blockchain *blockchain) getBlockchainInfo() (*protos.BlockchainInfo, error) {
@@ -200,12 +256,14 @@ func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Conte
 	if err != nil {
 		return 0, err
 	}
-	blockBytes, blockBytesErr := block.Bytes()
+
+	//todo: pass transcations by a separated param into <createIndexes>
+	blockBytes, blockBytesErr := block.GetBlockBytes()
 	if blockBytesErr != nil {
 		return 0, blockBytesErr
 	}
-	writeBatch.PutCF(db.GetDBHandle().BlockchainCF, encodeBlockNumberDBKey(blockNumber), blockBytes)
-	writeBatch.PutCF(db.GetDBHandle().BlockchainCF, blockCountKey, encodeUint64(blockNumber+1))
+	db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.EncodeBlockNumberDBKey(blockNumber), blockBytes)
+	db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.BlockCountKey, db.EncodeUint64(blockNumber+1))
 	if blockchain.indexer.isSynchronous() {
 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
 	}
@@ -227,14 +285,43 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) {
 	blockchain.lastProcessedBlock = nil
 }
 
-func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
-	blockBytes, blockBytesErr := block.Bytes()
+func (blockchain *blockchain) persistUpdatedRawBlock(block *protos.Block, blockNumber uint64) error {
+
+	block.Transactions = nil
+	blockBytes, blockBytesErr := block.GetBlockBytes()
 	if blockBytesErr != nil {
 		return blockBytesErr
 	}
 	writeBatch := gorocksdb.NewWriteBatch()
 	defer writeBatch.Destroy()
-	writeBatch.PutCF(db.GetDBHandle().BlockchainCF, encodeBlockNumberDBKey(blockNumber), blockBytes)
+	db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.EncodeBlockNumberDBKey(blockNumber), blockBytes)
+
+	blockHash, err := block.GetHash()
+	if err != nil {
+		return err
+	}
+
+	if blockchain.indexer.isSynchronous() {
+		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
+	}
+
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()
+	err = db.GetDBHandle().BatchCommit(opt, writeBatch)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
+	blockBytes, blockBytesErr := block.GetBlockBytes()
+	if blockBytesErr != nil {
+		return blockBytesErr
+	}
+	writeBatch := gorocksdb.NewWriteBatch()
+	defer writeBatch.Destroy()
+	db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.EncodeBlockNumberDBKey(blockNumber), blockBytes)
 
 	blockHash, err := block.GetHash()
 	if err != nil {
@@ -244,8 +331,8 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 	// Need to check as we support out of order blocks in cases such as block/state synchronization. This is
 	// real blockchain height, not size.
 	if blockchain.getSize() < blockNumber+1 {
-		sizeBytes := encodeUint64(blockNumber + 1)
-		writeBatch.PutCF(db.GetDBHandle().BlockchainCF, blockCountKey, sizeBytes)
+		sizeBytes := db.EncodeUint64(blockNumber + 1)
+		db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.BlockCountKey, sizeBytes)
 		blockchain.size = blockNumber + 1
 		blockchain.previousBlockHash = blockHash
 	}
@@ -256,61 +343,11 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	err = db.GetDBHandle().DB.Write(opt, writeBatch)
+	err = db.GetDBHandle().BatchCommit(opt, writeBatch)
 	if err != nil {
 		return err
 	}
 	return nil
-}
-
-func fetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
-	blockBytes, err := db.GetDBHandle().GetFromBlockchainCF(encodeBlockNumberDBKey(blockNumber))
-	if err != nil {
-		return nil, err
-	}
-	if blockBytes == nil {
-		return nil, nil
-	}
-	return protos.UnmarshallBlock(blockBytes)
-}
-
-func fetchBlockchainSizeFromDB() (uint64, error) {
-	bytes, err := db.GetDBHandle().GetFromBlockchainCF(blockCountKey)
-	if err != nil {
-		return 0, err
-	}
-	if bytes == nil {
-		return 0, nil
-	}
-	return decodeToUint64(bytes), nil
-}
-
-func fetchBlockchainSizeFromSnapshot(snapshot *gorocksdb.Snapshot) (uint64, error) {
-	blockNumberBytes, err := db.GetDBHandle().GetFromBlockchainCFSnapshot(snapshot, blockCountKey)
-	if err != nil {
-		return 0, err
-	}
-	var blockNumber uint64
-	if blockNumberBytes != nil {
-		blockNumber = decodeToUint64(blockNumberBytes)
-	}
-	return blockNumber, nil
-}
-
-var blockCountKey = []byte("blockCount")
-
-func encodeBlockNumberDBKey(blockNumber uint64) []byte {
-	return encodeUint64(blockNumber)
-}
-
-func encodeUint64(number uint64) []byte {
-	bytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(bytes, number)
-	return bytes
-}
-
-func decodeToUint64(bytes []byte) uint64 {
-	return binary.BigEndian.Uint64(bytes)
 }
 
 func (blockchain *blockchain) String() string {
@@ -330,4 +367,41 @@ func (blockchain *blockchain) String() string {
 		buffer.WriteString(">----------\n")
 	}
 	return buffer.String()
+}
+
+
+func (blockchain *blockchain) Dump(level int) {
+
+	size := blockchain.getSize()
+	if size == 0 {
+		return
+	}
+
+	dbg.Log(level, "========================blockchain height: %d=============================", size  - 1)
+
+	for i := uint64(0); i < size; i++ {
+		block, blockErr := blockchain.getBlock(i)
+		if blockErr != nil {
+			return
+		}
+		curBlockHash, _ := block.GetHash()
+
+		dbg.Log(level, "high[%s]: \n" +
+			"	StateHash<%x>, \n" +
+			"	Transactions<%x>, \n" +
+			"	curBlockHash<%x> \n" +
+			"	prevBlockHash<%x>, \n" +
+			"	ConsensusMetadata<%x>, \n" +
+			"	timp<%+v>, \n" +
+			"	NonHashData<%+v>",
+			strconv.FormatUint(i, 10),
+			block.StateHash,
+			block.Transactions,
+			curBlockHash,
+			block.PreviousBlockHash,
+			block.ConsensusMetadata,
+			block.Timestamp,
+			block.NonHashData)
+	}
+	dbg.Log(level, "==========================================================================")
 }

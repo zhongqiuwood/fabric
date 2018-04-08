@@ -154,20 +154,24 @@ func (stateTrie *StateTrie) AddChangesForPersistence(writeBatch *gorocksdb.Write
 		return nil
 	}
 
-	openchainDB := db.GetDBHandle()
 	lowestLevel := stateTrie.trieDelta.getLowestLevel()
 	for level := lowestLevel; level >= 0; level-- {
 		changedNodes := stateTrie.trieDelta.deltaMap[level]
 		for _, changedNode := range changedNodes {
 			if changedNode.markedForDeletion {
-				writeBatch.DeleteCF(openchainDB.StateCF, changedNode.trieKey.getEncodedBytes())
+				//writeBatch.DeleteCF(openchainDB.StateCF,
+				db.GetDBHandle().BatchDelete(db.StateCF, writeBatch,
+					changedNode.trieKey.getEncodedBytes())
 				continue
 			}
 			serializedContent, err := changedNode.marshal()
 			if err != nil {
 				return err
 			}
-			writeBatch.PutCF(openchainDB.StateCF, changedNode.trieKey.getEncodedBytes(), serializedContent)
+
+			//writeBatch.PutCF(openchainDB.StateCF, changedNode.trieKey.getEncodedBytes(), serializedContent)
+			db.GetDBHandle().BatchPut(db.StateCF, writeBatch,
+				changedNode.trieKey.getEncodedBytes(), serializedContent)
 		}
 	}
 	stateTrieLogger.Debug("Added changes to DB")

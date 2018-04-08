@@ -34,6 +34,15 @@ func (transaction *Transaction) Bytes() ([]byte, error) {
 	return data, nil
 }
 
+func UnmarshallTransaction(transaction []byte) (*Transaction, error) {
+	tx := &Transaction{}
+	err := proto.Unmarshal(transaction, tx)
+	if err != nil {
+		logger.Errorf("Error unmarshalling Transaction: %s", err)
+		return nil, fmt.Errorf("Could not unmarshal Transaction: %s", err)
+	}
+	return tx, nil
+}
 // NewTransaction creates a new transaction. It defines the function to call,
 // the chaincodeID on which the function should be called, and the arguments
 // string. The arguments could be a string of JSON, but there is no strict

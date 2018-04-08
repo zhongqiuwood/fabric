@@ -32,6 +32,7 @@ import (
 
 	"github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
+	"github.com/abchain/fabric/dbg"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
@@ -81,6 +82,7 @@ var (
 type Ledger struct {
 	blockchain *blockchain
 	state      *state.State
+	txstate    *state.TxState
 	currentID  interface{}
 }
 
@@ -98,13 +100,20 @@ func GetLedger() (*Ledger, error) {
 
 // GetNewLedger - gives a reference to a new ledger TODO need better approach
 func GetNewLedger() (*Ledger, error) {
-	blockchain, err := newBlockchain()
+
+	if protos.CurrentDbVersion == 1 {
+		InitializeDataBase(db.GetDBHandle(), db.GetGlobalDBHandle())
+	}
+
+	blockchain, err := newBlockchain(protos.CurrentDbVersion)
 	if err != nil {
 		return nil, err
 	}
 
-	state := state.NewState()
-	return &Ledger{blockchain, state, nil}, nil
+	txstate := state.NewTxState()
+	orgstate := state.NewState()
+
+	return &Ledger{blockchain, orgstate, txstate, nil}, nil
 }
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
@@ -150,6 +159,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	stateHash, err := ledger.state.GetHash()
+
 	if err != nil {
 		ledger.resetForNextTxGroup(false)
 		ledger.blockchain.blockPersistenceStatus(false)
@@ -193,11 +203,19 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	dbErr := db.GetDBHandle().DB.Write(opt, writeBatch)
+
+	dbErr := db.GetDBHandle().BatchCommit(opt, writeBatch)
+
 	if dbErr != nil {
 		ledger.resetForNextTxGroup(false)
 		ledger.blockchain.blockPersistenceStatus(false)
 		return dbErr
+	}
+
+	// update txdb
+	if protos.CurrentDbVersion == 1 {
+		//todo: init ledger.txstate.CurGState.ParentNodeStateHash on peer startup
+		commitGlobalState(transactions, stateHash, newBlockNumber, ledger.txstate.CurGState)
 	}
 
 	ledger.resetForNextTxGroup(true)
@@ -305,7 +323,7 @@ func (ledger *Ledger) SetStateMultipleKeys(chaincodeID string, kvs map[string][]
 // stateSnapshot.Release() once you are done with the snapshot to free up resources.
 func (ledger *Ledger) GetStateSnapshot() (*state.StateSnapshot, error) {
 	dbSnapshot := db.GetDBHandle().GetSnapshot()
-	blockHeight, err := fetchBlockchainSizeFromSnapshot(dbSnapshot)
+	blockHeight, err := db.GetDBHandle().FetchBlockchainSizeFromSnapshot(dbSnapshot)
 	if err != nil {
 		db.GetDBHandle().ReleaseSnapshot(dbSnapshot)
 		return nil, err
@@ -531,4 +549,118 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) {
 			}
 		}
 	}
+}
+
+
+
+/////////////////// DB-reorganize  methods ///////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
+func InitializeDataBase(orgdb db.IDataBaseHandler, txdb db.IDataBaseHandler) bool {
+
+	orgdbVersion, errVer := orgdb.GetValue(db.PersistCF, []byte(db.VersionKey))
+	if errVer == nil {
+		if orgdbVersion != nil {
+			ver := db.DecodeToUint64(orgdbVersion)
+			dbg.Infof("Original DB version: %d. No action required.", ver)
+			return false
+		} else {
+			// ok, this is the v0 db that expected to be reorganized
+			dbg.Infof("No original DB version detected, start to reorganize original DB and produce txdb.")
+		}
+	} else {
+		dbg.ChkErr(errVer)
+		return false
+	}
+
+	_, err := orgdb.MoveColumnFamily(db.PersistCF, txdb, db.PersistCF, true)
+
+	if err != nil {
+		dbg.ChkErr(err)
+		return false
+	}
+
+
+	bc, errBlockchain := newBlockchain(0)
+	if errBlockchain != nil {
+		return false
+	}
+
+	err = bc.reorganize()
+
+	if err != nil {
+		dbg.ChkErr(err)
+		return false
+	}
+
+	err = txdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.GlobalDataBaseVersion))
+	if err != nil {
+		return false
+	}
+	orgdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.OriginalDataBaseVersion))
+
+	return true
+}
+
+func putGlobalState(gs *protos.GlobalState, statehash []byte, writeBatch *gorocksdb.WriteBatch) error {
+
+	err := db.GetGlobalDBHandle().PutGlobalState(gs, statehash, writeBatch)
+	if err != nil {
+		dbg.Errorf("Error: %s", err)
+	}
+
+	parentStateHash := gs.ParentNodeStateHash
+
+	if parentStateHash != nil {
+		data, _ := db.GetGlobalDBHandle().GetValue(db.GlobalCF, parentStateHash)
+		parentGS, _ := protos.UnmarshallGS(data)
+		parentGS.NextNodeStateHash = statehash
+		dbg.Infof("gsInDB <%+v>", parentGS)
+
+		err := db.GetGlobalDBHandle().PutGlobalState(parentGS, parentStateHash, writeBatch)
+		if err != nil {
+			dbg.Errorf("Error: %s", err)
+		}
+	}
+	return err
+}
+
+func commitGlobalState(transactions []*protos.Transaction,
+	stateHash []byte, newBlockNumber uint64, globalState *protos.GlobalState) error {
+
+	if newBlockNumber == 0 && stateHash == nil {
+		stateHash = []byte("0")
+	}
+
+	wb := gorocksdb.NewWriteBatch()
+	defer wb.Destroy()
+
+	db.GetGlobalDBHandle().PutTransactions(transactions, db.TxCF, wb)
+
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()
+
+	// set current GState
+	globalState.NextNodeStateHash = nil
+	globalState.Branch = false
+	globalState.Cached = false
+	globalState.Count = newBlockNumber
+
+	// put current gs and update last gs
+	putGlobalState(globalState, stateHash, wb)
+	dbErr := db.GetGlobalDBHandle().BatchCommit(opt, wb)
+
+	dbg.ChkErr(dbErr)
+	if dbErr != nil {
+		return dbErr
+	}
+
+	// reset GState
+	globalState.NextNodeStateHash = nil
+	globalState.ParentNodeStateHash = stateHash
+	globalState.Branch = false
+	globalState.Cached = false
+	globalState.Count = 0
+
+	return nil
 }

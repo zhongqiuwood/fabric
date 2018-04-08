@@ -33,7 +33,7 @@ type RangeScanIterator struct {
 }
 
 func newRangeScanIterator(chaincodeID string, startKey string, endKey string) (*RangeScanIterator, error) {
-	dbItr := db.GetDBHandle().GetStateCFIterator()
+	dbItr := db.GetDBHandle().GetIterator(db.StateCF)
 	encodedStartKey := newTrieKey(chaincodeID, startKey).getEncodedBytes()
 	dbItr.Seek(encodedStartKey)
 	return &RangeScanIterator{dbItr, chaincodeID, endKey, "", nil, false}, nil

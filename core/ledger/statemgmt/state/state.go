@@ -27,6 +27,9 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
+	//"github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/protos"
+	//"github.com/abchain/fabric/dbg"
 )
 
 var logger = logging.MustGetLogger("state")
@@ -275,7 +278,7 @@ func (state *State) GetSnapshot(blockNumber uint64, dbSnapshot *gorocksdb.Snapsh
 
 // FetchStateDeltaFromDB fetches the StateDelta corrsponding to given blockNumber
 func (state *State) FetchStateDeltaFromDB(blockNumber uint64) (*statemgmt.StateDelta, error) {
-	stateDeltaBytes, err := db.GetDBHandle().GetFromStateDeltaCF(encodeStateDeltaKey(blockNumber))
+	stateDeltaBytes, err := db.GetDBHandle().GetValue(db.StateDeltaCF, encodeStateDeltaKey(blockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -297,13 +300,17 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *gor
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 
 	serializedStateDelta := state.stateDelta.Marshal()
-	cf := db.GetDBHandle().StateDeltaCF
+	//cf := db.GetDBHandle().StateDeltaCF
 	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
-	writeBatch.PutCF(cf, encodeStateDeltaKey(blockNumber), serializedStateDelta)
+
+	db.GetDBHandle().BatchPut(db.StateDeltaCF, writeBatch,
+		encodeStateDeltaKey(blockNumber), serializedStateDelta)
+
 	if blockNumber >= state.historyStateDeltaSize {
 		blockNumberToDelete := blockNumber - state.historyStateDeltaSize
 		logger.Debugf("Deleting state-delta corresponding to block number[%d]", blockNumberToDelete)
-		writeBatch.DeleteCF(cf, encodeStateDeltaKey(blockNumberToDelete))
+		db.GetDBHandle().BatchDelete(db.StateDeltaCF, writeBatch,
+			encodeStateDeltaKey(blockNumberToDelete))
 	} else {
 		logger.Debugf("Not deleting previous state-delta. Block number [%d] is smaller than historyStateDeltaSize [%d]",
 			blockNumber, state.historyStateDeltaSize)
@@ -332,7 +339,7 @@ func (state *State) CommitStateDelta() error {
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	return db.GetDBHandle().DB.Write(opt, writeBatch)
+	return db.GetDBHandle().BatchCommit(opt, writeBatch)
 }
 
 // DeleteState deletes ALL state keys/values from the DB. This is generally
@@ -340,7 +347,7 @@ func (state *State) CommitStateDelta() error {
 // a snapshot.
 func (state *State) DeleteState() error {
 	state.ClearInMemoryChanges(false)
-	err := db.GetDBHandle().DeleteState()
+	err := db.GetDBHandle().DeleteDbState()
 	if err != nil {
 		logger.Errorf("Error deleting state: %s", err)
 	}
@@ -364,3 +371,21 @@ func encodeUint64(number uint64) []byte {
 func decodeToUint64(bytes []byte) uint64 {
 	return binary.BigEndian.Uint64(bytes)
 }
+
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+// TxState structure for maintaining world state.
+// This encapsulates a particular implementation for managing the state persistence
+// This is not thread safe
+type TxState struct {
+	CurGState             *protos.GlobalState
+	//ConsensusCF           *ConsensusCF
+}
+
+func NewTxState() *TxState {
+	gs := protos.NewGlobalState()
+	return &TxState{gs}
+}
+
+

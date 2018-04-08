@@ -42,7 +42,7 @@ func (impl *StateImpl) Initialize(configs map[string]interface{}) error {
 func (impl *StateImpl) Get(chaincodeID string, key string) ([]byte, error) {
 	compositeKey := statemgmt.ConstructCompositeKey(chaincodeID, key)
 	openchainDB := db.GetDBHandle()
-	return openchainDB.GetFromStateCF(compositeKey)
+	return openchainDB.GetValue(db.StateCF, compositeKey)
 }
 
 // PrepareWorkingSet - method implementation for interface 'statemgmt.HashableState'
@@ -67,16 +67,19 @@ func (impl *StateImpl) AddChangesForPersistence(writeBatch *gorocksdb.WriteBatch
 	if delta == nil {
 		return nil
 	}
-	openchainDB := db.GetDBHandle()
 	updatedChaincodeIds := delta.GetUpdatedChaincodeIds(false)
 	for _, updatedChaincodeID := range updatedChaincodeIds {
 		updates := delta.GetUpdates(updatedChaincodeID)
 		for updatedKey, value := range updates {
 			compositeKey := statemgmt.ConstructCompositeKey(updatedChaincodeID, updatedKey)
 			if value.IsDeleted() {
-				writeBatch.DeleteCF(openchainDB.StateCF, compositeKey)
+				//writeBatch.DeleteCF(openchainDB.StateCF,
+				db.GetDBHandle().BatchDelete(db.StateCF, writeBatch, compositeKey)
 			} else {
-				writeBatch.PutCF(openchainDB.StateCF, compositeKey, value.GetValue())
+				//writeBatch.PutCF(openchainDB.StateCF, compositeKey, value.GetValue())
+				db.GetDBHandle().BatchPut(db.StateCF, writeBatch,
+					compositeKey, value.GetValue())
+
 			}
 		}
 	}

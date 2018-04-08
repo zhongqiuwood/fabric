@@ -112,8 +112,10 @@ func StartNode(postrun func() error) error {
 		return err
 	}
 
-	db.Start()
-	defer db.Stop()
+	pb.CurrentDbVersion = uint32(viper.GetInt("peer.db.version"))
+
+	db.Start(pb.CurrentDbVersion)
+	defer db.Stop(pb.CurrentDbVersion)
 
 	secHelper, err := getSecHelper()
 	if err != nil {

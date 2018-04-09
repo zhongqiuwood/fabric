@@ -123,9 +123,10 @@ service Peer {
     // other Message (e.g. from other peers).
     rpc Chat(stream Message) returns (stream Message) {}
 
-    // Request a new stream for bi-direction gossip, peerId is used to merge stream
-    // with the chatting one.
-    rpc GossipIn(PeerID) returns (stream Gossip) {}
+    // Request a new stream for bi-direction gossip
+    // We must sent a peerId first for merging the stream with chatting,
+    // This can't be achieve by protobuf and we had to imple it manually
+    rpc GossipIn(stream Gossip) returns (stream Gossip) {}
 
     // Process a transaction from a remote source.
     rpc ProcessTransaction(Transaction) returns (Response) {}

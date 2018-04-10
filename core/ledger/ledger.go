@@ -22,11 +22,11 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/events/producer"
+	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 
@@ -246,6 +246,11 @@ func (ledger *Ledger) GetTempStateHash() ([]byte, error) {
 	return ledger.state.GetHash()
 }
 
+// GetCurrentStateHash returns the current non-committed hash of the in memory state
+func (ledger *Ledger) GetCurrentStateHash() (stateHash []byte, err error) {
+	return ledger.GetTempStateHash()
+}
+
 // GetTempStateHashWithTxDeltaStateHashes - In addition to the state hash (as defined in method GetTempStateHash),
 // this method returns a map [txUuid of Tx --> cryptoHash(stateChangesMadeByTx)]
 // Only successful txs appear in this map
@@ -376,6 +381,11 @@ func (ledger *Ledger) RollbackStateDelta(id interface{}) error {
 	return nil
 }
 
+// alias of DeleteALLStateKeysAndValues
+func (ledger *Ledger) EmptyState() error {
+	return ledger.DeleteALLStateKeysAndValues()
+}
+
 // DeleteALLStateKeysAndValues deletes all keys and values from the state.
 // This is generally only used during state synchronization when creating a
 // new state from a snapshot.
@@ -390,6 +400,11 @@ func (ledger *Ledger) DeleteALLStateKeysAndValues() error {
 // height, current block hash, and previous block hash.
 func (ledger *Ledger) GetBlockchainInfo() (*protos.BlockchainInfo, error) {
 	return ledger.blockchain.getBlockchainInfo()
+}
+
+// HashBlock returns the hash of the included block, useful for mocking
+func (*Ledger) HashBlock(block *protos.Block) ([]byte, error) {
+	return block.GetHash()
 }
 
 // GetBlockByNumber return block given the number of the block on blockchain.
@@ -409,6 +424,11 @@ func (ledger *Ledger) GetBlockchainSize() uint64 {
 // GetTransactionByID return transaction by it's txId
 func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
 	return ledger.blockchain.getTransactionByID(txID)
+}
+
+// PutBlock is just the alias-form of putrawblock
+func (ledger *Ledger) PutBlock(blockNumber uint64, block *protos.Block) error {
+	return ledger.PutRawBlock(block, blockNumber)
 }
 
 // PutRawBlock puts a raw block on the chain. This function should only be

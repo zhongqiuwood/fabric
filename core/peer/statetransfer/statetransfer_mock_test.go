@@ -59,15 +59,21 @@ func (r mockResponse) String() string {
 	return "ERROR"
 }
 
+type BlockChainAccessor interface {
+	GetBlockByNumber(blockNumber uint64) (*protos.Block, error)
+	GetBlockchainSize() uint64
+	GetCurrentStateHash() (stateHash []byte, err error)
+}
+
 type LedgerDirectory interface {
-	GetLedgerByPeerID(peerID *protos.PeerID) (peer.BlockChainAccessor, bool)
+	GetLedgerByPeerID(peerID *protos.PeerID) (BlockChainAccessor, bool)
 }
 
 type HashLedgerDirectory struct {
-	remoteLedgers map[protos.PeerID]peer.BlockChainAccessor
+	remoteLedgers map[protos.PeerID]BlockChainAccessor
 }
 
-func (hd *HashLedgerDirectory) GetLedgerByPeerID(peerID *protos.PeerID) (peer.BlockChainAccessor, bool) {
+func (hd *HashLedgerDirectory) GetLedgerByPeerID(peerID *protos.PeerID) (BlockChainAccessor, bool) {
 	ledger, ok := hd.remoteLedgers[*peerID]
 	return ledger, ok
 }
@@ -698,7 +704,7 @@ func SimpleGetBlock(blockNumber uint64) *protos.Block {
 }
 
 func TestMockLedger(t *testing.T) {
-	remoteLedgers := make(map[protos.PeerID]peer.BlockChainAccessor)
+	remoteLedgers := make(map[protos.PeerID]BlockChainAccessor)
 	rl := &MockRemoteLedger{11}
 	rlPeerID := &protos.PeerID{
 		Name: "TestMockLedger",

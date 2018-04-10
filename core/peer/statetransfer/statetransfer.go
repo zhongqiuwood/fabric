@@ -25,6 +25,7 @@ import (
 
 	_ "github.com/abchain/fabric/core" // Logging format init
 
+	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
@@ -46,11 +47,16 @@ func init() {
 // public methods and structure definitions
 // =============================================================================
 
+// aggregate interfaces from ledger
+type LedgerStack interface {
+	ledger.BlockChainAccessor
+	ledger.BlockChainModifier
+	ledger.BlockChainUtil
+	ledger.StateAccessor
+}
+
 // PartialStack is a subset of peer.MessageHandlerCoordinator functionality which is necessary to perform state transfer
 type PartialStack interface {
-	peer.BlockChainAccessor
-	peer.BlockChainModifier
-	peer.BlockChainUtil
 	GetPeers() (*pb.PeersMessage, error)
 	GetPeerEndpoint() (*pb.PeerEndpoint, error)
 	GetRemoteLedger(receiver *pb.PeerID) (peer.RemoteLedger, error)
@@ -67,7 +73,8 @@ type Coordinator interface {
 
 // coordinatorImpl is the structure used to manage the state of state transfer
 type coordinatorImpl struct {
-	stack PartialStack
+	stack  PartialStack
+	ledger LedgerStack
 
 	DiscoveryThrottleTime time.Duration // The amount of time to wait after discovering there are no connected peers
 
@@ -100,7 +107,7 @@ func (sts *coordinatorImpl) SyncToTarget(blockNumber uint64, blockHash []byte, p
 	logger.Infof("Syncing to target %x for block number %d with peers %v", blockHash, blockNumber, peerIDs)
 
 	if !sts.inProgress {
-		sts.currentStateBlockNumber = sts.stack.GetBlockchainSize() - 1 // The block height is one more than the latest block number
+		sts.currentStateBlockNumber = sts.ledger.GetBlockchainSize() - 1 // The block height is one more than the latest block number
 		sts.inProgress = true
 	}
 
@@ -109,7 +116,7 @@ func (sts *coordinatorImpl) SyncToTarget(blockNumber uint64, blockHash []byte, p
 		sts.inProgress = false
 	}
 
-	logger.Debugf("Sync to target %x for block number %d returned, now at block height %d with err=%v recoverable=%v", blockHash, blockNumber, sts.stack.GetBlockchainSize(), err, recoverable)
+	logger.Debugf("Sync to target %x for block number %d returned, now at block height %d with err=%v recoverable=%v", blockHash, blockNumber, sts.ledger.GetBlockchainSize(), err, recoverable)
 	return err, recoverable
 }
 
@@ -132,11 +139,19 @@ func (sts *coordinatorImpl) Stop() {
 // =============================================================================
 
 // NewCoordinatorImpl constructs a coordinatorImpl
-func NewCoordinatorImpl(stack PartialStack) Coordinator {
+func NewCoordinatorImpl(stack PartialStack, ledgerst LedgerStack) Coordinator {
 	var err error
 	sts := &coordinatorImpl{}
 
 	sts.stack = stack
+	if ledgerst == nil {
+		sts.ledger, err = ledger.GetLedger()
+		if err != nil {
+			panic(fmt.Errorf("Cannot acquire ledger: %s", err))
+		}
+	} else {
+		sts.ledger = ledgerst
+	}
 
 	sts.RecoverDamage = viper.GetBool("statetransfer.recoverdamage")
 
@@ -340,7 +355,7 @@ func (sts *coordinatorImpl) syncBlocks(highBlock, lowBlock uint64, highHash []by
 							return fmt.Errorf("Received a block out of order, indicating a buffer overflow or other corruption: start=%d, end=%d, wanted %d", syncBlockMessage.Range.Start, syncBlockMessage.Range.End, blockCursor)
 						}
 
-						testHash, err := sts.stack.HashBlock(block)
+						testHash, err := sts.ledger.HashBlock(block)
 						if nil != err {
 							return fmt.Errorf("Got a block %d which could not hash from %v: %s", blockCursor, peerID, err)
 						}
@@ -353,8 +368,8 @@ func (sts *coordinatorImpl) syncBlocks(highBlock, lowBlock uint64, highHash []by
 						if !sts.RecoverDamage {
 
 							// If we are not supposed to be destructive in our recovery, check to make sure this block doesn't already exist
-							if oldBlock, err := sts.stack.GetBlockByNumber(blockCursor); err == nil && oldBlock != nil {
-								oldBlockHash, err := sts.stack.HashBlock(oldBlock)
+							if oldBlock, err := sts.ledger.GetBlockByNumber(blockCursor); err == nil && oldBlock != nil {
+								oldBlockHash, err := sts.ledger.HashBlock(oldBlock)
 								if nil == err {
 									if !bytes.Equal(oldBlockHash, validBlockHash) {
 										panic("The blockchain is corrupt and the configuration has specified that bad blocks should not be deleted/overridden")
@@ -365,10 +380,10 @@ func (sts *coordinatorImpl) syncBlocks(highBlock, lowBlock uint64, highHash []by
 								}
 								logger.Debugf("Not actually putting block %d to with PreviousBlockHash %x and StateHash %x, as it already exists", blockCursor, block.PreviousBlockHash, block.StateHash)
 							} else {
-								sts.stack.PutBlock(blockCursor, block)
+								sts.ledger.PutBlock(blockCursor, block)
 							}
 						} else {
-							sts.stack.PutBlock(blockCursor, block)
+							sts.ledger.PutBlock(blockCursor, block)
 						}
 
 						goodRange = &blockRange{
@@ -412,7 +427,7 @@ func (sts *coordinatorImpl) syncBlockchainToTarget(blockSyncReq *blockSyncReq) {
 
 	logger.Debugf("Processing a blockSyncReq to block %d through %d", blockSyncReq.blockNumber, blockSyncReq.reportOnBlock)
 
-	blockchainSize := sts.stack.GetBlockchainSize()
+	blockchainSize := sts.ledger.GetBlockchainSize()
 
 	if blockSyncReq.blockNumber+1 < blockchainSize {
 		if !sts.RecoverDamage {
@@ -428,12 +443,12 @@ func (sts *coordinatorImpl) syncBlockchainToTarget(blockSyncReq *blockSyncReq) {
 		// Don't bother fetching blocks which are already here and valid
 		// This is especially useful at startup
 		for {
-			block, err := sts.stack.GetBlockByNumber(blockCursor)
+			block, err := sts.ledger.GetBlockByNumber(blockCursor)
 			if err != nil || block == nil {
 				// Need to fetch this block
 				break
 			}
-			bh, err := sts.stack.HashBlock(block)
+			bh, err := sts.ledger.HashBlock(block)
 			if err != nil {
 				// Something wrong with this block
 				break
@@ -469,13 +484,13 @@ func (sts *coordinatorImpl) syncBlockchainToTarget(blockSyncReq *blockSyncReq) {
 func (sts *coordinatorImpl) verifyAndRecoverBlockchain() bool {
 
 	if 0 == len(sts.validBlockRanges) {
-		size := sts.stack.GetBlockchainSize()
+		size := sts.ledger.GetBlockchainSize()
 		if 0 == size {
 			logger.Warningf("No blocks in the blockchain, including the genesis block")
 			return false
 		}
 
-		block, err := sts.stack.GetBlockByNumber(size - 1)
+		block, err := sts.ledger.GetBlockByNumber(size - 1)
 		if nil != err {
 			logger.Warningf("Could not retrieve head block %d: %s", size, err)
 			return false
@@ -510,11 +525,11 @@ func (sts *coordinatorImpl) verifyAndRecoverBlockchain() bool {
 			// Ranges are not distinct (or are adjacent), we will collapse them or discard the lower if it does not chain
 			if sts.validBlockRanges[1].lowBlock < lowBlock {
 				// Range overlaps or is adjacent
-				block, err := sts.stack.GetBlockByNumber(lowBlock - 1) // Subtraction is safe here, lowBlock > 0
+				block, err := sts.ledger.GetBlockByNumber(lowBlock - 1) // Subtraction is safe here, lowBlock > 0
 				if nil != err {
 					logger.Warningf("Could not retrieve block %d, believed to be valid: %s", lowBlock-1, err)
 				} else {
-					if blockHash, err := sts.stack.HashBlock(block); err == nil {
+					if blockHash, err := sts.ledger.HashBlock(block); err == nil {
 						if bytes.Equal(blockHash, lowNextHash) {
 							// The chains connect, no need to validate all the way down
 							sts.validBlockRanges[0].lowBlock = sts.validBlockRanges[1].lowBlock
@@ -550,7 +565,7 @@ func (sts *coordinatorImpl) verifyAndRecoverBlockchain() bool {
 		targetBlock = lowBlock - sts.blockVerifyChunkSize
 	}
 
-	lastGoodBlockNumber, err := sts.stack.VerifyBlockchain(lowBlock, targetBlock)
+	lastGoodBlockNumber, err := sts.ledger.VerifyChain(lowBlock, targetBlock)
 
 	logger.Debugf("Verified chain from %d to %d, with target of %d", lowBlock, lastGoodBlockNumber, targetBlock)
 
@@ -559,7 +574,7 @@ func (sts *coordinatorImpl) verifyAndRecoverBlockchain() bool {
 		return false
 	}
 
-	lastGoodBlock, err := sts.stack.GetBlockByNumber(lastGoodBlockNumber)
+	lastGoodBlock, err := sts.ledger.GetBlockByNumber(lastGoodBlockNumber)
 	if nil != err {
 		logger.Errorf("Could not retrieve block %d, believed to be valid: %s", lowBlock-1, err)
 		return false
@@ -657,14 +672,14 @@ func (sts *coordinatorImpl) attemptStateTransfer(blockNumber uint64, peerIDs []*
 		return fmt.Errorf("Could not retrieve all blocks as recent as %d as requested: %s", blockNumber, err), true
 	}
 
-	stateHash, err := sts.stack.GetCurrentStateHash()
+	stateHash, err := sts.ledger.GetCurrentStateHash()
 	if nil != err {
 		sts.stateValid = false
 		return fmt.Errorf("Could not compute its current state hash: %s", err), true
 
 	}
 
-	block, err := sts.stack.GetBlockByNumber(sts.currentStateBlockNumber)
+	block, err := sts.ledger.GetBlockByNumber(sts.currentStateBlockNumber)
 	if err != nil {
 		return fmt.Errorf("Could not get block %d though we just retrieved it: %s", sts.currentStateBlockNumber, err), true
 	}
@@ -729,17 +744,17 @@ func (sts *coordinatorImpl) playStateUpToBlockNumber(toBlockNumber uint64, peerI
 						if err := umDelta.Unmarshal(delta); nil != err {
 							return fmt.Errorf("Received a corrupt state delta from %v : %s", peerID, err)
 						}
-						sts.stack.ApplyStateDelta(deltaMessage, umDelta)
+						sts.ledger.ApplyStateDelta(deltaMessage, umDelta)
 
 						success := false
 
-						testBlock, err := sts.stack.GetBlockByNumber(sts.currentStateBlockNumber + 1)
+						testBlock, err := sts.ledger.GetBlockByNumber(sts.currentStateBlockNumber + 1)
 
 						if err != nil {
 							logger.Warningf("Could not retrieve block %d, though it should be present", deltaMessage.Range.End)
 						} else {
 
-							stateHash, err = sts.stack.GetCurrentStateHash()
+							stateHash, err = sts.ledger.GetCurrentStateHash()
 							if err != nil {
 								logger.Warningf("Could not compute state hash for some reason: %s", err)
 							}
@@ -750,7 +765,7 @@ func (sts *coordinatorImpl) playStateUpToBlockNumber(toBlockNumber uint64, peerI
 						}
 
 						if !success {
-							if sts.stack.RollbackStateDelta(deltaMessage) != nil {
+							if sts.ledger.RollbackStateDelta(deltaMessage) != nil {
 								sts.stateValid = false
 								return fmt.Errorf("played state forward according to %v, but the state hash did not match, failed to roll back, invalidated state", peerID)
 							}
@@ -758,7 +773,7 @@ func (sts *coordinatorImpl) playStateUpToBlockNumber(toBlockNumber uint64, peerI
 
 						}
 
-						if sts.stack.CommitStateDelta(deltaMessage) != nil {
+						if sts.ledger.CommitStateDelta(deltaMessage) != nil {
 							sts.stateValid = false
 							return fmt.Errorf("Played state forward according to %v, hashes matched, but failed to commit, invalidated state", peerID)
 						}
@@ -796,7 +811,7 @@ func (sts *coordinatorImpl) syncStateSnapshot(minBlockNumber uint64, peerIDs []*
 	ok := sts.tryOverPeers(peerIDs, func(peerID *pb.PeerID) error {
 		logger.Debugf("Initiating state recovery from %v", peerID)
 
-		if err := sts.stack.EmptyState(); nil != err {
+		if err := sts.ledger.EmptyState(); nil != err {
 			logger.Errorf("Could not empty the current state: %s", err)
 		}
 
@@ -816,7 +831,7 @@ func (sts *coordinatorImpl) syncStateSnapshot(minBlockNumber uint64, peerIDs []*
 					return fmt.Errorf("had state snapshot channel close prematurely after %d deltas: %s", counter, err)
 				}
 				if 0 == len(piece.Delta) {
-					stateHash, err := sts.stack.GetCurrentStateHash()
+					stateHash, err := sts.ledger.GetCurrentStateHash()
 					if nil != err {
 						sts.stateValid = false
 						return fmt.Errorf("could not compute its current state hash: %x", err)
@@ -830,9 +845,9 @@ func (sts *coordinatorImpl) syncStateSnapshot(minBlockNumber uint64, peerIDs []*
 				if err := umDelta.Unmarshal(piece.Delta); nil != err {
 					return fmt.Errorf("received a corrupt delta from %v after %d deltas : %s", peerID, counter, err)
 				}
-				sts.stack.ApplyStateDelta(piece, umDelta)
+				sts.ledger.ApplyStateDelta(piece, umDelta)
 				currentStateBlock = piece.BlockNumber
-				if err := sts.stack.CommitStateDelta(piece); nil != err {
+				if err := sts.ledger.CommitStateDelta(piece); nil != err {
 					return fmt.Errorf("could not commit state delta from %v after %d deltas: %s", peerID, counter, err)
 				}
 				counter++

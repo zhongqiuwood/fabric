@@ -38,6 +38,7 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/discovery"
+	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/statemgmt/state"
@@ -68,33 +69,33 @@ type RemoteLedger interface {
 	StateRetriever
 }
 
-// BlockChainAccessor interface for retreiving blocks by block number
-type BlockChainAccessor interface {
-	GetBlockByNumber(blockNumber uint64) (*pb.Block, error)
-	GetBlockchainSize() uint64
-	GetCurrentStateHash() (stateHash []byte, err error)
-}
+// // BlockChainAccessor interface for retreiving blocks by block number
+// type BlockChainAccessor interface {
+// 	GetBlockByNumber(blockNumber uint64) (*pb.Block, error)
+// 	GetBlockchainSize() uint64
+// 	GetCurrentStateHash() (stateHash []byte, err error)
+// }
 
-// BlockChainModifier interface for applying changes to the block chain
-type BlockChainModifier interface {
-	ApplyStateDelta(id interface{}, delta *statemgmt.StateDelta) error
-	RollbackStateDelta(id interface{}) error
-	CommitStateDelta(id interface{}) error
-	EmptyState() error
-	PutBlock(blockNumber uint64, block *pb.Block) error
-}
+// // BlockChainModifier interface for applying changes to the block chain
+// type BlockChainModifier interface {
+// 	ApplyStateDelta(id interface{}, delta *statemgmt.StateDelta) error
+// 	RollbackStateDelta(id interface{}) error
+// 	CommitStateDelta(id interface{}) error
+// 	EmptyState() error
+// 	PutBlock(blockNumber uint64, block *pb.Block) error
+// }
 
-// BlockChainUtil interface for interrogating the block chain
-type BlockChainUtil interface {
-	HashBlock(block *pb.Block) ([]byte, error)
-	VerifyBlockchain(start, finish uint64) (uint64, error)
-}
+// // BlockChainUtil interface for interrogating the block chain
+// type BlockChainUtil interface {
+// 	HashBlock(block *pb.Block) ([]byte, error)
+// 	VerifyBlockchain(start, finish uint64) (uint64, error)
+// }
 
-// StateAccessor interface for retreiving blocks by block number
-type StateAccessor interface {
-	GetStateSnapshot() (*state.StateSnapshot, error)
-	GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error)
-}
+// // StateAccessor interface for retreiving blocks by block number
+// type StateAccessor interface {
+// 	GetStateSnapshot() (*state.StateSnapshot, error)
+// 	GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error)
+// }
 
 // MessageHandler standard interface for handling Openchain messages.
 type MessageHandler interface {
@@ -109,10 +110,10 @@ type MessageHandler interface {
 type MessageHandlerCoordinator interface {
 	Peer
 	SecurityAccessor
-	BlockChainAccessor
-	BlockChainModifier
-	BlockChainUtil
-	StateAccessor
+	//	BlockChainAccessor
+	// BlockChainModifier
+	// BlockChainUtil
+	// StateAccessor
 	RegisterHandler(messageHandler MessageHandler) error
 	DeregisterHandler(messageHandler MessageHandler) error
 	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
@@ -186,6 +187,7 @@ type EngineFactory func(MessageHandlerCoordinator) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
+	gossip.GossipHandler
 	handlerFactory HandlerFactory
 	handlerMap     *handlerMap
 	ledgerWrapper  *ledgerWrapper

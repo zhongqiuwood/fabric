@@ -27,6 +27,7 @@ import (
 	"github.com/looplab/fsm"
 	"github.com/spf13/viper"
 
+	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	pb "github.com/abchain/fabric/protos"
 )
@@ -49,6 +50,7 @@ type Handler struct {
 	syncBlocksRequestHandler      *syncBlocksRequestHandler
 	syncSnapshotTimeout           time.Duration
 	lastIgnoredSnapshotCID        *uint64
+	ledger                        *ledger.Ledger
 }
 
 // NewPeerHandler returns a new Peer handler
@@ -67,6 +69,8 @@ func NewPeerHandler(coord MessageHandlerCoordinator, stream ChatStream, initiate
 	} else {
 		d.syncSnapshotTimeout = dur
 	}
+
+	d.ledger, _ = ledger.GetLedger()
 
 	d.snapshotRequestHandler = newSyncStateSnapshotRequestHandler()
 	d.syncStateDeltasRequestHandler = newSyncStateDeltasHandler()
@@ -460,7 +464,7 @@ func (d *Handler) sendBlocks(syncBlockRange *pb.SyncBlockRange) {
 	}
 	for _, currBlockNum := range blockNums {
 		// Get the Block from
-		block, err := d.Coordinator.GetBlockByNumber(currBlockNum)
+		block, err := d.ledger.GetBlockByNumber(currBlockNum)
 		if err != nil {
 			peerLogger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
 			break
@@ -581,7 +585,7 @@ func (d *Handler) beforeSyncStateSnapshot(e *fsm.Event) {
 func (d *Handler) sendStateSnapshot(syncStateSnapshotRequest *pb.SyncStateSnapshotRequest) {
 	peerLogger.Debugf("Sending state snapshot with correlationId = %d", syncStateSnapshotRequest.CorrelationId)
 
-	snapshot, err := d.Coordinator.GetStateSnapshot()
+	snapshot, err := d.ledger.GetStateSnapshot()
 	if err != nil {
 		peerLogger.Errorf("Error getting snapshot: %s", err)
 		return
@@ -701,7 +705,7 @@ func (d *Handler) sendStateDeltas(syncStateDeltasRequest *pb.SyncStateDeltasRequ
 	}
 	for _, currBlockNum := range blockNums {
 		// Get the state deltas for Block from coordinator
-		stateDelta, err := d.Coordinator.GetStateDelta(currBlockNum)
+		stateDelta, err := d.ledger.GetStateDelta(currBlockNum)
 		if err != nil {
 			peerLogger.Errorf("Error sending stateDelta for blockNum %d: %s", currBlockNum, err)
 			break

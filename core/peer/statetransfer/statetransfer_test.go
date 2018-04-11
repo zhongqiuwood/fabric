@@ -309,7 +309,7 @@ func TestCatchupWithoutDeltas(t *testing.T) {
 	}, t)
 	ml.PutBlock(0, SimpleGetBlock(0))
 
-	sts := NewCoordinatorImpl(newPartialStack(ml, mrls)).(*coordinatorImpl)
+	sts := NewCoordinatorImpl(newPartialStack(ml, mrls), ml).(*coordinatorImpl)
 	sts.maxStateDeltas = 0
 
 	done := make(chan struct{})

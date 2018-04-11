@@ -52,7 +52,6 @@ type LedgerStack interface {
 	ledger.BlockChainAccessor
 	ledger.BlockChainModifier
 	ledger.BlockChainUtil
-	ledger.StateAccessor
 }
 
 // PartialStack is a subset of peer.MessageHandlerCoordinator functionality which is necessary to perform state transfer
@@ -565,7 +564,7 @@ func (sts *coordinatorImpl) verifyAndRecoverBlockchain() bool {
 		targetBlock = lowBlock - sts.blockVerifyChunkSize
 	}
 
-	lastGoodBlockNumber, err := sts.ledger.VerifyChain(lowBlock, targetBlock)
+	lastGoodBlockNumber, err := sts.ledger.VerifyBlockchain(lowBlock, targetBlock)
 
 	logger.Debugf("Verified chain from %d to %d, with target of %d", lowBlock, lastGoodBlockNumber, targetBlock)
 

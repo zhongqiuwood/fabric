@@ -493,6 +493,11 @@ func (ledger *Ledger) VerifyChain(highBlock, lowBlock uint64) (uint64, error) {
 	return lowBlock, nil
 }
 
+//alias of verifychain
+func (ledger *Ledger) VerifyBlockchain(highBlock, lowBlock uint64) (uint64, error) {
+	return ledger.VerifyChain(highBlock, lowBlock)
+}
+
 func (ledger *Ledger) checkValidIDBegin() error {
 	if ledger.currentID != nil {
 		return fmt.Errorf("Another TxGroup [%s] already in-progress", ledger.currentID)

@@ -26,7 +26,7 @@ type BlockChainModifier interface {
 // BlockChainUtil interface for interrogating the block chain
 type BlockChainUtil interface {
 	HashBlock(block *pb.Block) ([]byte, error)
-	VerifyChain(start, finish uint64) (uint64, error)
+	VerifyBlockchain(start, finish uint64) (uint64, error)
 }
 
 // StateAccessor interface for retreiving blocks by block number

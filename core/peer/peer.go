@@ -39,8 +39,8 @@ import (
 	"github.com/abchain/fabric/core/discovery"
 	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/abchain/fabric/core/ledger/statemgmt/state"
+	_ "github.com/abchain/fabric/core/ledger/statemgmt"
+	_ "github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 )
@@ -155,10 +155,10 @@ type EngineFactory func(Peer) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
-	gossip.GossipHandler
+	gossip.GossipStub
 	//	handlerFactory HandlerFactory
-	handlerMap    *handlerMap
-	ledgerWrapper *ledgerWrapper
+	handlerMap *handlerMap
+	//	ledgerWrapper *ledgerWrapper
 	random        *rand.Rand
 	secHelper     crypto.Peer
 	engine        Engine
@@ -230,6 +230,9 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	peer = new(Impl)
 	peerNodes := peer.initDiscovery()
 
+	//init all streaming stubs
+	peer.GossipStub.Peer = peer
+
 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
 	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
 
@@ -244,11 +247,11 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	}
 
 	// Initialize the ledger before the engine, as consensus may want to begin interrogating the ledger immediately
-	ledgerPtr, err := ledger.GetLedger()
-	if err != nil {
-		return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
-	}
-	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
+	// ledgerPtr, err := ledger.GetLedger()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
+	// }
+	//peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
 
 	if engFactory != nil {
 		peer.engine, err = engFactory(peer)
@@ -730,103 +733,105 @@ func (p *Impl) newHelloMessage() (*pb.HelloMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error creating hello message: %s", err)
 	}
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	//size := p.ledgerWrapper.ledger.GetBlockchainSize()
-	blockChainInfo, err := p.ledgerWrapper.ledger.GetBlockchainInfo()
+	l, err := ledger.GetLedger()
+	if err != nil {
+		return nil, fmt.Errorf("Error on get ledger: %s", err)
+	}
+
+	blockChainInfo, err := l.GetBlockchainInfo()
 	if err != nil {
 		return nil, fmt.Errorf("Error creating hello message, error getting block chain info: %s", err)
 	}
 	return &pb.HelloMessage{PeerEndpoint: endpoint, BlockchainInfo: blockChainInfo}, nil
 }
 
-// GetBlockByNumber return a block by block number
-func (p *Impl) GetBlockByNumber(blockNumber uint64) (*pb.Block, error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetBlockByNumber(blockNumber)
-}
+// // GetBlockByNumber return a block by block number
+// func (p *Impl) GetBlockByNumber(blockNumber uint64) (*pb.Block, error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetBlockByNumber(blockNumber)
+// }
 
-// GetBlockchainSize returns the height/length of the blockchain
-func (p *Impl) GetBlockchainSize() uint64 {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetBlockchainSize()
-}
+// // GetBlockchainSize returns the height/length of the blockchain
+// func (p *Impl) GetBlockchainSize() uint64 {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetBlockchainSize()
+// }
 
-// GetCurrentStateHash returns the current non-committed hash of the in memory state
-func (p *Impl) GetCurrentStateHash() (stateHash []byte, err error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetTempStateHash()
-}
+// // GetCurrentStateHash returns the current non-committed hash of the in memory state
+// func (p *Impl) GetCurrentStateHash() (stateHash []byte, err error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetTempStateHash()
+// }
 
-// HashBlock returns the hash of the included block, useful for mocking
-func (p *Impl) HashBlock(block *pb.Block) ([]byte, error) {
-	return block.GetHash()
-}
+// // HashBlock returns the hash of the included block, useful for mocking
+// func (p *Impl) HashBlock(block *pb.Block) ([]byte, error) {
+// 	return block.GetHash()
+// }
 
-// VerifyBlockchain checks the integrity of the blockchain between indices start and finish,
-// returning the first block who's PreviousBlockHash field does not match the hash of the previous block
-func (p *Impl) VerifyBlockchain(start, finish uint64) (uint64, error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.VerifyChain(start, finish)
-}
+// // VerifyBlockchain checks the integrity of the blockchain between indices start and finish,
+// // returning the first block who's PreviousBlockHash field does not match the hash of the previous block
+// func (p *Impl) VerifyBlockchain(start, finish uint64) (uint64, error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.VerifyChain(start, finish)
+// }
 
-// ApplyStateDelta applies a state delta to the current state
-// The result of this function can be retrieved using GetCurrentStateDelta
-// To commit the result, call CommitStateDelta, or to roll it back
-// call RollbackStateDelta
-func (p *Impl) ApplyStateDelta(id interface{}, delta *statemgmt.StateDelta) error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.ApplyStateDelta(id, delta)
-}
+// // ApplyStateDelta applies a state delta to the current state
+// // The result of this function can be retrieved using GetCurrentStateDelta
+// // To commit the result, call CommitStateDelta, or to roll it back
+// // call RollbackStateDelta
+// func (p *Impl) ApplyStateDelta(id interface{}, delta *statemgmt.StateDelta) error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.ApplyStateDelta(id, delta)
+// }
 
-// CommitStateDelta makes the result of ApplyStateDelta permanent
-// and releases the resources necessary to rollback the delta
-func (p *Impl) CommitStateDelta(id interface{}) error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.CommitStateDelta(id)
-}
+// // CommitStateDelta makes the result of ApplyStateDelta permanent
+// // and releases the resources necessary to rollback the delta
+// func (p *Impl) CommitStateDelta(id interface{}) error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.CommitStateDelta(id)
+// }
 
-// RollbackStateDelta undoes the results of ApplyStateDelta to revert
-// the current state back to the state before ApplyStateDelta was invoked
-func (p *Impl) RollbackStateDelta(id interface{}) error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.RollbackStateDelta(id)
-}
+// // RollbackStateDelta undoes the results of ApplyStateDelta to revert
+// // the current state back to the state before ApplyStateDelta was invoked
+// func (p *Impl) RollbackStateDelta(id interface{}) error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.RollbackStateDelta(id)
+// }
 
-// EmptyState completely empties the state and prepares it to restore a snapshot
-func (p *Impl) EmptyState() error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.DeleteALLStateKeysAndValues()
-}
+// // EmptyState completely empties the state and prepares it to restore a snapshot
+// func (p *Impl) EmptyState() error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.DeleteALLStateKeysAndValues()
+// }
 
-// GetStateSnapshot return the state snapshot
-func (p *Impl) GetStateSnapshot() (*state.StateSnapshot, error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetStateSnapshot()
-}
+// // GetStateSnapshot return the state snapshot
+// func (p *Impl) GetStateSnapshot() (*state.StateSnapshot, error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetStateSnapshot()
+// }
 
-// GetStateDelta return the state delta for the requested block number
-func (p *Impl) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetStateDelta(blockNumber)
-}
+// // GetStateDelta return the state delta for the requested block number
+// func (p *Impl) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetStateDelta(blockNumber)
+// }
 
-// PutBlock inserts a raw block into the blockchain at the specified index, nearly no error checking is performed
-func (p *Impl) PutBlock(blockNumber uint64, block *pb.Block) error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.PutRawBlock(block, blockNumber)
-}
+// // PutBlock inserts a raw block into the blockchain at the specified index, nearly no error checking is performed
+// func (p *Impl) PutBlock(blockNumber uint64, block *pb.Block) error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.PutRawBlock(block, blockNumber)
+// }
 
 // NewOpenchainDiscoveryHello constructs a new HelloMessage for sending
 func (p *Impl) NewOpenchainDiscoveryHello() (*pb.Message, error) {

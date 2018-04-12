@@ -36,7 +36,8 @@ import (
 // Helper contains the reference to the peer's MessageHandlerCoordinator
 type Helper struct {
 	consenter    consensus.Consenter
-	coordinator  peer.MessageHandlerCoordinator
+	self         peer.Peer
+	coordinator  peer.Neighbour
 	secOn        bool
 	valid        bool // Whether we believe the state is up to date
 	secHelper    crypto.Peer
@@ -48,15 +49,17 @@ type Helper struct {
 }
 
 // NewHelper constructs the consensus helper object
-func NewHelper(mhc peer.MessageHandlerCoordinator) *Helper {
+func NewHelper(mhp PeerStack) *Helper {
+
 	h := &Helper{
-		coordinator: mhc,
+		self:        mhp.Peer,
+		coordinator: mhp.Neighbour,
 		secOn:       viper.GetBool("security.enabled"),
-		secHelper:   mhc.GetSecHelper(),
+		secHelper:   mhp.GetSecHelper(),
 		valid:       true, // Assume our state is consistent until we are told otherwise, actual consensus (pbft) will invalidate this immediately, but noops will not
 	}
 
-	h.executor = executor.NewImpl(h, h, mhc)
+	h.executor = executor.NewImpl(h, h, mhp)
 	return h
 }
 
@@ -67,7 +70,7 @@ func (h *Helper) setConsenter(c consensus.Consenter) {
 
 // GetNetworkInfo returns the PeerEndpoints of the current validator and the entire validating network
 func (h *Helper) GetNetworkInfo() (self *pb.PeerEndpoint, network []*pb.PeerEndpoint, err error) {
-	ep, err := h.coordinator.GetPeerEndpoint()
+	ep, err := h.self.GetPeerEndpoint()
 	if err != nil {
 		return self, network, fmt.Errorf("Couldn't retrieve own endpoint: %v", err)
 	}
@@ -285,7 +288,11 @@ func (h *Helper) GetCurrentStateHash() (stateHash []byte, err error) {
 
 // GetBlockchainSize returns the current size of the blockchain
 func (h *Helper) GetBlockchainSize() uint64 {
-	return h.coordinator.GetBlockchainSize()
+	ledger, err := ledger.GetLedger()
+	if err != nil {
+		return 0
+	}
+	return ledger.GetBlockchainSize()
 }
 
 // GetBlockchainInfo gets the ledger's BlockchainInfo

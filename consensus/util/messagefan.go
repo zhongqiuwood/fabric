@@ -36,7 +36,7 @@ type Message struct {
 	Sender *pb.PeerID
 }
 
-// MessageFan contains the reference to the peer's MessageHandlerCoordinator
+// Deprecated: MessageFan contains the reference to the peer's MessageHandlerCoordinator
 type MessageFan struct {
 	ins  []<-chan *Message
 	out  chan *Message

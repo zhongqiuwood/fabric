@@ -17,7 +17,6 @@ limitations under the License.
 package peer
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -49,7 +48,18 @@ import (
 // Peer provides interface for a peer
 type Peer interface {
 	GetPeerEndpoint() (*pb.PeerEndpoint, error)
-	NewOpenchainDiscoveryHello() (*pb.Message, error)
+	//	NewOpenchainDiscoveryHello() (*pb.Message, error)
+	ExecuteTransaction(transaction *pb.Transaction) *pb.Response
+	SecurityAccessor
+	GetNeighbour() (Neighbour, error)
+}
+
+type Neighbour interface {
+	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
+	Unicast(*pb.Message, *pb.PeerID) error
+	GetPeers() (*pb.PeersMessage, error)
+	GetRemoteLedger(receiver *pb.PeerID) (RemoteLedger, error)
+	GetDiscoverer() (Discoverer, error)
 }
 
 // BlocksRetriever interface for retrieving blocks .
@@ -69,61 +79,19 @@ type RemoteLedger interface {
 	StateRetriever
 }
 
-// // BlockChainAccessor interface for retreiving blocks by block number
-// type BlockChainAccessor interface {
-// 	GetBlockByNumber(blockNumber uint64) (*pb.Block, error)
-// 	GetBlockchainSize() uint64
-// 	GetCurrentStateHash() (stateHash []byte, err error)
+// // MessageHandlerCoordinator responsible for coordinating between the registered MessageHandler's
+// type MessageHandlerCoordinator interface {
+// 	Peer
+// 	SecurityAccessor
+// 	RegisterHandler(messageHandler MessageHandler) error
+// 	DeregisterHandler(messageHandler MessageHandler) error
+// 	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
+// 	Unicast(*pb.Message, *pb.PeerID) error
+// 	GetPeers() (*pb.PeersMessage, error)
+// 	GetRemoteLedger(receiver *pb.PeerID) (RemoteLedger, error)
+// 	PeersDiscovered(*pb.PeersMessage) error
+// 	Discoverer
 // }
-
-// // BlockChainModifier interface for applying changes to the block chain
-// type BlockChainModifier interface {
-// 	ApplyStateDelta(id interface{}, delta *statemgmt.StateDelta) error
-// 	RollbackStateDelta(id interface{}) error
-// 	CommitStateDelta(id interface{}) error
-// 	EmptyState() error
-// 	PutBlock(blockNumber uint64, block *pb.Block) error
-// }
-
-// // BlockChainUtil interface for interrogating the block chain
-// type BlockChainUtil interface {
-// 	HashBlock(block *pb.Block) ([]byte, error)
-// 	VerifyBlockchain(start, finish uint64) (uint64, error)
-// }
-
-// // StateAccessor interface for retreiving blocks by block number
-// type StateAccessor interface {
-// 	GetStateSnapshot() (*state.StateSnapshot, error)
-// 	GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error)
-// }
-
-// MessageHandler standard interface for handling Openchain messages.
-type MessageHandler interface {
-	RemoteLedger
-	HandleMessage(msg *pb.Message) error
-	SendMessage(msg *pb.Message) error
-	To() (pb.PeerEndpoint, error)
-	Stop() error
-}
-
-// MessageHandlerCoordinator responsible for coordinating between the registered MessageHandler's
-type MessageHandlerCoordinator interface {
-	Peer
-	SecurityAccessor
-	//	BlockChainAccessor
-	// BlockChainModifier
-	// BlockChainUtil
-	// StateAccessor
-	RegisterHandler(messageHandler MessageHandler) error
-	DeregisterHandler(messageHandler MessageHandler) error
-	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
-	Unicast(*pb.Message, *pb.PeerID) error
-	GetPeers() (*pb.PeersMessage, error)
-	GetRemoteLedger(receiver *pb.PeerID) (RemoteLedger, error)
-	PeersDiscovered(*pb.PeersMessage) error
-	ExecuteTransaction(transaction *pb.Transaction) *pb.Response
-	Discoverer
-}
 
 // ChatStream interface supported by stream between Peers
 type ChatStream interface {
@@ -179,25 +147,38 @@ type handlerMap struct {
 	cachedPeerList []*pb.PeerEndpoint
 }
 
-// HandlerFactory for creating new MessageHandlers
-type HandlerFactory func(MessageHandlerCoordinator, ChatStream, bool) (MessageHandler, error)
+//HandlerFactory for creating new MessageHandlers
+//type HandlerFactory func(MessageHandler, ChatStream, bool) (LegacyMessageHandler, error)
 
 // EngineFactory for creating new engines
-type EngineFactory func(MessageHandlerCoordinator) (Engine, error)
+type EngineFactory func(Peer) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
 	gossip.GossipHandler
-	handlerFactory HandlerFactory
-	handlerMap     *handlerMap
-	ledgerWrapper  *ledgerWrapper
-	random         *rand.Rand
-	secHelper      crypto.Peer
-	engine         Engine
-	isValidator    bool
-	reconnectOnce  sync.Once
-	discHelper     discovery.Discovery
-	discPersist    bool
+	//	handlerFactory HandlerFactory
+	handlerMap    *handlerMap
+	ledgerWrapper *ledgerWrapper
+	random        *rand.Rand
+	secHelper     crypto.Peer
+	engine        Engine
+	isValidator   bool
+	reconnectOnce sync.Once
+	discHelper    discovery.Discovery
+	discPersist   bool
+}
+
+type LegacyMessageHandler interface {
+	HandleMessage(msg *pb.Message) error
+}
+
+// MessageHandler standard interface for handling Openchain messages.
+type MessageHandler interface {
+	RemoteLedger
+	LegacyMessageHandler
+	SendMessage(msg *pb.Message) error
+	To() (pb.PeerEndpoint, error)
+	Stop() error
 }
 
 // TransactionProccesor responsible for processing of Transactions
@@ -208,41 +189,41 @@ type TransactionProccesor interface {
 // Engine Responsible for managing Peer network communications (Handlers) and processing of Transactions
 type Engine interface {
 	TransactionProccesor
-	// GetHandlerFactory return a handler for an accepted Chat stream
-	GetHandlerFactory() HandlerFactory
+	// HandlerFactory return a handler for handling legacy message (consensus)
+	HandlerFactory(MessageHandler) (LegacyMessageHandler, error)
 	//GetInputChannel() (chan<- *pb.Transaction, error)
 }
 
 // NewPeerWithHandler returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
-func NewPeerWithHandler(secHelperFunc func() crypto.Peer, handlerFact HandlerFactory) (*Impl, error) {
-	peer := new(Impl)
-	peerNodes := peer.initDiscovery()
+// func NewPeerWithHandler(secHelperFunc func() crypto.Peer, handlerFact HandlerFactory) (*Impl, error) {
+// 	peer := new(Impl)
+// 	peerNodes := peer.initDiscovery()
 
-	if handlerFact == nil {
-		return nil, errors.New("Cannot supply nil handler factory")
-	}
-	peer.handlerFactory = handlerFact
-	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
-	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
+// 	if handlerFact == nil {
+// 		return nil, errors.New("Cannot supply nil handler factory")
+// 	}
+// 	//	peer.handlerFactory = handlerFact
+// 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]*Handler)}
+// 	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
 
-	peer.secHelper = secHelperFunc()
+// 	peer.secHelper = secHelperFunc()
 
-	// Install security object for peer
-	if SecurityEnabled() {
-		if peer.secHelper == nil {
-			return nil, fmt.Errorf("Security helper not provided")
-		}
-	}
+// 	// Install security object for peer
+// 	if SecurityEnabled() {
+// 		if peer.secHelper == nil {
+// 			return nil, fmt.Errorf("Security helper not provided")
+// 		}
+// 	}
 
-	ledgerPtr, err := ledger.GetLedger()
-	if err != nil {
-		return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
-	}
-	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
+// 	ledgerPtr, err := ledger.GetLedger()
+// 	if err != nil {
+// 		return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
+// 	}
+// 	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
 
-	peer.chatWithSomePeers(peerNodes)
-	return peer, nil
-}
+// 	peer.chatWithSomePeers(peerNodes)
+// 	return peer, nil
+// }
 
 // NewPeerWithEngine returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
 func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactory) (peer *Impl, err error) {
@@ -269,14 +250,17 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	}
 	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
 
-	peer.engine, err = engFactory(peer)
-	if err != nil {
-		return nil, err
+	if engFactory != nil {
+		peer.engine, err = engFactory(peer)
+		if err != nil {
+			return nil, err
+		}
 	}
-	peer.handlerFactory = peer.engine.GetHandlerFactory()
-	if peer.handlerFactory == nil {
-		return nil, errors.New("Cannot supply nil handler factory")
-	}
+
+	// peer.handlerFactory = peer.engine.GetHandlerFactory()
+	// if peer.handlerFactory == nil {
+	// 	return nil, errors.New("Cannot supply nil handler factory")
+	// }
 
 	peer.chatWithSomePeers(peerNodes)
 	return peer, nil
@@ -401,6 +385,14 @@ func getHandlerKey(peerMessageHandler MessageHandler) (*pb.PeerID, error) {
 
 func getHandlerKeyFromPeerEndpoint(peerEndpoint *pb.PeerEndpoint) *pb.PeerID {
 	return peerEndpoint.ID
+}
+
+func (p *Impl) GetDiscoverer() (Discoverer, error) {
+	return p, nil
+}
+
+func (p *Impl) GetNeighbour() (Neighbour, error) {
+	return p, nil
 }
 
 // RegisterHandler register a MessageHandler with this coordinator
@@ -634,10 +626,19 @@ func (p *Impl) chatWithPeer(address string) error {
 func (p *Impl) handleChat(ctx context.Context, stream ChatStream, initiatedStream bool) error {
 	deadline, ok := ctx.Deadline()
 	peerLogger.Debugf("Current context deadline = %s, ok = %v", deadline, ok)
-	handler, err := p.handlerFactory(p, stream, initiatedStream)
+	handler, err := NewPeerHandler(p, stream, initiatedStream)
 	if err != nil {
 		return fmt.Errorf("Error creating handler during handleChat initiation: %s", err)
 	}
+
+	var legacyHandler LegacyMessageHandler
+	if p.engine != nil {
+		legacyHandler, err = p.engine.HandlerFactory(handler)
+		if err != nil {
+			return fmt.Errorf("Could not obtain legacy handler: %s", err)
+		}
+	}
+
 	defer handler.Stop()
 	for {
 		in, err := stream.Recv()
@@ -650,7 +651,14 @@ func (p *Impl) handleChat(ctx context.Context, stream ChatStream, initiatedStrea
 			peerLogger.Error(e.Error())
 			return e
 		}
-		err = handler.HandleMessage(in)
+
+		//legacy message type in chatting stream, sent it to engine
+		if in.Type == pb.Message_CONSENSUS && legacyHandler != nil {
+			err = legacyHandler.HandleMessage(in)
+		} else {
+			err = handler.HandleMessage(in)
+		}
+
 		if err != nil {
 			peerLogger.Errorf("Error handling message: %s", err)
 			return err

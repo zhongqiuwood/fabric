@@ -54,7 +54,7 @@ type LedgerStack interface {
 	ledger.BlockChainUtil
 }
 
-// PartialStack is a subset of peer.MessageHandlerCoordinator functionality which is necessary to perform state transfer
+// PartialStack is a subset of peer.Neighbour functionality which is necessary to perform state transfer
 type PartialStack interface {
 	GetPeers() (*pb.PeersMessage, error)
 	GetPeerEndpoint() (*pb.PeerEndpoint, error)

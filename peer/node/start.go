@@ -143,7 +143,7 @@ func StartNode(postrun func() error) error {
 		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, helper.GetEngine)
 	} else {
 		logger.Debug("Running as non-validating peer")
-		peerServer, err = peer.NewPeerWithHandler(secHelperFunc, peer.NewPeerHandler)
+		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, nil)
 	}
 
 	if err != nil {

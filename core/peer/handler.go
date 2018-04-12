@@ -38,7 +38,7 @@ const DefaultSyncSnapshotTimeout time.Duration = 60 * time.Second
 type Handler struct {
 	chatMutex                     sync.Mutex
 	ToPeerEndpoint                *pb.PeerEndpoint
-	Coordinator                   MessageHandlerCoordinator
+	Coordinator                   *Impl
 	ChatStream                    ChatStream
 	doneChan                      chan struct{}
 	FSM                           *fsm.FSM
@@ -55,7 +55,7 @@ type Handler struct {
 
 // NewPeerHandler returns a new Peer handler
 // Is instance of HandlerFactory
-func NewPeerHandler(coord MessageHandlerCoordinator, stream ChatStream, initiatedStream bool) (MessageHandler, error) {
+func NewPeerHandler(coord *Impl, stream ChatStream, initiatedStream bool) (MessageHandler, error) {
 
 	d := &Handler{
 		ChatStream:      stream,
@@ -142,7 +142,7 @@ func (d *Handler) To() (pb.PeerEndpoint, error) {
 	return *(d.ToPeerEndpoint), nil
 }
 
-// Stop stops this handler, which will trigger the Deregister from the MessageHandlerCoordinator.
+// Stop stops this handler, which will trigger the Deregister from the Peer.
 func (d *Handler) Stop() error {
 	// Deregister the handler
 	err := d.deregister()

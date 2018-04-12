@@ -43,9 +43,9 @@ import (
 var devopsLogger = logging.MustGetLogger("devops")
 
 // NewDevopsServer creates and returns a new Devops server instance.
-func NewDevopsServer(coord peer.MessageHandlerCoordinator) *Devops {
+func NewDevopsServer(peer peer.Peer) *Devops {
 	d := new(Devops)
-	d.coord = coord
+	d.peer = peer
 	d.isSecurityEnabled = viper.GetBool("security.enabled")
 	d.bindingMap = &bindingMap{m: make(map[string]crypto.TransactionHandler)}
 	return d
@@ -59,7 +59,7 @@ type bindingMap struct {
 
 // Devops implementation of Devops services
 type Devops struct {
-	coord             peer.MessageHandlerCoordinator
+	peer              peer.Peer
 	isSecurityEnabled bool
 	bindingMap        *bindingMap
 }
@@ -211,7 +211,7 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 	if devopsLogger.IsEnabledFor(logging.DEBUG) {
 		devopsLogger.Debugf("Sending deploy transaction (%s) to validator", tx.Txid)
 	}
-	resp := d.coord.ExecuteTransaction(tx)
+	resp := d.peer.ExecuteTransaction(tx)
 	if resp.Status == pb.Response_FAILURE {
 		err = fmt.Errorf(string(resp.Msg))
 	}
@@ -269,7 +269,7 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	if devopsLogger.IsEnabledFor(logging.DEBUG) {
 		devopsLogger.Debugf("Sending invocation transaction (%s) to validator", transaction.Txid)
 	}
-	resp := d.coord.ExecuteTransaction(transaction)
+	resp := d.peer.ExecuteTransaction(transaction)
 	if resp.Status == pb.Response_FAILURE {
 		err = fmt.Errorf(string(resp.Msg))
 	} else {
@@ -486,7 +486,7 @@ func (d *Devops) EXP_ExecuteWithBinding(ctx context.Context, executeWithBinding 
 			return nil, fmt.Errorf("Error creating executing with binding:  %s", err)
 		}
 
-		return d.coord.ExecuteTransaction(tx), nil
+		return d.peer.ExecuteTransaction(tx), nil
 		//return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("NOT IMPLEMENTED")}, nil
 
 		//return &pb.Response{Status: pb.Response_SUCCESS, Msg: sigmaOutputBytes}, nil

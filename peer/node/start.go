@@ -33,6 +33,7 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/embedded_chaincode"
+	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/rest"
@@ -151,6 +152,9 @@ func StartNode(postrun func() error) error {
 
 		return err
 	}
+
+	// init services related to the peer, such as gossip
+	gossip.GetGossip()
 
 	// Register the Peer server
 	srv_peer := func(server *grpc.Server) {

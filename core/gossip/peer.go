@@ -12,13 +12,14 @@ var logger = logging.MustGetLogger("gossip")
 type GossipHandler struct {
 }
 
-func factory(id *pb.PeerID) stub.GossipHandler {
-	logger.Debug("create handler for peer", id)
-	return &GossipHandler{}
-}
+func GetGossip() {
 
-func init() {
-	stub.DefaultFactory = factory
+	logger.Debug("Gossip module inited")
+
+	stub.DefaultFactory = func(id *pb.PeerID) stub.GossipHandler {
+		logger.Debug("create handler for peer", id)
+		return &GossipHandler{}
+	}
 }
 
 func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {

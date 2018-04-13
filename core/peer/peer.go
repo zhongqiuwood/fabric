@@ -404,7 +404,7 @@ func (p *Impl) GetNeighbour() (Neighbour, error) {
 }
 
 // RegisterHandler register a MessageHandler with this coordinator
-func (p *Impl) RegisterHandler(ctx context.Context, messageHandler MessageHandler) error {
+func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandler MessageHandler) error {
 	key, err := getHandlerKey(messageHandler)
 	if err != nil {
 		return fmt.Errorf("Error registering handler: %s", err)
@@ -418,6 +418,10 @@ func (p *Impl) RegisterHandler(ctx context.Context, messageHandler MessageHandle
 	p.handlerMap.m[*key] = messageHandler
 	p.handlerMap.cachedPeerList = nil
 	peerLogger.Debugf("registered handler with key: %s", key)
+
+	if !initiated {
+		return nil
+	}
 
 	//also start all other stream stubs
 	ctxk := peerConnCtxKey("conn")

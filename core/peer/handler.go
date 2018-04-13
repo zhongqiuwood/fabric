@@ -196,7 +196,7 @@ func (d *Handler) beforeHello(e *fsm.Event) {
 	}
 
 	// Register
-	err = d.Coordinator.RegisterHandler(d.ChatStream.Context(), d)
+	err = d.Coordinator.RegisterHandler(d.ChatStream.Context(), d.initiatedStream, d)
 	if err != nil {
 		e.Cancel(fmt.Errorf("Error registering Handler: %s", err))
 	} else {

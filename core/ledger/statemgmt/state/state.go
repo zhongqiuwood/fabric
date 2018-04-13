@@ -27,9 +27,9 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
-	//"github.com/abchain/fabric/protos"
 	"github.com/abchain/fabric/protos"
-	//"github.com/abchain/fabric/dbg"
+	"github.com/abchain/fabric/dbg"
+	//"bytes"
 )
 
 var logger = logging.MustGetLogger("state")
@@ -389,3 +389,100 @@ func NewTxState() *TxState {
 }
 
 
+func putGlobalState(gs *protos.GlobalState, statehash []byte, wb *gorocksdb.WriteBatch) error {
+
+	parentGs := db.GetGlobalDBHandle().GetGlobalState(gs.ParentNodeStateHash)
+
+	if parentGs != nil {
+		if parentGs.Branched {
+			gs.LastBranchNodeStateHash = gs.ParentNodeStateHash
+		} else {
+			gs.LastBranchNodeStateHash = parentGs.LastBranchNodeStateHash
+		}
+	}
+
+	err := db.GetGlobalDBHandle().PutGlobalState(gs, statehash, nil)	// do NOT use writeBatch
+
+	if err != nil {
+		dbg.Errorf("Error: %s", err)
+	}
+
+	if gs.ParentNodeStateHash == nil {
+		return nil
+	}
+
+	nextNodeStateHash := db.GetGlobalDBHandle().AddChildNode4GlobalState(gs.ParentNodeStateHash, statehash, wb)
+
+	for _, next := range nextNodeStateHash {
+		child := next
+		for {
+			child = setLastBranchNodeStateHash(child, gs.ParentNodeStateHash, wb)
+			if child == nil {
+				break
+			}
+		}
+	}
+
+	return err
+}
+
+func setLastBranchNodeStateHash(statehash []byte, lastBranchNodeStateHash []byte, wb *gorocksdb.WriteBatch) []byte {
+
+	data, _ := db.GetGlobalDBHandle().GetValue(db.GlobalCF, statehash)
+	gs, _ := protos.UnmarshallGS(data)
+
+	if gs.LastBranchNodeStateHash != nil {
+		return nil
+	}
+
+	gs.LastBranchNodeStateHash = lastBranchNodeStateHash
+	db.GetGlobalDBHandle().PutGlobalState(gs, statehash, wb)
+
+	var res []byte
+	res = nil
+	if len(gs.NextNodeStateHash) == 1 {
+		res = gs.NextNodeStateHash[0]
+	}
+
+	return res
+}
+
+func CommitGlobalState(transactions []*protos.Transaction,
+	stateHash []byte, newBlockNumber uint64, globalState *protos.GlobalState) error {
+
+	if newBlockNumber == 0 && stateHash == nil {
+		stateHash = []byte("0")
+	}
+
+	wb := gorocksdb.NewWriteBatch()
+	defer wb.Destroy()
+
+	db.GetGlobalDBHandle().PutTransactions(transactions, db.TxCF, wb)
+
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()
+
+	// set current GState
+	globalState.NextNodeStateHash = nil
+	globalState.Branched = false
+	globalState.Cached = false
+	globalState.Count = newBlockNumber
+
+	// put current gs and update parent gs(Branched & NextNodeStateHash)
+	putGlobalState(globalState, stateHash, wb)
+	dbErr := db.GetGlobalDBHandle().BatchCommit(opt, wb)
+
+	dbg.ChkErr(dbErr)
+	if dbErr != nil {
+		return dbErr
+	}
+
+	// reset GState
+	globalState.NextNodeStateHash = nil
+	globalState.ParentNodeStateHash = stateHash
+	globalState.Branched = false
+	globalState.Cached = false
+	globalState.Count = 0
+
+	return nil
+}

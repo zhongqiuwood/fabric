@@ -48,9 +48,15 @@ func Debugf(format string, args ...interface{}) {
 	log(2, INFO, format, args...)
 }
 
+func Panic(format string, args ...interface{}) {
+	log(2, ERROR, format, args...)
+	panic(fmt.Sprintf(format, args...))
+}
+
 func Log(level int, format string, args ...interface{}) {
 	log(1, level, format, args...)
 }
+
 
 
 func Byte2int(value []byte) int {

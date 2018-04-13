@@ -26,6 +26,7 @@ import (
 	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
 	"github.com/abchain/fabric/dbg"
+	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 )
 
 // Blockchain holds basic information in memory. Operations on Blockchain are not thread-safe
@@ -33,6 +34,7 @@ import (
 type blockchain struct {
 	size               uint64
 	previousBlockHash  []byte
+	previousBlockStateHash  []byte
 	indexer            blockchainIndexer
 	lastProcessedBlock *lastProcessedBlock
 }
@@ -50,7 +52,7 @@ func newBlockchain(currentDbVersion uint32) (*blockchain, error) {
 	if err != nil {
 		return nil, err
 	}
-	blockchain := &blockchain{0, nil, nil, nil}
+	blockchain := &blockchain{0, nil, nil, nil, nil}
 	blockchain.size = size
 	if size > 0 {
 		previousBlock, err := db.GetDBHandle().FetchBlockFromDB(size - 1, currentDbVersion)
@@ -62,6 +64,7 @@ func newBlockchain(currentDbVersion uint32) (*blockchain, error) {
 			return nil, err
 		}
 		blockchain.previousBlockHash = previousBlockHash
+		blockchain.previousBlockStateHash = previousBlock.StateHash
 	}
 
 	err = blockchain.startIndexer()
@@ -122,7 +125,7 @@ func (blockchain *blockchain) reorganize() error {
 
 		block.FeedTranscationIds()
 
-		commitGlobalState(block.Transactions, block.StateHash, i, gs)
+		state.CommitGlobalState(block.Transactions, block.StateHash, i, gs)
 
 		if block.Transactions == nil {
 			dbg.Infof("%d: block.Transactions == nil", i)

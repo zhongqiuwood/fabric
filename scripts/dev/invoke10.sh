@@ -11,9 +11,16 @@ PEER_ID=0
 function deployAndInvoke {
     ./deploy.sh $CCNAME
     sleep 1
-    CORE_PEER_LOCALADDR=127.0.0.1:2${PEER_ID}56 ${FABRIC_TOP}/build/bin/peer chaincode invoke -l golang -n $CCNAME \
-            -c '{"Args":["invoke", "a", "b", "1"]}'
+    invoke
 }
+
+
+function invoke {
+    CORE_PEER_LOCALADDR=127.0.0.1:2${PEER_ID}56 ${FABRIC_TOP}/build/bin/peer chaincode invoke -l golang -n $CCNAME \
+            -c '{"Args":["invoke", "a", "b", "10"]}'
+}
+
+
 
 if [ $# -eq 0 ]; then
     ACTION=i
@@ -35,7 +42,7 @@ fi
 
 if [ "$ACTION" = "i" ];then
     CORE_PEER_LOCALADDR=127.0.0.1:2${PEER_ID}56 ${FABRIC_TOP}/build/bin/peer chaincode invoke -l golang -n $CCNAME \
-            -c '{"Args":["invoke", "a", "b", "1"]}'
+            -c '{"Args":["invoke", "a", "b", "10"]}'
     exit
 fi
 

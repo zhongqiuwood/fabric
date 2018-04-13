@@ -1,36 +1,29 @@
 #!/bin/bash
 
-CONSENSUS=$1
+CONSENSUS_INPUT=$1
 NUM_F=$2
 DB_VERSION=$3
 TAG_CLEAR=$4
 
-
 FABRIC_TOP=${GOPATH}/src/github.com/abchain/fabric
 BUILD_BIN=${FABRIC_TOP}/build/bin
 PEER_BINARY=embedded
-#CONSENSUS=pbft
+CONSENSUS=pbft
 
 if [ $# -eq 0 ]; then
-    echo "runyafabric.sh <noops | pbft> <f> <0 | 1, db version> <clearlog | clearall>"
+    echo "runyafabric.sh <n | p> <f> <0 | 1, db version> <clearlog | clearall>"
     exit
 fi
 
 let NUM_N=$NUM_F*3+1
 
-if [ "$CONSENSUS" = "noops" ];then
+if [ "$CONSENSUS_INPUT" = "n" ];then
+    CONSENSUS=noops
     let NUM_N=$NUM_F
 fi
 
 function clearLog {
         echo 'a' > err_nohup_peer0.json
-        echo 'a' > err_nohup_peer1.json
-        echo 'a' > err_nohup_peer2.json
-        echo 'a' > err_nohup_peer3.json
-        echo 'a' > peer0.json
-        echo 'a' > peer1.json
-        echo 'a' > peer2.json
-        echo 'a' > peer3.json
 }
 
 function runpeers {

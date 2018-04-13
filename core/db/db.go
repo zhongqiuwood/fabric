@@ -91,13 +91,17 @@ func (openchainDB *OpenchainDB) ReleaseSnapshot(snapshot *gorocksdb.Snapshot) {
 	openchainDB.dbHandler.ReleaseSnapshot(snapshot)
 }
 
-func (openchainDB *OpenchainDB) OpenCheckPoint(dbName string, statehash string) error {
+func (openchainDB *OpenchainDB) DumpGlobalState() {
+}
+
+
+func (openchainDB *OpenchainDB) OpenCheckPoint(dbName string, blockNumber uint64, statehash string) error {
 	openchainDB.closeDBHandler()
 	targetDir := getDBPath(dbName)
 	err := os.RemoveAll(targetDir)
 	dbg.ChkErr(err)
 	if err == nil {
-		openchainDB.produceDbByCheckPoint(dbName, statehash, columnfamilies)
+		openchainDB.produceDbByCheckPoint(dbName, blockNumber, statehash, columnfamilies)
 		openchainDB.closeDBHandler()
 		openchainDB.open(dbName, columnfamilies)
 	}

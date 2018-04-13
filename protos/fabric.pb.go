@@ -425,11 +425,11 @@ func (m *Block) GetNonHashData() *NonHashData {
 
 type GlobalState struct {
 	Count           uint64            `protobuf:"varint,1,opt,name=count" json:"count,omitempty"`
-	NextNodeStateHash   []byte        `protobuf:"bytes,2,opt,name=nextnodestatehash,proto3" json:"nextnodestatehash,omitempty"`
-	//NextNodeStateHash [][]byte      `protobuf:"bytes,2,rep,name=nextnodestatehash,proto3" json:"nextnodestatehash,omitempty"`
-	ParentNodeStateHash []byte        `protobuf:"bytes,3,opt,name=parentnodestatehash,proto3" json:"parentnodestatehash,omitempty"`
-	Branch           bool             `protobuf:"varint,4,opt,name=branch" json:"branch,omitempty"`
-	Cached           bool             `protobuf:"varint,5,opt,name=chached" json:"chached,omitempty"`
+	NextNodeStateHash       [][]byte  `protobuf:"bytes,2,rep,name=nextnodestatehash,proto3" json:"nextnodestatehash,omitempty"`
+	ParentNodeStateHash       []byte  `protobuf:"bytes,3,opt,name=parentnodestatehash,proto3" json:"parentnodestatehash,omitempty"`
+	LastBranchNodeStateHash   []byte  `protobuf:"bytes,4,opt,name=lastbranchnodestatehash,proto3" json:"lastbranchnodestatehash,omitempty"`
+	Branched         bool             `protobuf:"varint,5,opt,name=branch" json:"branch,omitempty"`
+	Cached           bool             `protobuf:"varint,6,opt,name=chached" json:"chached,omitempty"`
 }
 
 func (m *GlobalState) Reset()                    { *m = GlobalState{} }

@@ -42,6 +42,7 @@ type IDataBaseHandler interface {
 
 	MoveColumnFamily(srcname string, dstDb IDataBaseHandler, dstname string, rmSrcCf bool) (uint64, error)
 	GetDbName() string
+	DumpGlobalState()
 }
 
 // base class of db handler and txdb handler
@@ -276,23 +277,24 @@ func (openchainDB *BaseHandler) opendb(dbPath string, cf []string) []*gorocksdb.
 }
 
 
-func (baseHandler *BaseHandler) produceDbByCheckPoint(dbName string, statehash string, cf []string) error {
-	cpPath := baseHandler.getCpPath(baseHandler.dbName, statehash)
+func (baseHandler *BaseHandler) produceDbByCheckPoint(dbName string, blockNumber uint64, statehash string, cf []string) error {
+	cpPath := baseHandler.getCheckpointPath(baseHandler.dbName, blockNumber, statehash)
 	baseHandler.dbName = dbName
 	baseHandler.opendb(cpPath, cf)
 	targetDir := getDBPath(dbName)
 	return baseHandler.createCheckpoint(targetDir)
 }
 
-func (baseHandler *BaseHandler) ProduceCheckpoint(statehash string) error {
-	cpPath := baseHandler.getCpPath(baseHandler.dbName, statehash)
+func (baseHandler *BaseHandler) ProduceCheckpoint(newBlockNumber uint64, statehash string) error {
+	cpPath := baseHandler.getCheckpointPath(baseHandler.dbName, newBlockNumber, statehash)
 	return baseHandler.createCheckpoint(cpPath)
 }
 
-func (baseHandler *BaseHandler) getCpPath(dbName string, statehash string) string {
+func (baseHandler *BaseHandler) getCheckpointPath(dbName string, newBlockNumber uint64, statehash string) string {
 
 	checkpointTop := util.CanonicalizePath(getCheckPointPath(dbName))
 	util.MkdirIfNotExist(checkpointTop)
+	//return checkpointTop + dbg.Int2string(newBlockNumber) + "-" + statehash
 	return checkpointTop + statehash
 }
 

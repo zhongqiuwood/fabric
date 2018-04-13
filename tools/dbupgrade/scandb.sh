@@ -10,7 +10,4 @@ rm ./${EXECUTION}
 go build
 ./${EXECUTION} -dbpath /var/hyperledger/production$1 -mode q
 
-exit
-./${EXECUTION} -dbpath /var/hyperledger/test -mode q
-
-
+ls -l /var/hyperledger/production$1/checkpoint/db

@@ -21,6 +21,7 @@ import (
 	"github.com/tecbot/gorocksdb"
 	"github.com/abchain/fabric/protos"
 	"github.com/abchain/fabric/dbg"
+	"bytes"
 )
 
 var txdbLogger = logging.MustGetLogger("txdb")
@@ -57,11 +58,79 @@ func (txdb *GlobalDataDB) open(dbname string, cf []string) {
 	txdb.feedCfHandlers(cfhandlers)
 }
 
-func (txdb *GlobalDataDB) PutGlobalState(gs *protos.GlobalState,
-	statehash []byte, writeBatch *gorocksdb.WriteBatch) error {
+func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState{
+
+	var gs *protos.GlobalState
+	gs = nil
+	data, _ := txdb.GetValue(GlobalCF, statehash)
+	if data != nil {
+		gs, _ = protos.UnmarshallGS(data)
+	}
+
+	return gs
+}
+
+
+func (txdb *GlobalDataDB) AddChildNode4GlobalState(parentStateHash []byte, statehash []byte, wb *gorocksdb.WriteBatch) [][]byte {
+
+	var res [][]byte
+	data, _ := txdb.GetValue(GlobalCF, parentStateHash)
+	parentGS, _ := protos.UnmarshallGS(data)
+
+	nextNodeStateHashList := make([][]byte, len(parentGS.NextNodeStateHash)+1)
+
+	idx := 0
+	if len(parentGS.NextNodeStateHash) > 0 {
+
+		for _, next := range parentGS.NextNodeStateHash {
+			if bytes.Equal(next, statehash) {
+				// do not update parentGS.NextNodeStateHash
+				// if it has one that is exactly same as statehash
+				nextNodeStateHashList = nil
+				break
+			}
+			nextNodeStateHashList[idx] = next
+			idx++
+		}
+	}
+
+	if nextNodeStateHashList != nil {
+		nextNodeStateHashList[idx] = statehash
+		parentGS.NextNodeStateHash = nextNodeStateHashList
+	}
+
+	if parentGS.Branched == false && len(parentGS.NextNodeStateHash) > 1 {
+		parentGS.Branched = true
+		res = parentGS.NextNodeStateHash
+	}
+
+	dbg.Infof("gsInDB: len(parentGS.NextNodeStateHash)<%d>, <%+v>",
+		len(parentGS.NextNodeStateHash), parentGS)
+
+	err := txdb.PutGlobalState(parentGS, parentStateHash, wb)
+	if err != nil {
+		dbg.Errorf("Error: %s", err)
+	}
+
+	return res
+}
+
+func (txdb *GlobalDataDB) PutGlobalState(gs *protos.GlobalState, statehash []byte,
+	wb *gorocksdb.WriteBatch) error {
+
+	existingGs := txdb.GetGlobalState(statehash)
+
+	if existingGs != nil {
+		gs.Count = existingGs.Count
+	}
+
 	data, _ := gs.Bytes()
 	dbg.Infof("statehash<%x>: gs<%+v>, gs.Bytes<%x>", statehash, gs, data)
-	txdb.BatchPut(GlobalCF, writeBatch, statehash, data)
+	if wb == nil {
+		txdb.PutValue(GlobalCF, statehash, data)
+	} else {
+		txdb.BatchPut(GlobalCF, wb, statehash, data)
+	}
 	return  nil
 }
 
@@ -88,9 +157,7 @@ func (txdb *GlobalDataDB) getTransactionFromDB(txids []string) []*protos.Transac
 			dbg.DumpStack()
 			break
 		}
-
 		var tx *protos.Transaction
-
 		tx, err = protos.UnmarshallTransaction(txInByte)
 
 		if err != nil {
@@ -105,3 +172,32 @@ func (txdb *GlobalDataDB) getTransactionFromDB(txids []string) []*protos.Transac
 
 	return txs
 }
+
+func (txdb *GlobalDataDB) DumpGlobalState() {
+	itr := txdb.GetIterator(GlobalCF)
+	defer itr.Close()
+
+	idx := 0
+	itr.SeekToFirst()
+
+	for ; itr.Valid(); itr.Next() {
+		k := itr.Key()
+		v := itr.Value()
+		keyBytes := k.Data()
+		idx++
+
+		gs, _:= protos.UnmarshallGS(v.Data())
+
+		dbg.Infof("%d: statehash<%x>", gs.Count, keyBytes)
+		dbg.Infof("	  branched<%t>", gs.Branched)
+		dbg.Infof("	  parent<%x>", gs.ParentNodeStateHash)
+		dbg.Infof("	  lastBranch<%x>", gs.LastBranchNodeStateHash)
+		dbg.Infof("	  childNum<%d>:", len(gs.NextNodeStateHash))
+		for _, c := range gs.NextNodeStateHash {
+			dbg.Infof("        <%x>", c)
+		}
+		k.Free()
+		v.Free()
+	}
+}
+

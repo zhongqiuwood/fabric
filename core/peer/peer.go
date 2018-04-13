@@ -37,7 +37,7 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/discovery"
-	"github.com/abchain/fabric/core/gossip"
+	gossipstub "github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt/state"
@@ -97,6 +97,7 @@ type RemoteLedger interface {
 type ChatStream interface {
 	Send(*pb.Message) error
 	Recv() (*pb.Message, error)
+	Context() context.Context
 }
 
 // SecurityAccessor interface enables a Peer to hand out the crypto object for Peer
@@ -155,10 +156,10 @@ type EngineFactory func(Peer) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
-	gossip.GossipStub
 	//	handlerFactory HandlerFactory
 	handlerMap *handlerMap
 	//	ledgerWrapper *ledgerWrapper
+	gossipStub    *pb.StreamStub
 	random        *rand.Rand
 	secHelper     crypto.Peer
 	engine        Engine
@@ -230,9 +231,6 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	peer = new(Impl)
 	peerNodes := peer.initDiscovery()
 
-	//init all streaming stubs
-	peer.GossipStub.Peer = peer
-
 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
 	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
 
@@ -260,6 +258,9 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 		}
 	}
 
+	//todo: init all streaming stubs, these maybe moved into engine or else
+	peer.gossipStub = pb.NewStreamStub(&gossipstub.GossipFactory{})
+
 	// peer.handlerFactory = peer.engine.GetHandlerFactory()
 	// if peer.handlerFactory == nil {
 	// 	return nil, errors.New("Cannot supply nil handler factory")
@@ -273,6 +274,10 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 // Chat implementation of the the Chat bidi streaming RPC function
 func (p *Impl) Chat(stream pb.Peer_ChatServer) error {
 	return p.handleChat(stream.Context(), stream, false)
+}
+
+func (p *Impl) GossipIn(stream pb.Peer_GossipInServer) error {
+	return p.gossipStub.HandleServer(stream)
 }
 
 // ProcessTransaction implementation of the ProcessTransaction RPC function
@@ -399,7 +404,7 @@ func (p *Impl) GetNeighbour() (Neighbour, error) {
 }
 
 // RegisterHandler register a MessageHandler with this coordinator
-func (p *Impl) RegisterHandler(messageHandler MessageHandler) error {
+func (p *Impl) RegisterHandler(ctx context.Context, messageHandler MessageHandler) error {
 	key, err := getHandlerKey(messageHandler)
 	if err != nil {
 		return fmt.Errorf("Error registering handler: %s", err)
@@ -413,6 +418,25 @@ func (p *Impl) RegisterHandler(messageHandler MessageHandler) error {
 	p.handlerMap.m[*key] = messageHandler
 	p.handlerMap.cachedPeerList = nil
 	peerLogger.Debugf("registered handler with key: %s", key)
+
+	//also start all other stream stubs
+	ctxk := peerConnCtxKey("conn")
+	v := ctx.Value(ctxk)
+	if v == nil {
+		peerLogger.Errorf("No connection can be found in context")
+	} else {
+		conn := v.(*grpc.ClientConn)
+
+		go func() {
+			peerLogger.Debugf("start gossip stream %s", key)
+			err := p.gossipStub.HandleClient(conn, key)
+			if err != nil {
+				peerLogger.Errorf("gossip client stream %s fail: %s", key, err)
+			}
+		}()
+
+	}
+
 	return nil
 }
 
@@ -601,6 +625,8 @@ func (p *Impl) chatWithSomePeers(addresses []string) {
 	}
 }
 
+type peerConnCtxKey string
+
 func (p *Impl) chatWithPeer(address string) error {
 	peerLogger.Debugf("Initiating Chat with peer address: %s", address)
 	conn, err := NewPeerClientConnectionWithAddress(address)
@@ -608,8 +634,10 @@ func (p *Impl) chatWithPeer(address string) error {
 		peerLogger.Errorf("Error creating connection to peer address %s: %s", address, err)
 		return err
 	}
+	defer conn.Close()
 	serverClient := pb.NewPeerClient(conn)
-	ctx := context.Background()
+	ctx := context.WithValue(context.Background(), peerConnCtxKey("conn"), conn)
+
 	stream, err := serverClient.Chat(ctx)
 	if err != nil {
 		peerLogger.Errorf("Error establishing chat with peer address %s: %s", address, err)

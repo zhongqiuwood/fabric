@@ -1,27 +1,30 @@
 package gossip
 
 import (
-	"github.com/abchain/fabric/peer"
+	"github.com/abchain/fabric/core/gossip/stub"
+	_ "github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 )
 
 var logger = logging.MustGetLogger("gossip")
 
-type GossipStub struct {
-	peer.Peer
+type GossipHandler struct {
 }
 
-type gossipHandler struct {
-	*GossipStub
+func factory(id *pb.PeerID) stub.GossipHandler {
+	logger.Debug("create handler for peer", id)
+	return &GossipHandler{}
 }
 
-func (t *GossipStub) GossipStart(stream pb.Peer_GossipInServer) error {
+func init() {
+	stub.DefaultFactory = factory
+}
 
+func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 	return nil
 }
 
-func (t *GossipStub) GossipIn(stream pb.Peer_GossipInServer) error {
+func (t *GossipHandler) Stop() {
 
-	return nil
 }

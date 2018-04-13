@@ -303,14 +303,14 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *gor
 	//cf := db.GetDBHandle().StateDeltaCF
 	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
 
-	db.GetDBHandle().BatchPut(db.StateDeltaCF, writeBatch,
-		encodeStateDeltaKey(blockNumber), serializedStateDelta)
+	db.GetDBHandle().PutValue(db.StateDeltaCF,
+		encodeStateDeltaKey(blockNumber), serializedStateDelta, writeBatch)
 
 	if blockNumber >= state.historyStateDeltaSize {
 		blockNumberToDelete := blockNumber - state.historyStateDeltaSize
 		logger.Debugf("Deleting state-delta corresponding to block number[%d]", blockNumberToDelete)
-		db.GetDBHandle().BatchDelete(db.StateDeltaCF, writeBatch,
-			encodeStateDeltaKey(blockNumberToDelete))
+		db.GetDBHandle().DeleteKey(db.StateDeltaCF,
+			encodeStateDeltaKey(blockNumberToDelete), writeBatch)
 	} else {
 		logger.Debugf("Not deleting previous state-delta. Block number [%d] is smaller than historyStateDeltaSize [%d]",
 			blockNumber, state.historyStateDeltaSize)

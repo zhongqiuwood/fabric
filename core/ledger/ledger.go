@@ -605,11 +605,11 @@ func InitializeDataBase(orgdb db.IDataBaseHandler, txdb db.IDataBaseHandler) boo
 		return false
 	}
 
-	err = txdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.GlobalDataBaseVersion))
+	err = txdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.GlobalDataBaseVersion), nil)
 	if err != nil {
 		return false
 	}
-	orgdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.OriginalDataBaseVersion))
+	orgdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.OriginalDataBaseVersion), nil)
 
 	return true
 }

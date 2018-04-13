@@ -126,11 +126,7 @@ func (txdb *GlobalDataDB) PutGlobalState(gs *protos.GlobalState, statehash []byt
 
 	data, _ := gs.Bytes()
 	dbg.Infof("statehash<%x>: gs<%+v>, gs.Bytes<%x>", statehash, gs, data)
-	if wb == nil {
-		txdb.PutValue(GlobalCF, statehash, data)
-	} else {
-		txdb.BatchPut(GlobalCF, wb, statehash, data)
-	}
+	txdb.PutValue(GlobalCF, statehash, data, wb)
 	return  nil
 }
 

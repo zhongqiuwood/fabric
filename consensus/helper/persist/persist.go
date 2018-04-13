@@ -18,7 +18,6 @@ package persist
 
 import (
 	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/dbg"
 	"github.com/abchain/fabric/protos"
 )
 
@@ -30,16 +29,13 @@ type PersisHelper struct{}
 // StoreState stores a key,value pair
 func (h *PersisHelper) StoreState(key string, value []byte) error {
 	dbhandler := db.GetDataBaseHandler(protos.CurrentDbVersion)
-
-	dbg.Infof("StoreState add db.PersistCF: <consensus.%s> --> <%x>", key, value)
-
-	return dbhandler.PutValue(db.PersistCF, []byte("consensus."+key), value)
+	return dbhandler.PutValue(db.PersistCF, []byte("consensus."+key), value, nil)
 }
 
 // DelState removes a key,value pair
 func (h *PersisHelper) DelState(key string) {
 	dbhandler := db.GetDataBaseHandler(protos.CurrentDbVersion)
-	dbhandler.DeleteKey(db.PersistCF, []byte("consensus."+key))
+	dbhandler.DeleteKey(db.PersistCF, []byte("consensus."+key), nil)
 }
 
 // ReadState retrieves a value to a key

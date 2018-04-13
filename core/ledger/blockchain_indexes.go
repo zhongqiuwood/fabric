@@ -80,7 +80,7 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 	indexLogger.Debugf("Indexing block number [%d] by hash = [%x]", blockNumber, blockHash)
 
 	//dbg.Infof("IndexesCF add:  hash [%x] --> blocknumber [%d] ", blockHash, blockNumber)
-	db.GetDBHandle().BatchPut(db.IndexesCF, writeBatch,	encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber))
+	db.GetDBHandle().PutValue(db.IndexesCF,	encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber), writeBatch)
 
 	addressToTxIndexesMap := make(map[string][]uint64)
 	addressToChaincodeIDsMap := make(map[string][]*protos.ChaincodeID)
@@ -90,7 +90,7 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 		// add TxID -> (blockNumber,indexWithinBlock)
 
 		//dbg.Infof("IndexesCF add:  tx.Txid [%s] --> blockNumber, uint64(txIndex) [%d,%d] ", tx.Txid, blockNumber, uint64(txIndex))
-		db.GetDBHandle().BatchPut(db.IndexesCF, writeBatch,	encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)))
+		db.GetDBHandle().PutValue(db.IndexesCF, encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)), writeBatch)
 
 		txExecutingAddress := getTxExecutingAddress(tx)
 		addressToTxIndexesMap[txExecutingAddress] = append(addressToTxIndexesMap[txExecutingAddress], uint64(txIndex))
@@ -104,9 +104,8 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 		}
 	}
 	for address, txsIndexes := range addressToTxIndexesMap {
-
-		//dbg.Infof("IndexesCF add:  address, blockNumber [%s,%d] --> txsIndexes [%+v] ", address, blockNumber, txsIndexes)
-		db.GetDBHandle().BatchPut(db.IndexesCF, writeBatch, encodeAddressBlockNumCompositeKey(address, blockNumber), encodeListTxIndexes(txsIndexes))
+		db.GetDBHandle().PutValue(db.IndexesCF, encodeAddressBlockNumCompositeKey(address, blockNumber),
+			encodeListTxIndexes(txsIndexes), writeBatch)
 	}
 	return nil
 }

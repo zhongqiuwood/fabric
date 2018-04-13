@@ -305,3 +305,56 @@ func performBasicReadWrite(openchainDB *OpenchainDB, t *testing.T) {
 		t.Fatalf("read error. Bytes not equal. Expected [%s], found [%s]", "dummyValue3", value)
 	}
 }
+
+
+
+func (txdb *GlobalDataDB) DumpGlobalState() {
+	itr := txdb.GetIterator(GlobalCF)
+	defer itr.Close()
+
+	idx := 0
+	itr.SeekToFirst()
+
+	hashGSMap := make(map[string]*protos.GlobalState)
+	var genesis *protos.GlobalState
+
+	for ; itr.Valid(); itr.Next() {
+		k := itr.Key()
+		v := itr.Value()
+		keyBytes := k.Data()
+		idx++
+
+		gs, _:= protos.UnmarshallGS(v.Data())
+		hashGSMap[dbg.Byte2string(keyBytes)] = gs
+
+		if gs.Count == 0 {
+			genesis = gs
+		}
+		k.Free()
+		v.Free()
+	}
+
+	cur := genesis
+	sh := cur.ParentNodeStateHash
+	sh = nil
+	for {
+		dbg.Infof("%d, <%x>", cur.Count, xxx(sh, 3))
+		//dbg.Infof("%d, <%x>, <%x>-------|", cur.Count, xxx(sh, 3), xxx(sh, 3))
+
+		if cur.NextNodeStateHash != nil {
+			key := cur.NextNodeStateHash[0]
+			cur = hashGSMap[dbg.Byte2string(key)]
+			sh = key
+		} else {
+			break
+		}
+	}
+}
+
+func xxx(bkey []byte, num int)  []byte {
+
+	if bkey == nil {
+		return nil
+	}
+	return bkey[0:num]
+}

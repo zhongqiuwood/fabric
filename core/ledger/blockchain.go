@@ -119,7 +119,7 @@ func (blockchain *blockchain) reorganize() error {
 				return err
 			}
 
-			err = db.GetDBHandle().DeleteKey(db.IndexesCF, encodeBlockHashKey(blockHashV0))
+			err = db.GetDBHandle().DeleteKey(db.IndexesCF, encodeBlockHashKey(blockHashV0), nil)
 			dbg.Infof("%d: DeleteKey in <%s>: <%x>. err: %s", i, db.IndexesCF, encodeBlockHashKey(blockHashV0), err)
 		}
 
@@ -265,8 +265,8 @@ func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Conte
 	if blockBytesErr != nil {
 		return 0, blockBytesErr
 	}
-	db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.EncodeBlockNumberDBKey(blockNumber), blockBytes)
-	db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.BlockCountKey, db.EncodeUint64(blockNumber+1))
+	db.GetDBHandle().PutValue(db.BlockchainCF, db.EncodeBlockNumberDBKey(blockNumber), blockBytes, writeBatch)
+	db.GetDBHandle().PutValue(db.BlockchainCF, db.BlockCountKey, db.EncodeUint64(blockNumber+1), writeBatch)
 	if blockchain.indexer.isSynchronous() {
 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
 	}
@@ -297,7 +297,7 @@ func (blockchain *blockchain) persistUpdatedRawBlock(block *protos.Block, blockN
 	}
 	writeBatch := gorocksdb.NewWriteBatch()
 	defer writeBatch.Destroy()
-	db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.EncodeBlockNumberDBKey(blockNumber), blockBytes)
+	db.GetDBHandle().PutValue(db.BlockchainCF, db.EncodeBlockNumberDBKey(blockNumber), blockBytes, writeBatch)
 
 	blockHash, err := block.GetHash()
 	if err != nil {
@@ -324,7 +324,7 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 	}
 	writeBatch := gorocksdb.NewWriteBatch()
 	defer writeBatch.Destroy()
-	db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.EncodeBlockNumberDBKey(blockNumber), blockBytes)
+	db.GetDBHandle().PutValue(db.BlockchainCF, db.EncodeBlockNumberDBKey(blockNumber), blockBytes, writeBatch)
 
 	blockHash, err := block.GetHash()
 	if err != nil {
@@ -335,7 +335,7 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 	// real blockchain height, not size.
 	if blockchain.getSize() < blockNumber+1 {
 		sizeBytes := db.EncodeUint64(blockNumber + 1)
-		db.GetDBHandle().BatchPut(db.BlockchainCF, writeBatch, db.BlockCountKey, sizeBytes)
+		db.GetDBHandle().PutValue(db.BlockchainCF, db.BlockCountKey, sizeBytes, writeBatch)
 		blockchain.size = blockNumber + 1
 		blockchain.previousBlockHash = blockHash
 	}

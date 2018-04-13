@@ -110,8 +110,8 @@ func (indexer *blockchainIndexerAsync) createIndexesInternal(block *protos.Block
 	writeBatch := gorocksdb.NewWriteBatch()
 	defer writeBatch.Destroy()
 	addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
-	db.GetDBHandle().BatchPut(db.IndexesCF, writeBatch,
-		lastIndexedBlockKey, encodeBlockNumber(blockNumber))
+	db.GetDBHandle().PutValue(db.IndexesCF,
+		lastIndexedBlockKey, encodeBlockNumber(blockNumber), writeBatch)
 
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()

@@ -8,6 +8,7 @@ import (
 	"github.com/abchain/fabric/protos"
 	"encoding/binary"
 	"fmt"
+	"sync"
 )
 
 // cf in txdb
@@ -33,13 +34,13 @@ type IDataBaseHandler interface {
 	////////////////////////////////
 	//operations should be invoked with rw lock
 	GetIterator(cfname string) *gorocksdb.Iterator
-	DeleteKey(cfname string, key []byte) error
 	GetValue(cfname string, key []byte) ([]byte, error)
-	PutValue(cfname string, key []byte, value []byte) error
-	PutTransactions(transactions []*protos.Transaction, cfname string, writeBatch *gorocksdb.WriteBatch) error
+	DeleteKey(cfname string, key []byte, wb *gorocksdb.WriteBatch) error
+	PutValue(cfname string, key []byte, value []byte, wb *gorocksdb.WriteBatch) error
 	//operations should be in rw lock
 	////////////////////////////////
 
+	PutTransactions(transactions []*protos.Transaction, cfname string, wb *gorocksdb.WriteBatch) error
 	MoveColumnFamily(srcname string, dstDb IDataBaseHandler, dstname string, rmSrcCf bool) (uint64, error)
 	GetDbName() string
 	DumpGlobalState()
@@ -47,9 +48,10 @@ type IDataBaseHandler interface {
 
 // base class of db handler and txdb handler
 type BaseHandler struct {
-	dbName string
-	dbHandler   *gorocksdb.DB
+	dbName      string
+	dbHandler  *gorocksdb.DB
 	cfMap		map[string]*gorocksdb.ColumnFamilyHandle
+	lock        sync.RWMutex
 }
 
 // factory method to get db handler
@@ -115,7 +117,7 @@ func (bashHandler *BaseHandler) PutTransactions(txs []*protos.Transaction,
 	for _, tx := range txs {
 		data, _ := tx.Bytes()
 		dbg.Infof("<%s><%x>", tx.Txid, data)
-		bashHandler.BatchPut(cfname, wb, []byte(tx.Txid), data)
+		bashHandler.PutValue(cfname, []byte(tx.Txid), data, wb)
 	}
 	var dbErr error
 	if opt != nil {
@@ -135,47 +137,36 @@ func (bashHandler *BaseHandler) GetIterator(cfName string) *gorocksdb.Iterator {
 	return bashHandler.dbHandler.NewIteratorCF(opt, cf)
 }
 
-// cache key & value in wb
-func (baseHandler *BaseHandler) BatchPut(cfName string,
-	writeBatch *gorocksdb.WriteBatch, key, value []byte) {
-	cf := baseHandler.getCFByName(cfName)
-	writeBatch.PutCF(cf, key, value)
-}
-
-// cache key & value in wb
-func (baseHandler *BaseHandler) BatchDelete(cfName string,
-	writeBatch *gorocksdb.WriteBatch, key []byte) {
-	cf := baseHandler.getCFByName(cfName)
-	writeBatch.DeleteCF(cf, key)
-}
 
 
 //////////////////////////////////////////////////////////////////////////
 // rw lock,  write KVs into db
-func (openchainDB *BaseHandler) BatchCommit(opts *gorocksdb.WriteOptions,
-	writeBatch *gorocksdb.WriteBatch) error {
-	return openchainDB.dbHandler.Write(opts, writeBatch)
+func (baseHandler *BaseHandler) BatchCommit(opts *gorocksdb.WriteOptions, writeBatch *gorocksdb.WriteBatch) error {
+	baseHandler.lock.Lock()
+	defer baseHandler.lock.Unlock()
+	return baseHandler.dbHandler.Write(opts, writeBatch)
 }
 
 // rw lock
-func (bashHandler *BaseHandler) GetValue(cfName string, key []byte) ([]byte, error) {
-	cf := bashHandler.getCFByName(cfName)
+func (baseHandler *BaseHandler) GetValue(cfName string, key []byte) ([]byte, error) {
+	cf := baseHandler.getCFByName(cfName)
 
 	opt := gorocksdb.NewDefaultReadOptions()
 	defer opt.Destroy()
 
-	slice, err := bashHandler.dbHandler.GetCF(opt, cf, key)
+	baseHandler.lock.RLock()
+	slice, err := baseHandler.dbHandler.GetCF(opt, cf, key)
+	baseHandler.lock.RUnlock()
 
 	if err != nil {
-		dbg.Errorf("Error while trying to retrieve key: %s", key)
 		dbLogger.Errorf("Error while trying to retrieve key: %s", key)
 		return nil, err
 	}
 
 	defer slice.Free()
 	if slice.Data() == nil {
-		dbg.Errorf("No such value for column family<%s.%s>, key<%s>, key<%x>, key<%s>.",
-			bashHandler.dbName,	cfName, string(key), key, dbg.Byte2string(key))
+		dbLogger.Errorf("No such value for column family<%s.%s>, key<%s>, key<%x>, key<%s>.",
+			baseHandler.dbName,	cfName, string(key), key, dbg.Byte2string(key))
 		return nil, nil
 	}
 
@@ -184,34 +175,50 @@ func (bashHandler *BaseHandler) GetValue(cfName string, key []byte) ([]byte, err
 }
 
 // rw lock
-func (bashHandler *BaseHandler) PutValue(cfName string, key []byte, value []byte) error {
-	cf := bashHandler.getCFByName(cfName)
+func (baseHandler *BaseHandler) PutValue(cfName string, key []byte, value []byte, wb *gorocksdb.WriteBatch) error {
+	cf := baseHandler.getCFByName(cfName)
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	err := bashHandler.dbHandler.PutCF(opt, cf, key, value)
-	if err != nil {
-		dbLogger.Errorf("Error while trying to write key: %s", key)
+
+	var err error
+	if wb != nil {
+		wb.PutCF(cf, key, value)
+	} else {
+		baseHandler.lock.Lock()
+		defer baseHandler.lock.Unlock()
+		err = baseHandler.dbHandler.PutCF(opt, cf, key, value)
+		if err != nil {
+			dbLogger.Errorf("Error while trying to write key: %s", key)
+		}
 	}
+
 	return err
 }
 
 // rw lock
-func (bashHandler *BaseHandler) DeleteKey(cfName string, key []byte) error {
-	cf := bashHandler.getCFByName(cfName)
-
+func (baseHandler *BaseHandler) DeleteKey(cfName string, key []byte, wb *gorocksdb.WriteBatch) error {
+	cf := baseHandler.getCFByName(cfName)
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	err := bashHandler.dbHandler.DeleteCF(opt, cf, key)
-	if err != nil {
-		dbLogger.Errorf("Error while trying to delete key: %s", key)
+
+	var err error
+	if wb != nil {
+		wb.DeleteCF(cf, key)
+	} else {
+		baseHandler.lock.Lock()
+		defer baseHandler.lock.Unlock()
+		err = baseHandler.dbHandler.DeleteCF(opt, cf, key)
+		if err != nil {
+			dbLogger.Errorf("Error while trying to delete key: %s", key)
+		}
 	}
+
 	return err
 }
 // rw lock
 //////////////////////////////////////////////////////////////////////////
 
 // method exposed by IDataBaseHandler interface end
-////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
 func (baseHandler *BaseHandler) getCFByName(cfName string) *gorocksdb.ColumnFamilyHandle {
@@ -327,11 +334,11 @@ func (srcDb *BaseHandler) MoveColumnFamily(srcname string, dstDb IDataBaseHandle
 	for ; itr.Valid(); itr.Next() {
 		k := itr.Key()
 		v := itr.Value()
-		err = dstDb.PutValue(dstname, k.Data(), v.Data())
+		err = dstDb.PutValue(dstname, k.Data(), v.Data(), nil)
 		dbg.ChkErr(err)
 
 		if rmSrcCf {
-			srcDb.DeleteKey(srcname, k.Data())
+			srcDb.DeleteKey(srcname, k.Data(), nil)
 		}
 		k.Free()
 		v.Free()

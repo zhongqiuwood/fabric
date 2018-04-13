@@ -894,7 +894,7 @@ func (p *Impl) Store(key string, value []byte) error {
 	dbhandler := db.GetDataBaseHandler(pb.CurrentDbVersion)
 
 	//dbg.Infof("add db.PersistCF: <%s> --> <%x>", key, value)
-	return dbhandler.PutValue(db.PersistCF, []byte(key), value)
+	return dbhandler.PutValue(db.PersistCF, []byte(key), value, nil)
 }
 
 // Load enables a peer to read the value that corresponds to the given database key

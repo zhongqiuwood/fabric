@@ -242,7 +242,7 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *gorocks
 			if dataNode.isDelete() {
 				logger.Debugf("Deleting data node key = %#v", dataNode.dataKey)
 				//writeBatch.DeleteCF(openchainDB.StateCF,
-				db.GetDBHandle().BatchDelete(db.StateCF, writeBatch, dataNode.dataKey.getEncodedBytes())
+				db.GetDBHandle().DeleteKey(db.StateCF, dataNode.dataKey.getEncodedBytes(), writeBatch)
 			} else {
 				//dbg.Debugf("PutCF openchainDB.StateCF data node<%d-%d, %s> with value = %d",
 				//	dataNode.dataKey.bucketKey.level,
@@ -250,8 +250,8 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *gorocks
 				//	dataNode.dataKey.compositeKey,
 				//		dbg.Byte2int(dataNode.value))
 
-				db.GetDBHandle().BatchPut(db.StateCF, writeBatch,
-					dataNode.dataKey.getEncodedBytes(), dataNode.value)
+				db.GetDBHandle().PutValue(db.StateCF,
+					dataNode.dataKey.getEncodedBytes(), dataNode.value, writeBatch)
 			}
 		}
 	}
@@ -265,8 +265,8 @@ func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *goroc
 		for _, bucketNode := range bucketNodes {
 			if bucketNode.markedForDeletion {
 				//writeBatch.DeleteCF(openchainDB.StateCF,
-				db.GetDBHandle().BatchDelete(db.StateCF, writeBatch,
-					bucketNode.bucketKey.getEncodedBytes())
+				db.GetDBHandle().DeleteKey(db.StateCF,
+					bucketNode.bucketKey.getEncodedBytes(), writeBatch)
 			} else {
 
 				//dbg.Debugf("PutCF openchainDB.StateCF bucketNode <%d-%d>, numChildren<%d>",
@@ -278,8 +278,8 @@ func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *goroc
 				//	dbg.Debugf("        childrenCryptoHash<%x>", hash)
 				//}
 
-				db.GetDBHandle().BatchPut(db.StateCF, writeBatch,
-					bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
+				db.GetDBHandle().PutValue(db.StateCF,
+					bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal(), writeBatch)
 			}
 		}
 	}

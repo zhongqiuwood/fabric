@@ -1,57 +1,71 @@
 package gossip
 
 import (
+	"fmt"
+
 	pb "github.com/abchain/fabric/protos"
 )
 
-// PeerMessage struct
-type PeerMessage struct {
-	id      string
-	key     string
-	version uint64
+// StateVersion struct
+type StateVersion struct {
+	known  bool
+	hash   []byte
+	number uint64
 }
 
-// Source struct
-type Source struct {
-	key          string
-	version      uint64
-	ctime        uint64
-	utime        uint64
-	rawMessage   *pb.Message
-	peerVersions map[string]uint64
+// PeerState struct
+type PeerState struct {
+	id     string                   // peer id
+	states map[string]*StateVersion // key: catalog
 }
 
 // Model struct
 type Model struct {
-	// key: digest of message
-	// value: Source
-	store map[string]*Source
+	self   PeerState
+	store  map[string]*PeerState // key: peer id
+	merger VersionMergerInterface
+	crypto CryptoInterface
 }
 
-func (m *Model) get(key string) *Source {
-	source, ok := m.store[key]
+func (m *Model) get(peerID string, catalog string) *StateVersion {
+	state, ok := m.store[peerID]
 	if !ok {
 		return nil
 	}
-	return source
+	version, ok := state.states[catalog]
+	if !ok {
+		return nil
+	}
+	return version
 }
 
-func (m *Model) set(source *Source) error {
-	return m.localUpdate(source)
+func (m *Model) set(peerID string, catalog string, state *PeerState) error {
+	//return m.localUpdate(source)
+	return nil
 }
 
-func (m *Model) keys() []string {
+func (m *Model) setMerger(merger VersionMergerInterface) {
+	m.merger = merger
+	if m.merger == nil {
+		m.merger = &VersionMergerDummy{}
+	}
+}
+
+func (m *Model) keys(catalog string) []string {
 	keys := []string{}
-	for key := range m.store {
-		keys = append(keys, key)
+	for id, peer := range m.store {
+		_, ok := peer.states[catalog]
+		if ok {
+			keys = append(keys, id)
+		}
 	}
 	return keys
 }
 
-func (m *Model) forEach(iter func(k string, v *Source) error) error {
+func (m *Model) forEach(iter func(id string, peer *PeerState) error) error {
 	var err error
-	for key, source := range m.store {
-		err = iter(key, source)
+	for k, p := range m.store {
+		err = iter(k, p)
 		if err != nil {
 			break
 		}
@@ -59,26 +73,40 @@ func (m *Model) forEach(iter func(k string, v *Source) error) error {
 	return err
 }
 
-func (m *Model) applyUpdate(source *Source) error {
-	old := m.get(source.key)
-	if old != nil && old.key > source.key {
-		return nil
+func (m *Model) applyUpdate(message *pb.Gossip) error {
+	if m.merger == nil {
+		return fmt.Errorf("No merger implement")
 	}
-	m.store[source.key] = source
-	return nil
-}
 
-func (m *Model) localUpdate(source *Source) error {
-	return nil
-}
+	digest := message.GetDigest()
+	if digest == nil {
+		return fmt.Errorf("Message not diest with catalog(%s)", message.Catalog)
+	}
 
-func (m *Model) history(sources map[string]*Source) map[string]*Source {
-	results := map[string]*Source{}
-	for k, s := range m.store {
-		old, ok := sources[k]
-		if !ok || old.version < s.version {
-			results[k] = s
+	for id, state := range digest.Data {
+		if id == m.self.id {
+			continue
+		}
+		peer, ok := m.store[id]
+		remote := &StateVersion{hash: state.State, number: state.Num}
+		if m.crypto != nil && !m.crypto.Verify(id, message.Catalog, state) {
+			continue
+		}
+		if !ok {
+			newPeer := PeerState{id: id, states: map[string]*StateVersion{}}
+			newPeer.states[message.Catalog] = remote
+			m.store[id] = &newPeer
+			continue
+		}
+		local, ok := peer.states[message.Catalog]
+		if !ok || m.merger.NeedMerge(local, remote) {
+			peer.states[message.Catalog] = remote
 		}
 	}
-	return results
+
+	return nil
+}
+
+func (m *Model) history() error {
+	return nil
 }

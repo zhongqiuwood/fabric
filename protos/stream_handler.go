@@ -54,12 +54,6 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 		return fmt.Errorf("Streamhandler %s has been killed", h.tag)
 	}
 
-	err := h.BeforeSendMessage(m)
-
-	if err != nil {
-		return fmt.Errorf("Streamhandler %s filter message fail: %s", h.tag, err)
-	}
-
 	if h.enableLoss {
 		select {
 		case h.writeQueue <- m:
@@ -77,10 +71,14 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 func (h *StreamHandler) handleWrite(stream grpc.Stream) {
 
 	for m := range h.writeQueue {
-		err := stream.SendMsg(m)
-		if err != nil {
-			h.writeExited <- err
-			return
+
+		err := h.BeforeSendMessage(m)
+		if err == nil {
+			err = stream.SendMsg(m)
+			if err != nil {
+				h.writeExited <- err
+				return
+			}
 		}
 	}
 

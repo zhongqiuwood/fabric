@@ -154,7 +154,7 @@ func StartNode(postrun func() error) error {
 	}
 
 	// init services related to the peer, such as gossip
-	gossip.GetGossip()
+	gossip.NewGossip(peerServer)
 
 	// Register the Peer server
 	srv_peer := func(server *grpc.Server) {

@@ -1,24 +1,32 @@
 package gossip
 
 import (
+	"fmt"
 	"github.com/abchain/fabric/core/gossip/stub"
-	_ "github.com/abchain/fabric/core/peer"
+	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 )
 
 var logger = logging.MustGetLogger("gossip")
 
-type GossipHandler struct {
+type Gossip interface {
+	BroadcastTx(*pb.Transaction) error
 }
 
-func GetGossip() {
+type GossipStub struct {
+	*pb.StreamStub
+	peer.Discoverer
+}
 
-	logger.Debug("Gossip module inited")
+type GossipHandler struct {
+	peerId *pb.PeerID
+}
 
+func init() {
 	stub.DefaultFactory = func(id *pb.PeerID) stub.GossipHandler {
 		logger.Debug("create handler for peer", id)
-		return &GossipHandler{}
+		return &GossipHandler{peerId: id}
 	}
 }
 
@@ -28,4 +36,44 @@ func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 
 func (t *GossipHandler) Stop() {
 
+}
+
+var gossipStub *GossipStub
+
+//init the singleton of gossipstub
+func NewGossip(p peer.Peer) {
+
+	nb, err := p.GetNeighbour()
+	logger.Debug("Gossip module inited")
+
+	if err != nil {
+
+		logger.Errorf("No neighbour for this peer (%s), gossip run without access control", err)
+		gossipStub = &GossipStub{
+			StreamStub: p.GetStreamStub("gossip"),
+		}
+
+	} else {
+
+		dis, err := nb.GetDiscoverer()
+		if err != nil {
+			logger.Errorf("No discovery for this peer (%s), gossip run without access control", err)
+		}
+
+		gossipStub = &GossipStub{
+			StreamStub: p.GetStreamStub("gossip"),
+			Discoverer: dis,
+		}
+	}
+
+}
+
+// GetGossip - gives a reference to a 'singleton' GossipStub
+func GetGossip() Gossip {
+
+	return gossipStub
+}
+
+func (s *GossipStub) BroadcastTx(*pb.Transaction) error {
+	return fmt.Errorf("No implement")
 }

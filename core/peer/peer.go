@@ -52,6 +52,8 @@ type Peer interface {
 	ExecuteTransaction(transaction *pb.Transaction) *pb.Response
 	SecurityAccessor
 	GetNeighbour() (Neighbour, error)
+	//  currently the availiable streamstub is "gossip"
+	GetStreamStub(string) *pb.StreamStub
 }
 
 type Neighbour interface {
@@ -393,6 +395,14 @@ func getHandlerKey(peerMessageHandler MessageHandler) (*pb.PeerID, error) {
 
 func getHandlerKeyFromPeerEndpoint(peerEndpoint *pb.PeerEndpoint) *pb.PeerID {
 	return peerEndpoint.ID
+}
+
+func (p *Impl) GetStreamStub(name string) *pb.StreamStub {
+	if name == "gossip" {
+		return p.gossipStub
+	}
+
+	return nil
 }
 
 func (p *Impl) GetDiscoverer() (Discoverer, error) {

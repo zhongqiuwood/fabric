@@ -7,6 +7,8 @@ import (
 	"github.com/abchain/fabric/peerex"
 	"github.com/spf13/viper"
 	"runtime"
+	"github.com/abchain/fabric/flogging"
+	"github.com/abchain/fabric/dbg"
 )
 
 type NodeConfig struct {
@@ -21,6 +23,7 @@ func RunNode(cfg *NodeConfig) {
 		LogRole: "node",
 	}
 
+	dbg.Init()
 	err := peerConfig.InitGlobalWrapper(true, cfg.Settings)
 
 	if err != nil {
@@ -34,6 +37,8 @@ func RunNode(cfg *NodeConfig) {
 	if err != nil {
 		panic(fmt.Errorf("Failed to initialize the crypto layer: %s", err))
 	}
+
+	flogging.LoggingInit("node")
 
 	// run serve
 	node.StartNode(cfg.PostRun)

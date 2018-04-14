@@ -56,7 +56,7 @@ func (cache *bucketCache) loadAllBucketNodesFromDB() {
 		return
 	}
 	openchainDB := db.GetDBHandle()
-	itr := openchainDB.GetStateCFIterator()
+	itr := openchainDB.GetIterator(db.StateCF)
 	defer itr.Close()
 	itr.Seek([]byte{byte(0)})
 	count := 0

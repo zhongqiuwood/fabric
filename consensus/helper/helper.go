@@ -42,7 +42,7 @@ type Helper struct {
 	secHelper    crypto.Peer
 	curBatch     []*pb.Transaction       // TODO, remove after issue 579
 	curBatchErrs []*pb.TransactionResult // TODO, remove after issue 579
-	persist.Helper
+	persist.PersisHelper
 
 	executor consensus.Executor
 }
@@ -227,7 +227,8 @@ func (h *Helper) CommitTxBatch(id interface{}, metadata []byte) (*pb.Block, erro
 		return nil, fmt.Errorf("Failed to get the block at the head of the chain: %v", err)
 	}
 
-	logger.Debugf("Committed block with %d transactions, intended to include %d", len(block.Transactions), len(h.curBatch))
+	logger.Debugf("Committed block with %d transactions, intended to include %d",
+		len(block.Txids), len(h.curBatch))
 
 	return block, nil
 }

@@ -32,6 +32,8 @@ import (
 
 	"github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
+	"github.com/abchain/fabric/dbg"
+	"github.com/spf13/viper"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
@@ -81,6 +83,7 @@ var (
 type Ledger struct {
 	blockchain *blockchain
 	state      *state.State
+	txstate    *state.TxState
 	currentID  interface{}
 }
 
@@ -98,13 +101,22 @@ func GetLedger() (*Ledger, error) {
 
 // GetNewLedger - gives a reference to a new ledger TODO need better approach
 func GetNewLedger() (*Ledger, error) {
-	blockchain, err := newBlockchain()
+
+	if protos.CurrentDbVersion == 1 {
+		InitializeDataBase(db.GetDBHandle(), db.GetGlobalDBHandle())
+	}
+
+	blockchain, err := newBlockchain(protos.CurrentDbVersion)
 	if err != nil {
 		return nil, err
 	}
 
-	state := state.NewState()
-	return &Ledger{blockchain, state, nil}, nil
+	txstate := state.NewTxState()
+	orgstate := state.NewState()
+
+	txstate.CurGState.ParentNodeStateHash = blockchain.previousBlockStateHash
+
+	return &Ledger{blockchain, orgstate, txstate, nil}, nil
 }
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
@@ -150,6 +162,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	stateHash, err := ledger.state.GetHash()
+
 	if err != nil {
 		ledger.resetForNextTxGroup(false)
 		ledger.blockchain.blockPersistenceStatus(false)
@@ -193,11 +206,19 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	dbErr := db.GetDBHandle().DB.Write(opt, writeBatch)
+
+	dbErr := db.GetDBHandle().BatchCommit(opt, writeBatch)
+
 	if dbErr != nil {
 		ledger.resetForNextTxGroup(false)
 		ledger.blockchain.blockPersistenceStatus(false)
 		return dbErr
+	}
+
+	// update txdb
+	if protos.CurrentDbVersion == 1 {
+		//todo: init ledger.txstate.CurGState.ParentNodeStateHash on peer startup
+		state.CommitGlobalState(transactions, stateHash, newBlockNumber, ledger.txstate.CurGState)
 	}
 
 	ledger.resetForNextTxGroup(true)
@@ -211,6 +232,17 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	if len(transactionResults) != 0 {
 		ledgerLogger.Debug("There were some erroneous transactions. We need to send a 'TX rejected' message here.")
 	}
+
+	docp := viper.GetBool("peer.db.perBlockPerCheckpoint")
+	if protos.CurrentDbVersion == 1 && docp {
+		stringHash := dbg.Byte2string(stateHash)
+		if stringHash == "" && newBlockNumber == 0 {
+			stringHash = "0"
+		}
+
+		db.GetDBHandle().ProduceCheckpoint(newBlockNumber, stringHash)
+	}
+
 	return nil
 }
 
@@ -305,7 +337,7 @@ func (ledger *Ledger) SetStateMultipleKeys(chaincodeID string, kvs map[string][]
 // stateSnapshot.Release() once you are done with the snapshot to free up resources.
 func (ledger *Ledger) GetStateSnapshot() (*state.StateSnapshot, error) {
 	dbSnapshot := db.GetDBHandle().GetSnapshot()
-	blockHeight, err := fetchBlockchainSizeFromSnapshot(dbSnapshot)
+	blockHeight, err := db.GetDBHandle().FetchBlockchainSizeFromSnapshot(dbSnapshot)
 	if err != nil {
 		db.GetDBHandle().ReleaseSnapshot(dbSnapshot)
 		return nil, err
@@ -531,4 +563,53 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) {
 			}
 		}
 	}
+}
+
+
+/////////////////// DB-reorganize  methods ///////////////////////////////
+//////////////////////////////////////////////////////////////////////////
+
+func InitializeDataBase(orgdb db.IDataBaseHandler, txdb db.IDataBaseHandler) bool {
+
+	orgdbVersion, errVer := orgdb.GetValue(db.PersistCF, []byte(db.VersionKey))
+	if errVer == nil {
+		if orgdbVersion != nil {
+			ver := db.DecodeToUint64(orgdbVersion)
+			dbg.Infof("Original DB version: %d. No action required.", ver)
+			return false
+		} else {
+			// ok, this is the v0 db that expected to be reorganized
+			dbg.Infof("No original DB version detected, start to reorganize original DB and produce txdb.")
+		}
+	} else {
+		dbg.ChkErr(errVer)
+		return false
+	}
+
+	_, err := orgdb.MoveColumnFamily(db.PersistCF, txdb, db.PersistCF, true)
+
+	if err != nil {
+		dbg.ChkErr(err)
+		return false
+	}
+
+	bc, errBlockchain := newBlockchain(0)
+	if errBlockchain != nil {
+		return false
+	}
+
+	err = bc.reorganize()
+
+	if err != nil {
+		dbg.ChkErr(err)
+		return false
+	}
+
+	err = txdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.GlobalDataBaseVersion), nil)
+	if err != nil {
+		return false
+	}
+	orgdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.OriginalDataBaseVersion), nil)
+
+	return true
 }

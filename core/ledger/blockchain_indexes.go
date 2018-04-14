@@ -24,6 +24,7 @@ import (
 	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
+	//"github.com/abchain/fabric/dbg"
 )
 
 var indexLogger = logging.MustGetLogger("indexes")
@@ -75,12 +76,11 @@ func (indexer *blockchainIndexerSync) stop() {
 
 // Functions for persisting and retrieving index data
 func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error {
-	openchainDB := db.GetDBHandle()
-	cf := openchainDB.IndexesCF
-
 	// add blockhash -> blockNumber
 	indexLogger.Debugf("Indexing block number [%d] by hash = [%x]", blockNumber, blockHash)
-	writeBatch.PutCF(cf, encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber))
+
+	//dbg.Infof("IndexesCF add:  hash [%x] --> blocknumber [%d] ", blockHash, blockNumber)
+	db.GetDBHandle().PutValue(db.IndexesCF,	encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber), writeBatch)
 
 	addressToTxIndexesMap := make(map[string][]uint64)
 	addressToChaincodeIDsMap := make(map[string][]*protos.ChaincodeID)
@@ -88,7 +88,9 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 	transactions := block.GetTransactions()
 	for txIndex, tx := range transactions {
 		// add TxID -> (blockNumber,indexWithinBlock)
-		writeBatch.PutCF(cf, encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)))
+
+		//dbg.Infof("IndexesCF add:  tx.Txid [%s] --> blockNumber, uint64(txIndex) [%d,%d] ", tx.Txid, blockNumber, uint64(txIndex))
+		db.GetDBHandle().PutValue(db.IndexesCF, encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)), writeBatch)
 
 		txExecutingAddress := getTxExecutingAddress(tx)
 		addressToTxIndexesMap[txExecutingAddress] = append(addressToTxIndexesMap[txExecutingAddress], uint64(txIndex))
@@ -102,14 +104,15 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 		}
 	}
 	for address, txsIndexes := range addressToTxIndexesMap {
-		writeBatch.PutCF(cf, encodeAddressBlockNumCompositeKey(address, blockNumber), encodeListTxIndexes(txsIndexes))
+		db.GetDBHandle().PutValue(db.IndexesCF, encodeAddressBlockNumCompositeKey(address, blockNumber),
+			encodeListTxIndexes(txsIndexes), writeBatch)
 	}
 	return nil
 }
 
 func fetchBlockNumberByBlockHashFromDB(blockHash []byte) (uint64, error) {
 	indexLogger.Debugf("fetchBlockNumberByBlockHashFromDB() for blockhash [%x]", blockHash)
-	blockNumberBytes, err := db.GetDBHandle().GetFromIndexesCF(encodeBlockHashKey(blockHash))
+	blockNumberBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, encodeBlockHashKey(blockHash))
 	if err != nil {
 		return 0, err
 	}
@@ -122,7 +125,7 @@ func fetchBlockNumberByBlockHashFromDB(blockHash []byte) (uint64, error) {
 }
 
 func fetchTransactionIndexByIDFromDB(txID string) (uint64, uint64, error) {
-	blockNumTxIndexBytes, err := db.GetDBHandle().GetFromIndexesCF(encodeTxIDKey(txID))
+	blockNumTxIndexBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, encodeTxIDKey(txID))
 	if err != nil {
 		return 0, 0, err
 	}

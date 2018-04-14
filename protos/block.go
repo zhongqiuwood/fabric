@@ -21,7 +21,10 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/util"
+	//"github.com/spf13/viper"
 )
+
+var CurrentDbVersion uint32
 
 // NewBlock creates a new block with the specified proposer ID, list of,
 // transactions, and hash of the state calculated by calling State.GetHash()
@@ -41,8 +44,30 @@ import (
 // }
 
 // Bytes returns this block as an array of bytes.
-func (block *Block) Bytes() ([]byte, error) {
+func (block *Block) GetBlockBytes() ([]byte, error) {
+
+	transactions := block.Transactions
+
+	if CurrentDbVersion == 1 {
+		block.Transactions = nil
+	}
+	// do NOT persist transcations in db of v1
 	data, err := proto.Marshal(block)
+
+	block.Transactions = transactions
+	if err != nil {
+		logger.Errorf("Error marshalling block: %s", err)
+		return nil, fmt.Errorf("Could not marshal block: %s", err)
+	}
+	return data, nil
+}
+
+
+// Bytes returns this block with Transactions as an array of bytes.
+func (block *Block) GetBlockBytesV0() ([]byte, error) {
+	// do NOT persist transcations in db of v1
+	data, err := proto.Marshal(block)
+
 	if err != nil {
 		logger.Errorf("Error marshalling block: %s", err)
 		return nil, fmt.Errorf("Could not marshal block: %s", err)
@@ -55,6 +80,8 @@ func NewBlock(transactions []*Transaction, metadata []byte) *Block {
 	block := new(Block)
 	block.Transactions = transactions
 	block.ConsensusMetadata = metadata
+
+	block.FeedTranscationIds()
 	return block
 }
 
@@ -62,7 +89,31 @@ func NewBlock(transactions []*Transaction, metadata []byte) *Block {
 func (block *Block) GetHash() ([]byte, error) {
 
 	// copy the block and remove the non-hash data
-	blockBytes, err := block.Bytes()
+	blockBytes, err := block.GetBlockBytes()
+	if err != nil {
+		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
+	}
+	blockCopy, err := UnmarshallBlock(blockBytes)
+	if err != nil {
+		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
+	}
+	blockCopy.NonHashData = nil
+
+	// Hash the block
+	data, err := proto.Marshal(blockCopy)
+	if err != nil {
+		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
+	}
+	hash := util.ComputeCryptoHash(data)
+	return hash, nil
+}
+
+
+// GetHash returns the hash of this block.
+func (block *Block) GetHashV0() ([]byte, error) {
+
+	// copy the block and remove the non-hash data
+	blockBytes, err := block.GetBlockBytesV0()
 	if err != nil {
 		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
 	}
@@ -103,4 +154,17 @@ func UnmarshallBlock(blockBytes []byte) (*Block, error) {
 		return nil, fmt.Errorf("Could not unmarshal block: %s", err)
 	}
 	return block, nil
+}
+
+
+func (block *Block) FeedTranscationIds() {
+
+	if CurrentDbVersion == 1 && block.Txids == nil {
+		block.Txids = make([]string, len(block.Transactions))
+		idx := 0
+		for _, tx := range block.Transactions {
+			block.Txids[idx] = tx.Txid
+			idx++
+		}
+	}
 }

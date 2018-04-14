@@ -365,6 +365,7 @@ type Block struct {
 	PreviousBlockHash []byte                     `protobuf:"bytes,5,opt,name=previousBlockHash,proto3" json:"previousBlockHash,omitempty"`
 	ConsensusMetadata []byte                     `protobuf:"bytes,6,opt,name=consensusMetadata,proto3" json:"consensusMetadata,omitempty"`
 	NonHashData       *NonHashData               `protobuf:"bytes,7,opt,name=nonHashData" json:"nonHashData,omitempty"`
+	Txids             []string                   `protobuf:"bytes,8,rep,name=txids,json=txids" json:"txids,omitempty"`
 }
 
 func (m *Block) Reset()                    { *m = Block{} }
@@ -420,6 +421,21 @@ func (m *Block) GetNonHashData() *NonHashData {
 	}
 	return nil
 }
+
+
+type GlobalState struct {
+	Count           uint64            `protobuf:"varint,1,opt,name=count" json:"count,omitempty"`
+	NextNodeStateHash       [][]byte  `protobuf:"bytes,2,rep,name=nextnodestatehash,proto3" json:"nextnodestatehash,omitempty"`
+	ParentNodeStateHash       []byte  `protobuf:"bytes,3,opt,name=parentnodestatehash,proto3" json:"parentnodestatehash,omitempty"`
+	LastBranchNodeStateHash   []byte  `protobuf:"bytes,4,opt,name=lastbranchnodestatehash,proto3" json:"lastbranchnodestatehash,omitempty"`
+	Branched         bool             `protobuf:"varint,5,opt,name=branch" json:"branch,omitempty"`
+	Cached           bool             `protobuf:"varint,6,opt,name=chached" json:"chached,omitempty"`
+}
+
+func (m *GlobalState) Reset()                    { *m = GlobalState{} }
+func (m *GlobalState) String() string            { return proto.CompactTextString(m) }
+func (*GlobalState) ProtoMessage()               {}
+////////////////////////////
 
 // Contains information about the blockchain ledger such as height, current
 // block hash, and previous block hash.

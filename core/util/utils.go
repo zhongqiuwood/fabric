@@ -27,6 +27,8 @@ import (
 
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"golang.org/x/crypto/sha3"
+	"os"
+	"path"
 )
 
 type alg struct {
@@ -139,4 +141,64 @@ func ArrayToChaincodeArgs(args []string) [][]byte {
 		bargs[i] = []byte(arg)
 	}
 	return bargs
+}
+
+
+func MkdirIfNotExist(targetDir string) bool {
+	missing, err := dirMissingOrEmpty(targetDir)
+	if err != nil {
+		panic(fmt.Sprintf("Error while trying to open DB: %s", err))
+	}
+
+	if missing {
+		err = os.MkdirAll(path.Dir(targetDir), 0755)
+		if err != nil {
+			panic(fmt.Sprintf("Error making directory path [%s]: %s", targetDir, err))
+		}
+	}
+	return missing
+}
+
+func dirMissingOrEmpty(path string) (bool, error) {
+	dirExists, err := dirExists(path)
+	if err != nil {
+		return false, err
+	}
+	if !dirExists {
+		return true, nil
+	}
+
+	dirEmpty, err := dirEmpty(path)
+	if err != nil {
+		return false, err
+	}
+	if dirEmpty {
+		return true, nil
+	}
+	return false, nil
+}
+
+func dirExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func dirEmpty(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	_, err = f.Readdir(1)
+	if err == io.EOF {
+		return true, nil
+	}
+	return false, err
 }

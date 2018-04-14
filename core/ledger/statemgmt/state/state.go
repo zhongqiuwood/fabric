@@ -27,6 +27,9 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
+	"github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/dbg"
+	//"bytes"
 )
 
 var logger = logging.MustGetLogger("state")
@@ -275,7 +278,7 @@ func (state *State) GetSnapshot(blockNumber uint64, dbSnapshot *gorocksdb.Snapsh
 
 // FetchStateDeltaFromDB fetches the StateDelta corrsponding to given blockNumber
 func (state *State) FetchStateDeltaFromDB(blockNumber uint64) (*statemgmt.StateDelta, error) {
-	stateDeltaBytes, err := db.GetDBHandle().GetFromStateDeltaCF(encodeStateDeltaKey(blockNumber))
+	stateDeltaBytes, err := db.GetDBHandle().GetValue(db.StateDeltaCF, encodeStateDeltaKey(blockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -297,13 +300,17 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *gor
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 
 	serializedStateDelta := state.stateDelta.Marshal()
-	cf := db.GetDBHandle().StateDeltaCF
+	//cf := db.GetDBHandle().StateDeltaCF
 	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
-	writeBatch.PutCF(cf, encodeStateDeltaKey(blockNumber), serializedStateDelta)
+
+	db.GetDBHandle().PutValue(db.StateDeltaCF,
+		encodeStateDeltaKey(blockNumber), serializedStateDelta, writeBatch)
+
 	if blockNumber >= state.historyStateDeltaSize {
 		blockNumberToDelete := blockNumber - state.historyStateDeltaSize
 		logger.Debugf("Deleting state-delta corresponding to block number[%d]", blockNumberToDelete)
-		writeBatch.DeleteCF(cf, encodeStateDeltaKey(blockNumberToDelete))
+		db.GetDBHandle().DeleteKey(db.StateDeltaCF,
+			encodeStateDeltaKey(blockNumberToDelete), writeBatch)
 	} else {
 		logger.Debugf("Not deleting previous state-delta. Block number [%d] is smaller than historyStateDeltaSize [%d]",
 			blockNumber, state.historyStateDeltaSize)
@@ -332,7 +339,7 @@ func (state *State) CommitStateDelta() error {
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	return db.GetDBHandle().DB.Write(opt, writeBatch)
+	return db.GetDBHandle().BatchCommit(opt, writeBatch)
 }
 
 // DeleteState deletes ALL state keys/values from the DB. This is generally
@@ -340,7 +347,7 @@ func (state *State) CommitStateDelta() error {
 // a snapshot.
 func (state *State) DeleteState() error {
 	state.ClearInMemoryChanges(false)
-	err := db.GetDBHandle().DeleteState()
+	err := db.GetDBHandle().DeleteDbState()
 	if err != nil {
 		logger.Errorf("Error deleting state: %s", err)
 	}
@@ -363,4 +370,119 @@ func encodeUint64(number uint64) []byte {
 
 func decodeToUint64(bytes []byte) uint64 {
 	return binary.BigEndian.Uint64(bytes)
+}
+
+
+//////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////
+// TxState structure for maintaining world state.
+// This encapsulates a particular implementation for managing the state persistence
+// This is not thread safe
+type TxState struct {
+	CurGState             *protos.GlobalState
+	//ConsensusCF           *ConsensusCF
+}
+
+func NewTxState() *TxState {
+	gs := protos.NewGlobalState()
+	return &TxState{gs}
+}
+
+
+func putGlobalState(gs *protos.GlobalState, statehash []byte, wb *gorocksdb.WriteBatch) error {
+
+	parentGs := db.GetGlobalDBHandle().GetGlobalState(gs.ParentNodeStateHash)
+
+	if parentGs != nil {
+		if parentGs.Branched {
+			gs.LastBranchNodeStateHash = gs.ParentNodeStateHash
+		} else {
+			gs.LastBranchNodeStateHash = parentGs.LastBranchNodeStateHash
+		}
+	}
+
+	err := db.GetGlobalDBHandle().PutGlobalState(gs, statehash, nil)	// do NOT use writeBatch
+
+	if err != nil {
+		dbg.Errorf("Error: %s", err)
+	}
+
+	if gs.ParentNodeStateHash == nil {
+		return nil
+	}
+
+	nextNodeStateHash := db.GetGlobalDBHandle().AddChildNode4GlobalState(gs.ParentNodeStateHash, statehash, wb)
+
+	for _, next := range nextNodeStateHash {
+		child := next
+		for {
+			child = setLastBranchNodeStateHash(child, gs.ParentNodeStateHash, wb)
+			if child == nil {
+				break
+			}
+		}
+	}
+
+	return err
+}
+
+func setLastBranchNodeStateHash(statehash []byte, lastBranchNodeStateHash []byte, wb *gorocksdb.WriteBatch) []byte {
+
+	data, _ := db.GetGlobalDBHandle().GetValue(db.GlobalCF, statehash)
+	gs, _ := protos.UnmarshallGS(data)
+
+	if gs.LastBranchNodeStateHash != nil {
+		return nil
+	}
+
+	gs.LastBranchNodeStateHash = lastBranchNodeStateHash
+	db.GetGlobalDBHandle().PutGlobalState(gs, statehash, wb)
+
+	var res []byte
+	res = nil
+	if len(gs.NextNodeStateHash) == 1 {
+		res = gs.NextNodeStateHash[0]
+	}
+
+	return res
+}
+
+func CommitGlobalState(transactions []*protos.Transaction,
+	stateHash []byte, newBlockNumber uint64, globalState *protos.GlobalState) error {
+
+	if newBlockNumber == 0 && stateHash == nil {
+		stateHash = []byte("0")
+	}
+
+	wb := gorocksdb.NewWriteBatch()
+	defer wb.Destroy()
+
+	db.GetGlobalDBHandle().PutTransactions(transactions, db.TxCF, wb)
+
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()
+
+	// set current GState
+	globalState.NextNodeStateHash = nil
+	globalState.Branched = false
+	globalState.Cached = false
+	globalState.Count = newBlockNumber
+
+	// put current gs and update parent gs(Branched & NextNodeStateHash)
+	putGlobalState(globalState, stateHash, wb)
+	dbErr := db.GetGlobalDBHandle().BatchCommit(opt, wb)
+
+	dbg.ChkErr(dbErr)
+	if dbErr != nil {
+		return dbErr
+	}
+
+	// reset GState
+	globalState.NextNodeStateHash = nil
+	globalState.ParentNodeStateHash = stateHash
+	globalState.Branched = false
+	globalState.Cached = false
+	globalState.Count = 0
+
+	return nil
 }

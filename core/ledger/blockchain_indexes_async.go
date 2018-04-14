@@ -106,14 +106,16 @@ func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockN
 
 // createIndexes adds entries into db for creating indexes on various attributes
 func (indexer *blockchainIndexerAsync) createIndexesInternal(block *protos.Block, blockNumber uint64, blockHash []byte) error {
-	openchainDB := db.GetDBHandle()
+
 	writeBatch := gorocksdb.NewWriteBatch()
 	defer writeBatch.Destroy()
 	addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
-	writeBatch.PutCF(openchainDB.IndexesCF, lastIndexedBlockKey, encodeBlockNumber(blockNumber))
+	db.GetDBHandle().PutValue(db.IndexesCF,
+		lastIndexedBlockKey, encodeBlockNumber(blockNumber), writeBatch)
+
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	err := openchainDB.DB.Write(opt, writeBatch)
+	err := db.GetDBHandle().BatchCommit(opt, writeBatch)
 	if err != nil {
 		return err
 	}
@@ -311,7 +313,7 @@ func (indexerState *blockchainIndexerState) checkError() error {
 }
 
 func fetchLastIndexedBlockNumFromDB() (zerothBlockIndexed bool, lastIndexedBlockNum uint64, err error) {
-	lastIndexedBlockNumberBytes, err := db.GetDBHandle().GetFromIndexesCF(lastIndexedBlockKey)
+	lastIndexedBlockNumberBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, lastIndexedBlockKey)
 	if err != nil {
 		return
 	}

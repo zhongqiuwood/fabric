@@ -2,7 +2,9 @@
 
 package util
 
-import "strings"
+import (
+	"strings"
+)
 
 func CanonicalizePath(path string) string {
 
@@ -18,5 +20,3 @@ func CanonicalizeFilePath(filepath string) string {
 	return filepath
 	
 }
-
-

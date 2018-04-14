@@ -18,37 +18,39 @@ package persist
 
 import (
 	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/protos"
 )
 
-// Helper provides an abstraction to access the Persist column family
+// PersisHelper provides an abstraction to access the Persist column family
 // in the database.
-type Helper struct{}
+type PersisHelper struct{}
+
 
 // StoreState stores a key,value pair
-func (h *Helper) StoreState(key string, value []byte) error {
-	db := db.GetDBHandle()
-	return db.Put(db.PersistCF, []byte("consensus."+key), value)
+func (h *PersisHelper) StoreState(key string, value []byte) error {
+	dbhandler := db.GetDataBaseHandler(protos.CurrentDbVersion)
+	return dbhandler.PutValue(db.PersistCF, []byte("consensus."+key), value, nil)
 }
 
 // DelState removes a key,value pair
-func (h *Helper) DelState(key string) {
-	db := db.GetDBHandle()
-	db.Delete(db.PersistCF, []byte("consensus."+key))
+func (h *PersisHelper) DelState(key string) {
+	dbhandler := db.GetDataBaseHandler(protos.CurrentDbVersion)
+	dbhandler.DeleteKey(db.PersistCF, []byte("consensus."+key), nil)
 }
 
 // ReadState retrieves a value to a key
-func (h *Helper) ReadState(key string) ([]byte, error) {
-	db := db.GetDBHandle()
-	return db.Get(db.PersistCF, []byte("consensus."+key))
+func (h *PersisHelper) ReadState(key string) ([]byte, error) {
+	dbhandler := db.GetDataBaseHandler(protos.CurrentDbVersion)
+	return dbhandler.GetValue(db.PersistCF, []byte("consensus."+key))
 }
 
 // ReadStateSet retrieves all key,value pairs where the key starts with prefix
-func (h *Helper) ReadStateSet(prefix string) (map[string][]byte, error) {
-	db := db.GetDBHandle()
+func (h *PersisHelper) ReadStateSet(prefix string) (map[string][]byte, error) {
+	dbhandler := db.GetDataBaseHandler(protos.CurrentDbVersion)
 	prefixRaw := []byte("consensus." + prefix)
 
 	ret := make(map[string][]byte)
-	it := db.GetIterator(db.PersistCF)
+	it := dbhandler.GetIterator(db.PersistCF)
 	defer it.Close()
 	for it.Seek(prefixRaw); it.ValidForPrefix(prefixRaw); it.Next() {
 		key := string(it.Key().Data())

@@ -234,32 +234,52 @@ func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *gorocksdb.Write
 }
 
 func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *gorocksdb.WriteBatch) {
-	openchainDB := db.GetDBHandle()
+	//openchainDB := db.GetDBHandle()
 	affectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
 	for _, affectedBucket := range affectedBuckets {
 		dataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(affectedBucket)
 		for _, dataNode := range dataNodes {
 			if dataNode.isDelete() {
 				logger.Debugf("Deleting data node key = %#v", dataNode.dataKey)
-				writeBatch.DeleteCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes())
+				//writeBatch.DeleteCF(openchainDB.StateCF,
+				db.GetDBHandle().DeleteKey(db.StateCF, dataNode.dataKey.getEncodedBytes(), writeBatch)
 			} else {
-				logger.Debugf("Adding data node with value = %#v", dataNode.value)
-				writeBatch.PutCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes(), dataNode.value)
+				//dbg.Debugf("PutCF openchainDB.StateCF data node<%d-%d, %s> with value = %d",
+				//	dataNode.dataKey.bucketKey.level,
+				//		dataNode.dataKey.bucketKey.bucketNumber,
+				//	dataNode.dataKey.compositeKey,
+				//		dbg.Byte2int(dataNode.value))
+
+				db.GetDBHandle().PutValue(db.StateCF,
+					dataNode.dataKey.getEncodedBytes(), dataNode.value, writeBatch)
 			}
 		}
 	}
 }
 
 func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *gorocksdb.WriteBatch) {
-	openchainDB := db.GetDBHandle()
+	//openchainDB := db.GetDBHandle()
 	secondLastLevel := conf.getLowestLevel() - 1
 	for level := secondLastLevel; level >= 0; level-- {
 		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
 		for _, bucketNode := range bucketNodes {
 			if bucketNode.markedForDeletion {
-				writeBatch.DeleteCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes())
+				//writeBatch.DeleteCF(openchainDB.StateCF,
+				db.GetDBHandle().DeleteKey(db.StateCF,
+					bucketNode.bucketKey.getEncodedBytes(), writeBatch)
 			} else {
-				writeBatch.PutCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
+
+				//dbg.Debugf("PutCF openchainDB.StateCF bucketNode <%d-%d>, numChildren<%d>",
+				//	bucketNode.bucketKey.level,
+				//	bucketNode.bucketKey.bucketNumber,
+				//	len(bucketNode.childrenCryptoHash))
+
+				//for _, hash := range bucketNode.childrenCryptoHash {
+				//	dbg.Debugf("        childrenCryptoHash<%x>", hash)
+				//}
+
+				db.GetDBHandle().PutValue(db.StateCF,
+					bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal(), writeBatch)
 			}
 		}
 	}

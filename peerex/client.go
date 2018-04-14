@@ -77,6 +77,7 @@ func (g GlobalConfig) InitGlobalWrapper(restlog bool,
 	return g.InitGlobal(restlog)
 }
 
+
 func (g GlobalConfig) InitGlobal(restlog bool) error {
 
 	if globalConfigDone {
@@ -111,10 +112,14 @@ func (g GlobalConfig) InitGlobal(restlog bool) error {
 	if restlog {
 		outputfile := viper.GetString("logging.output.file")
 		if outputfile != "" {
+
 			fpath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
 			if fpath == "" {
 				return errors.New("No filesystem path is specified but require log-to-file")
 			}
+
+			// failed to produce the log file in case of fpath not existing
+			util.MkdirIfNotExist(fpath)
 
 			if viper.GetBool("logging.output.postfix") {
 				outputfile = outputfile + string(time.Now().Format("Mon Jan 2,2006 15-04-05"))
@@ -125,9 +130,12 @@ func (g GlobalConfig) InitGlobal(restlog bool) error {
 			flogout, err := logutil.NewFileLogBackend(flog, "", 0,
 				logging.WARNING, logging.ERROR)
 
+			format := logging.MustStringFormatter("%{time:15:04:05.000} %{level:.4s} [%{pid}]%{message}")
+			formatterFileLog := logging.NewBackendFormatter(flogout, format)
+
 			if err == nil {
 				stdlogout := logutil.WrapBackend(os.Stderr, "", 0)
-				logutil.SetCustomBackends([]logging.Backend{stdlogout, flogout})
+				logutil.SetCustomBackends([]logging.Backend{stdlogout, formatterFileLog})
 			} else {
 				logutil.SetBackend(os.Stderr, "", 0)
 				logger.Error("Create file log output fail:", err)

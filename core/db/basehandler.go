@@ -55,10 +55,10 @@ type BaseHandler struct {
 }
 
 // factory method to get db handler
-func GetDataBaseHandler(dbVersion uint32) IDataBaseHandler{
+func GetDataBaseHandler() IDataBaseHandler{
 
 	var dbhandler IDataBaseHandler
-	if dbVersion == 0 {
+	if protos.CurrentDbVersion == 0 {
 		dbhandler = GetDBHandle()
 	} else {
 		dbhandler = GetGlobalDBHandle()
@@ -75,9 +75,10 @@ func GetGlobalDBHandle() *GlobalDataDB {
 }
 
 // Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Start(dbversion uint32) {
-
+func Start() {
+	dbversion := protos.CurrentDbVersion
 	dbg.Infof("Current db version=<%d>", dbversion)
+	fmt.Printf("Current db version=<%d>\n", dbversion)
 
 	if dbversion == 1 {
 		globalDataDB.open("txdb", txDbColumnfamilies)
@@ -86,9 +87,9 @@ func Start(dbversion uint32) {
 }
 
 // Stop the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Stop(dbversion uint32) {
+func Stop() {
+	dbversion := protos.CurrentDbVersion
 	originalDB.closeDBHandler()
-
 	if dbversion == 1 {
 		globalDataDB.closeDBHandler()
 	}
@@ -173,6 +174,7 @@ func (baseHandler *BaseHandler) GetValue(cfName string, key []byte) ([]byte, err
 	data := makeCopy(slice.Data())
 	return data, nil
 }
+
 
 // rw lock
 func (baseHandler *BaseHandler) PutValue(cfName string, key []byte, value []byte, wb *gorocksdb.WriteBatch) error {

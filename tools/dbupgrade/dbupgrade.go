@@ -61,8 +61,14 @@ func main() {
 		os.Exit(3)
 	}
 
-	//viper.Set("	peer.db.version", "1")
-	viper.Set("peer.fileSystemPath", dbDir)
+	key := "peer.fileSystemPath"
+	viper.Set(key, dbDir)
+	fmt.Printf("key=%s\n", viper.GetString(key))
+
+	dbVersionKey := "peer.db.version"
+	viper.Set(dbVersionKey, "1")
+	protos.CurrentDbVersion = protos.GetDbVersionFromConfig()
+	fmt.Printf("CurrentDbVersion=%d\n", protos.CurrentDbVersion)
 
 	// check that dbDir exists
 	if _, err := os.Stat(dbDir); os.IsNotExist(err) {
@@ -75,14 +81,12 @@ func main() {
 		os.Exit(5)
 	}
 
+	db.Start()
 
-	protos.CurrentDbVersion = 1
-	db.Start(protos.CurrentDbVersion)
+	orgdb := db.GetDBHandle()
+	txdb := db.GetGlobalDBHandle()
 
-	orgdb := db.GetDataBaseHandler(0)
-	txdb := db.GetDataBaseHandler(1)
-
-	defer db.Stop(protos.CurrentDbVersion)
+	defer db.Stop()
 	if mode == "r" {
 		fmt.Printf("------------------------------Before InitializeDataBase-----------------------------\n")
 	}

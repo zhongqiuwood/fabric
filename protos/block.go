@@ -22,9 +22,20 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/util"
 	//"github.com/spf13/viper"
+	"github.com/spf13/viper"
 )
 
 var CurrentDbVersion uint32
+
+func GetDbVersionFromConfig() uint32 {
+
+	currentDbVersion := uint32(1)
+	len := len(viper.GetString("peer.db.version"))
+	if len > 0 {
+		currentDbVersion = uint32(viper.GetInt("peer.db.version"))
+	}
+	return currentDbVersion
+}
 
 // NewBlock creates a new block with the specified proposer ID, list of,
 // transactions, and hash of the state calculated by calling State.GetHash()

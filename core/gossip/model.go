@@ -107,6 +107,14 @@ func (m *Model) applyUpdate(message *pb.Gossip) error {
 	return nil
 }
 
-func (m *Model) history() error {
-	return nil
+// history return map with key:=peerID
+func (m *Model) history(catalog string) (map[string]*StateVersion, error) {
+	results := map[string]*StateVersion{}
+	for id, peer := range m.store {
+		state, ok := peer.states[catalog]
+		if ok {
+			results[id] = state
+		}
+	}
+	return results, nil
 }

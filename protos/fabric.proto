@@ -123,6 +123,11 @@ service Peer {
     // other Message (e.g. from other peers).
     rpc Chat(stream Message) returns (stream Message) {}
 
+    // Request a new stream for bi-direction gossip
+    // We must sent a peerId first for merging the stream with chatting,
+    // This can't be achieve by protobuf and we had to imple it manually
+    rpc GossipIn(stream Gossip) returns (stream Gossip) {}
+
     // Process a transaction from a remote source.
     rpc ProcessTransaction(Transaction) returns (Response) {}
 
@@ -160,6 +165,36 @@ message PeersAddresses {
 message HelloMessage {
   PeerEndpoint peerEndpoint = 1;
   BlockchainInfo blockchainInfo = 2;
+}
+
+message Gossip {
+
+    message Digest{
+        message PeerState{
+            bytes state = 1;
+            uint64 num  = 2;
+            bytes signature = 5;
+        }
+/*string is used to represent peerID*/        
+        map<string, PeerState> data = 1;
+    }
+
+    message Update{
+        bytes payload = 1; 
+    }
+
+    uint64 seq = 1;
+    string catalog = 2;
+    oneof m{
+        Digest digest = 5;
+        Update update = 6;
+    }
+}
+
+message Gossip_Tx{
+    bytes state = 1;
+    uint32 num  = 2; //when version number is used for gossiping txs, 32bit is enough
+    TransactionBlock txs = 4;
 }
 
 message Message {

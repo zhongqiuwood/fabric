@@ -44,22 +44,14 @@ const (
 type ConsensusHandler struct {
 	peer.MessageHandler
 	consenterChan chan *util.Message
-	coordinator   peer.MessageHandlerCoordinator
 }
 
 // NewConsensusHandler constructs a new MessageHandler for the plugin.
 // Is instance of peer.HandlerFactory
-func NewConsensusHandler(coord peer.MessageHandlerCoordinator,
-	stream peer.ChatStream, initiatedStream bool) (peer.MessageHandler, error) {
-
-	peerHandler, err := peer.NewPeerHandler(coord, stream, initiatedStream)
-	if err != nil {
-		return nil, fmt.Errorf("Error creating PeerHandler: %s", err)
-	}
+func NewConsensusHandler(peerHandler peer.MessageHandler) peer.LegacyMessageHandler {
 
 	handler := &ConsensusHandler{
 		MessageHandler: peerHandler,
-		coordinator:    coord,
 	}
 
 	consensusQueueSize := viper.GetInt("peer.validator.consensus.buffersize")
@@ -72,7 +64,7 @@ func NewConsensusHandler(coord peer.MessageHandlerCoordinator,
 	handler.consenterChan = make(chan *util.Message, consensusQueueSize)
 	getEngineImpl().consensusFan.AddFaninChannel(handler.consenterChan)
 
-	return handler, nil
+	return handler
 }
 
 // HandleMessage handles the incoming Fabric messages for the Peer
@@ -90,10 +82,8 @@ func (handler *ConsensusHandler) HandleMessage(msg *pb.Message) error {
 			logger.Errorf("Failed to queue consensus message because: %v", err)
 			return err
 		}
+	} else {
+		return fmt.Errorf("Message type %v is not consensus, rejecting", msg.Type)
 	}
 
-	if logger.IsEnabledFor(logging.DEBUG) {
-		logger.Debugf("Did not handle message of type %s, passing on to next MessageHandler", msg.Type)
-	}
-	return handler.MessageHandler.HandleMessage(msg)
 }

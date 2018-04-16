@@ -39,8 +39,8 @@ type EngineImpl struct {
 }
 
 // GetHandlerFactory returns new NewConsensusHandler
-func (eng *EngineImpl) GetHandlerFactory() peer.HandlerFactory {
-	return NewConsensusHandler
+func (eng *EngineImpl) HandlerFactory(h peer.MessageHandler) (peer.LegacyMessageHandler, error) {
+	return NewConsensusHandler(h), nil
 }
 
 // ProcessTransactionMsg processes a Message in context of a Transaction
@@ -108,15 +108,25 @@ func getEngineImpl() *EngineImpl {
 	return engine
 }
 
+type PeerStack struct {
+	peer.Peer
+	peer.Neighbour
+}
+
 // GetEngine returns initialized peer.Engine
-func GetEngine(coord peer.MessageHandlerCoordinator) (peer.Engine, error) {
-	var err error
+func GetEngine(peer peer.Peer) (peer.Engine, error) {
+
+	coord, err := peer.GetNeighbour()
+	if err != nil {
+		return nil, err
+	}
+
 	engineOnce.Do(func() {
 		engine = new(EngineImpl)
-		engine.helper = NewHelper(coord)
+		engine.helper = NewHelper(PeerStack{peer, coord})
 		engine.consenter = controller.NewConsenter(engine.helper)
 		engine.helper.setConsenter(engine.consenter)
-		engine.peerEndpoint, err = coord.GetPeerEndpoint()
+		engine.peerEndpoint, err = peer.GetPeerEndpoint()
 		engine.consensusFan = util.NewMessageFan()
 
 		go func() {

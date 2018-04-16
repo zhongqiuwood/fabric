@@ -33,6 +33,7 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/embedded_chaincode"
+	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/rest"
@@ -145,7 +146,7 @@ func StartNode(postrun func() error) error {
 		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, helper.GetEngine)
 	} else {
 		logger.Debug("Running as non-validating peer")
-		peerServer, err = peer.NewPeerWithHandler(secHelperFunc, peer.NewPeerHandler)
+		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, nil)
 	}
 
 	if err != nil {
@@ -153,6 +154,9 @@ func StartNode(postrun func() error) error {
 
 		return err
 	}
+
+	// init services related to the peer, such as gossip
+	gossip.NewGossip(peerServer)
 
 	// Register the Peer server
 	srv_peer := func(server *grpc.Server) {

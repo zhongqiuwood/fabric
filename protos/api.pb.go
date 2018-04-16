@@ -58,6 +58,7 @@ It has these top-level messages:
 	Gossip_Tx
 	Message
 	Response
+	GlobalState
 	BlockState
 	SyncBlockRange
 	SyncBlocks

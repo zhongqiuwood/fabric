@@ -94,6 +94,7 @@ message Block {
     bytes previousBlockHash = 5;
     bytes consensusMetadata = 6;
     NonHashData nonHashData = 7;
+    repeated string txids = 8;
 }
 
 // Contains information about the blockchain ledger such as height, current
@@ -235,6 +236,14 @@ message Response {
     }
     StatusCode status = 1;
     bytes msg = 2;
+}
+
+message GlobalState{
+    uint64 count = 1;
+    repeated bytes  nextNodeStateHash = 3;
+    bytes  parentNodeStateHash = 4;
+    bytes  lastBranchNodeStateHash = 5;
+    bool   branched = 6;
 }
 
 // BlockState is the payload of Message.SYNC_BLOCK_ADDED. When a VP

@@ -25,10 +25,10 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
 	"github.com/abchain/fabric/core/ledger/statemgmt/raw"
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
+	"github.com/abchain/fabric/dbg"
+	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
-	"github.com/abchain/fabric/protos"
-	"github.com/abchain/fabric/dbg"
 	//"bytes"
 )
 
@@ -372,14 +372,13 @@ func decodeToUint64(bytes []byte) uint64 {
 	return binary.BigEndian.Uint64(bytes)
 }
 
-
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////
 // TxState structure for maintaining world state.
 // This encapsulates a particular implementation for managing the state persistence
 // This is not thread safe
 type TxState struct {
-	CurGState             *protos.GlobalState
+	CurGState *protos.GlobalState
 	//ConsensusCF           *ConsensusCF
 }
 
@@ -387,7 +386,6 @@ func NewTxState() *TxState {
 	gs := protos.NewGlobalState()
 	return &TxState{gs}
 }
-
 
 func putGlobalState(gs *protos.GlobalState, statehash []byte, wb *gorocksdb.WriteBatch) error {
 
@@ -401,7 +399,7 @@ func putGlobalState(gs *protos.GlobalState, statehash []byte, wb *gorocksdb.Writ
 		}
 	}
 
-	err := db.GetGlobalDBHandle().PutGlobalState(gs, statehash, nil)	// do NOT use writeBatch
+	err := db.GetGlobalDBHandle().PutGlobalState(gs, statehash, nil) // do NOT use writeBatch
 
 	if err != nil {
 		dbg.Errorf("Error: %s", err)
@@ -465,7 +463,6 @@ func CommitGlobalState(transactions []*protos.Transaction,
 	// set current GState
 	globalState.NextNodeStateHash = nil
 	globalState.Branched = false
-	globalState.Cached = false
 	globalState.Count = newBlockNumber
 
 	// put current gs and update parent gs(Branched & NextNodeStateHash)
@@ -481,7 +478,6 @@ func CommitGlobalState(transactions []*protos.Transaction,
 	globalState.NextNodeStateHash = nil
 	globalState.ParentNodeStateHash = stateHash
 	globalState.Branched = false
-	globalState.Cached = false
 	globalState.Count = 0
 
 	return nil

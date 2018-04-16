@@ -19,10 +19,107 @@ package protos
 import (
 	"encoding/json"
 	"fmt"
+	"hash"
 
-	"github.com/golang/protobuf/proto"
+	bin "encoding/binary"
 	"github.com/abchain/fabric/core/util"
+	"github.com/golang/protobuf/proto"
+	"golang.org/x/crypto/sha3"
 )
+
+type conWriter interface {
+	Write([]byte) conWriter
+	Error() error
+}
+
+type failConWriter struct {
+	Err error
+}
+
+func (w *failConWriter) Write([]byte) conWriter {
+	return w
+}
+
+func (w *failConWriter) Error() error {
+	return w.Err
+}
+
+type hashConWriter struct {
+	H hash.Hash
+}
+
+func (w hashConWriter) Write(p []byte) conWriter {
+	i, err := w.H.Write(p)
+
+	if err != nil {
+		return &failConWriter{err}
+	} else if i < len(p) {
+		return &failConWriter{fmt.Errorf("Write %d for %d bytes", i, len(p))}
+	} else {
+		return w
+	}
+}
+
+func (w hashConWriter) Error() error {
+	return nil
+}
+
+//taken from core/util/utils.go
+const defaultAlg = "sha3"
+
+type alg struct {
+	hashFactory func() hash.Hash
+}
+
+var availableIDgenAlgs = map[string]alg{
+	defaultAlg: alg{sha3.New256},
+}
+
+func (t *Transaction) Digest() ([]byte, error) {
+	return t.digest(sha3.New256())
+}
+
+func (t *Transaction) DigestWithAlg(customIDgenAlg string) ([]byte, error) {
+
+	if customIDgenAlg == "" {
+		customIDgenAlg = defaultAlg
+	}
+	alg, ok := availableIDgenAlgs[customIDgenAlg]
+	if ok {
+		return t.digest(alg.hashFactory())
+	} else {
+		return nil, fmt.Errorf("Wrong ID generation algorithm was given: %s", customIDgenAlg)
+	}
+
+}
+
+// Digest generate a solid digest for transaction contents,
+// It ensure a bitwise equality to txs regardless the versions or extends in future
+// and the cost should be light on both memory and computation
+func (t *Transaction) digest(h hash.Hash) ([]byte, error) {
+
+	hash := hashConWriter{h}
+
+	err := hash.Write(t.ChaincodeID).Write(t.Payload).Write(t.Metadata).Write(t.Nonce).Error()
+
+	if err != nil {
+		return nil, err
+	}
+
+	//so we do not digest the nano part in ts ...
+	err = bin.Write(hash.H, bin.BigEndian, t.Timestamp.Seconds)
+	if err != nil {
+		return nil, err
+	}
+
+	err = bin.Write(hash.H, bin.BigEndian, int32(t.ConfidentialityLevel))
+	if err != nil {
+		return nil, err
+	}
+
+	//we can add more items for tx in future
+	return hash.H.Sum(nil), nil
+}
 
 // Bytes returns this transaction as an array of bytes.
 func (transaction *Transaction) Bytes() ([]byte, error) {
@@ -43,6 +140,7 @@ func UnmarshallTransaction(transaction []byte) (*Transaction, error) {
 	}
 	return tx, nil
 }
+
 // NewTransaction creates a new transaction. It defines the function to call,
 // the chaincodeID on which the function should be called, and the arguments
 // string. The arguments could be a string of JSON, but there is no strict
@@ -101,7 +199,7 @@ func NewChaincodeDeployTransaction(chaincodeDeploymentSpec *ChaincodeDeploymentS
 }
 
 // NewChaincodeExecute is used to invoke chaincode.
-func NewChaincodeExecute(chaincodeInvocationSpec *ChaincodeInvocationSpec, uuid string, typ Transaction_Type) (*Transaction, error) {
+func NewChaincodeExecute(chaincodeInvocationSpec *ChaincodeInvocationSpec, idAlg string, typ Transaction_Type) (*Transaction, error) {
 	transaction := new(Transaction)
 	transaction.Type = typ
 	transaction.Txid = uuid

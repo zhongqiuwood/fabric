@@ -96,6 +96,15 @@ func GenerateIDfromTxSHAHash(payload []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(payload))
 }
 
+// GenerateIDfromTxSHAHash generates SHA256 hash using Tx payload
+func GenerateIDfromDigest(d []byte) string {
+	if len(d) > 32 {
+		return fmt.Sprintf("%x", d[:32])
+	} else {
+		return fmt.Sprintf("%x", d)
+	}
+}
+
 // GenerateIDWithAlg generates an ID using a custom algorithm
 func GenerateIDWithAlg(customIDgenAlg string, payload []byte) (string, error) {
 	if customIDgenAlg == "" {
@@ -142,7 +151,6 @@ func ArrayToChaincodeArgs(args []string) [][]byte {
 	}
 	return bargs
 }
-
 
 func MkdirIfNotExist(targetDir string) bool {
 	missing, err := dirMissingOrEmpty(targetDir)

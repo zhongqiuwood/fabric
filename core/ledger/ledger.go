@@ -30,10 +30,10 @@ import (
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 
-	"github.com/abchain/fabric/protos"
-	"golang.org/x/net/context"
 	"github.com/abchain/fabric/dbg"
+	"github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
+	"golang.org/x/net/context"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
@@ -590,11 +590,10 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) {
 	}
 }
 
-
 /////////////////// DB-reorganize  methods ///////////////////////////////
 //////////////////////////////////////////////////////////////////////////
 
-func InitializeDataBase(orgdb db.IDataBaseHandler, txdb db.IDataBaseHandler) bool {
+func InitializeDataBase(orgdb db.IDataBaseHandler, txdb db.IDataBaseHandler) error {
 
 	orgdbVersion, errVer := orgdb.GetValue(db.PersistCF, []byte(db.VersionKey))
 	if errVer == nil {
@@ -634,7 +633,10 @@ func InitializeDataBase(orgdb db.IDataBaseHandler, txdb db.IDataBaseHandler) boo
 	if err != nil {
 		return false
 	}
-	orgdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.OriginalDataBaseVersion), nil)
+	err = orgdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.OriginalDataBaseVersion), nil)
+	if err != nil {
+		return false
+	}
 
 	return true
 }

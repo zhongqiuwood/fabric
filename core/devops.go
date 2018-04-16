@@ -231,6 +231,7 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	var generr error
 	if invoke {
 		if customIDgenAlg != "" {
+
 			ctorbytes, merr := asn1.Marshal(*chaincodeInvocationSpec.ChaincodeSpec.CtorMsg)
 			if merr != nil {
 				return nil, fmt.Errorf("Error marshalling constructor: %s", merr)

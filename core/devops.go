@@ -227,25 +227,10 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 
 	// Now create the Transactions message and send to Peer.
 	var customIDgenAlg = strings.ToLower(chaincodeInvocationSpec.IdGenerationAlg)
-	var id string
-	var generr error
-	if invoke {
-		if customIDgenAlg != "" {
 
-			ctorbytes, merr := asn1.Marshal(*chaincodeInvocationSpec.ChaincodeSpec.CtorMsg)
-			if merr != nil {
-				return nil, fmt.Errorf("Error marshalling constructor: %s", merr)
-			}
-			id, generr = util.GenerateIDWithAlg(customIDgenAlg, ctorbytes)
-			if generr != nil {
-				return nil, generr
-			}
-		} else {
-			id = util.GenerateUUID()
-		}
-	} else {
-		id = util.GenerateUUID()
-	}
+	// We generate a temporary id for used in work process and update it with
+	// the tx's content
+	id := util.GenerateUUID()
 	devopsLogger.Infof("Transaction ID: %v", id)
 	var transaction *pb.Transaction
 	var err error
@@ -267,6 +252,27 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	if err != nil {
 		return nil, err
 	}
+
+	if invoke {
+		var digest []byte
+		if customIDgenAlg != "" {
+			digest, err = transaction.DigestWithAlg(customIDgenAlg)
+		} else {
+			digest, err = transaction.Digest()
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		//truncate the digest which is too long
+		if len(digest) > 32 {
+			digest = digest[:32]
+		}
+		transaction.Txid = fmt.Sprintf("%x", digest)
+		devopsLogger.Debugf("Invocation transaction id updated to (%s) from (%s)", transaction.Txid, id)
+	}
+
 	if devopsLogger.IsEnabledFor(logging.DEBUG) {
 		devopsLogger.Debugf("Sending invocation transaction (%s) to validator", transaction.Txid)
 	}

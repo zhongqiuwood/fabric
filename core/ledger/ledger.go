@@ -599,44 +599,41 @@ func InitializeDataBase(orgdb db.IDataBaseHandler, txdb db.IDataBaseHandler) err
 	if errVer == nil {
 		if orgdbVersion != nil {
 			ver := db.DecodeToUint64(orgdbVersion)
-			dbg.Infof("Original DB version: %d. No action required.", ver)
-			return false
+			return fmt.Errorf("Original DB version: %d. No action required.", ver)
 		} else {
 			// ok, this is the v0 db that expected to be reorganized
 			dbg.Infof("No original DB version detected, start to reorganize original DB and produce txdb.")
 		}
 	} else {
 		dbg.ChkErr(errVer)
-		return false
+		return errVer
 	}
 
 	_, err := orgdb.MoveColumnFamily(db.PersistCF, txdb, db.PersistCF, true)
 
 	if err != nil {
-		dbg.ChkErr(err)
-		return false
+		return err
 	}
 
 	bc, errBlockchain := newBlockchain(0)
 	if errBlockchain != nil {
-		return false
+		return errBlockchain
 	}
 
 	err = bc.reorganize()
 
 	if err != nil {
-		dbg.ChkErr(err)
-		return false
+		return err
 	}
 
 	err = txdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.GlobalDataBaseVersion), nil)
 	if err != nil {
-		return false
+		return err
 	}
 	err = orgdb.PutValue(db.PersistCF, []byte(db.VersionKey), db.EncodeUint64(db.OriginalDataBaseVersion), nil)
 	if err != nil {
-		return false
+		return err
 	}
 
-	return true
+	return nil
 }

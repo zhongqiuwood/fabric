@@ -90,7 +90,6 @@ func (t *Transaction) DigestWithAlg(customIDgenAlg string) ([]byte, error) {
 	} else {
 		return nil, fmt.Errorf("Wrong ID generation algorithm was given: %s", customIDgenAlg)
 	}
-
 }
 
 // Digest generate a solid digest for transaction contents,
@@ -199,7 +198,7 @@ func NewChaincodeDeployTransaction(chaincodeDeploymentSpec *ChaincodeDeploymentS
 }
 
 // NewChaincodeExecute is used to invoke chaincode.
-func NewChaincodeExecute(chaincodeInvocationSpec *ChaincodeInvocationSpec, idAlg string, typ Transaction_Type) (*Transaction, error) {
+func NewChaincodeExecute(chaincodeInvocationSpec *ChaincodeInvocationSpec, uuid string, typ Transaction_Type) (*Transaction, error) {
 	transaction := new(Transaction)
 	transaction.Type = typ
 	transaction.Txid = uuid

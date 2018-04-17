@@ -2,6 +2,7 @@ package logging
 
 import (
 	"bufio"
+	flog "github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
 	"io"
 	"log"
@@ -9,8 +10,21 @@ import (
 	"sync"
 )
 
+var (
+	defBackend logging.LeveledBackend
+)
+
+func applyBackends(f logging.Formatter, b logging.Backend) logging.LeveledBackend {
+	fb := logging.NewBackendFormatter(backend, format)
+	return logging.AddModuleLevel(fb)
+}
+
 func InitLogger(module string) *logging.Logger {
-	return logging.MustGetLogger(module)
+
+	logger := logging.MustGetLogger(module)
+	logger.SetBackend(flog.DefaultBackend)
+
+	return logger
 }
 
 func SetLogFormat(format string) error {
@@ -20,30 +34,19 @@ func SetLogFormat(format string) error {
 		return err
 	}
 
-	logging.DefaultFormatter = f
+	if defBackend == nil {
+		defBackend = flog.DefaultBackend
+	}
+
+	defBackend = applyBackends()
+	DefaultFormatter = f
 
 	return nil
 }
 
+//deprecated, do nothing
 func SetBackend(w io.Writer, prefix string, flag int) {
 
-	backend := logging.NewLogBackend(w, prefix, flag)
-
-	backendFormatter := logging.NewBackendFormatter(backend, logging.DefaultFormatter)
-
-	logging.SetBackend(backendFormatter)
-}
-
-func SetCustomBackends(backend []logging.Backend) {
-
-	backendFormatters := make([]logging.Backend, 0, len(backend))
-
-	for _, be := range backend {
-		backendFormatters = append(backendFormatters,
-			logging.NewBackendFormatter(be, logging.DefaultFormatter))
-	}
-
-	logging.SetBackend(backendFormatters...)
 }
 
 func WrapBackend(w io.Writer, prefix string, flag int) logging.Backend {

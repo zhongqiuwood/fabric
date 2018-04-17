@@ -88,7 +88,7 @@ func DefaultLoggingLevel() logging.Level {
 }
 
 var (
-	DefaultBackend moduleLeveled
+	DefaultBackend *moduleLeveled
 )
 
 // Initiate 'leveled' logging to stderr.
@@ -98,9 +98,12 @@ func init() {
 		"%{color}%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}",
 	)
 
-	DefaultBackend.Backend = logging.NewLogBackend(os.Stderr, "", 0)
+	DefaultBackend = &moduleLeveled{
+		levels:  make(map[string]logging.Level),
+		Backend: logging.NewLogBackend(os.Stderr, "", 0),
+	}
 	DefaultBackend.SetLevel(loggingDefaultLevel, "")
 
-	logging.SetBackend(ApplyFormatter(&DefaultBackend, format))
+	logging.SetBackend(ApplyFormatter(DefaultBackend, format))
 
 }

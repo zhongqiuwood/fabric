@@ -34,6 +34,7 @@ func TestMain(m *testing.M) {
 func TestGetDBPathEmptyPath(t *testing.T) {
 	originalSetting := viper.GetString("peer.fileSystemPath")
 	viper.Set("peer.fileSystemPath", "")
+	viper.Set("peer.db.version", "0")
 	defer func() {
 		x := recover()
 		if x == nil {
@@ -55,6 +56,7 @@ func TestStartDB_DirDoesNotExist(t *testing.T) {
 			t.Fatalf("Failed to open DB: %s", r)
 		}
 	}()
+	viper.Set("peer.db.version", "0")
 	Start()
 }
 
@@ -67,15 +69,17 @@ func TestStartDB_NonEmptyDirExists(t *testing.T) {
 			t.Fatalf("dbPath is already exists. DB open should throw error")
 		}
 	}()
+	viper.Set("peer.db.version", "0")
 	Start()
 }
 
 func TestWriteAndRead(t *testing.T) {
 	deleteTestDBPath()
+	viper.Set("peer.db.version", "0")
 	Start()
 	defer deleteTestDBPath()
 	defer Stop()
-	performBasicReadWrite(openchainDB, t)
+	performBasicReadWrite(originalDB, t)
 }
 
 // This test verifies that when a new column family is added to the DB
@@ -83,6 +87,7 @@ func TestWriteAndRead(t *testing.T) {
 func TestDBColumnUpgrade(t *testing.T) {
 	deleteTestDBPath()
 	Start()
+	viper.Set("peer.db.version", "0")
 	Stop()
 
 	oldcfs := columnfamilies
@@ -98,6 +103,7 @@ func TestDBColumnUpgrade(t *testing.T) {
 			t.Fatalf("Error re-opening DB with upgraded columnFamilies")
 		}
 	}()
+	viper.Set("peer.db.version", "0")
 	Start()
 }
 
@@ -106,10 +112,10 @@ func TestDeleteState(t *testing.T) {
 	testDBWrapper.CleanDB(t)
 	openchainDB := GetDBHandle()
 	defer testDBWrapper.cleanup()
-	openchainDB.Put(openchainDB.StateCF, []byte("key1"), []byte("value1"))
-	openchainDB.Put(openchainDB.StateDeltaCF, []byte("key2"), []byte("value2"))
-	openchainDB.DeleteState()
-	value1, err := openchainDB.GetFromStateCF([]byte("key1"))
+	openchainDB.PutValue(StateCF, []byte("key1"), []byte("value1"), nil)
+	openchainDB.PutValue(StateDeltaCF, []byte("key2"), []byte("value2"), nil)
+	openchainDB.DeleteDbState()
+	value1, err := openchainDB.GetValue(StateCF, []byte("key1"))
 	if err != nil {
 		t.Fatalf("Error getting in value: %s", err)
 	}
@@ -117,7 +123,7 @@ func TestDeleteState(t *testing.T) {
 		t.Fatalf("A nil value expected. Found [%s]", value1)
 	}
 
-	value2, err := openchainDB.GetFromStateCF([]byte("key2"))
+	value2, err := openchainDB.GetValue(StateCF, []byte("key2"))
 	if err != nil {
 		t.Fatalf("Error getting in value: %s", err)
 	}
@@ -133,21 +139,21 @@ func TestDBSnapshot(t *testing.T) {
 	defer testDBWrapper.cleanup()
 
 	// write key-values
-	openchainDB.Put(openchainDB.BlockchainCF, []byte("key1"), []byte("value1"))
-	openchainDB.Put(openchainDB.BlockchainCF, []byte("key2"), []byte("value2"))
+	openchainDB.PutValue(BlockchainCF, []byte("key1"), []byte("value1"), nil)
+	openchainDB.PutValue(BlockchainCF, []byte("key2"), []byte("value2"), nil)
 
 	// create a snapshot
 	snapshot := openchainDB.GetSnapshot()
 
 	// add/delete/modify key-values
-	openchainDB.Delete(openchainDB.BlockchainCF, []byte("key1"))
-	openchainDB.Put(openchainDB.BlockchainCF, []byte("key2"), []byte("value2_new"))
-	openchainDB.Put(openchainDB.BlockchainCF, []byte("key3"), []byte("value3"))
+	openchainDB.DeleteKey(BlockchainCF, []byte("key1"), nil)
+	openchainDB.PutValue(BlockchainCF, []byte("key2"), []byte("value2_new"), nil)
+	openchainDB.PutValue(BlockchainCF, []byte("key3"), []byte("value3"), nil)
 
 	// test key-values from latest data in db
-	v1, _ := openchainDB.GetFromBlockchainCF([]byte("key1"))
-	v2, _ := openchainDB.GetFromBlockchainCF([]byte("key2"))
-	v3, _ := openchainDB.GetFromBlockchainCF([]byte("key3"))
+	v1, _ := openchainDB.GetValue(BlockchainCF, []byte("key1"))
+	v2, _ := openchainDB.GetValue(BlockchainCF, []byte("key2"))
+	v3, _ := openchainDB.GetValue(BlockchainCF, []byte("key3"))
 	if !bytes.Equal(v1, nil) {
 		t.Fatalf("Expected value from db is 'nil', found [%s]", v1)
 	}
@@ -186,16 +192,16 @@ func TestDBIteratorAndSnapshotIterator(t *testing.T) {
 	defer testDBWrapper.cleanup()
 
 	// write key-values
-	openchainDB.Put(openchainDB.StateCF, []byte("key1"), []byte("value1"))
-	openchainDB.Put(openchainDB.StateCF, []byte("key2"), []byte("value2"))
+	openchainDB.PutValue(StateCF, []byte("key1"), []byte("value1"), nil)
+	openchainDB.PutValue(StateCF, []byte("key2"), []byte("value2"), nil)
 
 	// create a snapshot
 	snapshot := openchainDB.GetSnapshot()
 
 	// add/delete/modify key-values
-	openchainDB.Delete(openchainDB.StateCF, []byte("key1"))
-	openchainDB.Put(openchainDB.StateCF, []byte("key2"), []byte("value2_new"))
-	openchainDB.Put(openchainDB.StateCF, []byte("key3"), []byte("value3"))
+	openchainDB.DeleteKey(StateCF, []byte("key1"), nil)
+	openchainDB.PutValue(StateCF, []byte("key2"), []byte("value2_new"), nil)
+	openchainDB.PutValue(StateCF, []byte("key3"), []byte("value3"), nil)
 
 	// test snapshot iterator
 	itr := openchainDB.GetStateCFSnapshotIterator(snapshot)
@@ -203,19 +209,19 @@ func TestDBIteratorAndSnapshotIterator(t *testing.T) {
 	testIterator(t, itr, map[string][]byte{"key1": []byte("value1"), "key2": []byte("value2")})
 
 	// test iterator over latest data in stateCF
-	itr = openchainDB.GetStateCFIterator()
+	itr = openchainDB.GetIterator(StateCF)
 	defer itr.Close()
 	testIterator(t, itr, map[string][]byte{"key2": []byte("value2_new"), "key3": []byte("value3")})
 
-	openchainDB.Put(openchainDB.StateDeltaCF, []byte("key4"), []byte("value4"))
-	openchainDB.Put(openchainDB.StateDeltaCF, []byte("key5"), []byte("value5"))
-	itr = openchainDB.GetStateDeltaCFIterator()
+	openchainDB.PutValue(StateDeltaCF, []byte("key4"), []byte("value4"), nil)
+	openchainDB.PutValue(StateDeltaCF, []byte("key5"), []byte("value5"), nil)
+	itr = openchainDB.GetIterator(StateDeltaCF)
 	defer itr.Close()
 	testIterator(t, itr, map[string][]byte{"key4": []byte("value4"), "key5": []byte("value5")})
 
-	openchainDB.Put(openchainDB.BlockchainCF, []byte("key6"), []byte("value6"))
-	openchainDB.Put(openchainDB.BlockchainCF, []byte("key7"), []byte("value7"))
-	itr = openchainDB.GetBlockchainCFIterator()
+	openchainDB.PutValue(BlockchainCF, []byte("key6"), []byte("value6"), nil)
+	openchainDB.PutValue(BlockchainCF, []byte("key7"), []byte("value7"), nil)
+	itr = openchainDB.GetIterator(BlockchainCF)
 	defer itr.Close()
 	testIterator(t, itr, map[string][]byte{"key6": []byte("value6"), "key7": []byte("value7")})
 }
@@ -265,15 +271,15 @@ func performBasicReadWrite(openchainDB *OpenchainDB, t *testing.T) {
 	defer opt.Destroy()
 	writeBatch := gorocksdb.NewWriteBatch()
 	defer writeBatch.Destroy()
-	writeBatch.PutCF(openchainDB.BlockchainCF, []byte("dummyKey"), []byte("dummyValue"))
-	writeBatch.PutCF(openchainDB.StateCF, []byte("dummyKey1"), []byte("dummyValue1"))
-	writeBatch.PutCF(openchainDB.StateDeltaCF, []byte("dummyKey2"), []byte("dummyValue2"))
-	writeBatch.PutCF(openchainDB.IndexesCF, []byte("dummyKey3"), []byte("dummyValue3"))
-	err := openchainDB.DB.Write(opt, writeBatch)
+	originalDB.PutValue(BlockchainCF, []byte("dummyKey"), []byte("dummyValue"), writeBatch)
+	originalDB.PutValue(StateCF, []byte("dummyKey1"), []byte("dummyValue1"), writeBatch)
+	originalDB.PutValue(StateDeltaCF, []byte("dummyKey2"), []byte("dummyValue2"), writeBatch)
+	originalDB.PutValue(IndexesCF, []byte("dummyKey3"), []byte("dummyValue3"), writeBatch)
+	err := originalDB.BatchCommit(opt, writeBatch)
 	if err != nil {
 		t.Fatalf("Error while writing to db: %s", err)
 	}
-	value, err := openchainDB.GetFromBlockchainCF([]byte("dummyKey"))
+	value, err := openchainDB.GetValue(BlockchainCF, []byte("dummyKey"))
 	if err != nil {
 		t.Fatalf("read error = [%s]", err)
 	}
@@ -281,7 +287,7 @@ func performBasicReadWrite(openchainDB *OpenchainDB, t *testing.T) {
 		t.Fatalf("read error. Bytes not equal. Expected [%s], found [%s]", "dummyValue", value)
 	}
 
-	value, err = openchainDB.GetFromStateCF([]byte("dummyKey1"))
+	value, err = openchainDB.GetValue(StateCF, []byte("dummyKey1"))
 	if err != nil {
 		t.Fatalf("read error = [%s]", err)
 	}
@@ -289,7 +295,7 @@ func performBasicReadWrite(openchainDB *OpenchainDB, t *testing.T) {
 		t.Fatalf("read error. Bytes not equal. Expected [%s], found [%s]", "dummyValue1", value)
 	}
 
-	value, err = openchainDB.GetFromStateDeltaCF([]byte("dummyKey2"))
+	value, err = openchainDB.GetValue(StateDeltaCF, []byte("dummyKey2"))
 	if err != nil {
 		t.Fatalf("read error = [%s]", err)
 	}
@@ -297,7 +303,7 @@ func performBasicReadWrite(openchainDB *OpenchainDB, t *testing.T) {
 		t.Fatalf("read error. Bytes not equal. Expected [%s], found [%s]", "dummyValue2", value)
 	}
 
-	value, err = openchainDB.GetFromIndexesCF([]byte("dummyKey3"))
+	value, err = openchainDB.GetValue(IndexesCF, []byte("dummyKey3"))
 	if err != nil {
 		t.Fatalf("read error = [%s]", err)
 	}
@@ -307,49 +313,49 @@ func performBasicReadWrite(openchainDB *OpenchainDB, t *testing.T) {
 }
 
 
-
-func (txdb *GlobalDataDB) DumpGlobalState() {
-	itr := txdb.GetIterator(GlobalCF)
-	defer itr.Close()
-
-	idx := 0
-	itr.SeekToFirst()
-
-	hashGSMap := make(map[string]*protos.GlobalState)
-	var genesis *protos.GlobalState
-
-	for ; itr.Valid(); itr.Next() {
-		k := itr.Key()
-		v := itr.Value()
-		keyBytes := k.Data()
-		idx++
-
-		gs, _:= protos.UnmarshallGS(v.Data())
-		hashGSMap[dbg.Byte2string(keyBytes)] = gs
-
-		if gs.Count == 0 {
-			genesis = gs
-		}
-		k.Free()
-		v.Free()
-	}
-
-	cur := genesis
-	sh := cur.ParentNodeStateHash
-	sh = nil
-	for {
-		dbg.Infof("%d, <%x>", cur.Count, xxx(sh, 3))
-		//dbg.Infof("%d, <%x>, <%x>-------|", cur.Count, xxx(sh, 3), xxx(sh, 3))
-
-		if cur.NextNodeStateHash != nil {
-			key := cur.NextNodeStateHash[0]
-			cur = hashGSMap[dbg.Byte2string(key)]
-			sh = key
-		} else {
-			break
-		}
-	}
-}
+//
+//func (txdb *GlobalDataDB) DumpGlobalState() {
+//	itr := txdb.GetIterator(GlobalCF)
+//	defer itr.Close()
+//
+//	idx := 0
+//	itr.SeekToFirst()
+//
+//	hashGSMap := make(map[string]*protos.GlobalState)
+//	var genesis *protos.GlobalState
+//
+//	for ; itr.Valid(); itr.Next() {
+//		k := itr.Key()
+//		v := itr.Value()
+//		keyBytes := k.Data()
+//		idx++
+//
+//		gs, _:= protos.UnmarshallGS(v.Data())
+//		hashGSMap[dbg.Byte2string(keyBytes)] = gs
+//
+//		if gs.Count == 0 {
+//			genesis = gs
+//		}
+//		k.Free()
+//		v.Free()
+//	}
+//
+//	cur := genesis
+//	sh := cur.ParentNodeStateHash
+//	sh = nil
+//	for {
+//		dbg.Infof("%d, <%x>", cur.Count, xxx(sh, 3))
+//		//dbg.Infof("%d, <%x>, <%x>-------|", cur.Count, xxx(sh, 3), xxx(sh, 3))
+//
+//		if cur.NextNodeStateHash != nil {
+//			key := cur.NextNodeStateHash[0]
+//			cur = hashGSMap[dbg.Byte2string(key)]
+//			sh = key
+//		} else {
+//			break
+//		}
+//	}
+//}
 
 func xxx(bkey []byte, num int)  []byte {
 

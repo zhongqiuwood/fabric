@@ -1,26 +1,27 @@
 package db
 
 import (
+	"github.com/spf13/viper"
+	"github.com/abchain/fabric/core/util"
+	"github.com/tecbot/gorocksdb"
+
+	"github.com/abchain/fabric/protos"
 	"encoding/binary"
 	"fmt"
-	"github.com/abchain/fabric/core/util"
-	"github.com/abchain/fabric/protos"
-	"github.com/spf13/viper"
-	"github.com/tecbot/gorocksdb"
 	"sync"
 )
 
 // cf in txdb
-const TxCF = "txCF"
-const GlobalCF = "globalCF"
-const ConsensusCF = "consensusCF"
-const PersistCF = "persistCF"
+const TxCF         = "txCF"
+const GlobalCF     = "globalCF"
+const ConsensusCF  = "consensusCF"
+const PersistCF    = "persistCF"
 
 // cf in db
 const BlockchainCF = "blockchainCF"
-const StateCF = "stateCF"
+const StateCF      = "stateCF"
 const StateDeltaCF = "stateDeltaCF"
-const IndexesCF = "indexesCF"
+const IndexesCF    = "indexesCF"
 
 var BlockCountKey = []byte("blockCount")
 var VersionKey = []byte("ya_fabric_db_version")
@@ -54,10 +55,10 @@ type BaseHandler struct {
 }
 
 // factory method to get db handler
-func GetDataBaseHandler(dbVersion uint32) IDataBaseHandler {
+func GetDataBaseHandler() IDataBaseHandler{
 
 	var dbhandler IDataBaseHandler
-	if dbVersion == 0 {
+	if protos.CurrentDbVersion == 0 {
 		dbhandler = GetDBHandle()
 	} else {
 		dbhandler = GetGlobalDBHandle()
@@ -74,8 +75,8 @@ func GetGlobalDBHandle() *GlobalDataDB {
 }
 
 // Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Start(dbversion uint32) {
-
+func Start() {
+	dbversion := protos.CurrentDbVersion
 	dbLogger.Infof("Current db version=<%d>", dbversion)
 
 	if dbversion == 1 {
@@ -85,7 +86,8 @@ func Start(dbversion uint32) {
 }
 
 // Stop the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Stop(dbversion uint32) {
+func Stop() {
+	dbversion := protos.CurrentDbVersion
 	originalDB.closeDBHandler()
 
 	if dbversion == 1 {

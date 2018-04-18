@@ -25,7 +25,7 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
 	"github.com/abchain/fabric/core/ledger/statemgmt/raw"
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
-	"github.com/abchain/fabric/dbg"
+	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
@@ -402,7 +402,7 @@ func putGlobalState(gs *protos.GlobalState, statehash []byte, wb *gorocksdb.Writ
 	err := db.GetGlobalDBHandle().PutGlobalState(gs, statehash, nil) // do NOT use writeBatch
 
 	if err != nil {
-		dbg.Errorf("Error: %s", err)
+		logger.Errorf("[%s] Error: %s", flogging.GoRDef, err)
 	}
 
 	if gs.ParentNodeStateHash == nil {
@@ -469,8 +469,8 @@ func CommitGlobalState(transactions []*protos.Transaction,
 	putGlobalState(globalState, stateHash, wb)
 	dbErr := db.GetGlobalDBHandle().BatchCommit(opt, wb)
 
-	dbg.ChkErr(dbErr)
 	if dbErr != nil {
+		logger.Errorf("[%s] Error: %s", flogging.GoRDef, dbErr)
 		return dbErr
 	}
 

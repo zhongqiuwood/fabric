@@ -80,6 +80,7 @@ func LoggingInit(command string) {
 	// Set the default logging level for all modules
 	logging.SetLevel(defaultLevel, "")
 	loggingLogger.Debugf("Setting default logging level to %s for command '%s'", defaultLevel, command)
+
 }
 
 // DefaultLoggingLevel returns the fallback value for loggers to use if parsing fails
@@ -88,7 +89,7 @@ func DefaultLoggingLevel() logging.Level {
 }
 
 var (
-	DefaultBackend *moduleLeveled
+	DefaultBackend *ModuleLeveled
 )
 
 // Initiate 'leveled' logging to stderr.
@@ -98,12 +99,13 @@ func init() {
 		"%{color}%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}",
 	)
 
-	DefaultBackend = &moduleLeveled{
-		levels:  make(map[string]logging.Level),
-		Backend: logging.NewLogBackend(os.Stderr, "", 0),
+	DefaultBackend = &ModuleLeveled{
+		levels: make(map[string]logging.Level),
+		Backend: logging.NewBackendFormatter(
+			logging.NewLogBackend(os.Stderr, "", 0), format),
 	}
 	DefaultBackend.SetLevel(loggingDefaultLevel, "")
 
-	logging.SetBackend(ApplyFormatter(DefaultBackend, format))
+	logging.SetBackend(DefaultBackend)
 
 }

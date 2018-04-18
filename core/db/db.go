@@ -17,15 +17,15 @@ limitations under the License.
 package db
 
 import (
-
+	flog "github.com/abchain/fabric/flogging"
+	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 	"os"
-	"github.com/abchain/fabric/dbg"
-	"github.com/abchain/fabric/protos"
 )
 
 var dbLogger = logging.MustGetLogger("db")
+var printGID = flog.GoRDef
 var rocksDBLogLevelMap = map[string]gorocksdb.InfoLogLevel{
 	"debug": gorocksdb.DebugInfoLogLevel,
 	"info":  gorocksdb.InfoInfoLogLevel,
@@ -46,6 +46,7 @@ type OpenchainDB struct {
 }
 
 var originalDB = createOriginalDB()
+
 func createOriginalDB() *OpenchainDB {
 	db := &OpenchainDB{}
 	db.cfMap = make(map[string]*gorocksdb.ColumnFamilyHandle)
@@ -59,7 +60,6 @@ func (openchainDB *OpenchainDB) open(dbname string, cf []string) {
 	cfhandlers := openchainDB.opendb(dbPath, cf)
 	openchainDB.feedCfHandlers(cfhandlers)
 }
-
 
 func (openchainDB *OpenchainDB) feedCfHandlers(cfHandlers []*gorocksdb.ColumnFamilyHandle) {
 	openchainDB.cfMap[BlockchainCF] = cfHandlers[1]
@@ -94,16 +94,16 @@ func (openchainDB *OpenchainDB) ReleaseSnapshot(snapshot *gorocksdb.Snapshot) {
 func (openchainDB *OpenchainDB) DumpGlobalState() {
 }
 
-
 func (openchainDB *OpenchainDB) OpenCheckPoint(dbName string, blockNumber uint64, statehash string) error {
 	openchainDB.closeDBHandler()
 	targetDir := getDBPath(dbName)
 	err := os.RemoveAll(targetDir)
-	dbg.ChkErr(err)
 	if err == nil {
 		openchainDB.produceDbByCheckPoint(dbName, blockNumber, statehash, columnfamilies)
 		openchainDB.closeDBHandler()
 		openchainDB.open(dbName, columnfamilies)
+	} else {
+		dbLogger.Errorf("[%s] Error: %s", printGID, err)
 	}
 	return err
 }
@@ -137,7 +137,6 @@ func (openchainDB *OpenchainDB) DeleteDbState() error {
 	return nil
 }
 
-
 //func (orgdb *OpenchainDB) getTxids(blockNumber uint64) []string {
 //
 //	block, err := orgdb.FetchBlockFromDB(blockNumber, false)
@@ -154,10 +153,9 @@ func (openchainDB *OpenchainDB) DeleteDbState() error {
 //	return block.Txids
 //}
 
-
 func (orgdb *OpenchainDB) FetchBlockFromDB(blockNumber uint64, dbversion uint32) (*protos.Block, error) {
 
-	blockBytes, err := orgdb.GetValue(BlockchainCF,	EncodeBlockNumberDBKey(blockNumber))
+	blockBytes, err := orgdb.GetValue(BlockchainCF, EncodeBlockNumberDBKey(blockNumber))
 	if err != nil {
 
 		return nil, err

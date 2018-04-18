@@ -19,12 +19,11 @@ package ledger
 import (
 	"fmt"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
-	//"github.com/abchain/fabric/dbg"
 )
 
 var indexLogger = logging.MustGetLogger("indexes")
@@ -80,7 +79,7 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 	indexLogger.Debugf("Indexing block number [%d] by hash = [%x]", blockNumber, blockHash)
 
 	//dbg.Infof("IndexesCF add:  hash [%x] --> blocknumber [%d] ", blockHash, blockNumber)
-	db.GetDBHandle().PutValue(db.IndexesCF,	encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber), writeBatch)
+	db.GetDBHandle().PutValue(db.IndexesCF, encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber), writeBatch)
 
 	addressToTxIndexesMap := make(map[string][]uint64)
 	addressToChaincodeIDsMap := make(map[string][]*protos.ChaincodeID)

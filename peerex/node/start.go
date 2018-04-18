@@ -3,12 +3,11 @@ package node
 import (
 	"fmt"
 	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/peer/node"
 	"github.com/abchain/fabric/peerex"
 	"github.com/spf13/viper"
 	"runtime"
-	"github.com/abchain/fabric/flogging"
-	"github.com/abchain/fabric/dbg"
 )
 
 type NodeConfig struct {
@@ -23,7 +22,6 @@ func RunNode(cfg *NodeConfig) {
 		LogRole: "node",
 	}
 
-	dbg.Init()
 	err := peerConfig.InitGlobalWrapper(true, cfg.Settings)
 
 	if err != nil {

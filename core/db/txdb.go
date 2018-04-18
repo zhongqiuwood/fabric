@@ -17,11 +17,10 @@ limitations under the License.
 package db
 
 import (
+	"bytes"
+	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
-	"github.com/abchain/fabric/protos"
-	"github.com/abchain/fabric/dbg"
-	"bytes"
 )
 
 var txdbLogger = logging.MustGetLogger("txdb")
@@ -58,7 +57,7 @@ func (txdb *GlobalDataDB) open(dbname string, cf []string) {
 	txdb.feedCfHandlers(cfhandlers)
 }
 
-func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState{
+func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 
 	var gs *protos.GlobalState
 	gs = nil
@@ -69,7 +68,6 @@ func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState{
 
 	return gs
 }
-
 
 func (txdb *GlobalDataDB) AddChildNode4GlobalState(parentStateHash []byte, statehash []byte, wb *gorocksdb.WriteBatch) [][]byte {
 
@@ -104,12 +102,12 @@ func (txdb *GlobalDataDB) AddChildNode4GlobalState(parentStateHash []byte, state
 		res = parentGS.NextNodeStateHash
 	}
 
-	dbg.Infof("gsInDB: len(parentGS.NextNodeStateHash)<%d>, <%+v>",
-		len(parentGS.NextNodeStateHash), parentGS)
+	dbLogger.Infof("[%s] gsInDB: len(parentGS.NextNodeStateHash)<%d>, <%+v>",
+		printGID, len(parentGS.NextNodeStateHash), parentGS)
 
 	err := txdb.PutGlobalState(parentGS, parentStateHash, wb)
 	if err != nil {
-		dbg.Errorf("Error: %s", err)
+		dbLogger.Errorf("[%s] Error: %s", printGID, err)
 	}
 
 	return res
@@ -125,12 +123,12 @@ func (txdb *GlobalDataDB) PutGlobalState(gs *protos.GlobalState, statehash []byt
 	}
 
 	data, _ := gs.Bytes()
-	dbg.Infof("statehash<%x>: gs<%+v>, gs.Bytes<%x>", statehash, gs, data)
+	dbLogger.Infof("[%s] statehash<%x>: gs<%+v>, gs.Bytes<%x>", printGID, statehash, gs, data)
 	txdb.PutValue(GlobalCF, statehash, data, wb)
-	return  nil
+	return nil
 }
 
-func (txdb *GlobalDataDB) getTransactionFromDB(txids []string) []*protos.Transaction  {
+func (txdb *GlobalDataDB) getTransactionFromDB(txids []string) []*protos.Transaction {
 
 	if txids == nil {
 		return nil
@@ -144,20 +142,20 @@ func (txdb *GlobalDataDB) getTransactionFromDB(txids []string) []*protos.Transac
 		txInByte, err := txdb.GetValue(TxCF, []byte(id))
 
 		if err != nil {
-			dbg.ChkErr(err)
+			dbLogger.Errorf("[%s] Error: %s", printGID, err)
 			txs = nil
 			break
 		}
 
 		if txInByte == nil {
-			dbg.DumpStack()
+			dbLogger.Errorf("[%s] Empty txInByte", printGID)
 			break
 		}
 		var tx *protos.Transaction
 		tx, err = protos.UnmarshallTransaction(txInByte)
 
 		if err != nil {
-			dbg.ChkErr(err)
+			dbLogger.Errorf("[%s] Error: %s", printGID, err)
 			txs = nil
 			break
 		}
@@ -182,18 +180,17 @@ func (txdb *GlobalDataDB) DumpGlobalState() {
 		keyBytes := k.Data()
 		idx++
 
-		gs, _:= protos.UnmarshallGS(v.Data())
+		gs, _ := protos.UnmarshallGS(v.Data())
 
-		dbg.Infof("%d: statehash<%x>", gs.Count, keyBytes)
-		dbg.Infof("	  branched<%t>", gs.Branched)
-		dbg.Infof("	  parent<%x>", gs.ParentNodeStateHash)
-		dbg.Infof("	  lastBranch<%x>", gs.LastBranchNodeStateHash)
-		dbg.Infof("	  childNum<%d>:", len(gs.NextNodeStateHash))
+		dbLogger.Infof("%d: statehash<%x>", gs.Count, keyBytes)
+		dbLogger.Infof("	  branched<%t>", gs.Branched)
+		dbLogger.Infof("	  parent<%x>", gs.ParentNodeStateHash)
+		dbLogger.Infof("	  lastBranch<%x>", gs.LastBranchNodeStateHash)
+		dbLogger.Infof("	  childNum<%d>:", len(gs.NextNodeStateHash))
 		for _, c := range gs.NextNodeStateHash {
-			dbg.Infof("        <%x>", c)
+			dbLogger.Infof("        <%x>", c)
 		}
 		k.Free()
 		v.Free()
 	}
 }
-

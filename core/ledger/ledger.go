@@ -30,13 +30,14 @@ import (
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 
-	"github.com/abchain/fabric/dbg"
+	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
+var printGID = flogging.GoRDef
 
 //ErrorType represents the type of a ledger error
 type ErrorType string
@@ -235,7 +236,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 
 	docp := viper.GetBool("peer.db.perBlockPerCheckpoint")
 	if protos.CurrentDbVersion == 1 && docp {
-		stringHash := dbg.Byte2string(stateHash)
+		stringHash := fmt.Sprintf("%x", stateHash)
 		if stringHash == "" && newBlockNumber == 0 {
 			stringHash = "0"
 		}
@@ -602,10 +603,10 @@ func InitializeDataBase(orgdb db.IDataBaseHandler, txdb db.IDataBaseHandler) err
 			return fmt.Errorf("Original DB version: %d. No action required.", ver)
 		} else {
 			// ok, this is the v0 db that expected to be reorganized
-			dbg.Infof("No original DB version detected, start to reorganize original DB and produce txdb.")
+			ledgerLogger.Infof("No original DB version detected, start to reorganize original DB and produce txdb.")
 		}
 	} else {
-		dbg.ChkErr(errVer)
+		ledgerLogger.Error("Init DB fail", errVer)
 		return errVer
 	}
 

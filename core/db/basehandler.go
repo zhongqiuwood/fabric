@@ -1,27 +1,26 @@
 package db
 
 import (
-	"github.com/spf13/viper"
-	"github.com/abchain/fabric/core/util"
-	"github.com/tecbot/gorocksdb"
-	"github.com/abchain/fabric/dbg"
-	"github.com/abchain/fabric/protos"
 	"encoding/binary"
 	"fmt"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/protos"
+	"github.com/spf13/viper"
+	"github.com/tecbot/gorocksdb"
 	"sync"
 )
 
 // cf in txdb
-const TxCF         = "txCF"
-const GlobalCF     = "globalCF"
-const ConsensusCF  = "consensusCF"
-const PersistCF    = "persistCF"
+const TxCF = "txCF"
+const GlobalCF = "globalCF"
+const ConsensusCF = "consensusCF"
+const PersistCF = "persistCF"
 
 // cf in db
 const BlockchainCF = "blockchainCF"
-const StateCF      = "stateCF"
+const StateCF = "stateCF"
 const StateDeltaCF = "stateDeltaCF"
-const IndexesCF    = "indexesCF"
+const IndexesCF = "indexesCF"
 
 var BlockCountKey = []byte("blockCount")
 var VersionKey = []byte("ya_fabric_db_version")
@@ -48,14 +47,14 @@ type IDataBaseHandler interface {
 
 // base class of db handler and txdb handler
 type BaseHandler struct {
-	dbName      string
-	dbHandler  *gorocksdb.DB
-	cfMap		map[string]*gorocksdb.ColumnFamilyHandle
-	lock        sync.RWMutex
+	dbName    string
+	dbHandler *gorocksdb.DB
+	cfMap     map[string]*gorocksdb.ColumnFamilyHandle
+	lock      sync.RWMutex
 }
 
 // factory method to get db handler
-func GetDataBaseHandler(dbVersion uint32) IDataBaseHandler{
+func GetDataBaseHandler(dbVersion uint32) IDataBaseHandler {
 
 	var dbhandler IDataBaseHandler
 	if dbVersion == 0 {
@@ -77,7 +76,7 @@ func GetGlobalDBHandle() *GlobalDataDB {
 // Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
 func Start(dbversion uint32) {
 
-	dbg.Infof("Current db version=<%d>", dbversion)
+	dbLogger.Infof("Current db version=<%d>", dbversion)
 
 	if dbversion == 1 {
 		globalDataDB.open("txdb", txDbColumnfamilies)
@@ -116,13 +115,13 @@ func (bashHandler *BaseHandler) PutTransactions(txs []*protos.Transaction,
 
 	for _, tx := range txs {
 		data, _ := tx.Bytes()
-		dbg.Infof("<%s><%x>", tx.Txid, data)
+		dbLogger.Debugf("[%s] <%s><%x>", printGID, tx.Txid, data)
 		bashHandler.PutValue(cfname, []byte(tx.Txid), data, wb)
 	}
 	var dbErr error
 	if opt != nil {
 		dbErr = bashHandler.BatchCommit(opt, wb)
-		dbg.ChkErr(dbErr)
+		dbLogger.Errorf("[%s] Error: %s", printGID, dbErr)
 	}
 	return dbErr
 }
@@ -136,8 +135,6 @@ func (bashHandler *BaseHandler) GetIterator(cfName string) *gorocksdb.Iterator {
 	defer opt.Destroy()
 	return bashHandler.dbHandler.NewIteratorCF(opt, cf)
 }
-
-
 
 //////////////////////////////////////////////////////////////////////////
 // rw lock,  write KVs into db
@@ -165,8 +162,8 @@ func (baseHandler *BaseHandler) GetValue(cfName string, key []byte) ([]byte, err
 
 	defer slice.Free()
 	if slice.Data() == nil {
-		dbLogger.Errorf("No such value for column family<%s.%s>, key<%s>, key<%x>, key<%s>.",
-			baseHandler.dbName,	cfName, string(key), key, dbg.Byte2string(key))
+		dbLogger.Errorf("No such value for column family<%s.%s>, key<%s>[%x].",
+			baseHandler.dbName, cfName, string(key), key)
 		return nil, nil
 	}
 
@@ -215,6 +212,7 @@ func (baseHandler *BaseHandler) DeleteKey(cfName string, key []byte, wb *gorocks
 
 	return err
 }
+
 // rw lock
 //////////////////////////////////////////////////////////////////////////
 
@@ -274,7 +272,7 @@ func (openchainDB *BaseHandler) opendb(dbPath string, cf []string) []*gorocksdb.
 
 	db, cfHandlers, err := gorocksdb.OpenDbColumnFamilies(opts, dbPath, cfNames, cfOpts)
 
-	dbg.Infof("gorocksdb.OpenDbColumnFamilies<%s>, len cfHandlers<%d>", dbPath, len(cfHandlers))
+	dbLogger.Infof("gorocksdb.OpenDbColumnFamilies<%s>, len cfHandlers<%d>", dbPath, len(cfHandlers))
 
 	if err != nil {
 		panic(fmt.Sprintf("Error opening DB: %s", err))
@@ -282,7 +280,6 @@ func (openchainDB *BaseHandler) opendb(dbPath string, cf []string) []*gorocksdb.
 	openchainDB.dbHandler = db
 	return cfHandlers
 }
-
 
 func (baseHandler *BaseHandler) produceDbByCheckPoint(dbName string, blockNumber uint64, statehash string, cf []string) error {
 	cpPath := baseHandler.getCheckpointPath(baseHandler.dbName, blockNumber, statehash)
@@ -309,15 +306,15 @@ func (openchainDB *BaseHandler) createCheckpoint(cpPath string) error {
 	sourceDB := openchainDB.dbHandler
 	checkpoint, err := sourceDB.NewCheckpoint()
 	if err != nil {
-		dbg.Errorf("NewCheckpoint Error: %s", err)
+		dbLogger.Errorf("[%s] NewCheckpoint Error: %s", printGID, err)
 		return err
 	}
 	defer checkpoint.Destroy()
 	err = checkpoint.CreateCheckpoint(cpPath, 0)
 	if err != nil {
-		dbg.Errorf("Failed to produce checkpoint: %s, <%s>", err.Error(), cpPath)
+		dbLogger.Errorf("[%s] Failed to produce checkpoint: %s, <%s>", printGID, err, cpPath)
 	} else {
-		dbg.Infof("Produced checkpoint successfully: %s", cpPath)
+		dbLogger.Infof("[%s] Produced checkpoint successfully: %s", printGID, cpPath)
 	}
 	return err
 }
@@ -335,7 +332,10 @@ func (srcDb *BaseHandler) MoveColumnFamily(srcname string, dstDb IDataBaseHandle
 		k := itr.Key()
 		v := itr.Value()
 		err = dstDb.PutValue(dstname, k.Data(), v.Data(), nil)
-		dbg.ChkErr(err)
+
+		if err != nil {
+			dbLogger.Error("Put value fail", err)
+		}
 
 		if rmSrcCf {
 			srcDb.DeleteKey(srcname, k.Data(), nil)
@@ -350,11 +350,11 @@ func (srcDb *BaseHandler) MoveColumnFamily(srcname string, dstDb IDataBaseHandle
 
 	itr.Close()
 
-	dbg.Infof("Moved %d KVs from %s.%s to %s.%s",
+	dbLogger.Infof("Moved %d KVs from %s.%s to %s.%s",
 		totalKVs, srcDb.dbName, srcname, dstDb.GetDbName(), dstname)
 
 	if err != nil {
-		dbg.Errorf("An error happened during moving: %s", err)
+		dbLogger.Errorf("An error happened during moving: %s", err)
 	}
 
 	return totalKVs, err
@@ -420,4 +420,3 @@ func EncodeUint64(number uint64) []byte {
 func DecodeToUint64(bytes []byte) uint64 {
 	return binary.BigEndian.Uint64(bytes)
 }
-

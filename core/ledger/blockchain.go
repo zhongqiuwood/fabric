@@ -21,22 +21,21 @@ import (
 	"strconv"
 
 	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
 	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
-	"github.com/abchain/fabric/dbg"
-	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 )
 
 // Blockchain holds basic information in memory. Operations on Blockchain are not thread-safe
 // TODO synchronize access to in-memory variables
 type blockchain struct {
-	size               uint64
-	previousBlockHash  []byte
-	previousBlockStateHash  []byte
-	indexer            blockchainIndexer
-	lastProcessedBlock *lastProcessedBlock
+	size                   uint64
+	previousBlockHash      []byte
+	previousBlockStateHash []byte
+	indexer                blockchainIndexer
+	lastProcessedBlock     *lastProcessedBlock
 }
 
 type lastProcessedBlock struct {
@@ -55,7 +54,7 @@ func newBlockchain(currentDbVersion uint32) (*blockchain, error) {
 	blockchain := &blockchain{0, nil, nil, nil, nil}
 	blockchain.size = size
 	if size > 0 {
-		previousBlock, err := db.GetDBHandle().FetchBlockFromDB(size - 1, currentDbVersion)
+		previousBlock, err := db.GetDBHandle().FetchBlockFromDB(size-1, currentDbVersion)
 		if err != nil {
 			return nil, err
 		}
@@ -120,7 +119,7 @@ func (blockchain *blockchain) reorganize() error {
 			}
 
 			err = db.GetDBHandle().DeleteKey(db.IndexesCF, encodeBlockHashKey(blockHashV0), nil)
-			dbg.Infof("%d: DeleteKey in <%s>: <%x>. err: %s", i, db.IndexesCF, encodeBlockHashKey(blockHashV0), err)
+			ledgerLogger.Infof("%d: DeleteKey in <%s>: <%x>. err: %s", i, db.IndexesCF, encodeBlockHashKey(blockHashV0), err)
 		}
 
 		block.FeedTranscationIds()
@@ -128,7 +127,7 @@ func (blockchain *blockchain) reorganize() error {
 		state.CommitGlobalState(block.Transactions, block.StateHash, i, gs)
 
 		if block.Transactions == nil {
-			dbg.Infof("%d: block.Transactions == nil", i)
+			ledgerLogger.Infof("%d: block.Transactions == nil", i)
 			continue
 		}
 
@@ -201,7 +200,7 @@ func (blockchain *blockchain) getTransaction(blockNumber uint64, txIndex uint64)
 		return nil, err
 	}
 
-	dbg.Infof("tx[%+v], txIndex[%d]", transactions, txIndex)
+	ledgerLogger.Debugf("[%s] tx[%+v], txIndex[%d]", printGID, transactions, txIndex)
 	return transactions[txIndex], nil
 }
 
@@ -372,7 +371,6 @@ func (blockchain *blockchain) String() string {
 	return buffer.String()
 }
 
-
 func (blockchain *blockchain) Dump(level int) {
 
 	size := blockchain.getSize()
@@ -380,7 +378,7 @@ func (blockchain *blockchain) Dump(level int) {
 		return
 	}
 
-	dbg.Log(level, "========================blockchain height: %d=============================", size  - 1)
+	ledgerLogger.Infof("========================blockchain height: %d=============================", size-1)
 
 	for i := uint64(0); i < size; i++ {
 		block, blockErr := blockchain.getBlock(i)
@@ -389,13 +387,13 @@ func (blockchain *blockchain) Dump(level int) {
 		}
 		curBlockHash, _ := block.GetHash()
 
-		dbg.Log(level, "high[%s]: \n" +
-			"	StateHash<%x>, \n" +
-			"	Transactions<%x>, \n" +
-			"	curBlockHash<%x> \n" +
-			"	prevBlockHash<%x>, \n" +
-			"	ConsensusMetadata<%x>, \n" +
-			"	timp<%+v>, \n" +
+		ledgerLogger.Infof("high[%s]: \n"+
+			"	StateHash<%x>, \n"+
+			"	Transactions<%x>, \n"+
+			"	curBlockHash<%x> \n"+
+			"	prevBlockHash<%x>, \n"+
+			"	ConsensusMetadata<%x>, \n"+
+			"	timp<%+v>, \n"+
 			"	NonHashData<%+v>",
 			strconv.FormatUint(i, 10),
 			block.StateHash,
@@ -406,5 +404,5 @@ func (blockchain *blockchain) Dump(level int) {
 			block.Timestamp,
 			block.NonHashData)
 	}
-	dbg.Log(level, "==========================================================================")
+	ledgerLogger.Info("==========================================================================")
 }

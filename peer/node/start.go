@@ -40,6 +40,7 @@ import (
 	"github.com/abchain/fabric/core/service"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/events/producer"
+	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -69,6 +70,17 @@ var nodeStartCmd = &cobra.Command{
 }
 
 func StartNode(postrun func() error) error {
+
+	fpath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
+	if fpath != "" {
+		util.MkdirIfNotExist(fpath)
+		err := flogging.LoggingFileInit(fpath)
+
+		if err != nil {
+			logger.Warning("Could not open file for log")
+		}
+	}
+
 	// Parameter overrides must be processed before any paramaters are
 	// cached. Failures to cache cause the server to terminate immediately.
 	if chaincodeDevMode {
@@ -108,8 +120,7 @@ func StartNode(postrun func() error) error {
 		logger.Infof("Privacy enabled status: false")
 	}
 
-	if err := writePid(util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))+"peer.pid",
-		os.Getpid()); err != nil {
+	if err := writePid(fpath+"peer.pid", os.Getpid()); err != nil {
 		return err
 	}
 

@@ -2,19 +2,16 @@ package peerex
 
 import (
 	"bufio"
-	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
-	"time"
 
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/flogging"
-	logutil "github.com/abchain/fabric/peerex/logging"
 )
 
 var logger = logging.MustGetLogger("clientcore")
@@ -67,18 +64,17 @@ func (_ *GlobalConfig) InitFinished() bool {
 	return globalConfigDone
 }
 
-func (g GlobalConfig) InitGlobalWrapper(restlog bool,
+func (g GlobalConfig) InitGlobalWrapper(resetlog bool,
 	defaultViperSetting map[string]interface{}) error {
 
 	for k, v := range defaultViperSetting {
 		viper.SetDefault(k, v)
 	}
 
-	return g.InitGlobal(restlog)
+	return g.InitGlobal(resetlog)
 }
 
-
-func (g GlobalConfig) InitGlobal(restlog bool) error {
+func (g GlobalConfig) InitGlobal(resetlog bool) error {
 
 	if globalConfigDone {
 		logger.Info("Global initiazation has done ...")
@@ -109,39 +105,9 @@ func (g GlobalConfig) InitGlobal(restlog bool) error {
 		return err
 	}
 
-	if restlog {
-		outputfile := viper.GetString("logging.output.file")
-		if outputfile != "" {
-
-			fpath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
-			if fpath == "" {
-				return errors.New("No filesystem path is specified but require log-to-file")
-			}
-
-			// failed to produce the log file in case of fpath not existing
-			util.MkdirIfNotExist(fpath)
-
-			if viper.GetBool("logging.output.postfix") {
-				outputfile = outputfile + string(time.Now().Format("Mon Jan 2,2006 15-04-05"))
-			}
-
-			flog := filepath.Join(fpath, outputfile)
-
-			flogout, err := logutil.NewFileLogBackend(flog, "", 0,
-				logging.WARNING, logging.ERROR)
-
-			format := logging.MustStringFormatter("%{time:15:04:05.000} %{level:.4s} [%{pid}]%{message}")
-			formatterFileLog := logging.NewBackendFormatter(flogout, format)
-
-			if err == nil {
-				stdlogout := logutil.WrapBackend(os.Stderr, "", 0)
-				logutil.SetCustomBackends([]logging.Backend{stdlogout, formatterFileLog})
-			} else {
-				logutil.SetBackend(os.Stderr, "", 0)
-				logger.Error("Create file log output fail:", err)
-			}
-		}
-
+	fpath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
+	if fpath != "" {
+		util.MkdirIfNotExist(fpath)
 	}
 
 	if g.LogRole == "" {
@@ -149,6 +115,13 @@ func (g GlobalConfig) InitGlobal(restlog bool) error {
 	}
 
 	flogging.LoggingInit(g.LogRole)
+
+	if resetlog {
+		err = flogging.LoggingFileInit(fpath)
+		if err != nil {
+			logger.Warning("Could not output log to file:", err)
+		}
+	}
 
 	globalConfigDone = true
 	logger.Info("Global init done ...")

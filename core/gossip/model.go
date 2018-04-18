@@ -9,7 +9,7 @@ import (
 // StateVersion struct
 type StateVersion struct {
 	known  bool
-	hash   []byte
+	hash   string
 	number uint64
 }
 
@@ -88,7 +88,7 @@ func (m *Model) applyUpdate(message *pb.Gossip) error {
 			continue
 		}
 		peer, ok := m.store[id]
-		remote := &StateVersion{hash: state.State, number: state.Num}
+		remote := &StateVersion{hash: string(state.State[:len(state.State)]), number: state.Num}
 		if m.crypto != nil && !m.crypto.Verify(id, message.Catalog, state) {
 			continue
 		}
@@ -107,6 +107,18 @@ func (m *Model) applyUpdate(message *pb.Gossip) error {
 	return nil
 }
 
+func (m *Model) updateSelf(catalog string, statehash string) {
+	if state, ok := m.self.states[catalog]; ok {
+		if state.hash == statehash {
+			state.number++
+		} else {
+			m.self.states[catalog] = &StateVersion{known: true, hash: statehash, number: 1}
+		}
+	} else {
+		m.self.states[catalog] = &StateVersion{known: true, hash: statehash, number: 1}
+	}
+}
+
 // history return map with key:=peerID
 func (m *Model) history(catalog string) (map[string]*StateVersion, error) {
 	results := map[string]*StateVersion{}
@@ -115,6 +127,9 @@ func (m *Model) history(catalog string) (map[string]*StateVersion, error) {
 		if ok {
 			results[id] = state
 		}
+	}
+	if state, ok := m.self.states[catalog]; ok {
+		results[m.self.id] = state
 	}
 	return results, nil
 }

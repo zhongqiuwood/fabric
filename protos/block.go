@@ -17,25 +17,11 @@ limitations under the License.
 package protos
 
 import (
+	"encoding/binary"
 	"fmt"
-
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/util"
-	//"github.com/spf13/viper"
-	"github.com/spf13/viper"
+	"github.com/golang/protobuf/proto"
 )
-
-var CurrentDbVersion uint32
-
-func GetDbVersionFromConfig() uint32 {
-
-	currentDbVersion := uint32(1)
-	len := len(viper.GetString("peer.db.version"))
-	if len > 0 {
-		currentDbVersion = uint32(viper.GetInt("peer.db.version"))
-	}
-	return currentDbVersion
-}
 
 // NewBlock creates a new block with the specified proposer ID, list of,
 // transactions, and hash of the state calculated by calling State.GetHash()
@@ -59,72 +45,88 @@ func (block *Block) GetBlockBytes() ([]byte, error) {
 
 	transactions := block.Transactions
 
-	if CurrentDbVersion == 1 {
+	// only persist transcations in legacy db
+	if block.Version > 0 {
 		block.Transactions = nil
+	} else {
+		block.Txids = nil
 	}
-	// do NOT persist transcations in db of v1
+
 	data, err := proto.Marshal(block)
 
 	block.Transactions = transactions
 	if err != nil {
-		logger.Errorf("Error marshalling block: %s", err)
 		return nil, fmt.Errorf("Could not marshal block: %s", err)
 	}
 	return data, nil
 }
 
-
-// Bytes returns this block with Transactions as an array of bytes.
-func (block *Block) GetBlockBytesV0() ([]byte, error) {
-	// do NOT persist transcations in db of v1
-	data, err := proto.Marshal(block)
-
-	if err != nil {
-		logger.Errorf("Error marshalling block: %s", err)
-		return nil, fmt.Errorf("Could not marshal block: %s", err)
-	}
-	return data, nil
-}
+const (
+	DefaultBlockVersion = 1
+)
 
 // NewBlock creates a new Block given the input parameters.
 func NewBlock(transactions []*Transaction, metadata []byte) *Block {
+	return NewBlockV(DefaultBlockVersion, transactions, metadata)
+}
+
+// NewBlock creates a new Block given the input parameters.
+func NewBlockV(ver uint32, transactions []*Transaction, metadata []byte) *Block {
 	block := new(Block)
 	block.Transactions = transactions
 	block.ConsensusMetadata = metadata
 
-	block.FeedTranscationIds()
+	block.Version = ver
+	block.feedTranscationIds()
 	return block
 }
 
 // GetHash returns the hash of this block.
 func (block *Block) GetHash() ([]byte, error) {
 
-	// copy the block and remove the non-hash data
-	blockBytes, err := block.GetBlockBytes()
-	if err != nil {
-		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
+	switch block.Version {
+	case 0:
+		return block.legacyHash()
+	case 1:
+		return block.hashV1()
+	default:
+		return nil, fmt.Errorf("No implement for version", block.Version)
 	}
-	blockCopy, err := UnmarshallBlock(blockBytes)
-	if err != nil {
-		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
-	}
-	blockCopy.NonHashData = nil
-
-	// Hash the block
-	data, err := proto.Marshal(blockCopy)
-	if err != nil {
-		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
-	}
-	hash := util.ComputeCryptoHash(data)
-	return hash, nil
 }
 
+func (block *Block) hashV1() ([]byte, error) {
 
-// GetHash returns the hash of this block.
-func (block *Block) GetHashV0() ([]byte, error) {
+	h := util.DefaultCryptoHash()
+
+	err := binary.Write(h, binary.BigEndian, block.Version)
+	if err != nil {
+		return nil, err
+	}
+
+	hw := util.NewHashWriter(h)
+
+	err = hw.Write(block.StateHash).Write(
+		block.PreviousBlockHash).Write(block.ConsensusMetadata).Error()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, txid := range block.Txids {
+		err = hw.Write([]byte(txid)).Error()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return h.Sum(nil), nil
+
+}
+
+// returns the hash of this block by the legacy way
+func (block *Block) legacyHash() ([]byte, error) {
 
 	// copy the block and remove the non-hash data
-	blockBytes, err := block.GetBlockBytesV0()
+	blockBytes, err := block.GetBlockBytes()
 	if err != nil {
 		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
 	}
@@ -164,18 +166,19 @@ func UnmarshallBlock(blockBytes []byte) (*Block, error) {
 		logger.Errorf("Error unmarshalling block: %s", err)
 		return nil, fmt.Errorf("Could not unmarshal block: %s", err)
 	}
+
+	block.feedTranscationIds()
+
 	return block, nil
 }
 
+// If block is load from legacy bytes, update the txid field
+func (block *Block) feedTranscationIds() {
 
-func (block *Block) FeedTranscationIds() {
-
-	if CurrentDbVersion == 1 && block.Txids == nil {
+	if block.Version == 0 && block.Txids == nil {
 		block.Txids = make([]string, len(block.Transactions))
-		idx := 0
-		for _, tx := range block.Transactions {
-			block.Txids[idx] = tx.Txid
-			idx++
+		for i, tx := range block.Transactions {
+			block.Txids[i] = tx.Txid
 		}
 	}
 }

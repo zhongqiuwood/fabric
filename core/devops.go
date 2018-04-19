@@ -265,11 +265,7 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 			return nil, err
 		}
 
-		//truncate the digest which is too long
-		if len(digest) > 32 {
-			digest = digest[:32]
-		}
-		transaction.Txid = fmt.Sprintf("%x", digest)
+		transaction.Txid = util.TxidFromDigest(digest)
 		devopsLogger.Debugf("Invocation transaction id updated to (%s) from (%s)", transaction.Txid, id)
 	}
 

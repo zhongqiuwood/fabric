@@ -27,6 +27,7 @@ import (
 
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"golang.org/x/crypto/sha3"
+	"hash"
 	"os"
 	"path"
 )
@@ -35,10 +36,33 @@ type alg struct {
 	hashFun func([]byte) string
 }
 
-const defaultAlg = "sha256"
+type algFactory func() hash.Hash
+
+const defaultAlg = "sha3"
 
 var availableIDgenAlgs = map[string]alg{
 	defaultAlg: alg{GenerateIDfromTxSHAHash},
+}
+
+var availableHashAlgs = map[string]algFactory{
+	defaultAlg: sha3.New256,
+	"sha256":   sha256.New,
+}
+
+func DefaultCryptoHash() hash.Hash {
+	return availableHashAlgs[defaultAlg]()
+}
+
+func CryptoHashByAlg(alg string) hash.Hash {
+	if alg == "" {
+		return DefaultCryptoHash()
+	}
+	factory, ok := availableHashAlgs[alg]
+	if ok {
+		return factory()
+	} else {
+		return nil
+	}
 }
 
 // ComputeCryptoHash should be used in openchain code so that we can change the actual algo used for crypto-hash at one place
@@ -91,7 +115,7 @@ func GenerateHashFromSignature(path string, args []byte) []byte {
 	return ComputeCryptoHash(args)
 }
 
-// GenerateIDfromTxSHAHash generates SHA256 hash using Tx payload
+// Deprecated: GenerateIDfromTxSHAHash generates SHA256 hash using Tx payload
 func GenerateIDfromTxSHAHash(payload []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(payload))
 }

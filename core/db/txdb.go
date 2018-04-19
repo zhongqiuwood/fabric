@@ -50,10 +50,8 @@ func (txdb *GlobalDataDB) feedCfHandlers(cfHandlers []*gorocksdb.ColumnFamilyHan
 	txdb.cfMap[PersistCF] = cfHandlers[4]
 }
 
-func (txdb *GlobalDataDB) open(dbname string, cf []string) {
-	dbPath := getDBPath(dbname)
-	txdb.dbName = dbname
-	cfhandlers := txdb.opendb(dbPath, cf)
+func (txdb *GlobalDataDB) open(dbpath string) {
+	cfhandlers := txdb.opendb(dbPath, txDbColumnfamilies)
 	txdb.feedCfHandlers(cfhandlers)
 }
 

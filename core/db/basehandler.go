@@ -1,33 +1,37 @@
 package db
 
 import (
-	"github.com/spf13/viper"
 	"github.com/abchain/fabric/core/util"
+	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
-
-	"github.com/abchain/fabric/protos"
 	"encoding/binary"
+	"path/filepath"
 	"fmt"
-	"sync"
+	"github.com/abchain/fabric/protos"
 )
 
 // cf in txdb
-const TxCF         = "txCF"
-const GlobalCF     = "globalCF"
-const ConsensusCF  = "consensusCF"
-const PersistCF    = "persistCF"
+const TxCF = "txCF"
+const GlobalCF = "globalCF"
+const ConsensusCF = "consensusCF"
+const PersistCF = "persistCF"
 
 // cf in db
 const BlockchainCF = "blockchainCF"
-const StateCF      = "stateCF"
+const StateCF = "stateCF"
 const StateDeltaCF = "stateDeltaCF"
-const IndexesCF    = "indexesCF"
+const IndexesCF = "indexesCF"
+const StateIndCF = "stateIndexCF"
 
 var BlockCountKey = []byte("blockCount")
 var VersionKey = []byte("ya_fabric_db_version")
 
 const OriginalDataBaseVersion = 1
 const GlobalDataBaseVersion = 1
+const (
+	//the maxium of long-run rocksdb interfaces can be open at the same time
+	maxOpenedExtend = 128
+)
 
 type IDataBaseHandler interface {
 
@@ -47,15 +51,15 @@ type IDataBaseHandler interface {
 }
 
 // base class of db handler and txdb handler
-type BaseHandler struct {
-	dbName    string
-	dbHandler *gorocksdb.DB
-	cfMap     map[string]*gorocksdb.ColumnFamilyHandle
-	lock      sync.RWMutex
+type baseHandler struct {
+	OpenOpt   *gorocksdb.Options
+	cfMap  	  map[string]*gorocksdb.ColumnFamilyHandle
+	db 		  *gorocksdb.DB
+	extendedLock chan int	//use a channel as locking for opening extend interface
 }
 
 // factory method to get db handler
-func GetDataBaseHandler() IDataBaseHandler{
+func GetDataBaseHandler() IDataBaseHandler {
 
 	var dbhandler IDataBaseHandler
 	if protos.CurrentDbVersion == 0 {
@@ -75,170 +79,20 @@ func GetGlobalDBHandle() *GlobalDataDB {
 }
 
 // Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Start() {
-	dbversion := protos.CurrentDbVersion
+func Start() error{
+
+	dbVersion := GlobalDataBaseVersion
+
+	if viper.IsSet("peer.db.version") {
+		//forced db version
+		dbVersion = viper.GetInt("peer.db.version")
+		if dbVersion > GlobalDataBaseVersion{
+			return fmt.Errorf("Specified wrong version for database :d", dbVersion)
+		}
+	}
+
 	dbLogger.Infof("Current db version=<%d>", dbversion)
 
-	if dbversion == 1 {
-		globalDataDB.open("txdb", txDbColumnfamilies)
-	}
-	originalDB.open("db", columnfamilies)
-}
-
-// Stop the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Stop() {
-	dbversion := protos.CurrentDbVersion
-	originalDB.closeDBHandler()
-
-	if dbversion == 1 {
-		globalDataDB.closeDBHandler()
-	}
-}
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-// method exposed by IDataBaseHandler interface
-func (baseHandler *BaseHandler) GetDbName() string {
-	return baseHandler.dbName
-}
-
-func (bashHandler *BaseHandler) PutTransactions(txs []*protos.Transaction,
-	cfname string, wb *gorocksdb.WriteBatch) error {
-
-	var opt *gorocksdb.WriteOptions
-	opt = nil
-	if wb == nil {
-		wb = gorocksdb.NewWriteBatch()
-		defer wb.Destroy()
-
-		opt = gorocksdb.NewDefaultWriteOptions()
-		defer opt.Destroy()
-	}
-
-	for _, tx := range txs {
-		data, _ := tx.Bytes()
-		dbLogger.Debugf("[%s] <%s><%x>", printGID, tx.Txid, data)
-		bashHandler.PutValue(cfname, []byte(tx.Txid), data, wb)
-	}
-	var dbErr error
-	if opt != nil {
-		dbErr = bashHandler.BatchCommit(opt, wb)
-		dbLogger.Errorf("[%s] Error: %s", printGID, dbErr)
-	}
-	return dbErr
-}
-
-// GetIterator returns an iterator for the given column family
-func (bashHandler *BaseHandler) GetIterator(cfName string) *gorocksdb.Iterator {
-	cf := bashHandler.getCFByName(cfName)
-
-	opt := gorocksdb.NewDefaultReadOptions()
-	opt.SetFillCache(true)
-	defer opt.Destroy()
-	return bashHandler.dbHandler.NewIteratorCF(opt, cf)
-}
-
-//////////////////////////////////////////////////////////////////////////
-// rw lock,  write KVs into db
-func (baseHandler *BaseHandler) BatchCommit(opts *gorocksdb.WriteOptions, writeBatch *gorocksdb.WriteBatch) error {
-	baseHandler.lock.Lock()
-	defer baseHandler.lock.Unlock()
-	return baseHandler.dbHandler.Write(opts, writeBatch)
-}
-
-// rw lock
-func (baseHandler *BaseHandler) GetValue(cfName string, key []byte) ([]byte, error) {
-	cf := baseHandler.getCFByName(cfName)
-
-	opt := gorocksdb.NewDefaultReadOptions()
-	defer opt.Destroy()
-
-	baseHandler.lock.RLock()
-	slice, err := baseHandler.dbHandler.GetCF(opt, cf, key)
-	baseHandler.lock.RUnlock()
-
-	if err != nil {
-		dbLogger.Errorf("Error while trying to retrieve key: %s", key)
-		return nil, err
-	}
-
-	defer slice.Free()
-	if slice.Data() == nil {
-		dbLogger.Errorf("No such value for column family<%s.%s>, key<%s>[%x].",
-			baseHandler.dbName, cfName, string(key), key)
-		return nil, nil
-	}
-
-	data := makeCopy(slice.Data())
-	return data, nil
-}
-
-// rw lock
-func (baseHandler *BaseHandler) PutValue(cfName string, key []byte, value []byte, wb *gorocksdb.WriteBatch) error {
-	cf := baseHandler.getCFByName(cfName)
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-
-	var err error
-	if wb != nil {
-		wb.PutCF(cf, key, value)
-	} else {
-		baseHandler.lock.Lock()
-		defer baseHandler.lock.Unlock()
-		err = baseHandler.dbHandler.PutCF(opt, cf, key, value)
-		if err != nil {
-			dbLogger.Errorf("Error while trying to write key: %s", key)
-		}
-	}
-
-	return err
-}
-
-// rw lock
-func (baseHandler *BaseHandler) DeleteKey(cfName string, key []byte, wb *gorocksdb.WriteBatch) error {
-	cf := baseHandler.getCFByName(cfName)
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-
-	var err error
-	if wb != nil {
-		wb.DeleteCF(cf, key)
-	} else {
-		baseHandler.lock.Lock()
-		defer baseHandler.lock.Unlock()
-		err = baseHandler.dbHandler.DeleteCF(opt, cf, key)
-		if err != nil {
-			dbLogger.Errorf("Error while trying to delete key: %s", key)
-		}
-	}
-
-	return err
-}
-
-// rw lock
-//////////////////////////////////////////////////////////////////////////
-
-// method exposed by IDataBaseHandler interface end
-////////////////////////////////////////////////////////////////////////////////
-
-func (baseHandler *BaseHandler) getCFByName(cfName string) *gorocksdb.ColumnFamilyHandle {
-	return baseHandler.cfMap[cfName]
-}
-
-func (baseHandler *BaseHandler) closeDBHandler() {
-	for _, cf := range baseHandler.cfMap {
-		if cf != nil {
-			cf.Destroy()
-		}
-	}
-	baseHandler.cfMap = make(map[string]*gorocksdb.ColumnFamilyHandle)
-	baseHandler.dbHandler.Close()
-}
-
-// Open open underlying rocksdb
-func (openchainDB *BaseHandler) opendb(dbPath string, cf []string) []*gorocksdb.ColumnFamilyHandle {
-
-	missing := util.MkdirIfNotExist(dbPath)
 	opts := gorocksdb.NewDefaultOptions()
 	defer opts.Destroy()
 
@@ -265,6 +119,219 @@ func (openchainDB *BaseHandler) opendb(dbPath string, cf []string) []*gorocksdb.
 	opts.SetCreateIfMissing(missing)
 	opts.SetCreateIfMissingColumnFamilies(true)
 
+	if dbversion != 0 {
+		globalDataDB.OpenOpt = opts
+		defer globalDataDB.OpenOpt = nil		
+		err := globalDataDB.open(getDBPath("txdb"), txDbColumnfamilies)
+		if err != nil{
+			return err
+		}
+	}
+
+	originalDB.OpenOpt = opts
+	defer originalDB.OpenOpt = nil
+
+	//TODO: custom maxOpenedExtend
+	originalDB.extendedLock = make(chan int, maxOpenedExtend)
+
+	err := originalDB.open(getDBPath("txdb"), columnfamilies)
+	if err != nil{
+		return err
+	}
+
+	return err
+}
+
+// Stop the db. Note this method has no guarantee correct behavior concurrent invocation.
+func Stop() {
+	originalDB.close()
+
+	if globalDataDB.dbHandler != nil {
+		globalDataDB.close()
+	}
+}
+
+////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
+// method exposed by IDataBaseHandler interface
+
+// func (bashHandler *BaseHandler) PutTransactions(txs []*protos.Transaction,
+// 	cfname string, wb *gorocksdb.WriteBatch) error {
+
+// 	var opt *gorocksdb.WriteOptions
+// 	opt = nil
+// 	if wb == nil {
+// 		wb = gorocksdb.NewWriteBatch()
+// 		defer wb.Destroy()
+
+// 		opt = gorocksdb.NewDefaultWriteOptions()
+// 		defer opt.Destroy()
+// 	}
+
+// 	for _, tx := range txs {
+// 		data, _ := tx.Bytes()
+// 		dbLogger.Debugf("[%s] <%s><%x>", printGID, tx.Txid, data)
+// 		bashHandler.PutValue(cfname, []byte(tx.Txid), data, wb)
+// 	}
+// 	var dbErr error
+// 	if opt != nil {
+// 		dbErr = bashHandler.BatchCommit(opt, wb)
+// 		dbLogger.Errorf("[%s] Error: %s", printGID, dbErr)
+// 	}
+// 	return dbErr
+// }
+
+func (h *baseHandler) get(cf *gorocksdb.ColumnFamilyHandle, key []byte) ([]byte, error) {
+	opt := gorocksdb.NewDefaultReadOptions()
+	defer opt.Destroy()
+
+	slice, err := h.db.GetCF(opt, cf, key)
+
+	if err != nil {
+		dbLogger.Errorf("[%s] Error while trying to retrieve key: %s", printGID, key)
+		return nil, err
+	}
+
+	defer slice.Free()
+	if slice.Data() == nil {
+		// nil value is not error
+		// dbLogger.Errorf("No such value for column family<%s.%s>, key<%s>[%x].",
+		// 	baseHandler.dbName, cfName, string(key), key)
+		return nil, nil
+	}
+
+	data := makeCopy(slice.Data())
+	return data, nil
+}
+
+func (h *baseHandler) put(cf *gorocksdb.ColumnFamilyHandle, key []byte, value []byte) error {
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()
+
+	err := h.db.PutCF(opt, cf, key, value)
+	if err != nil {
+		dbLogger.Errorf("[%s] Error while trying to write key: %s", printGID, key)
+	}
+
+	return err
+}
+
+func (h *baseHandler) delete(cf *gorocksdb.ColumnFamilyHandle, key []byte) error {
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()
+
+	err := h.db.DeleteCF(opt, cf, key)
+	if err != nil {
+		dbLogger.Errorf("[%s] Error while trying to delete key: %s", printGID, key)
+	}
+
+	return err
+}
+
+func (h *baseHandler) GetValue(cfName string, key []byte) ([]byte, error) {
+	cf, ok := h.cfMap[cfName]
+	if !ok{
+		return nil, fmt.Errorf("No cf for [%s]", cfName)
+	}
+
+	return h.get(cf, key)
+}
+
+func (h *baseHandler) PutValue(cfName string, key []byte, value []byte) error {
+	cf, ok := h.cfMap[cfName]
+	if !ok{
+		return nil, fmt.Errorf("No cf for [%s]", cfName)
+	}
+
+	return h.put(cf, key, value)
+}
+
+func (h *baseHandler) DeleteKey(cfName string, key []byte) error {
+
+	cf, ok := h.cfMap[cfName]
+	if !ok{
+		return nil, fmt.Errorf("No cf for [%s]", cfName)
+	}
+
+	return h.delete(cf, key)
+}
+
+func (h *baseHandler) GetCF(cfName string) *gorocksdb.ColumnFamilyHandle {
+	return h.cfMap[cfName]
+}
+
+func (h *baseHandler) GetExtended() (extendedHandler, error) {
+
+	//todo: log this?
+	select{
+	case h.extendedLock <- 0:
+	default:
+		return extendedHandler{}, fmt.Errorf("Exceed resource limit for extended handler")
+	}
+
+	return extendedHandler{h}, nil
+}
+
+type extendedHandler struct{
+	*baseHandler
+}
+
+//extend interface
+// GetIterator returns an iterator for the given column family
+func (h extendedHandler) Release(){
+
+	//we "absorb" a lock
+	select{
+	case <-h.extendedLock:
+	default:
+		dbLogger.Errorf("[%s] Release a extended handler which is not assigned before", printGID)
+	}
+
+}
+
+func (h extendedHandler) GetIterator(cfName string) *gorocksdb.Iterator {
+	cf := h.cfMap[cfName]
+
+	if cf == nil{
+		return nil
+	}
+
+	opt := gorocksdb.NewDefaultReadOptions()
+	opt.SetFillCache(true)
+	defer opt.Destroy()
+	return h.db.NewIteratorCF(opt, cf)
+}
+
+func (h extendedHandler) BatchCommit(writeBatch *gorocksdb.WriteBatch) error {
+
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()	
+
+	return h.db.Write(opt, writeBatch)
+}
+
+// GetSnapshot returns a point-in-time view of the DB. You MUST call snapshot.Release()
+// when you are done with the snapshot.
+func (h extendedHandler) GetSnapshot() *gorocksdb.Snapshot {
+	return h.db.NewSnapshot()
+}
+
+func (h extendedHandler) ReleaseSnapshot(snapshot *gorocksdb.Snapshot) {
+	h.db.ReleaseSnapshot(snapshot)
+}
+
+// Open open underlying rocksdb
+func (openchainDB *baseHandler) opendb(dbPath string, cf []string) []*gorocksdb.ColumnFamilyHandle {
+
+	if OpenOpt == nil {
+		//use some default options
+		opts := gorocksdb.NewDefaultOptions()
+		opts.SetCreateIfMissing(true)
+		opts.SetCreateIfMissingColumnFamilies(true)
+		defer opts.Destroy()
+		OpenOpt = opts
+	}
+
 	cfNames := []string{"default"}
 	cfNames = append(cfNames, cf...)
 	var cfOpts []*gorocksdb.Options
@@ -274,16 +341,32 @@ func (openchainDB *BaseHandler) opendb(dbPath string, cf []string) []*gorocksdb.
 
 	db, cfHandlers, err := gorocksdb.OpenDbColumnFamilies(opts, dbPath, cfNames, cfOpts)
 
+	if err != nil {
+		dbLogger.Error("Error opening DB:", err)
+		return nil
+	}
+
 	dbLogger.Infof("gorocksdb.OpenDbColumnFamilies<%s>, len cfHandlers<%d>", dbPath, len(cfHandlers))
 
-	if err != nil {
-		panic(fmt.Sprintf("Error opening DB: %s", err))
-	}
-	openchainDB.dbHandler = db
+	openchainDB.db = db
 	return cfHandlers
 }
 
-func (baseHandler *BaseHandler) produceDbByCheckPoint(dbName string, blockNumber uint64, statehash string, cf []string) error {
+func (h *baseHandler) close() {
+
+	if h.cfMap != nil{
+		for _, cf := range h.cfMap {
+			cf.Destroy()
+		}
+	}
+
+	if h.db != nil{
+		h.db.Close()
+	}
+
+}
+
+func (baseHandler *baseHandler) produceDbByCheckPoint(dbName string, blockNumber uint64, statehash string, cf []string) error {
 	cpPath := baseHandler.getCheckpointPath(baseHandler.dbName, blockNumber, statehash)
 	baseHandler.dbName = dbName
 	baseHandler.opendb(cpPath, cf)
@@ -291,12 +374,12 @@ func (baseHandler *BaseHandler) produceDbByCheckPoint(dbName string, blockNumber
 	return baseHandler.createCheckpoint(targetDir)
 }
 
-func (baseHandler *BaseHandler) ProduceCheckpoint(newBlockNumber uint64, statehash string) error {
+func (baseHandler *baseHandler) ProduceCheckpoint(newBlockNumber uint64, statehash string) error {
 	cpPath := baseHandler.getCheckpointPath(baseHandler.dbName, newBlockNumber, statehash)
 	return baseHandler.createCheckpoint(cpPath)
 }
 
-func (baseHandler *BaseHandler) getCheckpointPath(dbName string, newBlockNumber uint64, statehash string) string {
+func (baseHandler *baseHandler) getCheckpointPath(dbName string, newBlockNumber uint64, statehash string) string {
 
 	checkpointTop := util.CanonicalizePath(getCheckPointPath(dbName))
 	util.MkdirIfNotExist(checkpointTop)
@@ -304,7 +387,7 @@ func (baseHandler *BaseHandler) getCheckpointPath(dbName string, newBlockNumber 
 	return checkpointTop + statehash
 }
 
-func (openchainDB *BaseHandler) createCheckpoint(cpPath string) error {
+func (openchainDB *baseHandler) createCheckpoint(cpPath string) error {
 	sourceDB := openchainDB.dbHandler
 	checkpoint, err := sourceDB.NewCheckpoint()
 	if err != nil {
@@ -321,62 +404,43 @@ func (openchainDB *BaseHandler) createCheckpoint(cpPath string) error {
 	return err
 }
 
-func (srcDb *BaseHandler) MoveColumnFamily(srcname string, dstDb IDataBaseHandler,
-	dstname string, rmSrcCf bool) (uint64, error) {
-
-	var err error
-	itr := srcDb.GetIterator(srcname)
-	var totalKVs uint64
-	totalKVs = 0
-	itr.SeekToFirst()
-
-	for ; itr.Valid(); itr.Next() {
-		k := itr.Key()
-		v := itr.Value()
-		err = dstDb.PutValue(dstname, k.Data(), v.Data(), nil)
-
-		if err != nil {
-			dbLogger.Error("Put value fail", err)
-		}
-
-		if rmSrcCf {
-			srcDb.DeleteKey(srcname, k.Data(), nil)
-		}
-		k.Free()
-		v.Free()
-		if err != nil {
-			break
-		}
-		totalKVs++
+// Notice: snapshot operations can be executed from baseHandler
+func (h *baseHandler) GetFromSnapshot(snapshot *gorocksdb.Snapshot, cfName string, key []byte) ([]byte, error) {
+	cf, ok := h.cfMap[cfName]
+	if !ok{
+		return nil, fmt.Errorf("No cf for [%s]", cfName)
 	}
 
-	itr.Close()
-
-	dbLogger.Infof("Moved %d KVs from %s.%s to %s.%s",
-		totalKVs, srcDb.dbName, srcname, dstDb.GetDbName(), dstname)
-
-	if err != nil {
-		dbLogger.Errorf("An error happened during moving: %s", err)
-	}
-
-	return totalKVs, err
+	return h.getFromSnapshot(snapshot, cf, key)
 }
 
-func (openchainDB *BaseHandler) getSnapshotIterator(snapshot *gorocksdb.Snapshot,
+// GetStateCFSnapshotIterator get iterator for column family - stateCF. This iterator
+// is based on a snapshot and should be used for long running scans, such as
+// reading the entire state. Remember to call iterator.Close() when you are done.
+func (h *baseHandler) GetStateCFSnapshotIterator(snapshot *gorocksdb.Snapshot, cfName string) *gorocksdb.Iterator {
+	cf, ok := h.cfMap[cfName]
+	if !ok{
+		return nil, fmt.Errorf("No cf for [%s]", cfName)
+	}
+
+	return h.getSnapshotIterator(snapshot, cf)
+}
+
+func (openchainDB *baseHandler) getSnapshotIterator(snapshot *gorocksdb.Snapshot,
 	cfHandler *gorocksdb.ColumnFamilyHandle) *gorocksdb.Iterator {
 	opt := gorocksdb.NewDefaultReadOptions()
 	defer opt.Destroy()
 	opt.SetSnapshot(snapshot)
-	iter := openchainDB.dbHandler.NewIteratorCF(opt, cfHandler)
+	iter := openchainDB.db.NewIteratorCF(opt, cfHandler)
 	return iter
 }
 
-func (openchainDB *BaseHandler) getFromSnapshot(snapshot *gorocksdb.Snapshot,
+func (openchainDB *baseHandler) getFromSnapshot(snapshot *gorocksdb.Snapshot,
 	cfHandler *gorocksdb.ColumnFamilyHandle, key []byte) ([]byte, error) {
 	opt := gorocksdb.NewDefaultReadOptions()
 	defer opt.Destroy()
 	opt.SetSnapshot(snapshot)
-	slice, err := openchainDB.dbHandler.GetCF(opt, cfHandler, key)
+	slice, err := openchainDB.db.GetCF(opt, cfHandler, key)
 	if err != nil {
 		dbLogger.Errorf("Error while trying to retrieve key: %s", key)
 		return nil, err
@@ -389,18 +453,16 @@ func (openchainDB *BaseHandler) getFromSnapshot(snapshot *gorocksdb.Snapshot,
 func getDBPath(dbname string) string {
 
 	dbPath := viper.GetString("peer.fileSystemPath")
-	if dbPath == "" {
-		panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
-	}
-	return util.CanonicalizePath(dbPath) + dbname
+	// even null string is OK, just create it on the work directory
+	// if dbPath == "" {
+	// 	panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
+	// }
+	return filepath.Join(util.CanonicalizePath(dbPath), dbname)
 }
 
 func getCheckPointPath(dbname string) string {
 	dbPath := viper.GetString("peer.fileSystemPath")
-	if dbPath == "" {
-		panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
-	}
-	return util.CanonicalizePath(dbPath) + "checkpoint/" + dbname
+	return  filepath.Join(util.CanonicalizePath(dbPath), "checkpoint", dbname)
 }
 
 func makeCopy(src []byte) []byte {

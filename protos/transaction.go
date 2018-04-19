@@ -24,71 +24,30 @@ import (
 	bin "encoding/binary"
 	"github.com/abchain/fabric/core/util"
 	"github.com/golang/protobuf/proto"
-	"golang.org/x/crypto/sha3"
 )
 
-type conWriter interface {
-	Write([]byte) conWriter
-	Error() error
-}
+func TxidFromDigest(digest []byte) string {
 
-type failConWriter struct {
-	Err error
-}
+	//truncate the digest which is too long
 
-func (w *failConWriter) Write([]byte) conWriter {
-	return w
-}
-
-func (w *failConWriter) Error() error {
-	return w.Err
-}
-
-type hashConWriter struct {
-	H hash.Hash
-}
-
-func (w hashConWriter) Write(p []byte) conWriter {
-	i, err := w.H.Write(p)
-
-	if err != nil {
-		return &failConWriter{err}
-	} else if i < len(p) {
-		return &failConWriter{fmt.Errorf("Write %d for %d bytes", i, len(p))}
-	} else {
-		return w
+	if len(digest) > 32 {
+		digest = digest[:32]
 	}
-}
 
-func (w hashConWriter) Error() error {
-	return nil
-}
-
-//taken from core/util/utils.go
-const defaultAlg = "sha3"
-
-type alg struct {
-	hashFactory func() hash.Hash
-}
-
-var availableIDgenAlgs = map[string]alg{
-	defaultAlg: alg{sha3.New256},
+	return fmt.Sprintf("%x", digest)
 }
 
 func (t *Transaction) Digest() ([]byte, error) {
-	return t.digest(sha3.New256())
+	return t.digest(util.DefaultCryptoHash())
 }
 
 func (t *Transaction) DigestWithAlg(customIDgenAlg string) ([]byte, error) {
 
-	if customIDgenAlg == "" {
-		customIDgenAlg = defaultAlg
-	}
-	alg, ok := availableIDgenAlgs[customIDgenAlg]
-	if ok {
-		return t.digest(alg.hashFactory())
+	h := util.CryptoHashByAlg(customIDgenAlg)
+	if h == nil {
+		return nil, fmt.Errorf("Wrong hash algorithm was given: %s", customIDgenAlg)
 	} else {
-		return nil, fmt.Errorf("Wrong ID generation algorithm was given: %s", customIDgenAlg)
+		return t.digest(h)
 	}
 }
 
@@ -97,7 +56,7 @@ func (t *Transaction) DigestWithAlg(customIDgenAlg string) ([]byte, error) {
 // and the cost should be light on both memory and computation
 func (t *Transaction) digest(h hash.Hash) ([]byte, error) {
 
-	hash := hashConWriter{h}
+	hash := util.NewHashWriter(h)
 
 	err := hash.Write(t.ChaincodeID).Write(t.Payload).Write(t.Metadata).Write(t.Nonce).Error()
 
@@ -106,18 +65,18 @@ func (t *Transaction) digest(h hash.Hash) ([]byte, error) {
 	}
 
 	//so we do not digest the nano part in ts ...
-	err = bin.Write(hash.H, bin.BigEndian, t.Timestamp.Seconds)
+	err = bin.Write(h, bin.BigEndian, t.Timestamp.Seconds)
 	if err != nil {
 		return nil, err
 	}
 
-	err = bin.Write(hash.H, bin.BigEndian, int32(t.ConfidentialityLevel))
+	err = bin.Write(h, bin.BigEndian, int32(t.ConfidentialityLevel))
 	if err != nil {
 		return nil, err
 	}
 
 	//we can add more items for tx in future
-	return hash.H.Sum(nil), nil
+	return h.Sum(nil), nil
 }
 
 // Bytes returns this transaction as an array of bytes.

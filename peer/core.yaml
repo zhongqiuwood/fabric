@@ -470,11 +470,15 @@ security:
       batch:
         # The size of the batch of TCerts
         size: 5
-      reused:
+      # tcert.reused for one tCertificate by many transication
+      reused: 
         enabled: true
+        # expired is second from tcert create for update it, default mean oneweek before expired time and 1/3 before expired time
         expired: 0
-        batch: 2
-        round_robin: 6
+        # batch is the max times limit one tcert to use
+        batch: 64
+        # round_robin set crypto loop the tcert pool to get reuseable tcert, 0,1,2,3,0,1,2..., default 0 mean disable
+        round_robin: 0
 
     # Enable the release of keys needed to decrypt attributes from TCerts in
     # the chaincode using the metadata field of the transaction (requires

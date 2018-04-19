@@ -70,9 +70,6 @@ type configuration struct {
 	tcertReusedBatch       int
 	tcertReusedRoundRobin  int
 	tCertBatchSize int
-	
-
-	tCertBatchSize int
 }
 
 func (conf *configuration) init() error {
@@ -109,7 +106,7 @@ func (conf *configuration) init() error {
 	conf.keystorePath = filepath.Join(conf.configurationPath, "ks")
 
 	// Set raws path
-	conf.rawsPath = filepath.Join(conf.keystorePath, "raw")
+	conf.rawsPath = filepath.Join(conf.keystorePath, "raws")
 
 	// Set tCerts path
 	conf.tCertsPath = filepath.Join(conf.keystorePath, "tcerts")
@@ -358,9 +355,5 @@ func (conf *configuration) getTCertReusedBatch() int {
 
 func (conf *configuration) getTCertReusedRoundRobin() int {
 	return conf.tcertReusedRoundRobin
-}
-
-func (conf *configuration) getTCertBatchSize() int {
-	return conf.tCertBatchSize
 }
 

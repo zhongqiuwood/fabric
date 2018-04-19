@@ -21,31 +21,27 @@ import (
 	"fmt"
 	"sort"
 	"sync"
-
+	"time"
+	"errors"
+	"github.com/op/go-logging"
 	"github.com/abchain/fabric/core/crypto/primitives"
 )
 
-//TCertBlock is an object that include the generated TCert and the attributes used to generate it.
-// type TCertBlock struct {
-// 	tCert          tCert
-// 	attributesHash string
-// }
+var poolLogger = logging.MustGetLogger("tcertpool")
 
 //TCertDBBlock is an object used to store the TCert in the database. A raw field is used to represent the TCert and the preK0, a string field is use to the attributesHash.
 type TCertDBBlock struct {
 	tCertDER       []byte
 	attributesHash string
 	preK0          []byte
-	counter        int
+	// counter        int
 }
 
 type tCertPoolSingleThreadImpl struct {
 	client *clientImpl
 
 	// empty bool
-
 	// length map[string]int
-
 	// tCerts map[string][]*TCertBlock
 
 	tcblMap      map[string]tcertBlockList
@@ -90,10 +86,9 @@ func (tCertPool *tCertPoolSingleThreadImpl) Start() (err error) {
 func (tCertPool *tCertPoolSingleThreadImpl) Stop() (err error) {
 	tCertPool.m.Lock()
 	defer tCertPool.m.Unlock()
-	for k := range tCertPool.tCerts {
-		certList := tCertPool.tCerts[k]
-		certListLen := tCertPool.length[k]
-		tCertPool.client.ks.storeUnusedTCerts(certList[:certListLen])
+	for k := range tCertPool.tcblMap {
+		certList := tCertPool.tcblMap[k]
+		tCertPool.client.ks.storeUnusedTCerts(certList.GetUnusedTCertBlocks())
 	}
 
 	tCertPool.client.Debug("Store unused TCerts...done!")
@@ -139,28 +134,28 @@ func (tCertPool *tCertPoolSingleThreadImpl) GetNextTCerts(nCerts int, attributes
 	return blocks, nil
 }
 
-func (tCertPool *tCertPoolSingleThreadImpl) getNextTCert(attributes ...string) (tCert *TCertBlock, err error) {
+// func (tCertPool *tCertPoolSingleThreadImpl) getNextTCert(attributes ...string) (tCert *TCertBlock, err error) {
 
-	tCertPool.m.Lock()
-	defer tCertPool.m.Unlock()
+// 	tCertPool.m.Lock()
+// 	defer tCertPool.m.Unlock()
 
-	attributesHash := calculateAttributesHash(attributes)
+// 	attributesHash := calculateAttributesHash(attributes)
 
-	poolLen := tCertPool.length[attributesHash]
+// 	poolLen := tCertPool.length[attributesHash]
 
-	if poolLen <= 0 {
-		// Reload
-		if err := tCertPool.client.getTCertsFromTCA(attributesHash, attributes, tCertPool.client.conf.getTCertBatchSize()); err != nil {
-			return nil, fmt.Errorf("Failed loading TCerts from TCA")
-		}
-	}
+// 	if poolLen <= 0 {
+// 		// Reload
+// 		if err := tCertPool.client.getTCertsFromTCA(attributesHash, attributes, tCertPool.client.conf.getTCertBatchSize()); err != nil {
+// 			return nil, fmt.Errorf("Failed loading TCerts from TCA")
+// 		}
+// 	}
 
-	tCert = tCertPool.tCerts[attributesHash][tCertPool.length[attributesHash]-1]
+// 	tCert = tCertPool.tCerts[attributesHash][tCertPool.length[attributesHash]-1]
 
-	tCertPool.length[attributesHash] = tCertPool.length[attributesHash] - 1
+// 	tCertPool.length[attributesHash] = tCertPool.length[attributesHash] - 1
 
-	return tCert, nil
-}
+// 	return tCert, nil
+// }
 
 
 
@@ -174,12 +169,12 @@ func (tCertPool *tCertPoolSingleThreadImpl) init(client *clientImpl) error {
 func (tCertPool *tCertPoolSingleThreadImpl) getTCertBlockList(attrHash string) tcertBlockList {
 	v, ok := tCertPool.tcblMap[attrHash]
 	if !ok {
-		isReuseable := tCertPool.conf.getTCertReusedEnable()
-		batchSize := tCertPool.conf.getTCertBatchSize()
+		isReuseable := tCertPool.client.conf.getTCertReusedEnable()
+		batchSize := tCertPool.client.conf.getTCertBatchSize()
 		if isReuseable {
-			rr := tCertPool.conf.getTCertReusedRoundRobin()
-			counterLimit := tCertPool.conf.getTCertReusedBatch()
-			reusedUpdateSecond := tCertPool.conf.getTCertReusedUpdateSecond()
+			rr := tCertPool.client.conf.getTCertReusedRoundRobin()
+			counterLimit := tCertPool.client.conf.getTCertReusedBatch()
+			reusedUpdateSecond := tCertPool.client.conf.getTCertReusedUpdateSecond()
 			if rr > 1 {
 				 tcbl := newTCertBlockList(attrHash, rr, "RoundRobin").(*tcertBlockListRoundRobin)
 				 tcbl.counterLimit = counterLimit
@@ -225,33 +220,43 @@ func (tCertPool *tCertPoolSingleThreadImpl) supplyTCerts(num int, attributesHash
 	tCertPool.m.Lock()
 	defer tCertPool.m.Unlock()
 
-	blks, err := tCertPool.tcaClient.getTCertsFromTCA(attributesHash, attributes, num); 
-	if err != nil {
+	if err := tCertPool.client.getTCertsFromTCA(attributesHash, attributes, num); err != nil {
 		return fmt.Errorf("Failed loading TCerts from TCA")
 	}
-	for _, blk := range blks {
-		tCertPool.AddTCert(blk)
-	} 
+
+	// blks, err := tCertPool.tcaClient.getTCertsFromTCA(attributesHash, attributes, num); 
+	// if err != nil {
+	// 	return fmt.Errorf("Failed loading TCerts from TCA")
+	// }
+	// for _, blk := range blks {
+	// 	tCertPool.AddTCert(blk)
+	// } 
+
 	return nil
 }
 
 // AddTCert adds a TCert into the pool is invoked by the client after TCA is called.
 func (tCertPool *tCertPoolSingleThreadImpl) AddTCert(tCertBlock *TCertBlock) error {
-	tcertLogger.Debugf("Adding new Cert to tCertPool")
+	tCertPool.client.Debugf("Adding new Cert to tCertPool")
 
 	tcbl := tCertPool.getTCertBlockList(tCertBlock.attributesHash)
 	tcbl.Add(tCertBlock)
 	return nil
 }
 
+const (
+	fivemin = time.Minute * 5
+	oneweek = time.Hour * 24 * 7
+)
+
 //TCertBlock is an object that include the generated TCert and the attributes used to generate it.
 type TCertBlock struct {
-	tCert          TCert
+	tCert          tCert
 	attributesHash string
 	counter        int
 }
 
-func (tCertBlock *TCertBlock) GetTCert() TCert{
+func (tCertBlock *TCertBlock) GetTCert() tCert{
 	return tCertBlock.tCert
 }
 
@@ -342,6 +347,7 @@ func (tcbl *tcertBlockListNormal) Add(tcBlk *TCertBlock) {
 
 	tcbl.len = tcbl.len + 1
 	tcbl.blkList[tcbl.len] = tcBlk
+	poolLogger.Debugf("#TCBL ADD# hash: %s len: %s size: %s  ", tcbl.attrHash, tcbl.len, tcbl.size)
 }
 
 func (tcbl *tcertBlockListNormal) Get() (*TCertBlock, error) {
@@ -356,7 +362,7 @@ func (tcbl *tcertBlockListNormal) Get() (*TCertBlock, error) {
 
 	tcBlk := tcbl.blkList[tcbl.len]
 	tcbl.len = tcbl.len - 1
-
+	poolLogger.Debugf("#TCBL Get# hash: %s len: %s size: %s  ", tcbl.attrHash, tcbl.len, tcbl.size)
 	return tcBlk, nil
 }
 

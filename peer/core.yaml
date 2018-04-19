@@ -84,13 +84,14 @@ logging:
     client: debug
 
     peer:      debug
-    node:      info
+    node:      debug
     network:   debug
     chaincode: debug
     version:   warning
     output:
         file: "peer.log"
         postfix: false
+    tcertpool: debug    
 
 ###############################################################################
 #
@@ -100,7 +101,7 @@ logging:
 peer:
 
     # The Peer id is used for identifying this Peer instance.
-    id: vp0
+    id: vp
 
     # The privateKey to be used by this peer
     # privateKey: 794ef087680e2494fa4918fd8fb80fb284b50b57d321a31423fe42b9ccf6216047cea0b66fe8365a8e3f2a8140c6866cc45852e63124668bee1daa9c97da0c2a
@@ -468,6 +469,11 @@ security:
       batch:
         # The size of the batch of TCerts
         size:  200
+      reused:
+        enabled: true
+        expired: 0
+        batch: 8
+        round-robin: 0
     # Enable the release of keys needed to decrypt attributes from TCerts in
     # the chaincode using the metadata field of the transaction (requires
     # security to be enabled).

@@ -246,6 +246,19 @@ func (h *baseHandler) PutValue(cfName string, key []byte, value []byte) error {
 	return h.put(cf, key, value)
 }
 
+func (h *baseHandler) BatchCommit(cfName string, writeBatch *gorocksdb.WriteBatch) error {
+
+	cf, ok := h.cfMap[cfName]
+	if !ok{
+		return nil, fmt.Errorf("No cf for [%s]", cfName)
+	}
+
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()	
+
+	return h.db.Write(opt, writeBatch)
+}
+
 func (h *baseHandler) DeleteKey(cfName string, key []byte) error {
 
 	cf, ok := h.cfMap[cfName]
@@ -254,10 +267,6 @@ func (h *baseHandler) DeleteKey(cfName string, key []byte) error {
 	}
 
 	return h.delete(cf, key)
-}
-
-func (h *baseHandler) GetCF(cfName string) *gorocksdb.ColumnFamilyHandle {
-	return h.cfMap[cfName]
 }
 
 func (h *baseHandler) GetExtended() (extendedHandler, error) {
@@ -273,7 +282,7 @@ func (h *baseHandler) GetExtended() (extendedHandler, error) {
 }
 
 type extendedHandler struct{
-	*baseHandler
+	baseHandler
 }
 
 //extend interface
@@ -289,7 +298,7 @@ func (h extendedHandler) Release(){
 
 }
 
-func (h extendedHandler) GetIterator(cfName string) *gorocksdb.Iterator {
+func (h *extendedHandler) GetIterator(cfName string) *gorocksdb.Iterator {
 	cf := h.cfMap[cfName]
 
 	if cf == nil{
@@ -302,22 +311,37 @@ func (h extendedHandler) GetIterator(cfName string) *gorocksdb.Iterator {
 	return h.db.NewIteratorCF(opt, cf)
 }
 
-func (h extendedHandler) BatchCommit(writeBatch *gorocksdb.WriteBatch) error {
 
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()	
-
-	return h.db.Write(opt, writeBatch)
-}
 
 // GetSnapshot returns a point-in-time view of the DB. You MUST call snapshot.Release()
 // when you are done with the snapshot.
-func (h extendedHandler) GetSnapshot() *gorocksdb.Snapshot {
+func (h *extendedHandler) GetSnapshot() *gorocksdb.Snapshot {
 	return h.db.NewSnapshot()
 }
 
-func (h extendedHandler) ReleaseSnapshot(snapshot *gorocksdb.Snapshot) {
+func (h *extendedHandler) ReleaseSnapshot(snapshot *gorocksdb.Snapshot) {
 	h.db.ReleaseSnapshot(snapshot)
+}
+
+func (h *extendedHandler) GetFromSnapshot(snapshot *gorocksdb.Snapshot, cfName string, key []byte) ([]byte, error) {
+	cf, ok := h.cfMap[cfName]
+	if !ok{
+		return nil, fmt.Errorf("No cf for [%s]", cfName)
+	}
+
+	return h.getFromSnapshot(snapshot, cf, key)
+}
+
+// GetStateCFSnapshotIterator get iterator for column family - stateCF. This iterator
+// is based on a snapshot and should be used for long running scans, such as
+// reading the entire state. Remember to call iterator.Close() when you are done.
+func (h *baseHandler) GetStateCFSnapshotIterator(snapshot *gorocksdb.Snapshot, cfName string) *gorocksdb.Iterator {
+	cf, ok := h.cfMap[cfName]
+	if !ok{
+		return nil, fmt.Errorf("No cf for [%s]", cfName)
+	}
+
+	return h.getSnapshotIterator(snapshot, cf)
 }
 
 // Open open underlying rocksdb
@@ -402,28 +426,6 @@ func (openchainDB *baseHandler) createCheckpoint(cpPath string) error {
 		dbLogger.Infof("[%s] Produced checkpoint successfully: %s", printGID, cpPath)
 	}
 	return err
-}
-
-// Notice: snapshot operations can be executed from baseHandler
-func (h *baseHandler) GetFromSnapshot(snapshot *gorocksdb.Snapshot, cfName string, key []byte) ([]byte, error) {
-	cf, ok := h.cfMap[cfName]
-	if !ok{
-		return nil, fmt.Errorf("No cf for [%s]", cfName)
-	}
-
-	return h.getFromSnapshot(snapshot, cf, key)
-}
-
-// GetStateCFSnapshotIterator get iterator for column family - stateCF. This iterator
-// is based on a snapshot and should be used for long running scans, such as
-// reading the entire state. Remember to call iterator.Close() when you are done.
-func (h *baseHandler) GetStateCFSnapshotIterator(snapshot *gorocksdb.Snapshot, cfName string) *gorocksdb.Iterator {
-	cf, ok := h.cfMap[cfName]
-	if !ok{
-		return nil, fmt.Errorf("No cf for [%s]", cfName)
-	}
-
-	return h.getSnapshotIterator(snapshot, cf)
 }
 
 func (openchainDB *baseHandler) getSnapshotIterator(snapshot *gorocksdb.Snapshot,

@@ -92,19 +92,26 @@ func (openchainDB *OpenchainDB) open(dbpath string) error {
 func (openchainDB *OpenchainDB) GetValue(cfname string, key []byte) ([]byte, error) {
 	openchainDB.RLock()
 	defer openchainDB.RUnlock()
-	return openchainDB.BaseHandler.GetValue(cfname, key)
+	return openchainDB.baseHandler.GetValue(cfname, key)
 }
 
 func (openchainDB *OpenchainDB) DeleteKey(cfname string, key []byte) error {
 	openchainDB.RLock()
 	defer openchainDB.RUnlock()
-	return openchainDB.BaseHandler.DeleteKey(cfname, key)
+	return openchainDB.baseHandler.DeleteKey(cfname, key)
 }
 
 func (openchainDB *OpenchainDB) PutValue(cfname string, key []byte, value []byte) error {
 	openchainDB.RLock()
 	defer openchainDB.RUnlock()
-	return openchainDB.BaseHandler.PutValue(cfname, key, value)
+	return openchainDB.baseHandler.PutValue(cfname, key, value)
+}
+
+func (openchainDB *OpenchainDB) BatchCommit(cfName string, writeBatch *gorocksdb.WriteBatch) error {
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+
+	return openchainDB.baseHandler.BatchCommit(cfName, writeBatch)
 }
 
 // Some legacy entries ....

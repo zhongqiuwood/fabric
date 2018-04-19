@@ -80,14 +80,14 @@ logging:
     #
     # Developers: Please see fabric/docs/Setup/logging-control.md for more
     # options.
-    level: debug
-    client: debug
+    # level: debug
+    # client: debug
 
-    peer:      debug
+    peer:      info
     node:      debug
-    network:   debug
-    chaincode: debug
-    version:   warning
+    network:   info
+    chaincode: info
+    version:   debug
     output:
         file: "peer.log"
         postfix: false
@@ -101,7 +101,7 @@ logging:
 peer:
 
     # The Peer id is used for identifying this Peer instance.
-    id: vp
+    id: test_nvp0
 
     # The privateKey to be used by this peer
     # privateKey: 794ef087680e2494fa4918fd8fb80fb284b50b57d321a31423fe42b9ccf6216047cea0b66fe8365a8e3f2a8140c6866cc45852e63124668bee1daa9c97da0c2a
@@ -163,7 +163,7 @@ peer:
     # Validator defines whether this peer is a validating peer or not, and if
     # it is enabled, what consensus plugin to load
     validator:
-        enabled: true
+        enabled: false
 
         consensus:
             # Consensus plugin to use. The value is the name of the plugin, e.g. pbft, noops ( this value is case-insensitive)
@@ -267,6 +267,7 @@ peer:
     fileSystemPath: /var/hyperledger/production
     # rocksdb configurations
     db:
+        # 10485760 = 10M
         maxLogFileSize: 10485760
         keepLogFileNum: 10
         logLevel: "warn"
@@ -362,15 +363,15 @@ chaincode:
     # to come through. 1sec should be plenty for chaincode unit tests
     startuptimeout: 300000
 
-    #timeout in millisecs for deploying chaincode from a remote repository.
+    # timeout in millisecs for deploying chaincode from a remote repository.
     deploytimeout: 30000
     exectimeout: 30000
 
-    #mode - options are "dev", "net", "native"
-    #dev - in dev mode, user runs the chaincode after starting validator from
+    # mode - options are "dev", "net", "native"
+    # dev - in dev mode, user runs the chaincode after starting validator from
     # command line on local machine
-    #net - in net mode validator will run chaincode in a docker container
-    #native - the chaincode source code is built in with peer process
+    # net - in net mode validator will run chaincode in a docker container
+    # native - the chaincode source code is built in with peer process
     # and runs on peer starting up
 
     mode: native
@@ -444,22 +445,22 @@ security:
     # Enable security will force every entity on the network to enroll with obc-ca
     # and maintain a valid set of certificates in order to communicate with
     # other peers
-    enabled: false
+    enabled: true
     # To enroll NVP or VP with membersrvc. These parameters are for 1 time use.
     # They will not be valid on subsequent times without un-enroll first.
     # The values come from off-line registration with obc-ca. For testing, make
     # sure the values are in membersrvc/membersrvc.yaml file eca.users
-    enrollID: vp
-    enrollSecret: f3489fy98ghf
+    enrollID: test_nvp0
+    enrollSecret: iywrPBDEPl0K
     # To enable privacy of transactions (requires security to be enabled). This
     # encrypts the transaction content during transit and at rest. The state
     # data is also encrypted
-    privacy: false
+    privacy: true
 
     # Can be 256 or 384. If you change here, you have to change also
     # the same property in membersrvc.yaml to the same value
     level: 256
-
+ 
     # Can be SHA2 or SHA3. If you change here, you have to change also
     # the same property in membersrvc.yaml to the same value
     hashAlgorithm: SHA3
@@ -468,12 +469,13 @@ security:
     tcert:
       batch:
         # The size of the batch of TCerts
-        size:  200
+        size: 5
       reused:
         enabled: true
         expired: 0
-        batch: 8
-        round-robin: 0
+        batch: 2
+        round_robin: 6
+
     # Enable the release of keys needed to decrypt attributes from TCerts in
     # the chaincode using the metadata field of the transaction (requires
     # security to be enabled).

@@ -49,6 +49,13 @@ type tCertPoolSingleThreadImpl struct {
 	m sync.Mutex
 }
 
+func (tCertPool *tCertPoolSingleThreadImpl) init(client *clientImpl) error {
+	tCertPool.client = client
+	tCertPool.client.Debug("Init TCert Pool...")
+	tCertPool.tcblMap = make(map[string]tcertBlockList)
+	return nil
+}
+
 //Start starts the pool processing.
 func (tCertPool *tCertPoolSingleThreadImpl) Start() (err error) {
 	tCertPool.m.Lock()
@@ -124,7 +131,8 @@ func calculateAttributesHash(attributes []string) (attrHash string) {
 func (tCertPool *tCertPoolSingleThreadImpl) GetNextTCerts(nCerts int, attributes ...string) ([]*TCertBlock, error) {
 	attributesHash := calculateAttributesHash(attributes)
 	blocks := make([]*TCertBlock, nCerts)
-	for i := 0; i < nCerts; i++ {
+	for i := 0; i < nCerts; i++ {  // nCerts
+		// tCertPool.client.Debugf("********** %d *******\n", i)
 		block, err := tCertPool.getNextTCert(attributesHash, attributes...)
 		if err != nil {
 			return nil, err
@@ -134,39 +142,44 @@ func (tCertPool *tCertPoolSingleThreadImpl) GetNextTCerts(nCerts int, attributes
 	return blocks, nil
 }
 
-// func (tCertPool *tCertPoolSingleThreadImpl) getNextTCert(attributes ...string) (tCert *TCertBlock, err error) {
+func (tCertPool *tCertPoolSingleThreadImpl) getNextTCert(attrHash string, attributes ...string) (tCert *TCertBlock, err error) {
+	tCertPool.client.Debug("getNextTCert ...", attrHash)
+	tcbl := tCertPool.getTCertBlockList(attrHash)
 
-// 	tCertPool.m.Lock()
-// 	defer tCertPool.m.Unlock()
+	tCertBlk, err := tcbl.Get()
+	if err != nil {
+		num := tcbl.GetUpdateNum()
+		tCertPool.refillTCerts(num, attrHash, attributes...)
+		tCertBlk, err = tcbl.Get()
+		if err != nil {
+			return nil, err
+		}
+	}
+	
+	return tCertBlk, nil
+}
 
-// 	attributesHash := calculateAttributesHash(attributes)
+// AddTCert adds a TCert into the pool is invoked by the client after TCA is called.
+func (tCertPool *tCertPoolSingleThreadImpl) AddTCert(tCertBlock *TCertBlock) error {
+	tCertPool.client.Debugf("Adding new Cert to tCertPool")
 
-// 	poolLen := tCertPool.length[attributesHash]
+	tcbl := tCertPool.getTCertBlockList(tCertBlock.attributesHash)
+	tcbl.Add(tCertBlock)
+	return nil
+}
 
-// 	if poolLen <= 0 {
-// 		// Reload
-// 		if err := tCertPool.client.getTCertsFromTCA(attributesHash, attributes, tCertPool.client.conf.getTCertBatchSize()); err != nil {
-// 			return nil, fmt.Errorf("Failed loading TCerts from TCA")
-// 		}
-// 	}
-
-// 	tCert = tCertPool.tCerts[attributesHash][tCertPool.length[attributesHash]-1]
-
-// 	tCertPool.length[attributesHash] = tCertPool.length[attributesHash] - 1
-
-// 	return tCert, nil
-// }
-
-
-
-func (tCertPool *tCertPoolSingleThreadImpl) init(client *clientImpl) error {
-	tCertPool.client = client
-	tCertPool.client.Debug("Init TCert Pool...")
-	tCertPool.tcblMap = make(map[string]tcertBlockList)
+func (tCertPool *tCertPoolSingleThreadImpl) refillTCerts(num int, attributesHash string, attributes ...string) error {
+	tCertPool.client.Debugf("refillTCerts %d \n", num)
+	if err := tCertPool.client.getTCertsFromTCA(attributesHash, attributes, num); err != nil {
+		return fmt.Errorf("Failed loading TCerts from TCA")
+	}
 	return nil
 }
 
 func (tCertPool *tCertPoolSingleThreadImpl) getTCertBlockList(attrHash string) tcertBlockList {
+	// tCertPool.m.Lock()
+	// defer tCertPool.m.Unlock()
+
 	v, ok := tCertPool.tcblMap[attrHash]
 	if !ok {
 		isReuseable := tCertPool.client.conf.getTCertReusedEnable()
@@ -197,56 +210,9 @@ func (tCertPool *tCertPoolSingleThreadImpl) getTCertBlockList(attrHash string) t
 }
 
 
-func (tCertPool *tCertPoolSingleThreadImpl) getNextTCert(attrHash string, attributes ...string) (tCert *TCertBlock, err error) {
-	tCertPool.m.Lock()
-	defer tCertPool.m.Unlock()
-
-	tcbl := tCertPool.getTCertBlockList(attrHash)
-
-	tCertBlk, err := tcbl.Get()
-	if err != nil {
-		num := tcbl.GetUpdateNum()
-		tCertPool.supplyTCerts(num, attrHash, attributes...)
-	}
-	tCertBlk, err = tcbl.Get()
-	if err != nil {
-		return nil, err
-	}
-
-	return tCertBlk, nil
-}
-
-func (tCertPool *tCertPoolSingleThreadImpl) supplyTCerts(num int, attributesHash string, attributes ...string) error {
-	tCertPool.m.Lock()
-	defer tCertPool.m.Unlock()
-
-	if err := tCertPool.client.getTCertsFromTCA(attributesHash, attributes, num); err != nil {
-		return fmt.Errorf("Failed loading TCerts from TCA")
-	}
-
-	// blks, err := tCertPool.tcaClient.getTCertsFromTCA(attributesHash, attributes, num); 
-	// if err != nil {
-	// 	return fmt.Errorf("Failed loading TCerts from TCA")
-	// }
-	// for _, blk := range blks {
-	// 	tCertPool.AddTCert(blk)
-	// } 
-
-	return nil
-}
-
-// AddTCert adds a TCert into the pool is invoked by the client after TCA is called.
-func (tCertPool *tCertPoolSingleThreadImpl) AddTCert(tCertBlock *TCertBlock) error {
-	tCertPool.client.Debugf("Adding new Cert to tCertPool")
-
-	tcbl := tCertPool.getTCertBlockList(tCertBlock.attributesHash)
-	tcbl.Add(tCertBlock)
-	return nil
-}
-
 const (
 	fivemin = time.Minute * 5
-	oneweek = time.Hour * 24 * 7
+	oneweek = time.Hour * 24 *7
 )
 
 //TCertBlock is an object that include the generated TCert and the attributes used to generate it.
@@ -268,6 +234,7 @@ func (tCertBlock *TCertBlock) GetAttrHash() string{
 func (tcertBlock *TCertBlock) isExpired() bool {
 	tsNow := time.Now()
 	notAfter := tcertBlock.GetTCert().GetCertificate().NotAfter
+	poolLogger.Debugf("#isExpired: %s now: %s deadline: %s \n ", tsNow.Add(fivemin).After(notAfter), tsNow, notAfter)
 	if tsNow.Add(fivemin).After(notAfter) {
 		return true
 	}
@@ -284,11 +251,13 @@ func (tcertBlock *TCertBlock) isUpdateExpired(reusedUpdateSecond int) bool {
 	if reusedUpdateSecond == 0 {
 		// 1 week 
 		if tsNow.Add(oneweek).After(notAfter) {
+			poolLogger.Debugf("#isUpdateExpired oneweek, now: %s oneweek before deadline: %s \n ", tsNow, notAfter)
 			return true
 		} else {  // 2/3 expired
 			notBefore := tcertBlock.GetTCert().GetCertificate().NotBefore
 			timeDel := notAfter.Sub(notBefore) 
 			if tsNow.Add(timeDel * 1 / 3).After(notAfter) {
+				poolLogger.Debugf("#isUpdateExpired 2/3,now: %s oneweek before deadline: %s \n ", tsNow, notAfter)
 				return true
 			}
 		}
@@ -297,6 +266,8 @@ func (tcertBlock *TCertBlock) isUpdateExpired(reusedUpdateSecond int) bool {
 			return true
 		}
 	}
+
+	poolLogger.Debugf("#isUpdateExpired: false now: %s deadline: %s \n ", tsNow, notAfter)
 	return false
 }
 
@@ -345,24 +316,32 @@ func (tcbl *tcertBlockListNormal) Add(tcBlk *TCertBlock) {
 	tcbl.m.Lock()
 	defer tcbl.m.Unlock()
 
+	if (tcbl.len >= tcbl.size) {
+		poolLogger.Debugf("#TCBL ADD# hash: %s len: %d size: %d  full \n ", tcbl.attrHash, tcbl.len, tcbl.size)
+		return
+	}
+	for i := tcbl.len; i > 0; i-- {
+		tcbl.blkList[i] = tcbl.blkList[i - 1]
+	}
+	tcbl.blkList[0] = tcBlk
 	tcbl.len = tcbl.len + 1
-	tcbl.blkList[tcbl.len] = tcBlk
-	poolLogger.Debugf("#TCBL ADD# hash: %s len: %s size: %s  ", tcbl.attrHash, tcbl.len, tcbl.size)
+	poolLogger.Debugf("#TCBL ADD# hash: %s len: %d size: %d  \n", tcbl.attrHash, tcbl.len, tcbl.size)
 }
 
 func (tcbl *tcertBlockListNormal) Get() (*TCertBlock, error) {
+	tcbl.removeExpired()
+
 	tcbl.m.Lock()
 	defer tcbl.m.Unlock()
 
-	tcbl.removeExpired()
-
-	if tcbl.len < 0 {
+	if tcbl.len < 1 {
 		return nil, errors.New("empty")
 	}
 
-	tcBlk := tcbl.blkList[tcbl.len]
 	tcbl.len = tcbl.len - 1
-	poolLogger.Debugf("#TCBL Get# hash: %s len: %s size: %s  ", tcbl.attrHash, tcbl.len, tcbl.size)
+	tcBlk := tcbl.blkList[tcbl.len]
+	
+	poolLogger.Debugf("#TCBL Get# hash: %s len: %d size: %d  \n", tcbl.attrHash, tcbl.len, tcbl.size)
 	return tcBlk, nil
 }
 
@@ -374,8 +353,8 @@ func (tcbl *tcertBlockListNormal) removeExpired() {
 	tcbl.m.Lock()
 	defer tcbl.m.Unlock()
 
-	for tcbl.len >= 0 {
-		block := tcbl.blkList[tcbl.len]
+	for tcbl.len > 0 {
+		block := tcbl.blkList[tcbl.len - 1]
 		if block.isExpired() {
 			tcbl.len = tcbl.len - 1
 		} else {
@@ -400,26 +379,34 @@ type tcertBlockListReuse struct {
 func (tcbl *tcertBlockListReuse) Add(tcBlk *TCertBlock) {
 	tcbl.m.Lock()
 	defer tcbl.m.Unlock()
-
+	if (tcbl.len >= tcbl.size) {
+		poolLogger.Debugf("#TCBL ADD# hash: %s len: %d size: %d  full  \n", tcbl.attrHash, tcbl.len, tcbl.size)
+		return
+	}
+	for i := tcbl.len; i > 0; i-- {
+		tcbl.blkList[i] = tcbl.blkList[i - 1]
+	}
+	tcbl.blkList[0] = tcBlk
 	tcbl.len = tcbl.len + 1
-	tcbl.blkList[tcbl.len] = tcBlk
+	poolLogger.Debugf("#TCBL ADD# hash: %s len: %d size: %d  \n", tcbl.attrHash, tcbl.len, tcbl.size)
 }
 
 func (tcbl *tcertBlockListReuse) Get() (*TCertBlock, error) {
-	tcbl.m.Lock()
-	defer tcbl.m.Unlock()
-
 	tcbl.removeExpired()
 	tcbl.removeUpdateExpired()
 	tcbl.removeCounterOverflow()
 
-	if (tcbl.len < 0) {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+
+	if (tcbl.len < 1) {
 		return nil, errors.New("empty")
 	}
 
-	tcBlk := tcbl.blkList[tcbl.len]
+	tcBlk := tcbl.blkList[tcbl.len - 1]
 	tcBlk.counter = tcBlk.counter + 1
 
+	poolLogger.Debugf("#TCBL Get# hash: %s len: %d size: %d  \n", tcbl.attrHash, tcbl.len, tcbl.size)
 	return tcBlk, nil
 }
 
@@ -428,8 +415,8 @@ func (tcbl *tcertBlockListReuse) removeUpdateExpired() {
 	tcbl.m.Lock()
 	defer tcbl.m.Unlock()
 
-	for tcbl.len >= 0 {
-		block := tcbl.blkList[tcbl.len]
+	for tcbl.len > 0 {
+		block := tcbl.blkList[tcbl.len - 1]
 		if block.isUpdateExpired(tcbl.reusedUpdateSecond) {
 			tcbl.len = tcbl.len - 1
 		} else {
@@ -442,8 +429,8 @@ func (tcbl *tcertBlockListReuse) removeCounterOverflow() {
 	tcbl.m.Lock()
 	defer tcbl.m.Unlock()
 	
-	for tcbl.len >= 0 {
-		block := tcbl.blkList[tcbl.len]
+	for tcbl.len > 0 {
+		block := tcbl.blkList[tcbl.len - 1]
 		if block.isCounterOverflow(tcbl.counterLimit) {
 			tcbl.len = tcbl.len - 1
 		} else {
@@ -464,28 +451,37 @@ type tcertBlockListRoundRobin struct {
 func (tcbl *tcertBlockListRoundRobin) Add(tcBlk *TCertBlock) {
 	tcbl.m.Lock()
 	defer tcbl.m.Unlock()
-	if tcbl.len >= tcbl.size {
+	if (tcbl.len >= tcbl.size) {
+		poolLogger.Debugf("#TCBL ADD# hash: %s len: %d size: %d  full  ", tcbl.attrHash, tcbl.len, tcbl.size)
 		return
 	}
-	tcbl.blkList[tcbl.len] = tcBlk
+	for i := tcbl.len; i > 0; i-- {
+		tcbl.blkList[i] = tcbl.blkList[i - 1]
+	}
+	tcbl.blkList[0] = tcBlk
 	tcbl.len = tcbl.len + 1
+	
+	poolLogger.Debugf("#TCBL ADD# hash: %s len: %d size: %d  \n", tcbl.attrHash, tcbl.len, tcbl.size)
 }
 
 func (tcbl *tcertBlockListRoundRobin) Get() (*TCertBlock, error) {
-	tcbl.m.Lock()
-	defer tcbl.m.Unlock()
-
 	tcbl.removeExpired()
 	tcbl.removeUpdateExpired()
 	tcbl.removeCounterOverflow()
+
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
 
 	if (tcbl.cursor >= tcbl.len) {
 		return nil, errors.New("overLength")
 	}
 
+	poolLogger.Debugf("#TCBL Get# hash: %s len: %d size: %d cursor: %d \n", tcbl.attrHash, tcbl.len, tcbl.size, tcbl.cursor)
+
 	tcBlk := tcbl.blkList[tcbl.cursor]
 	tcBlk.counter = tcBlk.counter + 1
-	tcbl.cursor = tcbl.cursor - 1
+	tcbl.cursor = (tcbl.cursor + 1) % tcbl.size
+	
 	return tcBlk, nil
 }
 

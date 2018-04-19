@@ -362,7 +362,8 @@ func (node *nodeImpl) getEnrollmentCertificateFromECA(id, pw string) (interface{
 		Sign: &membersrvc.PublicKey{Type: membersrvc.CryptoType_ECDSA, Key: signPub},
 		Enc:  &membersrvc.PublicKey{Type: membersrvc.CryptoType_ECDSA, Key: encPub},
 		Sig:  nil}
-
+	
+	node.Errorf(id, pw)	
 	resp, err := ecaP.CreateCertificatePair(context.Background(), req)
 	if err != nil {
 		node.Errorf("Failed invoking CreateCertficatePair [%s].", err.Error())

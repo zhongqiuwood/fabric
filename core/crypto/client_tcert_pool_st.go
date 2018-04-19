@@ -26,26 +26,29 @@ import (
 )
 
 //TCertBlock is an object that include the generated TCert and the attributes used to generate it.
-type TCertBlock struct {
-	tCert          tCert
-	attributesHash string
-}
+// type TCertBlock struct {
+// 	tCert          tCert
+// 	attributesHash string
+// }
 
 //TCertDBBlock is an object used to store the TCert in the database. A raw field is used to represent the TCert and the preK0, a string field is use to the attributesHash.
 type TCertDBBlock struct {
 	tCertDER       []byte
 	attributesHash string
 	preK0          []byte
+	counter        int
 }
 
 type tCertPoolSingleThreadImpl struct {
 	client *clientImpl
 
-	empty bool
+	// empty bool
 
-	length map[string]int
+	// length map[string]int
 
-	tCerts map[string][]*TCertBlock
+	// tCerts map[string][]*TCertBlock
+
+	tcblMap      map[string]tcertBlockList
 
 	m sync.Mutex
 }
@@ -124,9 +127,10 @@ func calculateAttributesHash(attributes []string) (attrHash string) {
 
 //GetNextTCert returns a TCert from the pool valid to the passed attributes. If no TCert is available TCA is invoked to generate it.
 func (tCertPool *tCertPoolSingleThreadImpl) GetNextTCerts(nCerts int, attributes ...string) ([]*TCertBlock, error) {
+	attributesHash := calculateAttributesHash(attributes)
 	blocks := make([]*TCertBlock, nCerts)
 	for i := 0; i < nCerts; i++ {
-		block, err := tCertPool.getNextTCert(attributes...)
+		block, err := tCertPool.getNextTCert(attributesHash, attributes...)
 		if err != nil {
 			return nil, err
 		}
@@ -158,35 +162,327 @@ func (tCertPool *tCertPoolSingleThreadImpl) getNextTCert(attributes ...string) (
 	return tCert, nil
 }
 
-//AddTCert adds a TCert into the pool is invoked by the client after TCA is called.
-func (tCertPool *tCertPoolSingleThreadImpl) AddTCert(tCertBlock *TCertBlock) (err error) {
 
-	tCertPool.client.Debugf("Adding new Cert [% x].", tCertBlock.tCert.GetCertificate().Raw)
 
-	if tCertPool.length[tCertBlock.attributesHash] <= 0 {
-		tCertPool.length[tCertBlock.attributesHash] = 0
-	}
-
-	tCertPool.length[tCertBlock.attributesHash] = tCertPool.length[tCertBlock.attributesHash] + 1
-
-	if tCertPool.tCerts[tCertBlock.attributesHash] == nil {
-
-		tCertPool.tCerts[tCertBlock.attributesHash] = make([]*TCertBlock, tCertPool.client.conf.getTCertBatchSize())
-
-	}
-
-	tCertPool.tCerts[tCertBlock.attributesHash][tCertPool.length[tCertBlock.attributesHash]-1] = tCertBlock
-
+func (tCertPool *tCertPoolSingleThreadImpl) init(client *clientImpl) error {
+	tCertPool.client = client
+	tCertPool.client.Debug("Init TCert Pool...")
+	tCertPool.tcblMap = make(map[string]tcertBlockList)
 	return nil
 }
 
-func (tCertPool *tCertPoolSingleThreadImpl) init(client *clientImpl) (err error) {
-	tCertPool.client = client
-	tCertPool.client.Debug("Init TCert Pool...")
+func (tCertPool *tCertPoolSingleThreadImpl) getTCertBlockList(attrHash string) tcertBlockList {
+	v, ok := tCertPool.tcblMap[attrHash]
+	if !ok {
+		isReuseable := tCertPool.conf.getTCertReusedEnable()
+		batchSize := tCertPool.conf.getTCertBatchSize()
+		if isReuseable {
+			rr := tCertPool.conf.getTCertReusedRoundRobin()
+			counterLimit := tCertPool.conf.getTCertReusedBatch()
+			reusedUpdateSecond := tCertPool.conf.getTCertReusedUpdateSecond()
+			if rr > 1 {
+				 tcbl := newTCertBlockList(attrHash, rr, "RoundRobin").(*tcertBlockListRoundRobin)
+				 tcbl.counterLimit = counterLimit
+				 tcbl.reusedUpdateSecond = reusedUpdateSecond
+				 tCertPool.tcblMap[attrHash] = tcbl
+				 return tcbl
+			} else {
+				tcbl := newTCertBlockList(attrHash, batchSize, "Reuse").(*tcertBlockListReuse)
+				tcbl.counterLimit = counterLimit
+				tcbl.reusedUpdateSecond = reusedUpdateSecond
+				tCertPool.tcblMap[attrHash] = tcbl
+				return tcbl
+			}
+		}
+		tcbl := newTCertBlockList(attrHash, batchSize, "Normal")
+		tCertPool.tcblMap[attrHash] = tcbl
+		return tcbl
+	}
+	return v
+}
 
-	tCertPool.tCerts = make(map[string][]*TCertBlock)
 
-	tCertPool.length = make(map[string]int)
+func (tCertPool *tCertPoolSingleThreadImpl) getNextTCert(attrHash string, attributes ...string) (tCert *TCertBlock, err error) {
+	tCertPool.m.Lock()
+	defer tCertPool.m.Unlock()
 
-	return
+	tcbl := tCertPool.getTCertBlockList(attrHash)
+
+	tCertBlk, err := tcbl.Get()
+	if err != nil {
+		num := tcbl.GetUpdateNum()
+		tCertPool.supplyTCerts(num, attrHash, attributes...)
+	}
+	tCertBlk, err = tcbl.Get()
+	if err != nil {
+		return nil, err
+	}
+
+	return tCertBlk, nil
+}
+
+func (tCertPool *tCertPoolSingleThreadImpl) supplyTCerts(num int, attributesHash string, attributes ...string) error {
+	tCertPool.m.Lock()
+	defer tCertPool.m.Unlock()
+
+	blks, err := tCertPool.tcaClient.getTCertsFromTCA(attributesHash, attributes, num); 
+	if err != nil {
+		return fmt.Errorf("Failed loading TCerts from TCA")
+	}
+	for _, blk := range blks {
+		tCertPool.AddTCert(blk)
+	} 
+	return nil
+}
+
+// AddTCert adds a TCert into the pool is invoked by the client after TCA is called.
+func (tCertPool *tCertPoolSingleThreadImpl) AddTCert(tCertBlock *TCertBlock) error {
+	tcertLogger.Debugf("Adding new Cert to tCertPool")
+
+	tcbl := tCertPool.getTCertBlockList(tCertBlock.attributesHash)
+	tcbl.Add(tCertBlock)
+	return nil
+}
+
+//TCertBlock is an object that include the generated TCert and the attributes used to generate it.
+type TCertBlock struct {
+	tCert          TCert
+	attributesHash string
+	counter        int
+}
+
+func (tCertBlock *TCertBlock) GetTCert() TCert{
+	return tCertBlock.tCert
+}
+
+func (tCertBlock *TCertBlock) GetAttrHash() string{
+	return tCertBlock.attributesHash
+}
+
+// expired if tcert NotAfter in 5 min
+func (tcertBlock *TCertBlock) isExpired() bool {
+	tsNow := time.Now()
+	notAfter := tcertBlock.GetTCert().GetCertificate().NotAfter
+	if tsNow.Add(fivemin).After(notAfter) {
+		return true
+	}
+	return false
+}
+
+func (tcertBlock *TCertBlock) isCounterOverflow(counterLimit int) bool {
+	return counterLimit > 0 && tcertBlock.counter >= counterLimit 
+}	
+// expired if tcert NotAfter in 5 min
+func (tcertBlock *TCertBlock) isUpdateExpired(reusedUpdateSecond int) bool {
+	notAfter := tcertBlock. GetTCert().GetCertificate().NotAfter
+	tsNow := time.Now()
+	if reusedUpdateSecond == 0 {
+		// 1 week 
+		if tsNow.Add(oneweek).After(notAfter) {
+			return true
+		} else {  // 2/3 expired
+			notBefore := tcertBlock.GetTCert().GetCertificate().NotBefore
+			timeDel := notAfter.Sub(notBefore) 
+			if tsNow.Add(timeDel * 1 / 3).After(notAfter) {
+				return true
+			}
+		}
+	} else {
+		if tsNow.Add(time.Duration(reusedUpdateSecond)).After(notAfter) {
+			return true
+		}
+	}
+	return false
+}
+
+type tcertBlockList interface {
+	Add(tcBlk *TCertBlock)
+	Get() (*TCertBlock, error)
+	GetUpdateNum() int
+	GetUnusedTCertBlocks() []*TCertBlock
+}
+
+func newTCertBlockList(attrHash string, size int, mode string) tcertBlockList {
+	normal := &tcertBlockListNormal{
+		attrHash: attrHash,
+		blkList: make([]*TCertBlock, size),
+		len: 0,
+		size: size,
+	}
+	switch mode {
+	case "Normal":
+		return normal
+	case "Reuse":
+		return &tcertBlockListReuse{
+			tcertBlockListNormal: normal,
+		}
+	case "RoundRobin":
+		ru := &tcertBlockListReuse{
+			tcertBlockListNormal: normal,
+		}
+		return &tcertBlockListRoundRobin{
+			tcertBlockListReuse: ru,
+		}
+	}
+	return normal
+} 
+
+type tcertBlockListNormal struct {
+	attrHash    string
+	blkList     []*TCertBlock
+	len         int
+	size        int
+
+	m           sync.Mutex
+}
+
+func (tcbl *tcertBlockListNormal) Add(tcBlk *TCertBlock) {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+
+	tcbl.len = tcbl.len + 1
+	tcbl.blkList[tcbl.len] = tcBlk
+}
+
+func (tcbl *tcertBlockListNormal) Get() (*TCertBlock, error) {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+
+	tcbl.removeExpired()
+
+	if tcbl.len < 0 {
+		return nil, errors.New("empty")
+	}
+
+	tcBlk := tcbl.blkList[tcbl.len]
+	tcbl.len = tcbl.len - 1
+
+	return tcBlk, nil
+}
+
+func (tcbl *tcertBlockListNormal) GetUnusedTCertBlocks() []*TCertBlock {
+	return tcbl.blkList[:tcbl.len]
+}
+
+func (tcbl *tcertBlockListNormal) removeExpired() {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+
+	for tcbl.len >= 0 {
+		block := tcbl.blkList[tcbl.len]
+		if block.isExpired() {
+			tcbl.len = tcbl.len - 1
+		} else {
+			break
+		}
+	}
+}
+
+func (tcbl *tcertBlockListNormal) GetUpdateNum() int {
+	return tcbl.size
+}
+
+type tcertBlockListReuse struct {
+	*tcertBlockListNormal
+
+	counterLimit       int
+	reusedUpdateSecond int
+
+	m           sync.Mutex
+}
+
+func (tcbl *tcertBlockListReuse) Add(tcBlk *TCertBlock) {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+
+	tcbl.len = tcbl.len + 1
+	tcbl.blkList[tcbl.len] = tcBlk
+}
+
+func (tcbl *tcertBlockListReuse) Get() (*TCertBlock, error) {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+
+	tcbl.removeExpired()
+	tcbl.removeUpdateExpired()
+	tcbl.removeCounterOverflow()
+
+	if (tcbl.len < 0) {
+		return nil, errors.New("empty")
+	}
+
+	tcBlk := tcbl.blkList[tcbl.len]
+	tcBlk.counter = tcBlk.counter + 1
+
+	return tcBlk, nil
+}
+
+
+func (tcbl *tcertBlockListReuse) removeUpdateExpired() {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+
+	for tcbl.len >= 0 {
+		block := tcbl.blkList[tcbl.len]
+		if block.isUpdateExpired(tcbl.reusedUpdateSecond) {
+			tcbl.len = tcbl.len - 1
+		} else {
+			break
+		}
+	}
+}
+
+func (tcbl *tcertBlockListReuse) removeCounterOverflow() {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+	
+	for tcbl.len >= 0 {
+		block := tcbl.blkList[tcbl.len]
+		if block.isCounterOverflow(tcbl.counterLimit) {
+			tcbl.len = tcbl.len - 1
+		} else {
+			break
+		}
+	}
+}
+
+
+type tcertBlockListRoundRobin struct {
+	*tcertBlockListReuse
+
+	cursor      int
+
+	m           sync.Mutex
+}
+
+func (tcbl *tcertBlockListRoundRobin) Add(tcBlk *TCertBlock) {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+	if tcbl.len >= tcbl.size {
+		return
+	}
+	tcbl.blkList[tcbl.len] = tcBlk
+	tcbl.len = tcbl.len + 1
+}
+
+func (tcbl *tcertBlockListRoundRobin) Get() (*TCertBlock, error) {
+	tcbl.m.Lock()
+	defer tcbl.m.Unlock()
+
+	tcbl.removeExpired()
+	tcbl.removeUpdateExpired()
+	tcbl.removeCounterOverflow()
+
+	if (tcbl.cursor >= tcbl.len) {
+		return nil, errors.New("overLength")
+	}
+
+	tcBlk := tcbl.blkList[tcbl.cursor]
+	tcBlk.counter = tcBlk.counter + 1
+	tcbl.cursor = tcbl.cursor - 1
+	return tcBlk, nil
+}
+
+func (tcbl *tcertBlockListRoundRobin) GetUpdateNum() int {
+	return tcbl.size - tcbl.len
 }

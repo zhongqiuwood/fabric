@@ -346,7 +346,17 @@ func (tcbl *tcertBlockListNormal) Get() (*TCertBlock, error) {
 }
 
 func (tcbl *tcertBlockListNormal) GetUnusedTCertBlocks() []*TCertBlock {
-	return tcbl.blkList[:tcbl.len]
+	poolLogger.Debugf("#GetUnusedTCertBlocks  %d TCertBlock to fillter  \n", tcbl.len)
+	tcbs := make([]*TCertBlock, 0, tcbl.len)
+	for i := tcbl.len; i > 0; i-- {
+		block := tcbl.blkList[i - 1]
+		if block.counter > 0 {
+			continue
+		} 
+		tcbs = append(tcbs, block)	
+	}
+	poolLogger.Debugf("#GetUnusedTCertBlocks  %d TCertBlock unused  \n", len(tcbs))
+	return tcbs
 }
 
 func (tcbl *tcertBlockListNormal) removeExpired() {
@@ -410,7 +420,6 @@ func (tcbl *tcertBlockListReuse) Get() (*TCertBlock, error) {
 	return tcBlk, nil
 }
 
-
 func (tcbl *tcertBlockListReuse) removeUpdateExpired() {
 	tcbl.m.Lock()
 	defer tcbl.m.Unlock()
@@ -438,7 +447,6 @@ func (tcbl *tcertBlockListReuse) removeCounterOverflow() {
 		}
 	}
 }
-
 
 type tcertBlockListRoundRobin struct {
 	*tcertBlockListReuse

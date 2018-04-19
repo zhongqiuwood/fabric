@@ -65,6 +65,13 @@ type configuration struct {
 	multiThreading bool
 	multiChannel   bool
 
+	tcertReusedEnable      bool
+	tcertReusedUpdateSecond int  
+	tcertReusedBatch       int
+	tcertReusedRoundRobin  int
+	tCertBatchSize int
+	
+
 	tCertBatchSize int
 }
 
@@ -159,6 +166,35 @@ func (conf *configuration) init() error {
 	conf.multiChannel = false
 	if viper.IsSet("security.multithreading.multichannel") {
 		conf.multiChannel = viper.GetBool("security.multithreading.multichannel")
+	}
+
+	conf.tcertReusedEnable = false
+	if viper.IsSet("security.tcert.reused.enabled") {
+		conf.tcertReusedEnable = viper.GetBool("security.tcert.reused.enabled")
+	}
+
+	conf.tcertReusedUpdateSecond = 0
+	if viper.IsSet("security.tcert.reused.expired") {
+		conf.tcertReusedUpdateSecond = viper.GetInt("security.tcert.reused.expired")
+	}
+	
+	conf.tcertReusedBatch = 0
+	if viper.IsSet("security.tcert.reused.batch") {
+		conf.tcertReusedBatch = viper.GetInt("security.tcert.reused.batch")
+	}
+
+	conf.tcertReusedRoundRobin = 0
+	if viper.IsSet("security.tcert.reused.round_robin") {
+		conf.tcertReusedRoundRobin = viper.GetInt("security.tcert.reused.round_robin")
+	}
+
+	// Set tCertBatchSize
+	conf.tCertBatchSize = 64
+	if viper.IsSet("security.tcert.batch.size") {
+		ovveride := viper.GetInt("security.tcert.batch.size")
+		if ovveride != 0 {
+			conf.tCertBatchSize = ovveride
+		}
 	}
 
 	return nil
@@ -307,3 +343,24 @@ func (conf *configuration) getTCertBatchSize() int {
 func (conf *configuration) GetConfidentialityProtocolVersion() string {
 	return conf.confidentialityProtocolVersion
 }
+
+func (conf *configuration) getTCertReusedEnable() bool {
+	return conf.tcertReusedEnable
+}
+
+func (conf *configuration) getTCertReusedUpdateSecond() int {
+	return conf.tcertReusedUpdateSecond
+}
+
+func (conf *configuration) getTCertReusedBatch() int {
+	return conf.tcertReusedBatch
+}
+
+func (conf *configuration) getTCertReusedRoundRobin() int {
+	return conf.tcertReusedRoundRobin
+}
+
+func (conf *configuration) getTCertBatchSize() int {
+	return conf.tCertBatchSize
+}
+

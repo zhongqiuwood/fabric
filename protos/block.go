@@ -44,17 +44,14 @@ import (
 func (block *Block) GetBlockBytes() ([]byte, error) {
 
 	transactions := block.Transactions
+	block.Transactions = nil
 
-	// only persist transcations in legacy db
-	if block.Version > 0 {
-		block.Transactions = nil
-	} else {
-		block.Txids = nil
-	}
+	resume := func() { block.Transactions = transactions }
+
+	defer resume()
 
 	data, err := proto.Marshal(block)
 
-	block.Transactions = transactions
 	if err != nil {
 		return nil, fmt.Errorf("Could not marshal block: %s", err)
 	}
@@ -125,22 +122,25 @@ func (block *Block) hashV1() ([]byte, error) {
 // returns the hash of this block by the legacy way
 func (block *Block) legacyHash() ([]byte, error) {
 
-	// copy the block and remove the non-hash data
-	blockBytes, err := block.GetBlockBytes()
-	if err != nil {
-		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
-	}
-	blockCopy, err := UnmarshallBlock(blockBytes)
-	if err != nil {
-		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
-	}
-	blockCopy.NonHashData = nil
+	//we abandoned the old "deep copy" way to calc hash
+	txids := block.Txids
+	nonHashData := block.NonHashData
 
-	// Hash the block
-	data, err := proto.Marshal(blockCopy)
+	resume := func() {
+		block.Txids = txids
+		block.NonHashData = nonHashData
+	}
+
+	block.Txids = nil
+	block.NonHashData = nil
+
+	defer resume()
+
+	data, err := proto.Marshal(block)
 	if err != nil {
 		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
 	}
+
 	hash := util.ComputeCryptoHash(data)
 	return hash, nil
 }

@@ -44,3 +44,31 @@ func (srcDb *baseHandler) MoveColumnFamily(srcname string, dstDb IDataBaseHandle
 
 	return totalKVs, err
 }
+
+func (txdb *GlobalDataDB) DumpGlobalState() {
+	itr := txdb.GetIterator(GlobalCF)
+	defer itr.Close()
+
+	idx := 0
+	itr.SeekToFirst()
+
+	for ; itr.Valid(); itr.Next() {
+		k := itr.Key()
+		v := itr.Value()
+		keyBytes := k.Data()
+		idx++
+
+		gs, _ := protos.UnmarshallGS(v.Data())
+
+		dbLogger.Infof("%d: statehash<%x>", gs.Count, keyBytes)
+		dbLogger.Infof("	  branched<%t>", gs.Branched)
+		dbLogger.Infof("	  parent<%x>", gs.ParentNodeStateHash)
+		dbLogger.Infof("	  lastBranch<%x>", gs.LastBranchNodeStateHash)
+		dbLogger.Infof("	  childNum<%d>:", len(gs.NextNodeStateHash))
+		for _, c := range gs.NextNodeStateHash {
+			dbLogger.Infof("        <%x>", c)
+		}
+		k.Free()
+		v.Free()
+	}
+}

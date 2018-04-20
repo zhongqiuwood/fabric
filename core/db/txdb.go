@@ -18,12 +18,12 @@ package db
 
 import (
 	"bytes"
+	"errors"
 	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 )
 
-var txdbLogger = logging.MustGetLogger("txdb")
 var txDbColumnfamilies = []string{
 	TxCF,
 	GlobalCF,
@@ -31,37 +31,59 @@ var txDbColumnfamilies = []string{
 	PersistCF,
 }
 
+type txCFs struct {
+	txCF        *gorocksdb.ColumnFamilyHandle
+	globalCF    *gorocksdb.ColumnFamilyHandle
+	consensusCF *gorocksdb.ColumnFamilyHandle
+	persistCF   *gorocksdb.ColumnFamilyHandle
+}
+
+func (c *txCFs) feed(cfmap map[string]*gorocksdb.ColumnFamilyHandle) {
+	c.txCF = cfmap[TxCF]
+	c.globalCF = cfmap[GlobalCF]
+	c.consensusCF = cfmap[ConsensusCF]
+	c.persistCF = cfmap[PersistCF]
+}
+
 type GlobalDataDB struct {
-	BaseHandler
+	baseHandler
+	baseExtHandler
+	txCFs
 }
 
-var globalDataDB = createTxDB()
+var globalDataDB = &GlobalDataDB{}
 
-func createTxDB() *GlobalDataDB {
-	txdb := &GlobalDataDB{}
-	txdb.cfMap = make(map[string]*gorocksdb.ColumnFamilyHandle)
-	return txdb
-}
+func (txdb *GlobalDataDB) open(dbpath string) error {
 
-func (txdb *GlobalDataDB) feedCfHandlers(cfHandlers []*gorocksdb.ColumnFamilyHandle) {
-	txdb.cfMap[TxCF] = cfHandlers[1]
-	txdb.cfMap[GlobalCF] = cfHandlers[2]
-	txdb.cfMap[ConsensusCF] = cfHandlers[3]
-	txdb.cfMap[PersistCF] = cfHandlers[4]
-}
+	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies)
 
-func (txdb *GlobalDataDB) open(dbpath string) {
-	cfhandlers := txdb.opendb(dbPath, txDbColumnfamilies)
-	txdb.feedCfHandlers(cfhandlers)
+	if len(cfhandlers) != 4 {
+		return errors.New("rocksdb may ruin or not work as expected")
+	}
+
+	//feed cfs
+	txdb.cfMap = map[string]*gorocksdb.ColumnFamilyHandle{
+		TxCF:        cfHandlers[0],
+		GlobalCF:    cfHandlers[1],
+		ConsensusCF: cfHandlers[2],
+		PersistCF:   cfHandlers[3],
+	}
+
+	txdb.feed(txdb.cfMap)
+
+	return nil
 }
 
 func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 
 	var gs *protos.GlobalState
-	gs = nil
 	data, _ := txdb.GetValue(GlobalCF, statehash)
 	if data != nil {
-		gs, _ = protos.UnmarshallGS(data)
+		gs, err = protos.UnmarshallGS(data)
+		if err != nil {
+			dbLogger.Errorf("Decode global state of [%x] fail: %s", statehash, err)
+			return nil
+		}
 	}
 
 	return gs
@@ -163,32 +185,4 @@ func (txdb *GlobalDataDB) getTransactionFromDB(txids []string) []*protos.Transac
 	}
 
 	return txs
-}
-
-func (txdb *GlobalDataDB) DumpGlobalState() {
-	itr := txdb.GetIterator(GlobalCF)
-	defer itr.Close()
-
-	idx := 0
-	itr.SeekToFirst()
-
-	for ; itr.Valid(); itr.Next() {
-		k := itr.Key()
-		v := itr.Value()
-		keyBytes := k.Data()
-		idx++
-
-		gs, _ := protos.UnmarshallGS(v.Data())
-
-		dbLogger.Infof("%d: statehash<%x>", gs.Count, keyBytes)
-		dbLogger.Infof("	  branched<%t>", gs.Branched)
-		dbLogger.Infof("	  parent<%x>", gs.ParentNodeStateHash)
-		dbLogger.Infof("	  lastBranch<%x>", gs.LastBranchNodeStateHash)
-		dbLogger.Infof("	  childNum<%d>:", len(gs.NextNodeStateHash))
-		for _, c := range gs.NextNodeStateHash {
-			dbLogger.Infof("        <%x>", c)
-		}
-		k.Free()
-		v.Free()
-	}
 }

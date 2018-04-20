@@ -347,7 +347,7 @@ func (state *State) CommitStateDelta() error {
 // a snapshot.
 func (state *State) DeleteState() error {
 	state.ClearInMemoryChanges(false)
-	err := db.GetDBHandle().DeleteDbState()
+	err := db.GetDBHandle().DeleteState()
 	if err != nil {
 		logger.Errorf("Error deleting state: %s", err)
 	}

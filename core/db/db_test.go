@@ -114,7 +114,7 @@ func TestDeleteState(t *testing.T) {
 	defer testDBWrapper.cleanup()
 	openchainDB.PutValue(StateCF, []byte("key1"), []byte("value1"), nil)
 	openchainDB.PutValue(StateDeltaCF, []byte("key2"), []byte("value2"), nil)
-	openchainDB.DeleteDbState()
+	openchainDB.DeleteState()
 	value1, err := openchainDB.GetValue(StateCF, []byte("key1"))
 	if err != nil {
 		t.Fatalf("Error getting in value: %s", err)
@@ -143,7 +143,9 @@ func TestDBSnapshot(t *testing.T) {
 	openchainDB.PutValue(BlockchainCF, []byte("key2"), []byte("value2"), nil)
 
 	// create a snapshot
-	snapshot := openchainDB.GetSnapshot()
+	snapshot := openchainDB.GetExtended()
+
+	defer snapshot.Release()
 
 	// add/delete/modify key-values
 	openchainDB.DeleteKey(BlockchainCF, []byte("key1"), nil)
@@ -165,9 +167,9 @@ func TestDBSnapshot(t *testing.T) {
 	}
 
 	// test key-values from snapshot
-	v1, _ = openchainDB.GetFromBlockchainCFSnapshot(snapshot, []byte("key1"))
-	v2, _ = openchainDB.GetFromBlockchainCFSnapshot(snapshot, []byte("key2"))
-	v3, err := openchainDB.GetFromBlockchainCFSnapshot(snapshot, []byte("key3"))
+	v1, _ = GetFromBlockchainCFSnapshot(snapshot, []byte("key1"))
+	v2, _ = GetFromBlockchainCFSnapshot(snapshot, []byte("key2"))
+	v3, err := GetFromBlockchainCFSnapshot(snapshot, []byte("key3"))
 	if err != nil {
 		t.Fatalf("Error: %s", err)
 	}
@@ -312,7 +314,6 @@ func performBasicReadWrite(openchainDB *OpenchainDB, t *testing.T) {
 	}
 }
 
-
 //
 //func (txdb *GlobalDataDB) DumpGlobalState() {
 //	itr := txdb.GetIterator(GlobalCF)
@@ -357,7 +358,7 @@ func performBasicReadWrite(openchainDB *OpenchainDB, t *testing.T) {
 //	}
 //}
 
-func xxx(bkey []byte, num int)  []byte {
+func xxx(bkey []byte, num int) []byte {
 
 	if bkey == nil {
 		return nil

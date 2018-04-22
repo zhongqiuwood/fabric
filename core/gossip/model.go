@@ -25,6 +25,7 @@ type Model struct {
 	store  map[string]*PeerState // key: peer id
 	merger VersionMergerInterface
 	crypto CryptoInterface
+	nseq   uint64
 }
 
 func (m *Model) get(peerID string, catalog string) *StateVersion {
@@ -73,7 +74,7 @@ func (m *Model) forEach(iter func(id string, peer *PeerState) error) error {
 	return err
 }
 
-func (m *Model) applyUpdate(message *pb.Gossip) error {
+func (m *Model) applyDigest(message *pb.Gossip) error {
 	if m.merger == nil {
 		return fmt.Errorf("No merger implement")
 	}
@@ -107,6 +108,10 @@ func (m *Model) applyUpdate(message *pb.Gossip) error {
 	return nil
 }
 
+func (m *Model) applyUpdate(message *pb.Gossip) error {
+	return nil
+}
+
 func (m *Model) updateSelf(catalog string, statehash string) {
 	if state, ok := m.self.states[catalog]; ok {
 		if state.hash == statehash {
@@ -132,4 +137,54 @@ func (m *Model) history(catalog string) (map[string]*StateVersion, error) {
 		results[m.self.id] = state
 	}
 	return results, nil
+}
+
+func (m *Model) digestMessage(catalog string, maxn int) *pb.Gossip {
+
+	message := &pb.Gossip{}
+	message.Catalog = catalog
+	message.Seq = m.nseq
+
+	digest := &pb.Gossip_Digest{}
+	for id, peer := range m.store {
+		state, ok := peer.states[catalog]
+		if !ok {
+			continue
+		}
+		dps := &pb.Gossip_Digest_PeerState{
+			State:     []byte(state.hash),
+			Num:       state.number,
+			Signature: []byte(""),
+		}
+		m.crypto.Sign(catalog, dps)
+		digest.Data[id] = dps
+		if maxn > 0 && len(digest.Data) >= maxn {
+			break
+		}
+	}
+
+	// bytes, err := proto.Marshal(digest)
+	// if err != nil {
+	// 	return nil
+	// }
+
+	// message.M = bytes
+	m.nseq++
+
+	return message
+}
+
+func (m *Model) gossipTxMessage(txs []*pb.Transaction) *pb.Gossip {
+
+	message := &pb.Gossip{}
+	message.Catalog = "tx"
+	message.Seq = m.nseq
+
+	// gossip := &pb.Gossip_Update{}
+	// for _, tx := range txs {
+	// }
+
+	m.nseq++
+
+	return message
 }

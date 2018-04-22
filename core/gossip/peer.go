@@ -1,7 +1,6 @@
 package gossip
 
 import (
-	"fmt"
 	"math/rand"
 	"time"
 
@@ -126,8 +125,9 @@ func GetGossip() Gossip {
 }
 
 func (s *GossipStub) BroadcastTx(txs []*pb.Transaction) error {
-	//s.model.updateSelf("tx", tx.Txid) // query state as tx.Txid
-	return fmt.Errorf("No implement")
+	s.model.updateSelfTxs(txs) // query state as tx.Txid
+	return nil
+	//return fmt.Errorf("No implement")
 }
 
 func (s *GossipStub) sendTxDigests(refer *PeerAction) {

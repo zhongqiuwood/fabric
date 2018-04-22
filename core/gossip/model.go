@@ -3,6 +3,8 @@ package gossip
 import (
 	"fmt"
 
+	"github.com/golang/protobuf/proto"
+
 	pb "github.com/abchain/fabric/protos"
 )
 
@@ -112,15 +114,20 @@ func (m *Model) applyUpdate(message *pb.Gossip) error {
 	return nil
 }
 
-func (m *Model) updateSelf(catalog string, statehash string) {
+func (m *Model) updateSelfTxs(txs []*pb.Transaction) {
+	hash := ""
+	m.updateSelf("tx", hash, len(txs))
+}
+
+func (m *Model) updateSelf(catalog string, statehash string, count int) {
 	if state, ok := m.self.states[catalog]; ok {
 		if state.hash == statehash {
-			state.number++
+			state.number += uint64(count)
 		} else {
-			m.self.states[catalog] = &StateVersion{known: true, hash: statehash, number: 1}
+			m.self.states[catalog] = &StateVersion{known: true, hash: statehash, number: uint64(count)}
 		}
 	} else {
-		m.self.states[catalog] = &StateVersion{known: true, hash: statehash, number: 1}
+		m.self.states[catalog] = &StateVersion{known: true, hash: statehash, number: uint64(count)}
 	}
 }
 
@@ -168,7 +175,7 @@ func (m *Model) digestMessage(catalog string, maxn int) *pb.Gossip {
 	// 	return nil
 	// }
 
-	// message.M = bytes
+	message.M = &pb.Gossip_Digest_{digest}
 	m.nseq++
 
 	return message
@@ -180,9 +187,19 @@ func (m *Model) gossipTxMessage(txs []*pb.Transaction) *pb.Gossip {
 	message.Catalog = "tx"
 	message.Seq = m.nseq
 
-	// gossip := &pb.Gossip_Update{}
-	// for _, tx := range txs {
-	// }
+	gossiptx := &pb.Gossip_Tx{}
+	gossiptx.Num = uint32(len(txs))
+	// gossiptx.State = []byte("") TODO: apply state bytes
+	gossiptx.Txs = &pb.TransactionBlock{}
+	gossiptx.Txs.Transactions = txs
+
+	bytes, err := proto.Marshal(gossiptx)
+	if err != nil {
+		return nil
+	}
+
+	update := &pb.Gossip_Update{bytes}
+	message.M = &pb.Gossip_Update_{update}
 
 	m.nseq++
 

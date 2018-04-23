@@ -20,7 +20,6 @@ import (
 	"errors"
 	"github.com/abchain/fabric/protos"
 	"github.com/tecbot/gorocksdb"
-	"os"
 	"sync"
 )
 
@@ -47,8 +46,8 @@ func (c *openchainCFs) feed(cfmap map[string]*gorocksdb.ColumnFamilyHandle) {
 	c.stateCF = cfmap[StateCF]
 	c.stateDeltaCF = cfmap[StateDeltaCF]
 	c.indexesCF = cfmap[IndexesCF]
-	c.persistCF = cfHandlers[PersistCF]
-	c.stateIndCF = cfHandlers[StateIndCF]
+	c.persistCF = cfmap[PersistCF]
+	c.stateIndCF = cfmap[StateIndCF]
 }
 
 type OpenchainDB struct {
@@ -62,7 +61,7 @@ var originalDB = &OpenchainDB{}
 
 func (openchainDB *OpenchainDB) open(dbpath string) error {
 
-	cfhandlers := openchainDB.opendb(dbPath, append("default", columnfamilies...))
+	cfhandlers := openchainDB.opendb(dbpath, append([]string{"default"}, columnfamilies...), nil)
 
 	if len(cfhandlers) != 7 {
 		return errors.New("rocksdb may ruin or not work as expected")
@@ -73,12 +72,12 @@ func (openchainDB *OpenchainDB) open(dbpath string) error {
 
 	//feed cfs
 	openchainDB.cfMap = map[string]*gorocksdb.ColumnFamilyHandle{
-		BlockchainCF: cfHandlers[1],
-		StateCF:      cfHandlers[2],
-		StateDeltaCF: cfHandlers[3],
-		IndexesCF:    cfHandlers[4],
-		PersistCF:    cfHandlers[5],
-		StateIndCF:   cfHandlers[6],
+		BlockchainCF: cfhandlers[1],
+		StateCF:      cfhandlers[2],
+		StateDeltaCF: cfhandlers[3],
+		IndexesCF:    cfhandlers[4],
+		PersistCF:    cfhandlers[5],
+		StateIndCF:   cfhandlers[6],
 	}
 
 	openchainDB.feed(openchainDB.cfMap)
@@ -127,9 +126,9 @@ func (openchainDB *OpenchainDB) GetExtended() (*ExtHandler, error) {
 
 	//todo: log this?
 	select {
-	case h.extendedLock <- 0:
+	case openchainDB.extendedLock <- 0:
 	default:
-		return nil, fmt.Errorf("Exceed resource limit for extended handler")
+		return nil, errors.New("Exceed resource limit for extended handler")
 	}
 
 	ret := &ExtHandler{}
@@ -147,7 +146,7 @@ func (openchainDB *OpenchainDB) GetExtended() (*ExtHandler, error) {
 func (e *ExtHandler) Release() {
 
 	if e.snapshot != nil {
-		e.db.ReleaseSnapshot(h.snapshot)
+		e.db.ReleaseSnapshot(e.snapshot)
 		e.snapshot = nil
 	}
 
@@ -163,7 +162,7 @@ func (e *ExtHandler) Release() {
 func (e *ExtHandler) Snapshot() {
 
 	if e.snapshot == nil {
-		e.snapshot = e.GetSnapshot()
+		e.snapshot = e.db.NewSnapshot()
 	}
 
 }
@@ -171,7 +170,7 @@ func (e *ExtHandler) Snapshot() {
 // Some legacy entries, we make all "fromsnapshot" function becoming simple api (not member func)....
 func (e *ExtHandler) FetchBlockchainSizeFromSnapshot() (uint64, error) {
 
-	blockNumberBytes, err := e.GetFromBlockchainCFSnapshot(e, BlockCountKey)
+	blockNumberBytes, err := e.GetFromBlockchainCFSnapshot(BlockCountKey)
 	if err != nil {
 		return 0, err
 	}
@@ -196,20 +195,6 @@ func (e *ExtHandler) GetStateCFSnapshotIterator() *gorocksdb.Iterator {
 
 	e.Snapshot()
 	return e.getSnapshotIterator(e.snapshot, e.stateCF)
-}
-
-func (openchainDB *OpenchainDB) OpenCheckPoint(dbName string, blockNumber uint64, statehash string) error {
-	openchainDB.closeDBHandler()
-	targetDir := getDBPath(dbName)
-	err := os.RemoveAll(targetDir)
-	if err == nil {
-		openchainDB.produceDbByCheckPoint(dbName, blockNumber, statehash, columnfamilies)
-		openchainDB.closeDBHandler()
-		openchainDB.open(dbName, columnfamilies)
-	} else {
-		dbLogger.Errorf("[%s] Error: %s", printGID, err)
-	}
-	return err
 }
 
 // DeleteState delets ALL state keys/values from the DB. This is generally
@@ -267,10 +252,10 @@ func (openchainDB *OpenchainDB) DeleteState() error {
 
 func (orgdb *OpenchainDB) FetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 
-	openchainDB.RLock()
-	defer openchainDB.RUnlock()
+	orgdb.RLock()
+	defer orgdb.RUnlock()
 
-	blockBytes, err := orgdb.GetValue(BlockchainCF, EncodeBlockNumberDBKey(blockNumber))
+	blockBytes, err := orgdb.get(orgdb.blockchainCF, EncodeBlockNumberDBKey(blockNumber))
 	if err != nil {
 
 		return nil, err
@@ -286,10 +271,10 @@ func (orgdb *OpenchainDB) FetchBlockFromDB(blockNumber uint64) (*protos.Block, e
 
 func (orgdb *OpenchainDB) FetchBlockchainSizeFromDB() (uint64, error) {
 
-	openchainDB.RLock()
-	defer openchainDB.RUnlock()
+	orgdb.RLock()
+	defer orgdb.RUnlock()
 
-	bytes, err := orgdb.GetValue(BlockchainCF, BlockCountKey)
+	bytes, err := orgdb.get(orgdb.blockchainCF, BlockCountKey)
 	if err != nil {
 		return 0, err
 	}

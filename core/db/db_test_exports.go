@@ -76,7 +76,7 @@ func (testDB *TestDBWrapper) removeDBPath() {
 func (testDB *TestDBWrapper) WriteToDB(t testing.TB, writeBatch *gorocksdb.WriteBatch) {
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	err := GetDBHandle().dbHandler.Write(opt, writeBatch)
+	err := GetDBHandle().db.Write(opt, writeBatch)
 	if err != nil {
 		t.Fatalf("Error while writing to db. Error:%s", err)
 	}
@@ -84,7 +84,7 @@ func (testDB *TestDBWrapper) WriteToDB(t testing.TB, writeBatch *gorocksdb.Write
 
 // GetFromDB gets the value for the given key from default column-family
 func (testDB *TestDBWrapper) GetFromDB(t testing.TB, key []byte) []byte {
-	db := GetDBHandle().dbHandler
+	db := GetDBHandle().db
 	opt := gorocksdb.NewDefaultReadOptions()
 	defer opt.Destroy()
 	slice, err := db.Get(opt, key)
@@ -131,15 +131,15 @@ func (testDB *TestDBWrapper) GetEstimatedNumKeys(t testing.TB) map[string]string
 	openchainDB := GetDBHandle()
 	result := make(map[string]string, 5)
 
-	result["stateCF"] = openchainDB.dbHandler.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.getCFByName(StateCF))
-	result["stateDeltaCF"] = openchainDB.dbHandler.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.getCFByName(StateDeltaCF))
-	result["blockchainCF"] = openchainDB.dbHandler.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.getCFByName(BlockchainCF))
-	result["indexCF"] = openchainDB.dbHandler.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.getCFByName(IndexesCF))
+	result["stateCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.stateCF)
+	result["stateDeltaCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.stateDeltaCF)
+	result["blockchainCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.blockchainCF)
+	result["indexCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.indexesCF)
 	return result
 }
 
 // GetDBStats returns statistics for the database
 func (testDB *TestDBWrapper) GetDBStats() string {
 	openchainDB := GetDBHandle()
-	return openchainDB.dbHandler.GetProperty("rocksdb.stats")
+	return openchainDB.db.GetProperty("rocksdb.stats")
 }

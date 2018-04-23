@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"github.com/abchain/fabric/protos"
-	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 	"sync"
 )
@@ -81,7 +80,7 @@ func encodeMergeValue(op byte, count uint64, hash []byte) []byte {
 
 	buf := make([]byte, 8)
 
-	return bytes.Join([][]byte{op, buf[:binary.PutUvarint(buf, count)], hash}, nil)
+	return bytes.Join([][]byte{[]byte{op}, buf[:binary.PutUvarint(buf, count)], hash}, nil)
 }
 
 func (mo globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte) ([]byte, bool) {
@@ -102,7 +101,7 @@ func (mo globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte)
 
 	//the "last/next branchnode" mush be updated when we have walked through the operands
 	lbtarget := gs.LastBranchNodeStateHash
-	nxtarget := gs.NextBranchNodeStateHas
+	nxtarget := gs.NextBranchNodeStateHash
 	var nxtargetN, lbtargetN uint64
 
 	for _, op := range operands {
@@ -209,7 +208,7 @@ var globalDataDB = &GlobalDataDB{}
 
 func (txdb *GlobalDataDB) open(dbpath string) error {
 
-	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies)
+	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies, nil)
 
 	if len(cfhandlers) != 4 {
 		return errors.New("rocksdb may ruin or not work as expected")
@@ -217,10 +216,10 @@ func (txdb *GlobalDataDB) open(dbpath string) error {
 
 	//feed cfs
 	txdb.cfMap = map[string]*gorocksdb.ColumnFamilyHandle{
-		TxCF:        cfHandlers[0],
-		GlobalCF:    cfHandlers[1],
-		ConsensusCF: cfHandlers[2],
-		PersistCF:   cfHandlers[3],
+		TxCF:        cfhandlers[0],
+		GlobalCF:    cfhandlers[1],
+		ConsensusCF: cfhandlers[2],
+		PersistCF:   cfhandlers[3],
 	}
 
 	txdb.feed(txdb.cfMap)
@@ -230,17 +229,18 @@ func (txdb *GlobalDataDB) open(dbpath string) error {
 
 func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 
-	var gs *protos.GlobalState
 	data, _ := txdb.get(txdb.globalCF, statehash)
 	if data != nil {
-		gs, err = protos.UnmarshallGS(data)
+		gs, err := protos.UnmarshallGS(data)
 		if err != nil {
 			dbLogger.Errorf("Decode global state of [%x] fail: %s", statehash, err)
 			return nil
 		}
+
+		return gs
 	}
 
-	return gs
+	return nil
 }
 
 type gscommiter struct {
@@ -257,7 +257,7 @@ func (txdb *GlobalDataDB) addGSCritical(parentStateHash []byte,
 
 	//this read and write is critical and must be serialized
 	txdb.globalStateLock.Lock()
-	defer txdb.globalStateLock()
+	defer txdb.globalStateLock.Unlock()
 
 	data, _ := txdb.get(txdb.globalCF, parentStateHash)
 	if data == nil {
@@ -352,7 +352,7 @@ func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byt
 
 	//then we update lastbranch, trace childs ...
 	panic(len(cm.refGS.NextNodeStateHash) != 1) //how do you return the commiter??
-	target := cm.refGS.NextNodeStateHash[0]
+	target = cm.refGS.NextNodeStateHash[0]
 
 	for target != nil {
 		gsbyte, err := txdb.getFromSnapshot(sn, txdb.globalCF, target)

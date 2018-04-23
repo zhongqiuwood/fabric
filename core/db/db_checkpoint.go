@@ -52,3 +52,18 @@ func (openchainDB *baseHandler) createCheckpoint(cpPath string) error {
 	}
 	return err
 }
+
+
+func (openchainDB *OpenchainDB) OpenCheckPoint(dbName string, blockNumber uint64, statehash string) error {
+	openchainDB.closeDBHandler()
+	targetDir := getDBPath(dbName)
+	err := os.RemoveAll(targetDir)
+	if err == nil {
+		openchainDB.produceDbByCheckPoint(dbName, blockNumber, statehash, columnfamilies)
+		openchainDB.closeDBHandler()
+		openchainDB.open(dbName, columnfamilies)
+	} else {
+		dbLogger.Errorf("[%s] Error: %s", printGID, err)
+	}
+	return err
+}

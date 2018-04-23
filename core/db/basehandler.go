@@ -88,23 +88,10 @@ func GetGlobalDBHandle() *GlobalDataDB {
 	return globalDataDB
 }
 
-// Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Start() error{
+func DefaultOption() (opts *gorocksdb.Options) {
+	opts = gorocksdb.NewDefaultOptions()
 
-	dbVersion := GlobalDataBaseVersion
-
-	if viper.IsSet("peer.db.version") {
-		//forced db version
-		dbVersion = viper.GetInt("peer.db.version")
-		if dbVersion > GlobalDataBaseVersion{
-			return fmt.Errorf("Specified wrong version for database :d", dbVersion)
-		}
-	}
-
-	dbLogger.Infof("Current db version=<%d>", dbversion)
-
-	opts := gorocksdb.NewDefaultOptions()
-	defer opts.Destroy()
+	dbLogger.Info("Create new default option")
 
 	maxLogFileSize := viper.GetInt("peer.db.maxLogFileSize")
 	if maxLogFileSize > 0 {
@@ -127,7 +114,26 @@ func Start() error{
 	}
 
 	opts.SetCreateIfMissing(missing)
-	opts.SetCreateIfMissingColumnFamilies(true)
+	opts.SetCreateIfMissingColumnFamilies(true)	
+}
+
+// Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
+func Start() error{
+
+	dbVersion := GlobalDataBaseVersion
+
+	if viper.IsSet("peer.db.version") {
+		//forced db version
+		dbVersion = viper.GetInt("peer.db.version")
+		if dbVersion > GlobalDataBaseVersion{
+			return fmt.Errorf("Specified wrong version for database :d", dbVersion)
+		}
+	}
+
+	dbLogger.Infof("Current db version=<%d>", dbversion)
+
+	opts := DefaultOption()
+	defer opts.Destroy()
 
 	if dbversion != 0 {
 		globalDataDB.OpenOpt = opts
@@ -332,20 +338,26 @@ func (h *baseExtHandler) GetStateCFSnapshotIterator(snapshot *gorocksdb.Snapshot
 }
 
 // Open open underlying rocksdb
-func (openchainDB *baseHandler) opendb(dbPath string, cf []string) []*gorocksdb.ColumnFamilyHandle {
+func (openchainDB *baseHandler) opendb(dbPath string, cf []string, cfOpts []*gorocksdb.Options) []*gorocksdb.ColumnFamilyHandle {
 
-	if OpenOpt == nil {
+	opts := openchainDB.OpenOpt
+	if opts == nil {
 		//use some default options
-		opts := gorocksdb.NewDefaultOptions()
+		opts = gorocksdb.NewDefaultOptions()
 		opts.SetCreateIfMissing(true)
 		opts.SetCreateIfMissingColumnFamilies(true)
 		defer opts.Destroy()
-		OpenOpt = opts
 	}
 
-	var cfOpts []*gorocksdb.Options
-	for range cf {
-		cfOpts = append(cfOpts, opts)
+	if cfOpts == nil{
+		cfOpts = make([]*gorocksdb.Options, len(cf))
+	}
+
+	for i, op := range cfOpts {
+
+		if op == nil{
+			cfOpts[i] = opts
+		}
 	}
 
 	db, cfHandlers, err := gorocksdb.OpenDbColumnFamilies(opts, dbPath, cf, cfOpts)

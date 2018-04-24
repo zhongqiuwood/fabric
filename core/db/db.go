@@ -55,6 +55,7 @@ type OpenchainDB struct {
 	openchainCFs
 	sync.RWMutex
 	extendedLock chan int //use a channel as locking for opening extend interface
+	dbTag string
 }
 
 var originalDB = &OpenchainDB{}
@@ -81,6 +82,11 @@ func (openchainDB *OpenchainDB) open(dbpath string) error {
 	}
 
 	openchainDB.feed(openchainDB.cfMap)
+
+	//TODO: custom maxOpenedExtend
+	openchainDB.extendedLock = make(chan int, maxOpenedExtend)
+	//add one reference count
+	openchainDB.extendedLock <- 0:
 
 	return nil
 }
@@ -154,7 +160,8 @@ func (e *ExtHandler) Release() {
 	select {
 	case <-e.extendedLock:
 	default:
-		dbLogger.Errorf("[%s] Release a extended handler which is not assigned before", printGID)
+		dbLogger.Infof("[%s] Release current db", printGID)
+		e.close()
 	}
 
 }

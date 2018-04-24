@@ -149,10 +149,7 @@ func Start() error {
 	}
 
 	originalDB.OpenOpt = opts
-	//TODO: custom maxOpenedExtend
-	originalDB.extendedLock = make(chan int, maxOpenedExtend)
-
-	err = originalDB.open(getDBPath("txdb"))
+	err = originalDB.open(getDBPath("db"))
 	if err != nil {
 		return err
 	}

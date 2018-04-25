@@ -43,3 +43,7 @@ func (l *ModuleLeveled) SetLevel(level logging.Level, module string) {
 func (l *ModuleLeveled) IsEnabledFor(level logging.Level, module string) bool {
 	return level <= l.GetLevel(module)
 }
+
+func (l *ModuleLeveled) Log(level logging.Level, calldepth int, rec *logging.Record) error {
+	return l.Backend.Log(level, calldepth+1, rec)
+}

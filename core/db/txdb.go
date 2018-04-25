@@ -49,7 +49,6 @@ func (c *txCFs) feed(cfmap map[string]*gorocksdb.ColumnFamilyHandle) {
 
 type GlobalDataDB struct {
 	baseHandler
-	baseExtHandler
 	txCFs
 	globalStateLock sync.Mutex
 	//caution: destroy option before cf/db is WRONG but just ok only if it was just "default"
@@ -320,8 +319,8 @@ func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byt
 	}
 
 	//create snapshot, start updating on gs-tree
-	sn := txdb.db.NewSnapshot()
-	defer txdb.db.ReleaseSnapshot(sn)
+	sn := txdb.NewSnapshot()
+	defer txdb.ReleaseSnapshot(sn)
 
 	//first we update nextbranch, trace parents ...
 	target := cm.refGS.ParentNodeStateHash

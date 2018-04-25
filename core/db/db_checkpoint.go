@@ -2,19 +2,22 @@ package db
 
 import (
 	"fmt"
-	"github.com/abchain/fabric/protos"
-	"github.com/op/go-logging"
+	"github.com/abchain/fabric/core/util"
+	_ "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
 	"path/filepath"
-	"sync"
 )
 
 var CurrentDBPathKey = []byte("blockCount")
 
 func getCheckPointPath(dbname string) string {
-	dbPath := viper.GetString("peer.fileSystemPath")
-	return filepath.Join(util.CanonicalizePath(dbPath), "checkpoint", dbname)
+	chkpPath := filepath.Join(util.CanonicalizeFilePath(viper.GetString("peer.fileSystemPath")),
+		"checkpoint")
+
+	util.MkdirIfNotExist(chkpPath)
+
+	return util.CanonicalizePath(chkpPath) + dbname
 }
 
 func activeDbName(statehash string) string {
@@ -37,7 +40,7 @@ func createCheckpoint(db *gorocksdb.DB, cpPath string) error {
 
 func (oc *OpenchainDB) StateSwitch(statehash string) error {
 
-	dbLogger.Infof("[%s] Start state switch to %s", printGID, statehash)
+	dbLogger.Infof("[%s] Start state switching to %s", printGID, statehash)
 
 	opts := gorocksdb.NewDefaultOptions()
 	defer opts.Destroy()
@@ -62,68 +65,33 @@ func (oc *OpenchainDB) StateSwitch(statehash string) error {
 	//now open the new state ...
 	dbopts := DefaultOption()
 	defer dbopts.Destroy()
-	newdb := &OpenchainDB{}
+	newdb := &ocDB{}
 	newdb.OpenOpt = dbopts
 	err = newdb.open(newdbPath)
 	if err != nil {
 		return err
 	}
 
+	newdb.OpenOpt = nil
+
 	//prepare ok, now do the switch ...
 	oc.Lock()
 	defer oc.Unlock()
 
-	olddb := oc
-
-	//every is copied except for the mutex
-	oc.baseHandler = newdb.baseHandler
-	oc.openchainCFs = newdb.openchainCFs
-	oc.extendedLock = newdb.extendedLock
+	olddb := oc.db
+	oc.db = newdb
 
 	//done, now release one refcount, and close db if needed
+	olddb.finalDrop = false //DATA RACE? No, it should be SAFE
 	select {
 	case <-olddb.extendedLock:
 	default:
-		dbLogger.Infof("[%s] Release current db on %s", printGID, olddb.dbTag)
+		dbLogger.Infof("[%s] Release current db <%s>", printGID, olddb.dbName)
 		olddb.close()
+		olddb.dropDB()
 	}
 
 	dbLogger.Infof("[%s] State switch to %s done", printGID, statehash)
 
 	return nil
-}
-
-func (baseHandler *baseHandler) produceDbByCheckPoint(dbName string, blockNumber uint64, statehash string, cf []string) error {
-	cpPath := baseHandler.getCheckpointPath(baseHandler.dbName, blockNumber, statehash)
-	baseHandler.dbName = dbName
-	baseHandler.opendb(cpPath, cf)
-	targetDir := getDBPath(dbName)
-	return baseHandler.createCheckpoint(targetDir)
-}
-
-func (oc *OpenchainDB) ProduceCheckpoint(newBlockNumber uint64, statehash string) error {
-	cpPath := baseHandler.getCheckpointPath(baseHandler.dbName, newBlockNumber, statehash)
-	return baseHandler.createCheckpoint(cpPath)
-}
-
-func (baseHandler *baseHandler) getCheckpointPath(dbName string, newBlockNumber uint64, statehash string) string {
-
-	checkpointTop := util.CanonicalizePath(getCheckPointPath(dbName))
-	util.MkdirIfNotExist(checkpointTop)
-	//return checkpointTop + dbg.Int2string(newBlockNumber) + "-" + statehash
-	return checkpointTop + statehash
-}
-
-func (openchainDB *OpenchainDB) OpenCheckPoint(dbName string, blockNumber uint64, statehash string) error {
-	openchainDB.closeDBHandler()
-	targetDir := getDBPath(dbName)
-	err := os.RemoveAll(targetDir)
-	if err == nil {
-		openchainDB.produceDbByCheckPoint(dbName, blockNumber, statehash, columnfamilies)
-		openchainDB.closeDBHandler()
-		openchainDB.open(dbName, columnfamilies)
-	} else {
-		dbLogger.Errorf("[%s] Error: %s", printGID, err)
-	}
-	return err
 }

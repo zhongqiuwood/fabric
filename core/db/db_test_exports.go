@@ -72,11 +72,16 @@ func (testDB *TestDBWrapper) removeDBPath() {
 	os.RemoveAll(dbPath)
 }
 
+func NewWriteBatch() *DBWriteBatch {
+	return &DBWriteBatch{WriteBatch: gorocksdb.NewWriteBatch()}
+
+}
+
 // WriteToDB tests can use this method for persisting a given batch to db
-func (testDB *TestDBWrapper) WriteToDB(t testing.TB, writeBatch *gorocksdb.WriteBatch) {
+func (testDB *TestDBWrapper) WriteToDB(t testing.TB, writeBatch *DBWriteBatch) {
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	err := GetDBHandle().db.Write(opt, writeBatch)
+	err := GetDBHandle().db.Write(opt, writeBatch.WriteBatch)
 	if err != nil {
 		t.Fatalf("Error while writing to db. Error:%s", err)
 	}
@@ -131,10 +136,10 @@ func (testDB *TestDBWrapper) GetEstimatedNumKeys(t testing.TB) map[string]string
 	openchainDB := GetDBHandle()
 	result := make(map[string]string, 5)
 
-	result["stateCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.stateCF)
-	result["stateDeltaCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.stateDeltaCF)
-	result["blockchainCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.blockchainCF)
-	result["indexCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.indexesCF)
+	result["stateCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.db.StateCF)
+	result["stateDeltaCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.db.StateDeltaCF)
+	result["blockchainCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.db.BlockchainCF)
+	result["indexCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.db.IndexesCF)
 	return result
 }
 

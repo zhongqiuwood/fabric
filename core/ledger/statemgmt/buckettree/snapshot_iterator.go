@@ -27,8 +27,8 @@ type StateSnapshotIterator struct {
 	dbItr *gorocksdb.Iterator
 }
 
-func newStateSnapshotIterator(exth *db.ExtHandler) (*StateSnapshotIterator, error) {
-	dbItr := exth.GetStateCFSnapshotIterator()
+func newStateSnapshotIterator(snapshot *db.DBSnapshot) (*StateSnapshotIterator, error) {
+	dbItr := snapshot.GetStateCFSnapshotIterator()
 	dbItr.Seek([]byte{0x01})
 	dbItr.Prev()
 	return &StateSnapshotIterator{dbItr}, nil

@@ -22,7 +22,6 @@ import (
 
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/protos"
-	"github.com/tecbot/gorocksdb"
 )
 
 var lastIndexedBlockKey = []byte{byte(0)}
@@ -99,7 +98,7 @@ func (indexer *blockchainIndexerAsync) start(blockchain *blockchain) error {
 	return nil
 }
 
-func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error {
+func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
 	indexer.blockChan <- blockWrapper{block, blockNumber, blockHash, false}
 	return nil
 }
@@ -107,15 +106,13 @@ func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockN
 // createIndexes adds entries into db for creating indexes on various attributes
 func (indexer *blockchainIndexerAsync) createIndexesInternal(block *protos.Block, blockNumber uint64, blockHash []byte) error {
 
-	writeBatch := gorocksdb.NewWriteBatch()
+	writeBatch := db.GetDBHandle().NewWriteBatch()
 	defer writeBatch.Destroy()
 	addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
-	db.GetDBHandle().PutValue(db.IndexesCF,
-		lastIndexedBlockKey, encodeBlockNumber(blockNumber), writeBatch)
+	writeBatch.PutCF(writeBatch.GetDBHandle().IndexesCF,
+		lastIndexedBlockKey, encodeBlockNumber(blockNumber))
 
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	err := db.GetDBHandle().BatchCommit(opt, writeBatch)
+	err := writeBatch.BatchCommit()
 	if err != nil {
 		return err
 	}

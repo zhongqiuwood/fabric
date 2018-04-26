@@ -43,7 +43,7 @@ func TestStateSnapshotIterator(t *testing.T) {
 
 	// take db snapeshot
 	dbSnapshot := db.GetDBHandle().GetSnapshot()
-
+	defer dbSnapshot.Release()
 	// delete keys
 	stateDelta.Delete("chaincodeID1", "key1", nil)
 	stateDelta.Delete("chaincodeID2", "key2", nil)
@@ -57,6 +57,7 @@ func TestStateSnapshotIterator(t *testing.T) {
 	testutil.AssertNil(t, stateImplTestWrapper.get("chaincodeID5", "key5"))
 
 	itr, err := newStateSnapshotIterator(dbSnapshot)
+	defer itr.Close()
 	testutil.AssertNoError(t, err, "Error while getting state snapeshot iterator")
 	numKeys := 0
 	for itr.Next() {

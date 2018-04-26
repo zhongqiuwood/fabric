@@ -23,7 +23,6 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/testutil"
-	"github.com/tecbot/gorocksdb"
 )
 
 var testDBWrapper = db.NewTestDBWrapper()
@@ -62,7 +61,7 @@ func (testWrapper *stateTestWrapper) getSnapshot() *StateSnapshot {
 }
 
 func (testWrapper *stateTestWrapper) persistAndClearInMemoryChanges(blockNumber uint64) {
-	writeBatch := gorocksdb.NewWriteBatch()
+	writeBatch := testDBWrapper.NewWriteBatch()
 	defer writeBatch.Destroy()
 	testWrapper.state.AddChangesForPersistence(blockNumber, writeBatch)
 	testDBWrapper.WriteToDB(testWrapper.t, writeBatch)

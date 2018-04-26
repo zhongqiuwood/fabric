@@ -29,7 +29,6 @@ import (
 	"golang.org/x/crypto/sha3"
 	"hash"
 	"os"
-	"path"
 )
 
 type alg struct {
@@ -183,7 +182,7 @@ func MkdirIfNotExist(targetDir string) bool {
 	}
 
 	if missing {
-		err = os.MkdirAll(path.Dir(targetDir), 0755)
+		err = os.MkdirAll(targetDir, 0755)
 		if err != nil {
 			panic(fmt.Sprintf("Error making directory path [%s]: %s", targetDir, err))
 		}

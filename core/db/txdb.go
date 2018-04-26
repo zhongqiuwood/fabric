@@ -41,6 +41,7 @@ type txCFs struct {
 }
 
 func (c *txCFs) feed(cfmap map[string]*gorocksdb.ColumnFamilyHandle) {
+
 	c.txCF = cfmap[TxCF]
 	c.globalCF = cfmap[GlobalCF]
 	c.consensusCF = cfmap[ConsensusCF]
@@ -209,16 +210,14 @@ func (txdb *GlobalDataDB) open(dbpath string) error {
 
 	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies, nil)
 
-	if len(cfhandlers) != 4 {
+	if len(cfhandlers) != len(txDbColumnfamilies) {
 		return errors.New("rocksdb may ruin or not work as expected")
 	}
 
 	//feed cfs
-	txdb.cfMap = map[string]*gorocksdb.ColumnFamilyHandle{
-		TxCF:        cfhandlers[0],
-		GlobalCF:    cfhandlers[1],
-		ConsensusCF: cfhandlers[2],
-		PersistCF:   cfhandlers[3],
+	txdb.cfMap = make(map[string]*gorocksdb.ColumnFamilyHandle)
+	for i, cfName := range txDbColumnfamilies {
+		txdb.cfMap[cfName] = cfhandlers[i]
 	}
 
 	txdb.feed(txdb.cfMap)
@@ -385,6 +384,10 @@ func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byt
 		return fmt.Errorf("commit on node [%x] was ruined: %s", parentStateHash, err)
 	}
 
+	return nil
+}
+
+func (txdb *GlobalDataDB) PutTransactions(txs []*protos.Transaction) error {
 	return nil
 }
 

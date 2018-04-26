@@ -72,8 +72,8 @@ func (testDB *TestDBWrapper) removeDBPath() {
 	os.RemoveAll(dbPath)
 }
 
-func NewWriteBatch() *DBWriteBatch {
-	return &DBWriteBatch{WriteBatch: gorocksdb.NewWriteBatch()}
+func (testDB *TestDBWrapper) NewWriteBatch() *DBWriteBatch {
+	return GetDBHandle().NewWriteBatch()
 
 }
 

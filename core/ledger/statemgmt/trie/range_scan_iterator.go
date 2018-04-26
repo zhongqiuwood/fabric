@@ -19,12 +19,11 @@ package trie
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/tecbot/gorocksdb"
 )
 
 // RangeScanIterator implements the interface 'statemgmt.RangeScanIterator'
 type RangeScanIterator struct {
-	dbItr        *gorocksdb.Iterator
+	dbItr        *db.DBIterator
 	chaincodeID  string
 	endKey       string
 	currentKey   string

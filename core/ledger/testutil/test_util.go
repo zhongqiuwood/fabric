@@ -20,6 +20,7 @@ import (
 	"crypto/rand"
 	"flag"
 	"fmt"
+	"io/ioutil"
 	mathRand "math/rand"
 	"reflect"
 	"regexp"
@@ -66,6 +67,13 @@ func SetupTestConfig() {
 		`%{color}%{time:15:04:05.000} [%{module}] %{shortfunc} [%{shortfile}] -> %{level:.4s} %{id:03x}%{color:reset} %{message}`,
 	)
 	logging.SetFormatter(formatter)
+
+	//use temp path for db
+	tempDir, err := ioutil.TempDir("", "fabric-ledger-test")
+	if err != nil {
+		panic(err)
+	}
+	viper.Set("peer.fileSystemPath", tempDir)
 }
 
 func SetLogLevel(level logging.Level, module string) {

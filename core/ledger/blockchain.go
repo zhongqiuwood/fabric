@@ -18,14 +18,12 @@ package ledger
 
 import (
 	"bytes"
-	"strconv"
-
+	"encoding/binary"
 	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
-	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
+	"strconv"
 )
 
 // Blockchain holds basic information in memory. Operations on Blockchain are not thread-safe
@@ -46,15 +44,15 @@ type lastProcessedBlock struct {
 
 var indexBlockDataSynchronously = true
 
-func newBlockchain(currentDbVersion uint32) (*blockchain, error) {
-	size, err := db.GetDBHandle().FetchBlockchainSizeFromDB()
+func newBlockchain() (*blockchain, error) {
+	size, err := fetchBlockchainSizeFromDB()
 	if err != nil {
 		return nil, err
 	}
 	blockchain := &blockchain{0, nil, nil, nil, nil}
 	blockchain.size = size
 	if size > 0 {
-		previousBlock, err := db.GetDBHandle().FetchBlockFromDB(size-1, currentDbVersion)
+		previousBlock, err := fetchBlockFromDB(size - 1)
 		if err != nil {
 			return nil, err
 		}
@@ -96,63 +94,9 @@ func (blockchain *blockchain) getSize() uint64 {
 	return blockchain.size
 }
 
-// move txs to txdb
-func (blockchain *blockchain) reorganize() error {
-
-	size := blockchain.getSize()
-	if size == 0 {
-		return nil
-	}
-
-	gs := protos.NewGlobalState()
-
-	for i := uint64(0); i < size; i++ {
-		block, blockErr := blockchain.getBlockByOldMode(i)
-		if blockErr != nil {
-			return blockErr
-		}
-
-		if i > 0 {
-			blockHashV0, err := block.GetHashV0()
-			if err != nil {
-				return err
-			}
-
-			err = db.GetDBHandle().DeleteKey(db.IndexesCF, encodeBlockHashKey(blockHashV0), nil)
-			ledgerLogger.Infof("%d: DeleteKey in <%s>: <%x>. err: %s", i, db.IndexesCF, encodeBlockHashKey(blockHashV0), err)
-		}
-
-		block.FeedTranscationIds()
-
-		state.CommitGlobalState(block.Transactions, block.StateHash, i, gs)
-
-		if block.Transactions == nil {
-			ledgerLogger.Infof("%d: block.Transactions == nil", i)
-			continue
-		}
-
-		blockchain.persistUpdatedRawBlock(block, i)
-	}
-
-	//dbg.Infof("===========================after shrink==============================")
-	//for i := uint64(0); i < size; i++ {
-	//	block, blockErr := blockchain.getBlock(i)
-	//	if blockErr != nil {
-	//		return blockErr
-	//	}
-	//	//block.Dump()
-	//}
-	return nil
-}
-
 // getBlock get block at arbitrary height in block chain
 func (blockchain *blockchain) getBlock(blockNumber uint64) (*protos.Block, error) {
-	return db.GetDBHandle().FetchBlockFromDB(blockNumber, protos.CurrentDbVersion)
-}
-
-// getBlock get block at arbitrary height in block chain
-func (blockchain *blockchain) getBlockByOldMode(blockNumber uint64) (*protos.Block, error) {
-	return db.GetDBHandle().FetchBlockFromDB(blockNumber, 0)
+	return fetchBlockFromDB(blockNumber)
 }
 
 // getBlockByHash get block by block hash
@@ -246,7 +190,7 @@ func (blockchain *blockchain) buildBlock(block *protos.Block, stateHash []byte) 
 }
 
 func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Context,
-	block *protos.Block, stateHash []byte, writeBatch *gorocksdb.WriteBatch) (uint64, error) {
+	block *protos.Block, stateHash []byte, writeBatch *db.DBWriteBatch) (uint64, error) {
 	block = blockchain.buildBlock(block, stateHash)
 	if block.NonHashData == nil {
 		block.NonHashData = &protos.NonHashData{LocalLedgerCommitTimestamp: util.CreateUtcTimestamp()}
@@ -264,8 +208,9 @@ func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Conte
 	if blockBytesErr != nil {
 		return 0, blockBytesErr
 	}
-	db.GetDBHandle().PutValue(db.BlockchainCF, db.EncodeBlockNumberDBKey(blockNumber), blockBytes, writeBatch)
-	db.GetDBHandle().PutValue(db.BlockchainCF, db.BlockCountKey, db.EncodeUint64(blockNumber+1), writeBatch)
+	cf := writeBatch.GetDBHandle().BlockchainCF
+	writeBatch.PutCF(cf, encodeBlockNumberDBKey(blockNumber), blockBytes)
+	writeBatch.PutCF(cf, blockCountKey, encodeUint64(blockNumber+1))
 	if blockchain.indexer.isSynchronous() {
 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
 	}
@@ -278,7 +223,7 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) {
 		blockchain.size++
 		blockchain.previousBlockHash = blockchain.lastProcessedBlock.blockHash
 		if !blockchain.indexer.isSynchronous() {
-			writeBatch := gorocksdb.NewWriteBatch()
+			writeBatch := db.GetDBHandle().NewWriteBatch()
 			defer writeBatch.Destroy()
 			blockchain.indexer.createIndexes(blockchain.lastProcessedBlock.block,
 				blockchain.lastProcessedBlock.blockNumber, blockchain.lastProcessedBlock.blockHash, writeBatch)
@@ -287,43 +232,44 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) {
 	blockchain.lastProcessedBlock = nil
 }
 
-func (blockchain *blockchain) persistUpdatedRawBlock(block *protos.Block, blockNumber uint64) error {
+// func (blockchain *blockchain) persistUpdatedRawBlock(block *protos.Block, blockNumber uint64) error {
 
-	block.Transactions = nil
-	blockBytes, blockBytesErr := block.GetBlockBytes()
-	if blockBytesErr != nil {
-		return blockBytesErr
-	}
-	writeBatch := gorocksdb.NewWriteBatch()
-	defer writeBatch.Destroy()
-	db.GetDBHandle().PutValue(db.BlockchainCF, db.EncodeBlockNumberDBKey(blockNumber), blockBytes, writeBatch)
+// 	block.Transactions = nil
+// 	blockBytes, blockBytesErr := block.GetBlockBytes()
+// 	if blockBytesErr != nil {
+// 		return blockBytesErr
+// 	}
+// 	writeBatch := gorocksdb.NewWriteBatch()
+// 	defer writeBatch.Destroy()
+// 	db.GetDBHandle().PutValue(db.BlockchainCF, db.EncodeBlockNumberDBKey(blockNumber), blockBytes, writeBatch)
 
-	blockHash, err := block.GetHash()
-	if err != nil {
-		return err
-	}
+// 	blockHash, err := block.GetHash()
+// 	if err != nil {
+// 		return err
+// 	}
 
-	if blockchain.indexer.isSynchronous() {
-		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
-	}
+// 	if blockchain.indexer.isSynchronous() {
+// 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
+// 	}
 
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	err = db.GetDBHandle().BatchCommit(opt, writeBatch)
-	if err != nil {
-		return err
-	}
-	return nil
-}
+// 	opt := gorocksdb.NewDefaultWriteOptions()
+// 	defer opt.Destroy()
+// 	err = db.GetDBHandle().BatchCommit(opt, writeBatch)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return nil
+// }
 
 func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
 	blockBytes, blockBytesErr := block.GetBlockBytes()
 	if blockBytesErr != nil {
 		return blockBytesErr
 	}
-	writeBatch := gorocksdb.NewWriteBatch()
+	writeBatch := db.GetDBHandle().NewWriteBatch()
 	defer writeBatch.Destroy()
-	db.GetDBHandle().PutValue(db.BlockchainCF, db.EncodeBlockNumberDBKey(blockNumber), blockBytes, writeBatch)
+	cf := writeBatch.GetDBHandle().BlockchainCF
+	writeBatch.PutCF(cf, encodeBlockNumberDBKey(blockNumber), blockBytes)
 
 	blockHash, err := block.GetHash()
 	if err != nil {
@@ -333,8 +279,8 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 	// Need to check as we support out of order blocks in cases such as block/state synchronization. This is
 	// real blockchain height, not size.
 	if blockchain.getSize() < blockNumber+1 {
-		sizeBytes := db.EncodeUint64(blockNumber + 1)
-		db.GetDBHandle().PutValue(db.BlockchainCF, db.BlockCountKey, sizeBytes, writeBatch)
+		sizeBytes := encodeUint64(blockNumber + 1)
+		writeBatch.PutCF(cf, blockCountKey, sizeBytes)
 		blockchain.size = blockNumber + 1
 		blockchain.previousBlockHash = blockHash
 	}
@@ -343,13 +289,61 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
 	}
 
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	err = db.GetDBHandle().BatchCommit(opt, writeBatch)
+	err = writeBatch.BatchCommit()
 	if err != nil {
 		return err
 	}
 	return nil
+}
+
+func fetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
+	blockBytes, err := db.GetDBHandle().GetFromBlockchainCF(encodeBlockNumberDBKey(blockNumber))
+	if err != nil {
+		return nil, err
+	}
+	if blockBytes == nil {
+		return nil, nil
+	}
+	return protos.UnmarshallBlock(blockBytes)
+}
+
+func fetchBlockchainSizeFromDB() (uint64, error) {
+	bytes, err := db.GetDBHandle().GetFromBlockchainCF(blockCountKey)
+	if err != nil {
+		return 0, err
+	}
+	if bytes == nil {
+		return 0, nil
+	}
+	return decodeToUint64(bytes), nil
+}
+
+func fetchBlockchainSizeFromSnapshot(snapshot *db.DBSnapshot) (uint64, error) {
+	blockNumberBytes, err := snapshot.GetFromBlockchainCFSnapshot(blockCountKey)
+	if err != nil {
+		return 0, err
+	}
+	var blockNumber uint64
+	if blockNumberBytes != nil {
+		blockNumber = decodeToUint64(blockNumberBytes)
+	}
+	return blockNumber, nil
+}
+
+var blockCountKey = []byte("blockCount")
+
+func encodeBlockNumberDBKey(blockNumber uint64) []byte {
+	return encodeUint64(blockNumber)
+}
+
+func encodeUint64(number uint64) []byte {
+	bytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(bytes, number)
+	return bytes
+}
+
+func decodeToUint64(bytes []byte) uint64 {
+	return binary.BigEndian.Uint64(bytes)
 }
 
 func (blockchain *blockchain) String() string {

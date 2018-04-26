@@ -49,6 +49,7 @@ func TestStateSnapshotIterator(t *testing.T) {
 
 	// take db snapeshot
 	dbSnapshot := db.GetDBHandle().GetSnapshot()
+	defer dbSnapshot.Release()
 
 	stateDelta1 := statemgmt.NewStateDelta()
 	// delete a few keys
@@ -72,6 +73,7 @@ func TestStateSnapshotIterator(t *testing.T) {
 	testutil.AssertEquals(t, stateTrieTestWrapper.Get("chaincodeID5", "key5"), []byte("value5_new"))
 
 	itr, err := newStateSnapshotIterator(dbSnapshot)
+	defer itr.Close()
 	testutil.AssertNoError(t, err, "Error while getting state snapeshot iterator")
 
 	stateDeltaFromSnapshot := statemgmt.NewStateDelta()

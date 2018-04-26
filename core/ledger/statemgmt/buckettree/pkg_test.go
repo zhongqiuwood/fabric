@@ -135,7 +135,7 @@ func (testWrapper *stateImplTestWrapper) addChangesForPersistence(writeBatch *db
 }
 
 func (testWrapper *stateImplTestWrapper) persistChangesAndResetInMemoryChanges() {
-	writeBatch := db.NewWriteBatch()
+	writeBatch := testDBWrapper.NewWriteBatch()
 	defer writeBatch.Destroy()
 	testWrapper.addChangesForPersistence(writeBatch)
 	testDBWrapper.WriteToDB(testWrapper.t, writeBatch)

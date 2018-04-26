@@ -23,7 +23,6 @@ import (
 	"github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
-	"github.com/tecbot/gorocksdb"
 )
 
 var indexLogger = logging.MustGetLogger("indexes")
@@ -34,7 +33,7 @@ var prefixAddressBlockNumCompositeKey = byte(3)
 type blockchainIndexer interface {
 	isSynchronous() bool
 	start(blockchain *blockchain) error
-	createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error
+	createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error
 	fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error)
 	fetchTransactionIndexByID(txID string) (uint64, uint64, error)
 	stop()
@@ -57,7 +56,7 @@ func (indexer *blockchainIndexerSync) start(blockchain *blockchain) error {
 }
 
 func (indexer *blockchainIndexerSync) createIndexes(
-	block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error {
+	block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
 	return addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
 }
 
@@ -74,12 +73,12 @@ func (indexer *blockchainIndexerSync) stop() {
 }
 
 // Functions for persisting and retrieving index data
-func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error {
+func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
 	// add blockhash -> blockNumber
-	indexLogger.Debugf("Indexing block number [%d] by hash = [%x]", blockNumber, blockHash)
+	cf := writeBatch.GetDBHandle().IndexesCF
 
-	//dbg.Infof("IndexesCF add:  hash [%x] --> blocknumber [%d] ", blockHash, blockNumber)
-	db.GetDBHandle().PutValue(db.IndexesCF, encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber), writeBatch)
+	indexLogger.Debugf("Indexing block number [%d] by hash = [%x]", blockNumber, blockHash)
+	writeBatch.PutCF(cf, encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber))
 
 	addressToTxIndexesMap := make(map[string][]uint64)
 	addressToChaincodeIDsMap := make(map[string][]*protos.ChaincodeID)
@@ -87,9 +86,7 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 	transactions := block.GetTransactions()
 	for txIndex, tx := range transactions {
 		// add TxID -> (blockNumber,indexWithinBlock)
-
-		//dbg.Infof("IndexesCF add:  tx.Txid [%s] --> blockNumber, uint64(txIndex) [%d,%d] ", tx.Txid, blockNumber, uint64(txIndex))
-		db.GetDBHandle().PutValue(db.IndexesCF, encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)), writeBatch)
+		writeBatch.PutCF(cf, encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)))
 
 		txExecutingAddress := getTxExecutingAddress(tx)
 		addressToTxIndexesMap[txExecutingAddress] = append(addressToTxIndexesMap[txExecutingAddress], uint64(txIndex))
@@ -103,8 +100,8 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 		}
 	}
 	for address, txsIndexes := range addressToTxIndexesMap {
-		db.GetDBHandle().PutValue(db.IndexesCF, encodeAddressBlockNumCompositeKey(address, blockNumber),
-			encodeListTxIndexes(txsIndexes), writeBatch)
+		writeBatch.PutCF(cf, encodeAddressBlockNumCompositeKey(address, blockNumber),
+			encodeListTxIndexes(txsIndexes))
 	}
 	return nil
 }

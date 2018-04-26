@@ -17,7 +17,7 @@ limitations under the License.
 package statemgmt
 
 import (
-	"github.com/tecbot/gorocksdb"
+	"github.com/abchain/fabric/core/db"
 )
 
 // HashableState - Interface that is be implemented by state management
@@ -42,7 +42,7 @@ type HashableState interface {
 	// to persist for committing the  stateDelta (passed in PrepareWorkingSet method) to DB.
 	// In addition to the information in the StateDelta, the implementation may also want to
 	// persist intermediate results for faster crypto-hash computation
-	AddChangesForPersistence(writeBatch *gorocksdb.WriteBatch) error
+	AddChangesForPersistence(writeBatch *db.DBWriteBatch) error
 
 	// ClearWorkingSet state implementation may clear any data structures that it may have constructed
 	// for computing cryptoHash and persisting the changes for the stateDelta (passed in PrepareWorkingSet method)
@@ -52,7 +52,7 @@ type HashableState interface {
 	// All the key-value of global state. A particular implementation may need to remove additional information
 	// that the implementation keeps for faster crypto-hash computation. For instance, filter a few of the
 	// key-values or remove some data from particular key-values.
-	GetStateSnapshotIterator(snapshot *gorocksdb.Snapshot) (StateSnapshotIterator, error)
+	GetStateSnapshotIterator(snapshot *db.DBSnapshot) (StateSnapshotIterator, error)
 
 	// GetRangeScanIterator - state implementation to provide an iterator that is supposed to give
 	// All the key-values for a given chaincodeID such that a return key should be lexically greater than or

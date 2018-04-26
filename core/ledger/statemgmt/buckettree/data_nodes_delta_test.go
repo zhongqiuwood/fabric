@@ -25,6 +25,7 @@ import (
 )
 
 func TestDataNodesSort(t *testing.T) {
+	initConfig(nil)
 	dataNodes := dataNodes{}
 	dataNode1 := newDataNode(newDataKey("chaincodeID1", "key1"), []byte("value1_1"))
 	dataNode2 := newDataNode(newDataKey("chaincodeID1", "key2"), []byte("value1_2"))

@@ -1,7 +1,6 @@
 package db
 
 import (
-	"encoding/binary"
 	"fmt"
 	"github.com/abchain/fabric/core/util"
 	flog "github.com/abchain/fabric/flogging"
@@ -32,9 +31,6 @@ const BlockchainCF = "blockchainCF"
 const StateCF = "stateCF"
 const StateDeltaCF = "stateDeltaCF"
 const IndexesCF = "indexesCF"
-
-var BlockCountKey = []byte("blockCount")
-var VersionKey = []byte("ya_fabric_db_version")
 
 const OriginalDataBaseVersion = 1
 const GlobalDataBaseVersion = 1
@@ -139,7 +135,6 @@ func Start() {
 
 	globalDataDB.OpenOpt = opts
 	err := globalDataDB.open(getDBPath("txdb"))
-	dbLogger.Info("opentxdbend", err)
 	if err != nil {
 		panic(err)
 	}
@@ -355,11 +350,15 @@ func (openchainDB *baseHandler) getFromSnapshot(snapshot *gorocksdb.Snapshot,
 func getDBPath(dbname string) string {
 
 	dbPath := viper.GetString("peer.fileSystemPath")
-	// even null string is OK, just create it on the work directory
-	// if dbPath == "" {
-	// 	panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
-	// }
-	return filepath.Join(util.CanonicalizeFilePath(dbPath), dbname)
+	//though null string is OK, we still avoid this problem
+	if dbPath == "" {
+		panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
+	}
+	dbPath = util.CanonicalizePath(dbPath)
+	if util.MkdirIfNotExist(dbPath) {
+		dbLogger.Infof("dbpath %s not exist, we have created it", dbPath)
+	}
+	return filepath.Join(dbPath, dbname)
 }
 
 func makeCopy(src []byte) []byte {
@@ -368,16 +367,16 @@ func makeCopy(src []byte) []byte {
 	return dest
 }
 
-func EncodeBlockNumberDBKey(blockNumber uint64) []byte {
-	return EncodeUint64(blockNumber)
-}
+// func EncodeBlockNumberDBKey(blockNumber uint64) []byte {
+// 	return EncodeUint64(blockNumber)
+// }
 
-func EncodeUint64(number uint64) []byte {
-	bytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(bytes, number)
-	return bytes
-}
+// func EncodeUint64(number uint64) []byte {
+// 	bytes := make([]byte, 8)
+// 	binary.BigEndian.PutUint64(bytes, number)
+// 	return bytes
+// }
 
-func DecodeToUint64(bytes []byte) uint64 {
-	return binary.BigEndian.Uint64(bytes)
-}
+// func DecodeToUint64(bytes []byte) uint64 {
+// 	return binary.BigEndian.Uint64(bytes)
+// }

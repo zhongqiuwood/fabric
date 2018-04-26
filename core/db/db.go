@@ -19,7 +19,6 @@ package db
 import (
 	"errors"
 	"fmt"
-	"github.com/abchain/fabric/protos"
 	"github.com/tecbot/gorocksdb"
 	"sync"
 )
@@ -83,17 +82,14 @@ func (openchainDB *ocDB) open(dbpath string) error {
 
 	cfhandlers := openchainDB.opendb(dbpath, columnfamilies, nil)
 
-	if len(cfhandlers) != 5 {
+	if len(cfhandlers) != len(columnfamilies) {
 		return errors.New("rocksdb may ruin or not work as expected")
 	}
 
 	//feed cfs
-	openchainDB.cfMap = map[string]*gorocksdb.ColumnFamilyHandle{
-		BlockchainCF: cfhandlers[0],
-		StateCF:      cfhandlers[1],
-		StateDeltaCF: cfhandlers[2],
-		IndexesCF:    cfhandlers[3],
-		PersistCF:    cfhandlers[4],
+	openchainDB.cfMap = make(map[string]*gorocksdb.ColumnFamilyHandle)
+	for i, cfName := range columnfamilies {
+		openchainDB.cfMap[cfName] = cfhandlers[i]
 	}
 
 	openchainDB.feed(openchainDB.cfMap)
@@ -141,38 +137,31 @@ func (openchainDB *OpenchainDB) PutValue(cfname string, key []byte, value []byte
 //	return block.Txids
 //}
 
-func (orgdb *OpenchainDB) FetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
+// func (orgdb *OpenchainDB) FetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
+
+// 	orgdb.RLock()
+// 	defer orgdb.RUnlock()
+
+// 	blockBytes, err := orgdb.db.get(orgdb.db.BlockchainCF, EncodeBlockNumberDBKey(blockNumber))
+// 	if err != nil {
+
+// 		return nil, err
+// 	}
+// 	if blockBytes == nil {
+
+// 		return nil, nil
+// 	}
+// 	block, errUnmarshall := protos.UnmarshallBlock(blockBytes)
+
+// 	return block, errUnmarshall
+// }
+
+func (orgdb *OpenchainDB) GetFromBlockchainCF(key []byte) ([]byte, error) {
 
 	orgdb.RLock()
 	defer orgdb.RUnlock()
 
-	blockBytes, err := orgdb.db.get(orgdb.db.BlockchainCF, EncodeBlockNumberDBKey(blockNumber))
-	if err != nil {
-
-		return nil, err
-	}
-	if blockBytes == nil {
-
-		return nil, nil
-	}
-	block, errUnmarshall := protos.UnmarshallBlock(blockBytes)
-
-	return block, errUnmarshall
-}
-
-func (orgdb *OpenchainDB) FetchBlockchainSizeFromDB() (uint64, error) {
-
-	orgdb.RLock()
-	defer orgdb.RUnlock()
-
-	bytes, err := orgdb.db.get(orgdb.db.BlockchainCF, BlockCountKey)
-	if err != nil {
-		return 0, err
-	}
-	if bytes == nil {
-		return 0, nil
-	}
-	return DecodeToUint64(bytes), nil
+	return orgdb.db.get(orgdb.db.BlockchainCF, key)
 }
 
 // DeleteState delets ALL state keys/values from the DB. This is generally
@@ -301,7 +290,7 @@ func (openchainDB *OpenchainDB) GetIterator(cfName string) *DBIterator {
 
 func (e *DBWriteBatch) Destroy() {
 	if e.WriteBatch != nil {
-		e.Destroy()
+		e.WriteBatch.Destroy()
 	}
 	e.h.release()
 }
@@ -332,19 +321,19 @@ func (e *DBSnapshot) GetSnapshot() *gorocksdb.Snapshot {
 	return e.snapshot
 }
 
-// Some legacy entries, we make all "fromsnapshot" function becoming simple api (not member func)....
-func (e *DBSnapshot) FetchBlockchainSizeFromSnapshot() (uint64, error) {
+// // Some legacy entries, we make all "fromsnapshot" function becoming simple api (not member func)....
+// func (e *DBSnapshot) FetchBlockchainSizeFromSnapshot() (uint64, error) {
 
-	blockNumberBytes, err := e.GetFromBlockchainCFSnapshot(BlockCountKey)
-	if err != nil {
-		return 0, err
-	}
-	var blockNumber uint64
-	if blockNumberBytes != nil {
-		blockNumber = DecodeToUint64(blockNumberBytes)
-	}
-	return blockNumber, nil
-}
+// 	blockNumberBytes, err := e.GetFromBlockchainCFSnapshot(BlockCountKey)
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	var blockNumber uint64
+// 	if blockNumberBytes != nil {
+// 		blockNumber = DecodeToUint64(blockNumberBytes)
+// 	}
+// 	return blockNumber, nil
+// }
 
 // GetFromBlockchainCFSnapshot get value for given key from column family in a DB snapshot - blockchainCF
 func (e *DBSnapshot) GetFromBlockchainCFSnapshot(key []byte) ([]byte, error) {

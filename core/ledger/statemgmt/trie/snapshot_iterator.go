@@ -29,8 +29,8 @@ type StateSnapshotIterator struct {
 	currentValue []byte
 }
 
-func newStateSnapshotIterator(snapshot *gorocksdb.Snapshot) (*StateSnapshotIterator, error) {
-	dbItr := db.GetDBHandle().GetStateCFSnapshotIterator(snapshot)
+func newStateSnapshotIterator(snapshot *db.DBSnapshot) (*StateSnapshotIterator, error) {
+	dbItr := snapshot.GetStateCFSnapshotIterator()
 	dbItr.SeekToFirst()
 	// skip the root key, because, the value test in Next method is misleading for root key as the value field
 	dbItr.Next()

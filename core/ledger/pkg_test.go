@@ -24,7 +24,6 @@ import (
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
-	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
 )
 
@@ -48,7 +47,7 @@ func newTestBlockchainWrapper(t *testing.T) *blockchainTestWrapper {
 }
 
 func (testWrapper *blockchainTestWrapper) addNewBlock(block *protos.Block, stateHash []byte) uint64 {
-	writeBatch := gorocksdb.NewWriteBatch()
+	writeBatch := testDBWrapper.NewWriteBatch()
 	defer writeBatch.Destroy()
 	newBlockNumber, err := testWrapper.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
 	testutil.AssertNoError(testWrapper.t, err, "Error while adding a new block")

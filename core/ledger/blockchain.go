@@ -144,8 +144,12 @@ func (blockchain *blockchain) getTransaction(blockNumber uint64, txIndex uint64)
 		return nil, err
 	}
 
-	ledgerLogger.Debugf("[%s] tx[%+v], txIndex[%d]", printGID, transactions, txIndex)
-	return transactions[txIndex], nil
+	tx, err := db.GetGlobalDBHandle().GetTransaction(ransactions[txIndex].Txid)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
 }
 
 // getTransactionByBlockHash get a transaction identified by block hash and index within the block

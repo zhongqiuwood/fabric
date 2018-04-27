@@ -405,6 +405,29 @@ func (txdb *GlobalDataDB) PutTransactions(txs []*protos.Transaction) error {
 	return txdb.DB.Write(opt, wb)
 }
 
+func (txdb *GlobalDataDB) GetTransaction(txid string) (*protos.Transaction, error) {
+
+	txInByte, err := txdb.get(txdb.txCF, []byte(txid))
+
+	if err != nil {
+		return nil, err
+	}
+
+	if txInByte == nil {
+		dbLogger.Debugf("[%s] Transaction %s not found", printGID, txid)
+		return nil, nil
+	} else {
+		tx, err := protos.UnmarshallTransaction(txInByte)
+		if err != nil {
+			//treat as not found
+			dbLogger.Errorf("[%s] Transaction data error: %s", printGID, err)
+			return nil, nil
+		}
+		return tx, nil
+	}
+
+}
+
 func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction {
 
 	if txids == nil {
@@ -415,25 +438,15 @@ func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction 
 	txs := make([]*protos.Transaction, 0, length)
 
 	for _, id := range txids {
-		txInByte, err := txdb.get(txdb.txCF, []byte(id))
 
+		var tx *protos.Transaction
+		tx, err := txdb.GetTransaction(id)
+
+		//not try more, just quit
 		if err != nil {
-			//not try more, just quit
 			return nil
-		}
-
-		if txInByte == nil {
-			dbLogger.Debugf("[%s] Transaction %s not found", printGID, id)
-			continue
-		} else {
-			var tx *protos.Transaction
-			tx, err = protos.UnmarshallTransaction(txInByte)
-
-			if err != nil {
-				dbLogger.Errorf("[%s] Transaction data error: %s", printGID, err)
-			} else {
-				txs = append(txs, tx)
-			}
+		} else if tx != nil {
+			txs = append(txs, tx)
 		}
 
 	}

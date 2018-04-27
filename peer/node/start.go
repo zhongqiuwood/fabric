@@ -124,7 +124,7 @@ func StartNode(postrun func() error) error {
 		return err
 	}
 
-	pb.CurrentDbVersion = pb.GetDbVersionFromConfig()
+	//	pb.CurrentDbVersion = pb.GetDbVersionFromConfig()
 
 	db.Start()
 	defer db.Stop()

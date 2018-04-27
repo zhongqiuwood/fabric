@@ -265,7 +265,7 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 			return nil, err
 		}
 
-		transaction.Txid = util.TxidFromDigest(digest)
+		transaction.Txid = util.GenerateIDfromDigest(digest)
 		devopsLogger.Debugf("Invocation transaction id updated to (%s) from (%s)", transaction.Txid, id)
 	}
 

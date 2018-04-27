@@ -102,8 +102,7 @@ func (block *Block) hashV1() ([]byte, error) {
 
 	hw := util.NewHashWriter(h)
 
-	err = hw.Write(block.StateHash).Write(
-		block.PreviousBlockHash).Write(block.ConsensusMetadata).Error()
+	err = hw.Write(block.PreviousBlockHash).Write(block.ConsensusMetadata).Error()
 	if err != nil {
 		return nil, err
 	}

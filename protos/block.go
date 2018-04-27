@@ -40,31 +40,59 @@ import (
 // 	return block
 // }
 
+type normalizeBlock struct {
+	transactions []*Transaction
+	txids        []string
+}
+
+func (n *normalizeBlock) Resume(block *Block) {
+	block.Transactions = n.transactions
+	block.Txids = n.txids
+}
+
+//Use to make the block become "normalized" without mutate the block
+func makeNormalizeBlock(block *Block) *normalizeBlock {
+	r := &normalizeBlock{block.Transactions, block.Txids}
+	block.Transactions = nil
+
+	if r.txids == nil && r.transactions != nil {
+		block.Txids = make([]string, len(r.transactions))
+		for i, tx := range r.transactions {
+			block.Txids[i] = tx.Txid
+		}
+	}
+
+	return r
+}
+
 // Bytes returns this block as an array of bytes.
 func (block *Block) GetBlockBytes() ([]byte, error) {
 
-	transactions := block.Transactions
-	block.Transactions = nil
-
-	resume := func() { block.Transactions = transactions }
-
-	defer resume()
+	normalize := makeNormalizeBlock(block)
+	defer normalize.Resume(block)
 
 	data, err := proto.Marshal(block)
 
 	if err != nil {
 		return nil, fmt.Errorf("Could not marshal block: %s", err)
 	}
+
 	return data, nil
 }
 
-const (
-	DefaultBlockVersion = 1
-)
+var defaultBlockVersion uint32 = 1
+
+func SetDefaultBlockVer(v uint32) {
+	defaultBlockVersion = v
+}
+
+func DefaultBlockVer() uint32 {
+	return defaultBlockVersion
+}
 
 // NewBlock creates a new Block given the input parameters.
 func NewBlock(transactions []*Transaction, metadata []byte) *Block {
-	return NewBlockV(DefaultBlockVersion, transactions, metadata)
+	return NewBlockV(defaultBlockVersion, transactions, metadata)
 }
 
 // NewBlock creates a new Block given the input parameters.
@@ -74,7 +102,14 @@ func NewBlockV(ver uint32, transactions []*Transaction, metadata []byte) *Block 
 	block.ConsensusMetadata = metadata
 
 	block.Version = ver
-	block.feedTranscationIds()
+
+	if len(block.Transactions) > 0 {
+		block.Txids = make([]string, len(block.Transactions))
+		for i, tx := range block.Transactions {
+			block.Txids[i] = tx.Txid
+		}
+	}
+
 	return block
 }
 
@@ -92,6 +127,9 @@ func (block *Block) GetHash() ([]byte, error) {
 }
 
 func (block *Block) hashV1() ([]byte, error) {
+
+	normalize := makeNormalizeBlock(block)
+	defer normalize.Resume(block)
 
 	h := util.DefaultCryptoHash()
 
@@ -121,7 +159,7 @@ func (block *Block) hashV1() ([]byte, error) {
 // returns the hash of this block by the legacy way
 func (block *Block) legacyHash() ([]byte, error) {
 
-	//we abandoned the old "deep copy" way to calc hash
+	//legacy way use special "normalized" process
 	txids := block.Txids
 	nonHashData := block.NonHashData
 
@@ -166,18 +204,5 @@ func UnmarshallBlock(blockBytes []byte) (*Block, error) {
 		return nil, fmt.Errorf("Could not unmarshal block: %s", err)
 	}
 
-	block.feedTranscationIds()
-
 	return block, nil
-}
-
-// If block is load from legacy bytes, update the txid field
-func (block *Block) feedTranscationIds() {
-
-	if block.Version == 0 && block.Txids == nil {
-		block.Txids = make([]string, len(block.Transactions))
-		for i, tx := range block.Transactions {
-			block.Txids[i] = tx.Txid
-		}
-	}
 }

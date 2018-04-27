@@ -419,6 +419,12 @@ func (ledger *Ledger) DeleteALLStateKeysAndValues() error {
 	return ledger.state.DeleteState()
 }
 
+/////////////////// transaction related methods /////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+func (ledger *Ledger) PutTransactions(txs []*protos.Transaction) error {
+	return db.GetGlobalDBHandle().PutTransactions(txs)
+}
+
 /////////////////// blockchain related methods /////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -460,7 +466,13 @@ func (ledger *Ledger) PutBlock(blockNumber uint64, block *protos.Block) error {
 // PutRawBlock puts a raw block on the chain. This function should only be
 // used for synchronization between peers.
 func (ledger *Ledger) PutRawBlock(block *protos.Block, blockNumber uint64) error {
-	err := ledger.blockchain.persistRawBlock(block, blockNumber)
+
+	err := ledger.PutTransactions(block.Transactions)
+	if err != nil {
+		return err
+	}
+
+	err = ledger.blockchain.persistRawBlock(block, blockNumber)
 	if err != nil {
 		return err
 	}

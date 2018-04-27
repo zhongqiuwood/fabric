@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/abchain/fabric/core/util"
 	flog "github.com/abchain/fabric/flogging"
-	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
@@ -32,44 +31,12 @@ const StateCF = "stateCF"
 const StateDeltaCF = "stateDeltaCF"
 const IndexesCF = "indexesCF"
 
-const OriginalDataBaseVersion = 1
-const GlobalDataBaseVersion = 1
-
-type IDataBaseHandler interface {
-
-	////////////////////////////////
-	//operations should be invoked with rw lock
-	GetIterator(cfname string) *gorocksdb.Iterator
-	GetValue(cfname string, key []byte) ([]byte, error)
-	DeleteKey(cfname string, key []byte, wb *gorocksdb.WriteBatch) error
-	PutValue(cfname string, key []byte, value []byte, wb *gorocksdb.WriteBatch) error
-	//operations should be in rw lock
-	////////////////////////////////
-
-	PutTransactions(transactions []*protos.Transaction, cfname string, wb *gorocksdb.WriteBatch) error
-	MoveColumnFamily(srcname string, dstDb IDataBaseHandler, dstname string, rmSrcCf bool) (uint64, error)
-	GetDbName() string
-	DumpGlobalState()
-}
-
 // base class of db handler and txdb handler
 type baseHandler struct {
 	*gorocksdb.DB
 	OpenOpt *gorocksdb.Options
 	cfMap   map[string]*gorocksdb.ColumnFamilyHandle
 }
-
-// // factory method to get db handler
-// func GetDataBaseHandler() IDataBaseHandler {
-
-// 	var dbhandler IDataBaseHandler
-// 	if protos.CurrentDbVersion == 0 {
-// 		dbhandler = GetDBHandle()
-// 	} else {
-// 		dbhandler = GetGlobalDBHandle()
-// 	}
-// 	return dbhandler
-// }
 
 func GetDBHandle() *OpenchainDB {
 	return originalDB
@@ -152,36 +119,6 @@ func Stop() {
 	originalDB.db.close()
 	globalDataDB.close()
 }
-
-////////////////////////////////////////////////////////////////////////////////
-////////////////////////////////////////////////////////////////////////////////
-// method exposed by IDataBaseHandler interface
-
-// func (bashHandler *BaseHandler) PutTransactions(txs []*protos.Transaction,
-// 	cfname string, wb *gorocksdb.WriteBatch) error {
-
-// 	var opt *gorocksdb.WriteOptions
-// 	opt = nil
-// 	if wb == nil {
-// 		wb = gorocksdb.NewWriteBatch()
-// 		defer wb.Destroy()
-
-// 		opt = gorocksdb.NewDefaultWriteOptions()
-// 		defer opt.Destroy()
-// 	}
-
-// 	for _, tx := range txs {
-// 		data, _ := tx.Bytes()
-// 		dbLogger.Debugf("[%s] <%s><%x>", printGID, tx.Txid, data)
-// 		bashHandler.PutValue(cfname, []byte(tx.Txid), data, wb)
-// 	}
-// 	var dbErr error
-// 	if opt != nil {
-// 		dbErr = bashHandler.BatchCommit(opt, wb)
-// 		dbLogger.Errorf("[%s] Error: %s", printGID, dbErr)
-// 	}
-// 	return dbErr
-// }
 
 func (h *baseHandler) get(cf *gorocksdb.ColumnFamilyHandle, key []byte) ([]byte, error) {
 	opt := gorocksdb.NewDefaultReadOptions()

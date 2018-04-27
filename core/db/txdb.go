@@ -388,19 +388,32 @@ func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byt
 }
 
 func (txdb *GlobalDataDB) PutTransactions(txs []*protos.Transaction) error {
-	return nil
+
+	//according to rocksdb's wiki, use writebach can do faster writting
+	opt := gorocksdb.NewDefaultWriteOptions()
+	defer opt.Destroy()
+
+	wb := gorocksdb.NewWriteBatch()
+	defer wb.Destroy()
+
+	for _, tx := range txs {
+		data, _ := tx.Bytes()
+		dbLogger.Debugf("[%s] Write transaction <%s>", printGID, tx.Txid)
+		wb.PutCF(txdb.txCF, []byte(tx.Txid), data)
+	}
+
+	return txdb.DB.Write(opt, wb)
 }
 
-func (txdb *GlobalDataDB) getTransactions(txids []string) []*protos.Transaction {
+func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction {
 
 	if txids == nil {
 		return nil
 	}
 
 	length := len(txids)
-	txs := make([]*protos.Transaction, length)
+	txs := make([]*protos.Transaction, 0, length)
 
-	idx := 0
 	for _, id := range txids {
 		txInByte, err := txdb.get(txdb.txCF, []byte(id))
 
@@ -410,7 +423,8 @@ func (txdb *GlobalDataDB) getTransactions(txids []string) []*protos.Transaction 
 		}
 
 		if txInByte == nil {
-			dbLogger.Errorf("[%s] Transaction %s not found", printGID, id)
+			dbLogger.Debugf("[%s] Transaction %s not found", printGID, id)
+			continue
 		} else {
 			var tx *protos.Transaction
 			tx, err = protos.UnmarshallTransaction(txInByte)
@@ -418,12 +432,11 @@ func (txdb *GlobalDataDB) getTransactions(txids []string) []*protos.Transaction 
 			if err != nil {
 				dbLogger.Errorf("[%s] Transaction data error: %s", printGID, err)
 			} else {
-				txs[idx] = tx
-				idx++
+				txs = append(txs, tx)
 			}
 		}
 
 	}
 
-	return txs[:idx]
+	return txs
 }

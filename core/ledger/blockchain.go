@@ -189,6 +189,8 @@ func (blockchain *blockchain) buildBlock(block *protos.Block, stateHash []byte) 
 	return block
 }
 
+//this entry put both transactions and block bytes, it serve for the legacy code and should not
+//be used in new code, it will be deprecated in future
 func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Context,
 	block *protos.Block, stateHash []byte, writeBatch *db.DBWriteBatch) (uint64, error) {
 	block = blockchain.buildBlock(block, stateHash)
@@ -199,6 +201,12 @@ func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Conte
 	}
 	blockNumber := blockchain.size
 	blockHash, err := block.GetHash()
+	if err != nil {
+		return 0, err
+	}
+
+	//pass transactions first
+	err = db.GetGlobalDBHandle().PutTransactions(block.Transactions)
 	if err != nil {
 		return 0, err
 	}
@@ -231,35 +239,6 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) {
 	}
 	blockchain.lastProcessedBlock = nil
 }
-
-// func (blockchain *blockchain) persistUpdatedRawBlock(block *protos.Block, blockNumber uint64) error {
-
-// 	block.Transactions = nil
-// 	blockBytes, blockBytesErr := block.GetBlockBytes()
-// 	if blockBytesErr != nil {
-// 		return blockBytesErr
-// 	}
-// 	writeBatch := gorocksdb.NewWriteBatch()
-// 	defer writeBatch.Destroy()
-// 	db.GetDBHandle().PutValue(db.BlockchainCF, db.EncodeBlockNumberDBKey(blockNumber), blockBytes, writeBatch)
-
-// 	blockHash, err := block.GetHash()
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	if blockchain.indexer.isSynchronous() {
-// 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
-// 	}
-
-// 	opt := gorocksdb.NewDefaultWriteOptions()
-// 	defer opt.Destroy()
-// 	err = db.GetDBHandle().BatchCommit(opt, writeBatch)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return nil
-// }
 
 func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
 	blockBytes, blockBytesErr := block.GetBlockBytes()
@@ -304,7 +283,13 @@ func fetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 	if blockBytes == nil {
 		return nil, nil
 	}
-	return protos.UnmarshallBlock(blockBytes)
+	blk, err := protos.UnmarshallBlock(blockBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	blk.Transactions = db.GetGlobalDBHandle().GetTransactions(blk.Txids)
+	return blk, nil
 }
 
 func fetchBlockchainSizeFromDB() (uint64, error) {

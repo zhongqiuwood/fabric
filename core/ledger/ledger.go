@@ -82,6 +82,7 @@ var (
 // Ledger - the struct for openchain ledger
 type Ledger struct {
 	blockchain *blockchain
+	txpool     *transactionPool
 	state      *state.State
 	txstate    *state.TxState
 	currentID  interface{}
@@ -107,12 +108,17 @@ func GetNewLedger() (*Ledger, error) {
 		return nil, err
 	}
 
+	txpool, err := newTxPool()
+	if err != nil {
+		return nil, err
+	}
+
 	txstate := state.NewTxState()
 	orgstate := state.NewState()
 
 	txstate.CurGState.ParentNodeStateHash = blockchain.previousBlockStateHash
 
-	return &Ledger{blockchain, orgstate, txstate, nil}, nil
+	return &Ledger{blockchain, txpool, orgstate, txstate, nil}, nil
 }
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
@@ -455,7 +461,7 @@ func (ledger *Ledger) GetBlockchainSize() uint64 {
 
 // GetTransactionByID return transaction by it's txId
 func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
-	return ledger.blockchain.getTransactionByID(txID)
+	return ledger.txpool.getTransaction(txID)
 }
 
 // PutBlock is just the alias-form of putrawblock

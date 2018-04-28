@@ -108,14 +108,14 @@ func (blockchain *blockchain) getBlockByHash(blockHash []byte) (*protos.Block, e
 	return blockchain.getBlock(blockNumber)
 }
 
-func (blockchain *blockchain) getTransactionByID(txID string) (*protos.Transaction, error) {
-	blockNumber, txIndex, err := blockchain.indexer.fetchTransactionIndexByID(txID)
-	if err != nil {
-		return nil, err
-	}
+// func (blockchain *blockchain) getTransactionByID(txID string) (*protos.Transaction, error) {
+// 	blockNumber, txIndex, err := blockchain.indexer.fetchTransactionIndexByID(txID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return blockchain.getTransaction(blockNumber, txIndex)
-}
+// 	return blockchain.getTransaction(blockNumber, txIndex)
+// }
 
 // getTransactions get all transactions in a block identified by block number
 func (blockchain *blockchain) getTransactions(blockNumber uint64) ([]*protos.Transaction, error) {
@@ -123,7 +123,7 @@ func (blockchain *blockchain) getTransactions(blockNumber uint64) ([]*protos.Tra
 	if err != nil {
 		return nil, err
 	}
-	return block.GetTransactions(), nil
+	return fetchTxsFromDB(block.GetTxids()), nil
 }
 
 // getTransactionsByBlockHash get all transactions in a block identified by block hash
@@ -132,35 +132,42 @@ func (blockchain *blockchain) getTransactionsByBlockHash(blockHash []byte) ([]*p
 	if err != nil {
 		return nil, err
 	}
-	return block.GetTransactions(), nil
+	return fetchTxsFromDB(block.GetTxids()), nil
 }
 
 // getTransaction get a transaction identified by block number and index within the block
 func (blockchain *blockchain) getTransaction(blockNumber uint64, txIndex uint64) (*protos.Transaction, error) {
 
-	transactions, err := blockchain.getTransactions(blockNumber)
-
+	block, err := blockchain.getBlock(blockNumber)
 	if err != nil {
 		return nil, err
 	}
 
-	tx, err := db.GetGlobalDBHandle().GetTransaction(ransactions[txIndex].Txid)
-	if err != nil {
-		return nil, err
+	txids := block.GetTxids()
+	//out of range
+	if uint64(len(txids)) <= txIndex {
+		return nil, ErrOutOfBounds
 	}
 
-	return nil, nil
+	return fetchTxFromDB(txids[txIndex])
 }
 
 // getTransactionByBlockHash get a transaction identified by block hash and index within the block
 func (blockchain *blockchain) getTransactionByBlockHash(blockHash []byte, txIndex uint64) (*protos.Transaction, error) {
 
-	transactions, err := blockchain.getTransactionsByBlockHash(blockHash)
-
+	block, err := blockchain.getBlockByHash(blockHash)
 	if err != nil {
 		return nil, err
 	}
-	return transactions[txIndex], nil
+
+	txids := block.GetTxids()
+	//out of range
+	if uint64(len(txids)) <= txIndex {
+		return nil, ErrOutOfBounds
+	}
+
+	return fetchTxFromDB(txids[txIndex])
+
 }
 
 func (blockchain *blockchain) getBlockchainInfo() (*protos.BlockchainInfo, error) {

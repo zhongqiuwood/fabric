@@ -171,6 +171,12 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		return err
 	}
 
+	//commit transactions first
+	err = ledger.PutTransactions(transactions)
+	if err != nil {
+		return err
+	}
+
 	writeBatch := db.GetDBHandle().NewWriteBatch()
 	defer writeBatch.Destroy()
 	block := protos.NewBlock(transactions, metadata)
@@ -428,7 +434,12 @@ func (ledger *Ledger) DeleteALLStateKeysAndValues() error {
 /////////////////// transaction related methods /////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
 func (ledger *Ledger) PutTransactions(txs []*protos.Transaction) error {
-	return db.GetGlobalDBHandle().PutTransactions(txs)
+	return ledger.txpool.putTransaction(txs)
+}
+
+// GetTransactionByID return transaction by it's txId
+func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
+	return ledger.txpool.getTransaction(txID)
 }
 
 /////////////////// blockchain related methods /////////////////////////////////////
@@ -459,26 +470,28 @@ func (ledger *Ledger) GetBlockchainSize() uint64 {
 	return ledger.blockchain.getSize()
 }
 
-// GetTransactionByID return transaction by it's txId
-func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
-	return ledger.txpool.getTransaction(txID)
-}
-
-// PutBlock is just the alias-form of putrawblock
+// PutBlock put a raw block on the chain and also commit the corresponding transactions
 func (ledger *Ledger) PutBlock(blockNumber uint64, block *protos.Block) error {
-	return ledger.PutRawBlock(block, blockNumber)
-}
 
-// PutRawBlock puts a raw block on the chain. This function should only be
-// used for synchronization between peers.
-func (ledger *Ledger) PutRawBlock(block *protos.Block, blockNumber uint64) error {
+	//handle different type of block (with or without transaction included)
+	var err error
+	if block.GetTransactions() != nil {
+		err = ledger.txpool.putTransaction(block.Transactions)
+	} else {
+		err = ledger.txpool.commitTransaction(block.GetTxids())
+	}
 
-	err := ledger.PutTransactions(block.Transactions)
 	if err != nil {
 		return err
 	}
 
-	err = ledger.blockchain.persistRawBlock(block, blockNumber)
+	return ledger.PutRawBlock(block, blockNumber)
+}
+
+// PutRawBlock just puts a raw block on the chain without handling the tx
+func (ledger *Ledger) PutRawBlock(block *protos.Block, blockNumber uint64) error {
+
+	err := ledger.blockchain.persistRawBlock(block, blockNumber)
 	if err != nil {
 		return err
 	}

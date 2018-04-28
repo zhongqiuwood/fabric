@@ -21,6 +21,43 @@ func newTxPool() (*transactionPool, error) {
 	return txpool, nil
 }
 
+func (tp *transactionPool) clearPool(txs []*pb.Transaction) {
+
+	tp.Lock()
+	defer tp.Unlock()
+	for _, tx := range txs {
+		delete(tp.txPool, tx.Txid)
+	}
+}
+
+func (tp *transactionPool) putTransaction(txs []*pb.Transaction) error {
+
+	err := db.GetGlobalDBHandle().PutTransactions(txs)
+	if err != nil {
+		return err
+	}
+
+	tp.clearPool(txs)
+
+	return nil
+}
+
+func (tp *transactionPool) commitTransaction(txids []string) error {
+
+	pendingTxs := make([]*pb.Transaction, 0, len(txids))
+
+	tp.RLock()
+	for _, id := range txids {
+		tx, ok := tp.txPool[id]
+		if ok {
+			pendingTxs = append(pendingTxs, tx)
+		}
+	}
+	tp.RUnlock()
+
+	return tp.putTransaction(pendingTxs)
+}
+
 func (tp *transactionPool) getConfirmedTransaction(txID string) (*pb.Transaction, error) {
 	return fetchTxFromDB(txID)
 }

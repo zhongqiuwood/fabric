@@ -53,6 +53,8 @@ func newTestBlockchainWrapper(t *testing.T) *blockchainTestWrapper {
 func (testWrapper *blockchainTestWrapper) addNewBlock(block *protos.Block, stateHash []byte) uint64 {
 	writeBatch := testDBWrapper.NewWriteBatch()
 	defer writeBatch.Destroy()
+	err := testWrapper.txpool.putTransaction(block.GetTransactions())
+	testutil.AssertNoError(testWrapper.t, err, "Error while adding txs from a new block")
 	newBlockNumber, err := testWrapper.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
 	testutil.AssertNoError(testWrapper.t, err, "Error while adding a new block")
 	testDBWrapper.WriteToDB(testWrapper.t, writeBatch)
@@ -191,8 +193,10 @@ func (ledgerTestWrapper *ledgerTestWrapper) VerifyChain(highBlock, lowBlock uint
 	return result
 }
 
+//"putrawblock" here called "putblock" in fact (because testwrapper never define putblock)
+//notice we haved change the semantics of "putrawblock" in ledger struct
 func (ledgerTestWrapper *ledgerTestWrapper) PutRawBlock(block *protos.Block, blockNumber uint64) {
-	err := ledgerTestWrapper.ledger.PutRawBlock(block, blockNumber)
+	err := ledgerTestWrapper.ledger.PutBlock(blockNumber, block)
 	testutil.AssertNoError(ledgerTestWrapper.tb, err, "error while verifying chain")
 }
 

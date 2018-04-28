@@ -200,8 +200,6 @@ func (blockchain *blockchain) buildBlock(block *protos.Block, stateHash []byte) 
 	return block
 }
 
-//this entry put both transactions and block bytes, it serve for the legacy code and should not
-//be used in new code, it will be deprecated in future
 func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Context,
 	block *protos.Block, stateHash []byte, writeBatch *db.DBWriteBatch) (uint64, error) {
 	block = blockchain.buildBlock(block, stateHash)
@@ -216,13 +214,6 @@ func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Conte
 		return 0, err
 	}
 
-	//pass transactions first
-	err = db.GetGlobalDBHandle().PutTransactions(block.Transactions)
-	if err != nil {
-		return 0, err
-	}
-
-	//todo: pass transcations by a separated param into <createIndexes>
 	blockBytes, blockBytesErr := block.GetBlockBytes()
 	if blockBytesErr != nil {
 		return 0, blockBytesErr
@@ -299,7 +290,7 @@ func fetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 		return nil, err
 	}
 
-	blk.Transactions = db.GetGlobalDBHandle().GetTransactions(blk.Txids)
+	blk.Transactions = fetchTxsFromDB(blk.Txids)
 	return blk, nil
 }
 

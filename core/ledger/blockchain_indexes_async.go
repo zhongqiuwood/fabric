@@ -130,6 +130,16 @@ func (indexer *blockchainIndexerAsync) fetchBlockNumberByBlockHash(blockHash []b
 	return fetchBlockNumberByBlockHashFromDB(blockHash)
 }
 
+func (indexer *blockchainIndexerAsync) fetchBlockNumberByStateHash(stateHash []byte) (uint64, error) {
+	err := indexer.indexerState.checkError()
+	if err != nil {
+		indexLogger.Debug("Async indexer has a previous error. Returing the error")
+		return 0, err
+	}
+	indexer.indexerState.waitForLastCommittedBlock()
+	return fetchBlockNumberByStateHashFromDB(stateHash)
+}
+
 func (indexer *blockchainIndexerAsync) fetchTransactionIndexByID(txID string) (uint64, uint64, error) {
 	err := indexer.indexerState.checkError()
 	if err != nil {

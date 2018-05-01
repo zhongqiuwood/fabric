@@ -17,17 +17,16 @@ limitations under the License.
 package state
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
 	"github.com/abchain/fabric/core/ledger/statemgmt/raw"
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
-	//"bytes"
 )
 
 var logger = logging.MustGetLogger("state")
@@ -348,22 +347,13 @@ func (state *State) DeleteState() error {
 }
 
 func encodeStateDeltaKey(blockNumber uint64) []byte {
-	return encodeUint64(blockNumber)
+	return util.EncodeUint64(blockNumber)
 }
 
 func decodeStateDeltaKey(dbkey []byte) uint64 {
-	return decodeToUint64(dbkey)
+	return util.DecodeToUint64(dbkey)
 }
 
-func encodeUint64(number uint64) []byte {
-	bytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(bytes, number)
-	return bytes
-}
-
-func decodeToUint64(bytes []byte) uint64 {
-	return binary.BigEndian.Uint64(bytes)
-}
 
 //////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////

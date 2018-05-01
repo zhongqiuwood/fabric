@@ -453,3 +453,33 @@ func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction 
 
 	return txs
 }
+
+
+func (openchainDB *GlobalDataDB) GetIterator(cfName string) *DBIterator {
+
+	cf := openchainDB.cfMap[cfName]
+
+	if cf == nil {
+		panic(fmt.Sprintf("Wrong CF Name %s", cfName))
+	}
+
+	opt := gorocksdb.NewDefaultReadOptions()
+	opt.SetFillCache(true)
+	defer opt.Destroy()
+	return &DBIterator{extHandler{nil}, openchainDB.NewIteratorCF(opt, cf)}
+}
+
+
+func (txdb *GlobalDataDB) PutGenesisGlobalState() error {
+
+	newgs := protos.NewGlobalState()
+	newgs.Count = 0
+	newgs.Branched = false
+
+	v, err := newgs.Bytes()
+
+	if err == nil {
+		err = txdb.PutValue(GlobalCF, []byte("0"), v)
+	}
+	return err
+}

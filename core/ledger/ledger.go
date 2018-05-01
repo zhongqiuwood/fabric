@@ -118,7 +118,78 @@ func GetNewLedger() (*Ledger, error) {
 
 	txstate.CurGState.ParentNodeStateHash = blockchain.previousBlockStateHash
 
+	err = sanityCheck()
+	if err != nil {
+		return nil, err
+	}
 	return &Ledger{blockchain, txpool, orgstate, txstate, nil}, nil
+}
+
+
+func sanityCheck() error {
+
+	size, err := fetchBlockchainSizeFromDB()
+	if err != nil {
+		return err
+	}
+
+	if size == 0 {
+		return nil
+	}
+
+	noneExistingList := make([][]byte, 0)
+	var lastExisting []byte
+
+	for n := size - 1; n >= 0; n-- {
+
+		block, err := fetchBlockFromDB(n)
+		if err != nil {
+			return err
+		}
+
+		if block.StateHash == nil && n == 0 {
+			block.StateHash = []byte("0")
+		}
+
+		gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
+		if gs != nil {
+			lastExisting = block.StateHash
+			ledgerLogger.Infof("Block number [%d] state exists in txdb, statehash: [%x]",
+				n, block.StateHash)
+			break
+		} else {
+			ledgerLogger.Warningf("Block number [%d] state does not exist in txdb, statehash: [%x]",
+				n, block.StateHash)
+			noneExistingList = append(noneExistingList, block.StateHash)
+		}
+
+		// in case of overflow as type n is uint64
+		if n == 0 {
+			break
+		}
+	}
+
+	for index := len(noneExistingList) - 1; index >= 0; index-- {
+		stateHash := noneExistingList[index]
+		var err error
+		if lastExisting == nil {
+			ledgerLogger.Infof("Put genesis GlobalState")
+			err = db.GetGlobalDBHandle().PutGenesisGlobalState()
+		} else {
+
+			ledgerLogger.Infof("AddGlobalState:")
+			ledgerLogger.Infof("	parentStateHash[%x]", lastExisting)
+			ledgerLogger.Infof("	statehash[%x]", stateHash)
+			// todo: uncomment out AddGlobalState
+			//err = db.GetGlobalDBHandle().AddGlobalState(lastExisting, stateHash)
+		}
+		if err != nil {
+			return err
+		}
+		lastExisting = stateHash
+	}
+
+	return nil
 }
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
@@ -221,11 +292,12 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		return dbErr
 	}
 
-	// // update txdb
-	// if protos.CurrentDbVersion == 1 {
-	// 	//todo: init ledger.txstate.CurGState.ParentNodeStateHash on peer startup
-	// 	state.CommitGlobalState(transactions, stateHash, newBlockNumber, ledger.txstate.CurGState)
-	// }
+	if newBlockNumber == 0 && stateHash == nil {
+		db.GetGlobalDBHandle().PutGenesisGlobalState()
+	} else {
+		// todo AddGlobalState
+		//db.GetGlobalDBHandle().AddGlobalState(ledger.blockchain.previousBlockStateHash, stateHash)
+	}
 
 	ledger.resetForNextTxGroup(true)
 	ledger.blockchain.blockPersistenceStatus(true)

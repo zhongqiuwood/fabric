@@ -81,11 +81,11 @@ var (
 
 // Ledger - the struct for openchain ledger
 type Ledger struct {
-	blockchain *blockchain
-	txpool     *transactionPool
-	state      *state.State
-	txstate    *state.TxState
-	currentID  interface{}
+	blockchain       *blockchain
+	txpool           *transactionPool
+	state            *state.State
+	currentID        interface{}
+	currentStateHash []byte
 }
 
 var ledger *Ledger
@@ -113,12 +113,9 @@ func GetNewLedger() (*Ledger, error) {
 		return nil, err
 	}
 
-	txstate := state.NewTxState()
-	orgstate := state.NewState()
+	state := state.NewState()
 
-	txstate.CurGState.ParentNodeStateHash = blockchain.previousBlockStateHash
-
-	return &Ledger{blockchain, txpool, orgstate, txstate, nil}, nil
+	return &Ledger{blockchain, txpool, state, nil, nil}, nil
 }
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
@@ -130,6 +127,12 @@ func (ledger *Ledger) BeginTxBatch(id interface{}) error {
 	if err != nil {
 		return err
 	}
+
+	ledger.currentStateHash, err = ledger.state.GetHash()
+	if err != nil {
+		return err
+	}
+
 	ledger.currentID = id
 	return nil
 }
@@ -221,11 +224,14 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		return dbErr
 	}
 
-	// // update txdb
-	// if protos.CurrentDbVersion == 1 {
-	// 	//todo: init ledger.txstate.CurGState.ParentNodeStateHash on peer startup
-	// 	state.CommitGlobalState(transactions, stateHash, newBlockNumber, ledger.txstate.CurGState)
-	// }
+	//all commit done, we can add global state
+	dbErr = db.GetGlobalDBHandle().AddGlobalState(ledger.currentStateHash, stateHash)
+	if dbErr != nil {
+		//should this the correct way to omit StateDuplicatedError?
+		if _, ok := dbErr.(db.StateDuplicatedError); !ok {
+			return dbErr
+		}
+	}
 
 	ledger.resetForNextTxGroup(true)
 	ledger.blockchain.blockPersistenceStatus(true)
@@ -440,6 +446,21 @@ func (ledger *Ledger) PutTransactions(txs []*protos.Transaction) error {
 // GetTransactionByID return transaction by it's txId
 func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
 	return ledger.txpool.getTransaction(txID)
+}
+
+// GetTransactionByID return transaction by it's txId
+func (ledger *Ledger) GetTransactionsByRange(statehash []byte, beg int, end int) ([]*protos.Transaction, error) {
+
+	blk, err := ledger.blockchain.getBlockByState(statehash)
+	if err != nil {
+		return nil, err
+	}
+
+	if blk.GetTxids() == nil || len(blk.Txids) < end {
+		return nil, ErrOutOfBounds
+	}
+
+	return fetchTxsFromDB(blk.Txids[beg:end]), nil
 }
 
 /////////////////// blockchain related methods /////////////////////////////////////

@@ -108,6 +108,14 @@ func (blockchain *blockchain) getBlockByHash(blockHash []byte) (*protos.Block, e
 	return blockchain.getBlock(blockNumber)
 }
 
+func (blockchain *blockchain) getBlockByState(stateHash []byte) (*protos.Block, error) {
+	blockNumber, err := blockchain.indexer.fetchBlockNumberByStateHash(stateHash)
+	if err != nil {
+		return nil, err
+	}
+	return blockchain.getBlock(blockNumber)
+}
+
 // func (blockchain *blockchain) getTransactionByID(txID string) (*protos.Transaction, error) {
 // 	blockNumber, txIndex, err := blockchain.indexer.fetchTransactionIndexByID(txID)
 // 	if err != nil {

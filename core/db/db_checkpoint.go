@@ -24,6 +24,10 @@ func activeDbName(statehash string) string {
 	return "db_from_" + statehash
 }
 
+func encodeStatehash(statehash []byte) string {
+	return fmt.Sprintf("%x", statehash)
+}
+
 func createCheckpoint(db *gorocksdb.DB, cpPath string) error {
 	checkpoint, err := db.NewCheckpoint()
 	if err != nil {

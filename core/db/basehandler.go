@@ -31,6 +31,8 @@ const StateCF = "stateCF"
 const StateDeltaCF = "stateDeltaCF"
 const IndexesCF = "indexesCF"
 
+const currentDBKey = "currentDB"
+
 // base class of db handler and txdb handler
 type baseHandler struct {
 	*gorocksdb.DB
@@ -79,18 +81,6 @@ func DefaultOption() (opts *gorocksdb.Options) {
 
 // Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
 func Start() {
-
-	// dbVersion := GlobalDataBaseVersion
-
-	// if viper.IsSet("peer.db.version") {
-	// 	//forced db version
-	// 	dbVersion = viper.GetInt("peer.db.version")
-	// 	if dbVersion > GlobalDataBaseVersion {
-	// 		return fmt.Errorf("Specified wrong version for database :d", dbVersion)
-	// 	}
-	// }
-
-	// dbLogger.Infof("Current db version=<%d>", dbVersion)
 
 	opts := DefaultOption()
 	clearOpt := func() {

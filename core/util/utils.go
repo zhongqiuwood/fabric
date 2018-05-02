@@ -29,6 +29,7 @@ import (
 	"golang.org/x/crypto/sha3"
 	"hash"
 	"os"
+	"encoding/binary"
 )
 
 type alg struct {
@@ -232,4 +233,14 @@ func dirEmpty(path string) (bool, error) {
 		return true, nil
 	}
 	return false, err
+}
+
+func EncodeUint64(number uint64) []byte {
+	bytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(bytes, number)
+	return bytes
+}
+
+func DecodeToUint64(bytes []byte) uint64 {
+	return binary.BigEndian.Uint64(bytes)
 }

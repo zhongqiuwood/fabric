@@ -18,7 +18,6 @@ package ledger
 
 import (
 	"bytes"
-	"encoding/binary"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
@@ -228,7 +227,7 @@ func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Conte
 	}
 	cf := writeBatch.GetDBHandle().BlockchainCF
 	writeBatch.PutCF(cf, encodeBlockNumberDBKey(blockNumber), blockBytes)
-	writeBatch.PutCF(cf, blockCountKey, encodeUint64(blockNumber+1))
+	writeBatch.PutCF(cf, blockCountKey, util.EncodeUint64(blockNumber+1))
 	if blockchain.indexer.isSynchronous() {
 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
 	}
@@ -268,7 +267,7 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 	// Need to check as we support out of order blocks in cases such as block/state synchronization. This is
 	// real blockchain height, not size.
 	if blockchain.getSize() < blockNumber+1 {
-		sizeBytes := encodeUint64(blockNumber + 1)
+		sizeBytes := util.EncodeUint64(blockNumber + 1)
 		writeBatch.PutCF(cf, blockCountKey, sizeBytes)
 		blockchain.size = blockNumber + 1
 		blockchain.previousBlockHash = blockHash
@@ -310,7 +309,7 @@ func fetchBlockchainSizeFromDB() (uint64, error) {
 	if bytes == nil {
 		return 0, nil
 	}
-	return decodeToUint64(bytes), nil
+	return util.DecodeToUint64(bytes), nil
 }
 
 func fetchBlockchainSizeFromSnapshot(snapshot *db.DBSnapshot) (uint64, error) {
@@ -320,7 +319,7 @@ func fetchBlockchainSizeFromSnapshot(snapshot *db.DBSnapshot) (uint64, error) {
 	}
 	var blockNumber uint64
 	if blockNumberBytes != nil {
-		blockNumber = decodeToUint64(blockNumberBytes)
+		blockNumber = util.DecodeToUint64(blockNumberBytes)
 	}
 	return blockNumber, nil
 }
@@ -328,17 +327,7 @@ func fetchBlockchainSizeFromSnapshot(snapshot *db.DBSnapshot) (uint64, error) {
 var blockCountKey = []byte("blockCount")
 
 func encodeBlockNumberDBKey(blockNumber uint64) []byte {
-	return encodeUint64(blockNumber)
-}
-
-func encodeUint64(number uint64) []byte {
-	bytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(bytes, number)
-	return bytes
-}
-
-func decodeToUint64(bytes []byte) uint64 {
-	return binary.BigEndian.Uint64(bytes)
+	return util.EncodeUint64(blockNumber)
 }
 
 func (blockchain *blockchain) String() string {

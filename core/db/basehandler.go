@@ -294,16 +294,3 @@ func makeCopy(src []byte) []byte {
 	return dest
 }
 
-// func EncodeBlockNumberDBKey(blockNumber uint64) []byte {
-// 	return EncodeUint64(blockNumber)
-// }
-
-// func EncodeUint64(number uint64) []byte {
-// 	bytes := make([]byte, 8)
-// 	binary.BigEndian.PutUint64(bytes, number)
-// 	return bytes
-// }
-
-// func DecodeToUint64(bytes []byte) uint64 {
-// 	return binary.BigEndian.Uint64(bytes)
-// }

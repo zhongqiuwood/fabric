@@ -269,7 +269,7 @@ func TestServerOpenchainREST_API_GetBlockByNumber(t *testing.T) {
 	}
 
 	// Add a fake block number 9 and try to fetch non-existing block 6
-	ledger.PutRawBlock(&block0, 9)
+	ledger.PutBlock(9, &block0)
 	body = performHTTPGet(t, httpServer.URL+"/chain/blocks/6")
 	res = parseRESTResult(t, body)
 	if res.Error == "" {

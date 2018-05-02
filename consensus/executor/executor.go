@@ -51,7 +51,7 @@ func NewImpl(consumer consensus.ExecutionConsumer, rawExecutor PartialStack, stp
 	co := &coordinatorImpl{
 		rawExecutor: rawExecutor,
 		consumer:    consumer,
-		stc:         statetransfer.NewCoordinatorImpl(stps),
+		stc:         statetransfer.NewCoordinatorImpl(stps, nil),
 		manager:     events.NewManagerImpl(),
 	}
 	co.manager.SetReceiver(co)

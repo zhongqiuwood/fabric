@@ -19,24 +19,24 @@ package ledger
 import (
 	"fmt"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
-	"github.com/tecbot/gorocksdb"
-	//"github.com/abchain/fabric/dbg"
 )
 
 var indexLogger = logging.MustGetLogger("indexes")
 var prefixBlockHashKey = byte(1)
 var prefixTxIDKey = byte(2)
 var prefixAddressBlockNumCompositeKey = byte(3)
+var prefixStateHashKey = byte(4)
 
 type blockchainIndexer interface {
 	isSynchronous() bool
 	start(blockchain *blockchain) error
-	createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error
+	createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error
 	fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error)
+	fetchBlockNumberByStateHash(stateHash []byte) (uint64, error)
 	fetchTransactionIndexByID(txID string) (uint64, uint64, error)
 	stop()
 }
@@ -58,12 +58,16 @@ func (indexer *blockchainIndexerSync) start(blockchain *blockchain) error {
 }
 
 func (indexer *blockchainIndexerSync) createIndexes(
-	block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error {
+	block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
 	return addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
 }
 
 func (indexer *blockchainIndexerSync) fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error) {
 	return fetchBlockNumberByBlockHashFromDB(blockHash)
+}
+
+func (indexer *blockchainIndexerSync) fetchBlockNumberByStateHash(stateHash []byte) (uint64, error) {
+	return fetchBlockNumberByStateHashFromDB(stateHash)
 }
 
 func (indexer *blockchainIndexerSync) fetchTransactionIndexByID(txID string) (uint64, uint64, error) {
@@ -75,38 +79,39 @@ func (indexer *blockchainIndexerSync) stop() {
 }
 
 // Functions for persisting and retrieving index data
-func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error {
+func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
 	// add blockhash -> blockNumber
+	cf := writeBatch.GetDBHandle().IndexesCF
+
 	indexLogger.Debugf("Indexing block number [%d] by hash = [%x]", blockNumber, blockHash)
+	writeBatch.PutCF(cf, encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber))
+	if block.GetStateHash() != nil {
+		writeBatch.PutCF(cf, encodeStateHashKey(block.StateHash), encodeBlockNumber(blockNumber))
+	}
 
-	//dbg.Infof("IndexesCF add:  hash [%x] --> blocknumber [%d] ", blockHash, blockNumber)
-	db.GetDBHandle().PutValue(db.IndexesCF,	encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber), writeBatch)
-
-	addressToTxIndexesMap := make(map[string][]uint64)
-	addressToChaincodeIDsMap := make(map[string][]*protos.ChaincodeID)
+	//	addressToTxIndexesMap := make(map[string][]uint64)
+	//	addressToChaincodeIDsMap := make(map[string][]*protos.ChaincodeID)
 
 	transactions := block.GetTransactions()
 	for txIndex, tx := range transactions {
 		// add TxID -> (blockNumber,indexWithinBlock)
+		writeBatch.PutCF(cf, encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)))
 
-		//dbg.Infof("IndexesCF add:  tx.Txid [%s] --> blockNumber, uint64(txIndex) [%d,%d] ", tx.Txid, blockNumber, uint64(txIndex))
-		db.GetDBHandle().PutValue(db.IndexesCF, encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)), writeBatch)
+		// txExecutingAddress := getTxExecutingAddress(tx)
+		// addressToTxIndexesMap[txExecutingAddress] = append(addressToTxIndexesMap[txExecutingAddress], uint64(txIndex))
 
-		txExecutingAddress := getTxExecutingAddress(tx)
-		addressToTxIndexesMap[txExecutingAddress] = append(addressToTxIndexesMap[txExecutingAddress], uint64(txIndex))
-
-		switch tx.Type {
-		case protos.Transaction_CHAINCODE_DEPLOY, protos.Transaction_CHAINCODE_INVOKE:
-			authroizedAddresses, chaincodeID := getAuthorisedAddresses(tx)
-			for _, authroizedAddress := range authroizedAddresses {
-				addressToChaincodeIDsMap[authroizedAddress] = append(addressToChaincodeIDsMap[authroizedAddress], chaincodeID)
-			}
-		}
+		// switch tx.Type {
+		// case protos.Transaction_CHAINCODE_DEPLOY, protos.Transaction_CHAINCODE_INVOKE:
+		// 	authroizedAddresses, chaincodeID := getAuthorisedAddresses(tx)
+		// 	for _, authroizedAddress := range authroizedAddresses {
+		// 		addressToChaincodeIDsMap[authroizedAddress] = append(addressToChaincodeIDsMap[authroizedAddress], chaincodeID)
+		// 	}
+		// }
 	}
-	for address, txsIndexes := range addressToTxIndexesMap {
-		db.GetDBHandle().PutValue(db.IndexesCF, encodeAddressBlockNumCompositeKey(address, blockNumber),
-			encodeListTxIndexes(txsIndexes), writeBatch)
-	}
+	// for address, txsIndexes := range addressToTxIndexesMap {
+	// 	writeBatch.PutCF(cf, encodeAddressBlockNumCompositeKey(address, blockNumber),
+	// 		encodeListTxIndexes(txsIndexes))
+	// }
 	return nil
 }
 
@@ -119,6 +124,20 @@ func fetchBlockNumberByBlockHashFromDB(blockHash []byte) (uint64, error) {
 	indexLogger.Debugf("blockNumberBytes for blockhash [%x] is [%x]", blockHash, blockNumberBytes)
 	if len(blockNumberBytes) == 0 {
 		return 0, newLedgerError(ErrorTypeBlockNotFound, fmt.Sprintf("No block indexed with block hash [%x]", blockHash))
+	}
+	blockNumber := decodeBlockNumber(blockNumberBytes)
+	return blockNumber, nil
+}
+
+func fetchBlockNumberByStateHashFromDB(stateHash []byte) (uint64, error) {
+	indexLogger.Debugf("fetchBlockNumberByStateHashFromDB() for statehash [%x]", stateHash)
+	blockNumberBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, encodeStateHashKey(stateHash))
+	if err != nil {
+		return 0, err
+	}
+	indexLogger.Debugf("blockNumberBytes for statehash [%x] is [%x]", stateHash, blockNumberBytes)
+	if len(blockNumberBytes) == 0 {
+		return 0, newLedgerError(ErrorTypeBlockNotFound, fmt.Sprintf("No block indexed with block hash [%x]", stateHash))
 	}
 	blockNumber := decodeBlockNumber(blockNumberBytes)
 	return blockNumber, nil
@@ -187,6 +206,10 @@ func decodeBlockNumTxIndex(bytes []byte) (blockNum uint64, txIndex uint64, err e
 // encode BlockHashKey
 func encodeBlockHashKey(blockHash []byte) []byte {
 	return prependKeyPrefix(prefixBlockHashKey, blockHash)
+}
+
+func encodeStateHashKey(stateHash []byte) []byte {
+	return prependKeyPrefix(prefixStateHashKey, stateHash)
 }
 
 // encode TxIDKey

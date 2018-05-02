@@ -17,21 +17,11 @@ limitations under the License.
 package db
 
 import (
-
-	"github.com/op/go-logging"
+	"errors"
+	"fmt"
 	"github.com/tecbot/gorocksdb"
-	"os"
-	"github.com/abchain/fabric/dbg"
-	"github.com/abchain/fabric/protos"
+	"sync"
 )
-
-var dbLogger = logging.MustGetLogger("db")
-var rocksDBLogLevelMap = map[string]gorocksdb.InfoLogLevel{
-	"debug": gorocksdb.DebugInfoLogLevel,
-	"info":  gorocksdb.InfoInfoLogLevel,
-	"warn":  gorocksdb.WarnInfoLogLevel,
-	"error": gorocksdb.ErrorInfoLogLevel,
-	"fatal": gorocksdb.FatalInfoLogLevel}
 
 var columnfamilies = []string{
 	BlockchainCF, // blocks of the block chain
@@ -41,102 +31,95 @@ var columnfamilies = []string{
 	PersistCF,    // persistent per-peer state (consensus)
 }
 
+type openchainCFs struct {
+	BlockchainCF *gorocksdb.ColumnFamilyHandle
+	StateCF      *gorocksdb.ColumnFamilyHandle
+	StateDeltaCF *gorocksdb.ColumnFamilyHandle
+	IndexesCF    *gorocksdb.ColumnFamilyHandle
+	PersistCF    *gorocksdb.ColumnFamilyHandle
+}
+
+func (c *openchainCFs) feed(cfmap map[string]*gorocksdb.ColumnFamilyHandle) {
+	c.BlockchainCF = cfmap[BlockchainCF]
+	c.StateCF = cfmap[StateCF]
+	c.StateDeltaCF = cfmap[StateDeltaCF]
+	c.IndexesCF = cfmap[IndexesCF]
+	c.PersistCF = cfmap[PersistCF]
+}
+
+type ocDB struct {
+	baseHandler
+	openchainCFs
+	extendedLock chan int //use a channel as locking for opening extend interface
+	dbName       string
+	finalDrop    bool
+}
+
 type OpenchainDB struct {
-	BaseHandler
+	db *ocDB
+	sync.RWMutex
 }
 
-var originalDB = createOriginalDB()
-func createOriginalDB() *OpenchainDB {
-	db := &OpenchainDB{}
-	db.cfMap = make(map[string]*gorocksdb.ColumnFamilyHandle)
-	return db
-}
+var originalDB = &OpenchainDB{db: &ocDB{}}
 
-func (openchainDB *OpenchainDB) open(dbname string, cf []string) {
+func (oc *ocDB) dropDB() {
 
-	dbPath := getDBPath(dbname)
-	openchainDB.dbName = dbname
-	cfhandlers := openchainDB.opendb(dbPath, cf)
-	openchainDB.feedCfHandlers(cfhandlers)
-}
+	opt := gorocksdb.NewDefaultOptions()
+	defer opt.Destroy()
 
+	err := gorocksdb.DestroyDb(oc.dbName, opt)
 
-func (openchainDB *OpenchainDB) feedCfHandlers(cfHandlers []*gorocksdb.ColumnFamilyHandle) {
-	openchainDB.cfMap[BlockchainCF] = cfHandlers[1]
-	openchainDB.cfMap[StateCF] = cfHandlers[2]
-	openchainDB.cfMap[StateDeltaCF] = cfHandlers[3]
-	openchainDB.cfMap[IndexesCF] = cfHandlers[4]
-	openchainDB.cfMap[PersistCF] = cfHandlers[5]
-}
-
-// GetFromBlockchainCFSnapshot get value for given key from column family in a DB snapshot - blockchainCF
-func (openchainDB *OpenchainDB) GetFromBlockchainCFSnapshot(snapshot *gorocksdb.Snapshot, key []byte) ([]byte, error) {
-	return openchainDB.getFromSnapshot(snapshot, openchainDB.getCFByName(BlockchainCF), key)
-}
-
-// GetStateCFSnapshotIterator get iterator for column family - stateCF. This iterator
-// is based on a snapshot and should be used for long running scans, such as
-// reading the entire state. Remember to call iterator.Close() when you are done.
-func (openchainDB *OpenchainDB) GetStateCFSnapshotIterator(snapshot *gorocksdb.Snapshot) *gorocksdb.Iterator {
-	return openchainDB.getSnapshotIterator(snapshot, openchainDB.getCFByName(StateCF))
-}
-
-// GetSnapshot returns a point-in-time view of the DB. You MUST call snapshot.Release()
-// when you are done with the snapshot.
-func (openchainDB *OpenchainDB) GetSnapshot() *gorocksdb.Snapshot {
-	return openchainDB.dbHandler.NewSnapshot()
-}
-
-func (openchainDB *OpenchainDB) ReleaseSnapshot(snapshot *gorocksdb.Snapshot) {
-	openchainDB.dbHandler.ReleaseSnapshot(snapshot)
-}
-
-func (openchainDB *OpenchainDB) DumpGlobalState() {
-}
-
-
-func (openchainDB *OpenchainDB) OpenCheckPoint(dbName string, blockNumber uint64, statehash string) error {
-	openchainDB.closeDBHandler()
-	targetDir := getDBPath(dbName)
-	err := os.RemoveAll(targetDir)
-	dbg.ChkErr(err)
-	if err == nil {
-		openchainDB.produceDbByCheckPoint(dbName, blockNumber, statehash, columnfamilies)
-		openchainDB.closeDBHandler()
-		openchainDB.open(dbName, columnfamilies)
-	}
-	return err
-}
-
-// DeleteState delets ALL state keys/values from the DB. This is generally
-// only used during state synchronization when creating a new state from
-// a snapshot.
-func (openchainDB *OpenchainDB) DeleteDbState() error {
-	err := openchainDB.dbHandler.DropColumnFamily(openchainDB.getCFByName(StateCF))
 	if err != nil {
-		dbLogger.Errorf("Error dropping state CF: %s", err)
-		return err
+		dbLogger.Infof("[%s] Drop whole db <%s>", printGID, oc.dbName)
+	} else {
+		dbLogger.Errorf("[%s] Drop whole db <%s> FAIL: %s", printGID, oc.dbName, err)
 	}
-	err = openchainDB.dbHandler.DropColumnFamily(openchainDB.getCFByName(StateDeltaCF))
-	if err != nil {
-		dbLogger.Errorf("Error dropping state delta CF: %s", err)
-		return err
+}
+
+func (openchainDB *ocDB) open(dbpath string) error {
+
+	openchainDB.dbName = dbpath
+
+	cfhandlers := openchainDB.opendb(dbpath, columnfamilies, nil)
+
+	if len(cfhandlers) != len(columnfamilies) {
+		return errors.New("rocksdb may ruin or not work as expected")
 	}
-	opts := gorocksdb.NewDefaultOptions()
-	defer opts.Destroy()
-	openchainDB.cfMap[StateCF], err = openchainDB.dbHandler.CreateColumnFamily(opts, StateCF)
-	if err != nil {
-		dbLogger.Errorf("Error creating state CF: %s", err)
-		return err
+
+	//feed cfs
+	openchainDB.cfMap = make(map[string]*gorocksdb.ColumnFamilyHandle)
+	for i, cfName := range columnfamilies {
+		openchainDB.cfMap[cfName] = cfhandlers[i]
 	}
-	openchainDB.cfMap[StateDeltaCF], err = openchainDB.dbHandler.CreateColumnFamily(opts, StateDeltaCF)
-	if err != nil {
-		dbLogger.Errorf("Error creating state delta CF: %s", err)
-		return err
-	}
+
+	openchainDB.feed(openchainDB.cfMap)
+
+	//TODO: custom maxOpenedExtend
+	openchainDB.extendedLock = make(chan int, maxOpenedExtend)
+	//add one reference count
+	openchainDB.extendedLock <- 0
+
 	return nil
 }
 
+// override methods with rwlock
+func (openchainDB *OpenchainDB) GetValue(cfname string, key []byte) ([]byte, error) {
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+	return openchainDB.db.GetValue(cfname, key)
+}
+
+func (openchainDB *OpenchainDB) DeleteKey(cfname string, key []byte) error {
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+	return openchainDB.db.DeleteKey(cfname, key)
+}
+
+func (openchainDB *OpenchainDB) PutValue(cfname string, key []byte, value []byte) error {
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+	return openchainDB.db.PutValue(cfname, key, value)
+}
 
 //func (orgdb *OpenchainDB) getTxids(blockNumber uint64) []string {
 //
@@ -154,47 +137,221 @@ func (openchainDB *OpenchainDB) DeleteDbState() error {
 //	return block.Txids
 //}
 
+// func (orgdb *OpenchainDB) FetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 
-func (orgdb *OpenchainDB) FetchBlockFromDB(blockNumber uint64, dbversion uint32) (*protos.Block, error) {
+// 	orgdb.RLock()
+// 	defer orgdb.RUnlock()
 
-	blockBytes, err := orgdb.GetValue(BlockchainCF,	EncodeBlockNumberDBKey(blockNumber))
-	if err != nil {
+// 	blockBytes, err := orgdb.db.get(orgdb.db.BlockchainCF, EncodeBlockNumberDBKey(blockNumber))
+// 	if err != nil {
 
-		return nil, err
-	}
-	if blockBytes == nil {
+// 		return nil, err
+// 	}
+// 	if blockBytes == nil {
 
-		return nil, nil
-	}
-	block, errUnmarshall := protos.UnmarshallBlock(blockBytes)
+// 		return nil, nil
+// 	}
+// 	block, errUnmarshall := protos.UnmarshallBlock(blockBytes)
 
-	if block != nil && dbversion == 1 {
-		// fetch transcations from txdb since v1
-		block.Transactions = GetGlobalDBHandle().getTransactionFromDB(block.Txids)
-	}
+// 	return block, errUnmarshall
+// }
 
-	return block, errUnmarshall
+func (orgdb *OpenchainDB) GetFromBlockchainCF(key []byte) ([]byte, error) {
+
+	orgdb.RLock()
+	defer orgdb.RUnlock()
+
+	return orgdb.db.get(orgdb.db.BlockchainCF, key)
 }
 
-func (orgdb *OpenchainDB) FetchBlockchainSizeFromDB() (uint64, error) {
-	bytes, err := orgdb.GetValue(BlockchainCF, BlockCountKey)
+// DeleteState delets ALL state keys/values from the DB. This is generally
+// only used during state synchronization when creating a new state from
+// a snapshot.
+func (openchainDB *OpenchainDB) DeleteState() error {
+
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+
+	err := openchainDB.db.DropColumnFamily(openchainDB.db.StateCF)
 	if err != nil {
-		return 0, err
+		dbLogger.Errorf("Error dropping state CF: %s", err)
+		return err
 	}
-	if bytes == nil {
-		return 0, nil
+	err = openchainDB.db.DropColumnFamily(openchainDB.db.StateDeltaCF)
+	if err != nil {
+		dbLogger.Errorf("Error dropping state delta CF: %s", err)
+		return err
 	}
-	return DecodeToUint64(bytes), nil
+	opts := gorocksdb.NewDefaultOptions()
+	defer opts.Destroy()
+	openchainDB.db.StateCF, err = openchainDB.db.CreateColumnFamily(opts, StateCF)
+	if err != nil {
+		dbLogger.Errorf("Error creating state CF: %s", err)
+		return err
+	}
+	openchainDB.db.StateDeltaCF, err = openchainDB.db.CreateColumnFamily(opts, StateDeltaCF)
+	if err != nil {
+		dbLogger.Errorf("Error creating state delta CF: %s", err)
+		return err
+	}
+
+	openchainDB.db.cfMap[StateCF] = openchainDB.db.StateCF
+	openchainDB.db.cfMap[StateDeltaCF] = openchainDB.db.StateDeltaCF
+
+	return nil
 }
 
-func (orgdb *OpenchainDB) FetchBlockchainSizeFromSnapshot(snapshot *gorocksdb.Snapshot) (uint64, error) {
-	blockNumberBytes, err := orgdb.GetFromBlockchainCFSnapshot(snapshot, BlockCountKey)
-	if err != nil {
-		return 0, err
+const (
+	//the maxium of long-run rocksdb interfaces can be open at the same time
+	maxOpenedExtend = 128
+)
+
+type extHandler struct {
+	*ocDB
+}
+
+type DBSnapshot struct {
+	extHandler
+	snapshot *gorocksdb.Snapshot
+}
+
+type DBIterator struct {
+	h extHandler
+	*gorocksdb.Iterator
+}
+
+type DBWriteBatch struct {
+	h extHandler
+	*gorocksdb.WriteBatch
+}
+
+func (openchainDB *OpenchainDB) getExtended() *ocDB {
+
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+
+	openchainDB.db.extendedLock <- 0
+	return openchainDB.db
+}
+
+//extend interface
+// GetIterator returns an iterator for the given column family
+func (e *extHandler) release() {
+
+	//to make test and some wrapper also work
+	if e.ocDB == nil {
+		return
 	}
-	var blockNumber uint64
-	if blockNumberBytes != nil {
-		blockNumber = DecodeToUint64(blockNumberBytes)
+
+	//we "absorb" a lock
+	select {
+	case <-e.extendedLock:
+	default:
+		dbLogger.Infof("[%s] Release current db <%s>", printGID, e.dbName)
+		e.close()
+
+		if e.finalDrop {
+			e.dropDB()
+		}
 	}
-	return blockNumber, nil
+
+}
+
+func (openchainDB *OpenchainDB) NewWriteBatch() *DBWriteBatch {
+	db := openchainDB.getExtended()
+
+	return &DBWriteBatch{extHandler{db}, gorocksdb.NewWriteBatch()}
+}
+
+// GetSnapshot create a point-in-time view of the DB.
+func (openchainDB *OpenchainDB) GetSnapshot() *DBSnapshot {
+
+	db := openchainDB.getExtended()
+
+	return &DBSnapshot{extHandler{db}, db.NewSnapshot()}
+}
+
+func (openchainDB *OpenchainDB) GetIterator(cfName string) *DBIterator {
+
+	db := openchainDB.getExtended()
+
+	cf := db.cfMap[cfName]
+
+	if cf == nil {
+		panic(fmt.Sprintf("Wrong CF Name %s", cfName))
+	}
+
+	opt := gorocksdb.NewDefaultReadOptions()
+	opt.SetFillCache(true)
+	defer opt.Destroy()
+
+	return &DBIterator{extHandler{db}, db.NewIteratorCF(opt, cf)}
+}
+
+func (e *DBWriteBatch) Destroy() {
+	if e.WriteBatch != nil {
+		e.WriteBatch.Destroy()
+	}
+	e.h.release()
+}
+
+func (e *DBIterator) Close() {
+	if e.Iterator != nil {
+		e.Iterator.Close()
+	}
+	e.h.release()
+}
+
+func (e *DBSnapshot) Release() {
+	if e.snapshot != nil {
+		e.ReleaseSnapshot(e.snapshot)
+	}
+	e.release()
+}
+
+func (e *DBWriteBatch) GetDBHandle() *ocDB {
+	return e.h.ocDB
+}
+
+func (e *DBWriteBatch) BatchCommit() error {
+	return e.h.BatchCommit(e.WriteBatch)
+}
+
+func (e *DBSnapshot) GetSnapshot() *gorocksdb.Snapshot {
+	return e.snapshot
+}
+
+// // Some legacy entries, we make all "fromsnapshot" function becoming simple api (not member func)....
+// func (e *DBSnapshot) FetchBlockchainSizeFromSnapshot() (uint64, error) {
+
+// 	blockNumberBytes, err := e.GetFromBlockchainCFSnapshot(BlockCountKey)
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	var blockNumber uint64
+// 	if blockNumberBytes != nil {
+// 		blockNumber = DecodeToUint64(blockNumberBytes)
+// 	}
+// 	return blockNumber, nil
+// }
+
+// GetFromBlockchainCFSnapshot get value for given key from column family in a DB snapshot - blockchainCF
+func (e *DBSnapshot) GetFromBlockchainCFSnapshot(key []byte) ([]byte, error) {
+
+	if e.snapshot == nil {
+		return nil, fmt.Errorf("Snapshot is not inited")
+	}
+	return e.getFromSnapshot(e.snapshot, e.BlockchainCF, key)
+}
+
+// GetStateCFSnapshotIterator get iterator for column family - stateCF. This iterator
+// is based on a snapshot and should be used for long running scans, such as
+// reading the entire state. Remember to call iterator.Close() when you are done.
+func (e *DBSnapshot) GetStateCFSnapshotIterator() *gorocksdb.Iterator {
+
+	if e.snapshot == nil {
+		dbLogger.Error("Snapshot is not inited")
+		return nil
+	}
+	return e.getSnapshotIterator(e.snapshot, e.StateCF)
 }

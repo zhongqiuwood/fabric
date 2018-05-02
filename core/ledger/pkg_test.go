@@ -24,7 +24,6 @@ import (
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
-	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
 )
 
@@ -39,17 +38,23 @@ func TestMain(m *testing.M) {
 type blockchainTestWrapper struct {
 	t          *testing.T
 	blockchain *blockchain
+	txpool     *transactionPool
 }
 
 func newTestBlockchainWrapper(t *testing.T) *blockchainTestWrapper {
 	blockchain, err := newBlockchain()
 	testutil.AssertNoError(t, err, "Error while getting handle to chain")
-	return &blockchainTestWrapper{t, blockchain}
+	txpool, _ := newTxPool()
+	testutil.AssertNoError(t, err, "Error while getting handle to chain")
+
+	return &blockchainTestWrapper{t, blockchain, txpool}
 }
 
 func (testWrapper *blockchainTestWrapper) addNewBlock(block *protos.Block, stateHash []byte) uint64 {
-	writeBatch := gorocksdb.NewWriteBatch()
+	writeBatch := testDBWrapper.NewWriteBatch()
 	defer writeBatch.Destroy()
+	err := testWrapper.txpool.putTransaction(block.GetTransactions())
+	testutil.AssertNoError(testWrapper.t, err, "Error while adding txs from a new block")
 	newBlockNumber, err := testWrapper.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
 	testutil.AssertNoError(testWrapper.t, err, "Error while adding a new block")
 	testDBWrapper.WriteToDB(testWrapper.t, writeBatch)
@@ -94,7 +99,7 @@ func (testWrapper *blockchainTestWrapper) getTransactionByBlockHash(blockHash []
 }
 
 func (testWrapper *blockchainTestWrapper) getTransactionByID(txID string) *protos.Transaction {
-	tx, err := testWrapper.blockchain.getTransactionByID(txID)
+	tx, err := testWrapper.txpool.getTransaction(txID)
 	testutil.AssertNoError(testWrapper.t, err, "Error while getting tx from blockchain")
 	return tx
 }
@@ -188,8 +193,10 @@ func (ledgerTestWrapper *ledgerTestWrapper) VerifyChain(highBlock, lowBlock uint
 	return result
 }
 
+//"putrawblock" here called "putblock" in fact (because testwrapper never define putblock)
+//notice we haved change the semantics of "putrawblock" in ledger struct
 func (ledgerTestWrapper *ledgerTestWrapper) PutRawBlock(block *protos.Block, blockNumber uint64) {
-	err := ledgerTestWrapper.ledger.PutRawBlock(block, blockNumber)
+	err := ledgerTestWrapper.ledger.PutBlock(blockNumber, block)
 	testutil.AssertNoError(ledgerTestWrapper.tb, err, "error while verifying chain")
 }
 

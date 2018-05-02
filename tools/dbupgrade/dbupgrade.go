@@ -21,12 +21,11 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 	"github.com/spf13/viper"
 	//"github.com/tecbot/gorocksdb"
-	"github.com/abchain/fabric/dbg"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/flogging"
 )
@@ -49,10 +48,8 @@ func main() {
 	dbDir := *dbDirPtr
 	mode := *modePtr
 
-
 	fmt.Printf("dbDir = [%s], mode=%s\n", dbDir, mode)
 
-	dbg.Init()
 	flogging.LoggingInit("scandb")
 
 	if dbDir == "" || (mode != "q" && mode != "r") {
@@ -72,7 +69,7 @@ func main() {
 
 	// check that dbDir exists
 	if _, err := os.Stat(dbDir); os.IsNotExist(err) {
-		fmt.Printf("<%s> does not exist\n",  dbDir)
+		fmt.Printf("<%s> does not exist\n", dbDir)
 		os.Exit(4)
 	}
 
@@ -98,7 +95,7 @@ func main() {
 
 		res := ledger.InitializeDataBase(orgdb, txdb)
 
-		if !res {
+		if res != nil {
 			return
 		}
 
@@ -152,10 +149,10 @@ func scan(openchainDB db.IDataBaseHandler, cfName string, printer detailPrinter)
 		} else if cfName == db.PersistCF {
 			keyName = string(keyBytes)
 		} else if cfName == db.GlobalCF {
-			keyName = dbg.Byte2string(keyBytes)
+			keyName = fmt.Sprintf("%x", keyBytes)
 			//keyName = string(keyBytes)
 		} else {
-			keyName = dbg.Byte2string(keyBytes)
+			keyName = fmt.Sprintf("%x", keyBytes)
 		}
 
 		fmt.Printf("<%d>: key=[%s], value=[%x]\n", totalKVs, keyName, v.Data())
@@ -169,7 +166,6 @@ func scan(openchainDB db.IDataBaseHandler, cfName string, printer detailPrinter)
 		v.Free()
 	}
 	itr.Close()
-
 
 	fmt.Printf("|======================== dump %s.%s done. %d totalKVs=======================\n", openchainDB.GetDbName(), cfName, totalKVs)
 	fmt.Printf("===================================================================================\n\n")

@@ -19,7 +19,6 @@ package raw
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/tecbot/gorocksdb"
 )
 
 // StateImpl implements raw state management. This implementation does not support computation of crypto-hash of the state.
@@ -62,24 +61,21 @@ func (impl *StateImpl) ComputeCryptoHash() ([]byte, error) {
 }
 
 // AddChangesForPersistence - method implementation for interface 'statemgmt.HashableState'
-func (impl *StateImpl) AddChangesForPersistence(writeBatch *gorocksdb.WriteBatch) error {
+func (impl *StateImpl) AddChangesForPersistence(writeBatch *db.DBWriteBatch) error {
 	delta := impl.stateDelta
 	if delta == nil {
 		return nil
 	}
+	openchainDB := writeBatch.GetDBHandle()
 	updatedChaincodeIds := delta.GetUpdatedChaincodeIds(false)
 	for _, updatedChaincodeID := range updatedChaincodeIds {
 		updates := delta.GetUpdates(updatedChaincodeID)
 		for updatedKey, value := range updates {
 			compositeKey := statemgmt.ConstructCompositeKey(updatedChaincodeID, updatedKey)
 			if value.IsDeleted() {
-				//writeBatch.DeleteCF(openchainDB.StateCF,
-				db.GetDBHandle().DeleteKey(db.StateCF, compositeKey, writeBatch)
+				writeBatch.DeleteCF(openchainDB.StateCF, compositeKey)
 			} else {
-				//writeBatch.PutCF(openchainDB.StateCF, compositeKey, value.GetValue())
-				db.GetDBHandle().PutValue(db.StateCF,
-					compositeKey, value.GetValue(), writeBatch)
-
+				writeBatch.PutCF(openchainDB.StateCF, compositeKey, value.GetValue())
 			}
 		}
 	}
@@ -91,7 +87,7 @@ func (impl *StateImpl) PerfHintKeyChanged(chaincodeID string, key string) {
 }
 
 // GetStateSnapshotIterator - method implementation for interface 'statemgmt.HashableState'
-func (impl *StateImpl) GetStateSnapshotIterator(snapshot *gorocksdb.Snapshot) (statemgmt.StateSnapshotIterator, error) {
+func (impl *StateImpl) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (statemgmt.StateSnapshotIterator, error) {
 	panic("Not a full-fledged state implementation. Implemented only for measuring best-case performance benchmark")
 }
 

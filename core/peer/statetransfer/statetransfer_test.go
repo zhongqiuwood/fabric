@@ -26,7 +26,7 @@ import (
 	"time"
 
 	configSetup "github.com/abchain/fabric/core/config"
-	"github.com/abchain/fabric/core/peer"
+	_ "github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/protos"
 
 	"github.com/op/go-logging"
@@ -56,13 +56,13 @@ func newPartialStack(ml *MockLedger, rld *MockRemoteHashLedgerDirectory) Partial
 }
 
 func newTestStateTransfer(ml *MockLedger, rld *MockRemoteHashLedgerDirectory) *coordinatorImpl {
-	ci := NewCoordinatorImpl(newPartialStack(ml, rld)).(*coordinatorImpl)
+	ci := NewCoordinatorImpl(newPartialStack(ml, rld), ml).(*coordinatorImpl)
 	ci.Start()
 	return ci
 }
 
 func newTestThreadlessStateTransfer(ml *MockLedger, rld *MockRemoteHashLedgerDirectory) *coordinatorImpl {
-	return NewCoordinatorImpl(newPartialStack(ml, rld)).(*coordinatorImpl)
+	return NewCoordinatorImpl(newPartialStack(ml, rld), ml).(*coordinatorImpl)
 }
 
 type MockRemoteHashLedgerDirectory struct {
@@ -75,7 +75,7 @@ func (mrls *MockRemoteHashLedgerDirectory) GetMockRemoteLedgerByPeerID(peerID *p
 }
 
 func createRemoteLedgers(low, high uint64) *MockRemoteHashLedgerDirectory {
-	rols := make(map[protos.PeerID]peer.BlockChainAccessor)
+	rols := make(map[protos.PeerID]BlockChainAccessor)
 
 	for i := low; i <= high; i++ {
 		peerID := &protos.PeerID{
@@ -309,7 +309,7 @@ func TestCatchupWithoutDeltas(t *testing.T) {
 	}, t)
 	ml.PutBlock(0, SimpleGetBlock(0))
 
-	sts := NewCoordinatorImpl(newPartialStack(ml, mrls)).(*coordinatorImpl)
+	sts := NewCoordinatorImpl(newPartialStack(ml, mrls), ml).(*coordinatorImpl)
 	sts.maxStateDeltas = 0
 
 	done := make(chan struct{})

@@ -33,12 +33,14 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/embedded_chaincode"
+	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/rest"
 	"github.com/abchain/fabric/core/service"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/events/producer"
+	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -68,6 +70,17 @@ var nodeStartCmd = &cobra.Command{
 }
 
 func StartNode(postrun func() error) error {
+
+	fpath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
+	if fpath != "" {
+		util.MkdirIfNotExist(fpath)
+		err := flogging.LoggingFileInit(fpath)
+
+		if err != nil {
+			logger.Warning("Could not open file for log")
+		}
+	}
+
 	// Parameter overrides must be processed before any paramaters are
 	// cached. Failures to cache cause the server to terminate immediately.
 	if chaincodeDevMode {
@@ -107,12 +120,11 @@ func StartNode(postrun func() error) error {
 		logger.Infof("Privacy enabled status: false")
 	}
 
-	if err := writePid(util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))+"peer.pid",
-		os.Getpid()); err != nil {
+	if err := writePid(fpath+"peer.pid", os.Getpid()); err != nil {
 		return err
 	}
 
-	pb.CurrentDbVersion = pb.GetDbVersionFromConfig()
+	//	pb.CurrentDbVersion = pb.GetDbVersionFromConfig()
 
 	db.Start()
 	defer db.Stop()
@@ -145,7 +157,7 @@ func StartNode(postrun func() error) error {
 		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, helper.GetEngine)
 	} else {
 		logger.Debug("Running as non-validating peer")
-		peerServer, err = peer.NewPeerWithHandler(secHelperFunc, peer.NewPeerHandler)
+		peerServer, err = peer.NewPeerWithEngine(secHelperFunc, nil)
 	}
 
 	if err != nil {
@@ -153,6 +165,9 @@ func StartNode(postrun func() error) error {
 
 		return err
 	}
+
+	// init services related to the peer, such as gossip
+	gossip.NewGossip(peerServer)
 
 	// Register the Peer server
 	srv_peer := func(server *grpc.Server) {

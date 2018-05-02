@@ -17,7 +17,6 @@ limitations under the License.
 package peer
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -38,9 +37,10 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/discovery"
+	gossipstub "github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/abchain/fabric/core/ledger/statemgmt/state"
+	_ "github.com/abchain/fabric/core/ledger/statemgmt"
+	_ "github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 )
@@ -48,7 +48,20 @@ import (
 // Peer provides interface for a peer
 type Peer interface {
 	GetPeerEndpoint() (*pb.PeerEndpoint, error)
-	NewOpenchainDiscoveryHello() (*pb.Message, error)
+	//	NewOpenchainDiscoveryHello() (*pb.Message, error)
+	ExecuteTransaction(transaction *pb.Transaction) *pb.Response
+	SecurityAccessor
+	GetNeighbour() (Neighbour, error)
+	//  currently the availiable streamstub is "gossip"
+	GetStreamStub(string) *pb.StreamStub
+}
+
+type Neighbour interface {
+	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
+	Unicast(*pb.Message, *pb.PeerID) error
+	GetPeers() (*pb.PeersMessage, error)
+	GetRemoteLedger(receiver *pb.PeerID) (RemoteLedger, error)
+	GetDiscoverer() (Discoverer, error)
 }
 
 // BlocksRetriever interface for retrieving blocks .
@@ -68,66 +81,25 @@ type RemoteLedger interface {
 	StateRetriever
 }
 
-// BlockChainAccessor interface for retreiving blocks by block number
-type BlockChainAccessor interface {
-	GetBlockByNumber(blockNumber uint64) (*pb.Block, error)
-	GetBlockchainSize() uint64
-	GetCurrentStateHash() (stateHash []byte, err error)
-}
-
-// BlockChainModifier interface for applying changes to the block chain
-type BlockChainModifier interface {
-	ApplyStateDelta(id interface{}, delta *statemgmt.StateDelta) error
-	RollbackStateDelta(id interface{}) error
-	CommitStateDelta(id interface{}) error
-	EmptyState() error
-	PutBlock(blockNumber uint64, block *pb.Block) error
-}
-
-// BlockChainUtil interface for interrogating the block chain
-type BlockChainUtil interface {
-	HashBlock(block *pb.Block) ([]byte, error)
-	VerifyBlockchain(start, finish uint64) (uint64, error)
-}
-
-// StateAccessor interface for retreiving blocks by block number
-type StateAccessor interface {
-	GetStateSnapshot() (*state.StateSnapshot, error)
-	GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error)
-}
-
-// MessageHandler standard interface for handling Openchain messages.
-type MessageHandler interface {
-	RemoteLedger
-	HandleMessage(msg *pb.Message) error
-	SendMessage(msg *pb.Message) error
-	To() (pb.PeerEndpoint, error)
-	Stop() error
-}
-
-// MessageHandlerCoordinator responsible for coordinating between the registered MessageHandler's
-type MessageHandlerCoordinator interface {
-	Peer
-	SecurityAccessor
-	BlockChainAccessor
-	BlockChainModifier
-	BlockChainUtil
-	StateAccessor
-	RegisterHandler(messageHandler MessageHandler) error
-	DeregisterHandler(messageHandler MessageHandler) error
-	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
-	Unicast(*pb.Message, *pb.PeerID) error
-	GetPeers() (*pb.PeersMessage, error)
-	GetRemoteLedger(receiver *pb.PeerID) (RemoteLedger, error)
-	PeersDiscovered(*pb.PeersMessage) error
-	ExecuteTransaction(transaction *pb.Transaction) *pb.Response
-	Discoverer
-}
+// // MessageHandlerCoordinator responsible for coordinating between the registered MessageHandler's
+// type MessageHandlerCoordinator interface {
+// 	Peer
+// 	SecurityAccessor
+// 	RegisterHandler(messageHandler MessageHandler) error
+// 	DeregisterHandler(messageHandler MessageHandler) error
+// 	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
+// 	Unicast(*pb.Message, *pb.PeerID) error
+// 	GetPeers() (*pb.PeersMessage, error)
+// 	GetRemoteLedger(receiver *pb.PeerID) (RemoteLedger, error)
+// 	PeersDiscovered(*pb.PeersMessage) error
+// 	Discoverer
+// }
 
 // ChatStream interface supported by stream between Peers
 type ChatStream interface {
 	Send(*pb.Message) error
 	Recv() (*pb.Message, error)
+	Context() context.Context
 }
 
 // SecurityAccessor interface enables a Peer to hand out the crypto object for Peer
@@ -178,24 +150,38 @@ type handlerMap struct {
 	cachedPeerList []*pb.PeerEndpoint
 }
 
-// HandlerFactory for creating new MessageHandlers
-type HandlerFactory func(MessageHandlerCoordinator, ChatStream, bool) (MessageHandler, error)
+//HandlerFactory for creating new MessageHandlers
+//type HandlerFactory func(MessageHandler, ChatStream, bool) (LegacyMessageHandler, error)
 
 // EngineFactory for creating new engines
-type EngineFactory func(MessageHandlerCoordinator) (Engine, error)
+type EngineFactory func(Peer) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
-	handlerFactory HandlerFactory
-	handlerMap     *handlerMap
-	ledgerWrapper  *ledgerWrapper
-	random         *rand.Rand
-	secHelper      crypto.Peer
-	engine         Engine
-	isValidator    bool
-	reconnectOnce  sync.Once
-	discHelper     discovery.Discovery
-	discPersist    bool
+	//	handlerFactory HandlerFactory
+	handlerMap *handlerMap
+	//	ledgerWrapper *ledgerWrapper
+	gossipStub    *pb.StreamStub
+	random        *rand.Rand
+	secHelper     crypto.Peer
+	engine        Engine
+	isValidator   bool
+	reconnectOnce sync.Once
+	discHelper    discovery.Discovery
+	discPersist   bool
+}
+
+type LegacyMessageHandler interface {
+	HandleMessage(msg *pb.Message) error
+}
+
+// MessageHandler standard interface for handling Openchain messages.
+type MessageHandler interface {
+	RemoteLedger
+	LegacyMessageHandler
+	SendMessage(msg *pb.Message) error
+	To() (pb.PeerEndpoint, error)
+	Stop() error
 }
 
 // TransactionProccesor responsible for processing of Transactions
@@ -206,41 +192,41 @@ type TransactionProccesor interface {
 // Engine Responsible for managing Peer network communications (Handlers) and processing of Transactions
 type Engine interface {
 	TransactionProccesor
-	// GetHandlerFactory return a handler for an accepted Chat stream
-	GetHandlerFactory() HandlerFactory
+	// HandlerFactory return a handler for handling legacy message (consensus)
+	HandlerFactory(MessageHandler) (LegacyMessageHandler, error)
 	//GetInputChannel() (chan<- *pb.Transaction, error)
 }
 
 // NewPeerWithHandler returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
-func NewPeerWithHandler(secHelperFunc func() crypto.Peer, handlerFact HandlerFactory) (*Impl, error) {
-	peer := new(Impl)
-	peerNodes := peer.initDiscovery()
+// func NewPeerWithHandler(secHelperFunc func() crypto.Peer, handlerFact HandlerFactory) (*Impl, error) {
+// 	peer := new(Impl)
+// 	peerNodes := peer.initDiscovery()
 
-	if handlerFact == nil {
-		return nil, errors.New("Cannot supply nil handler factory")
-	}
-	peer.handlerFactory = handlerFact
-	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
-	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
+// 	if handlerFact == nil {
+// 		return nil, errors.New("Cannot supply nil handler factory")
+// 	}
+// 	//	peer.handlerFactory = handlerFact
+// 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]*Handler)}
+// 	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
 
-	peer.secHelper = secHelperFunc()
+// 	peer.secHelper = secHelperFunc()
 
-	// Install security object for peer
-	if SecurityEnabled() {
-		if peer.secHelper == nil {
-			return nil, fmt.Errorf("Security helper not provided")
-		}
-	}
+// 	// Install security object for peer
+// 	if SecurityEnabled() {
+// 		if peer.secHelper == nil {
+// 			return nil, fmt.Errorf("Security helper not provided")
+// 		}
+// 	}
 
-	ledgerPtr, err := ledger.GetLedger()
-	if err != nil {
-		return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
-	}
-	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
+// 	ledgerPtr, err := ledger.GetLedger()
+// 	if err != nil {
+// 		return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
+// 	}
+// 	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
 
-	peer.chatWithSomePeers(peerNodes)
-	return peer, nil
-}
+// 	peer.chatWithSomePeers(peerNodes)
+// 	return peer, nil
+// }
 
 // NewPeerWithEngine returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
 func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactory) (peer *Impl, err error) {
@@ -261,20 +247,26 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	}
 
 	// Initialize the ledger before the engine, as consensus may want to begin interrogating the ledger immediately
-	ledgerPtr, err := ledger.GetLedger()
-	if err != nil {
-		return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
-	}
-	peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
+	// ledgerPtr, err := ledger.GetLedger()
+	// if err != nil {
+	// 	return nil, fmt.Errorf("Error constructing NewPeerWithHandler: %s", err)
+	// }
+	//peer.ledgerWrapper = &ledgerWrapper{ledger: ledgerPtr}
 
-	peer.engine, err = engFactory(peer)
-	if err != nil {
-		return nil, err
+	if engFactory != nil {
+		peer.engine, err = engFactory(peer)
+		if err != nil {
+			return nil, err
+		}
 	}
-	peer.handlerFactory = peer.engine.GetHandlerFactory()
-	if peer.handlerFactory == nil {
-		return nil, errors.New("Cannot supply nil handler factory")
-	}
+
+	//todo: init all streaming stubs, these maybe moved into engine or else
+	peer.gossipStub = pb.NewStreamStub(&gossipstub.GossipFactory{})
+
+	// peer.handlerFactory = peer.engine.GetHandlerFactory()
+	// if peer.handlerFactory == nil {
+	// 	return nil, errors.New("Cannot supply nil handler factory")
+	// }
 
 	peer.chatWithSomePeers(peerNodes)
 	return peer, nil
@@ -284,6 +276,10 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 // Chat implementation of the the Chat bidi streaming RPC function
 func (p *Impl) Chat(stream pb.Peer_ChatServer) error {
 	return p.handleChat(stream.Context(), stream, false)
+}
+
+func (p *Impl) GossipIn(stream pb.Peer_GossipInServer) error {
+	return p.gossipStub.HandleServer(stream)
 }
 
 // ProcessTransaction implementation of the ProcessTransaction RPC function
@@ -401,8 +397,24 @@ func getHandlerKeyFromPeerEndpoint(peerEndpoint *pb.PeerEndpoint) *pb.PeerID {
 	return peerEndpoint.ID
 }
 
+func (p *Impl) GetStreamStub(name string) *pb.StreamStub {
+	if name == "gossip" {
+		return p.gossipStub
+	}
+
+	return nil
+}
+
+func (p *Impl) GetDiscoverer() (Discoverer, error) {
+	return p, nil
+}
+
+func (p *Impl) GetNeighbour() (Neighbour, error) {
+	return p, nil
+}
+
 // RegisterHandler register a MessageHandler with this coordinator
-func (p *Impl) RegisterHandler(messageHandler MessageHandler) error {
+func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandler MessageHandler) error {
 	key, err := getHandlerKey(messageHandler)
 	if err != nil {
 		return fmt.Errorf("Error registering handler: %s", err)
@@ -416,6 +428,29 @@ func (p *Impl) RegisterHandler(messageHandler MessageHandler) error {
 	p.handlerMap.m[*key] = messageHandler
 	p.handlerMap.cachedPeerList = nil
 	peerLogger.Debugf("registered handler with key: %s", key)
+
+	if !initiated {
+		return nil
+	}
+
+	//also start all other stream stubs
+	ctxk := peerConnCtxKey("conn")
+	v := ctx.Value(ctxk)
+	if v == nil {
+		peerLogger.Errorf("No connection can be found in context")
+	} else {
+		conn := v.(*grpc.ClientConn)
+
+		go func() {
+			peerLogger.Debugf("start gossip stream %s", key)
+			err := p.gossipStub.HandleClient(conn, key)
+			if err != nil {
+				peerLogger.Errorf("gossip client stream %s fail: %s", key, err)
+			}
+		}()
+
+	}
+
 	return nil
 }
 
@@ -604,6 +639,8 @@ func (p *Impl) chatWithSomePeers(addresses []string) {
 	}
 }
 
+type peerConnCtxKey string
+
 func (p *Impl) chatWithPeer(address string) error {
 	peerLogger.Debugf("Initiating Chat with peer address: %s", address)
 	conn, err := NewPeerClientConnectionWithAddress(address)
@@ -611,8 +648,10 @@ func (p *Impl) chatWithPeer(address string) error {
 		peerLogger.Errorf("Error creating connection to peer address %s: %s", address, err)
 		return err
 	}
+	defer conn.Close()
 	serverClient := pb.NewPeerClient(conn)
-	ctx := context.Background()
+	ctx := context.WithValue(context.Background(), peerConnCtxKey("conn"), conn)
+
 	stream, err := serverClient.Chat(ctx)
 	if err != nil {
 		peerLogger.Errorf("Error establishing chat with peer address %s: %s", address, err)
@@ -632,10 +671,19 @@ func (p *Impl) chatWithPeer(address string) error {
 func (p *Impl) handleChat(ctx context.Context, stream ChatStream, initiatedStream bool) error {
 	deadline, ok := ctx.Deadline()
 	peerLogger.Debugf("Current context deadline = %s, ok = %v", deadline, ok)
-	handler, err := p.handlerFactory(p, stream, initiatedStream)
+	handler, err := NewPeerHandler(p, stream, initiatedStream)
 	if err != nil {
 		return fmt.Errorf("Error creating handler during handleChat initiation: %s", err)
 	}
+
+	var legacyHandler LegacyMessageHandler
+	if p.engine != nil {
+		legacyHandler, err = p.engine.HandlerFactory(handler)
+		if err != nil {
+			return fmt.Errorf("Could not obtain legacy handler: %s", err)
+		}
+	}
+
 	defer handler.Stop()
 	for {
 		in, err := stream.Recv()
@@ -648,7 +696,14 @@ func (p *Impl) handleChat(ctx context.Context, stream ChatStream, initiatedStrea
 			peerLogger.Error(e.Error())
 			return e
 		}
-		err = handler.HandleMessage(in)
+
+		//legacy message type in chatting stream, sent it to engine
+		if in.Type == pb.Message_CONSENSUS && legacyHandler != nil {
+			err = legacyHandler.HandleMessage(in)
+		} else {
+			err = handler.HandleMessage(in)
+		}
+
 		if err != nil {
 			peerLogger.Errorf("Error handling message: %s", err)
 			return err
@@ -720,103 +775,105 @@ func (p *Impl) newHelloMessage() (*pb.HelloMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error creating hello message: %s", err)
 	}
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	//size := p.ledgerWrapper.ledger.GetBlockchainSize()
-	blockChainInfo, err := p.ledgerWrapper.ledger.GetBlockchainInfo()
+	l, err := ledger.GetLedger()
+	if err != nil {
+		return nil, fmt.Errorf("Error on get ledger: %s", err)
+	}
+
+	blockChainInfo, err := l.GetBlockchainInfo()
 	if err != nil {
 		return nil, fmt.Errorf("Error creating hello message, error getting block chain info: %s", err)
 	}
 	return &pb.HelloMessage{PeerEndpoint: endpoint, BlockchainInfo: blockChainInfo}, nil
 }
 
-// GetBlockByNumber return a block by block number
-func (p *Impl) GetBlockByNumber(blockNumber uint64) (*pb.Block, error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetBlockByNumber(blockNumber)
-}
+// // GetBlockByNumber return a block by block number
+// func (p *Impl) GetBlockByNumber(blockNumber uint64) (*pb.Block, error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetBlockByNumber(blockNumber)
+// }
 
-// GetBlockchainSize returns the height/length of the blockchain
-func (p *Impl) GetBlockchainSize() uint64 {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetBlockchainSize()
-}
+// // GetBlockchainSize returns the height/length of the blockchain
+// func (p *Impl) GetBlockchainSize() uint64 {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetBlockchainSize()
+// }
 
-// GetCurrentStateHash returns the current non-committed hash of the in memory state
-func (p *Impl) GetCurrentStateHash() (stateHash []byte, err error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetTempStateHash()
-}
+// // GetCurrentStateHash returns the current non-committed hash of the in memory state
+// func (p *Impl) GetCurrentStateHash() (stateHash []byte, err error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetTempStateHash()
+// }
 
-// HashBlock returns the hash of the included block, useful for mocking
-func (p *Impl) HashBlock(block *pb.Block) ([]byte, error) {
-	return block.GetHash()
-}
+// // HashBlock returns the hash of the included block, useful for mocking
+// func (p *Impl) HashBlock(block *pb.Block) ([]byte, error) {
+// 	return block.GetHash()
+// }
 
-// VerifyBlockchain checks the integrity of the blockchain between indices start and finish,
-// returning the first block who's PreviousBlockHash field does not match the hash of the previous block
-func (p *Impl) VerifyBlockchain(start, finish uint64) (uint64, error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.VerifyChain(start, finish)
-}
+// // VerifyBlockchain checks the integrity of the blockchain between indices start and finish,
+// // returning the first block who's PreviousBlockHash field does not match the hash of the previous block
+// func (p *Impl) VerifyBlockchain(start, finish uint64) (uint64, error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.VerifyChain(start, finish)
+// }
 
-// ApplyStateDelta applies a state delta to the current state
-// The result of this function can be retrieved using GetCurrentStateDelta
-// To commit the result, call CommitStateDelta, or to roll it back
-// call RollbackStateDelta
-func (p *Impl) ApplyStateDelta(id interface{}, delta *statemgmt.StateDelta) error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.ApplyStateDelta(id, delta)
-}
+// // ApplyStateDelta applies a state delta to the current state
+// // The result of this function can be retrieved using GetCurrentStateDelta
+// // To commit the result, call CommitStateDelta, or to roll it back
+// // call RollbackStateDelta
+// func (p *Impl) ApplyStateDelta(id interface{}, delta *statemgmt.StateDelta) error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.ApplyStateDelta(id, delta)
+// }
 
-// CommitStateDelta makes the result of ApplyStateDelta permanent
-// and releases the resources necessary to rollback the delta
-func (p *Impl) CommitStateDelta(id interface{}) error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.CommitStateDelta(id)
-}
+// // CommitStateDelta makes the result of ApplyStateDelta permanent
+// // and releases the resources necessary to rollback the delta
+// func (p *Impl) CommitStateDelta(id interface{}) error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.CommitStateDelta(id)
+// }
 
-// RollbackStateDelta undoes the results of ApplyStateDelta to revert
-// the current state back to the state before ApplyStateDelta was invoked
-func (p *Impl) RollbackStateDelta(id interface{}) error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.RollbackStateDelta(id)
-}
+// // RollbackStateDelta undoes the results of ApplyStateDelta to revert
+// // the current state back to the state before ApplyStateDelta was invoked
+// func (p *Impl) RollbackStateDelta(id interface{}) error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.RollbackStateDelta(id)
+// }
 
-// EmptyState completely empties the state and prepares it to restore a snapshot
-func (p *Impl) EmptyState() error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.DeleteALLStateKeysAndValues()
-}
+// // EmptyState completely empties the state and prepares it to restore a snapshot
+// func (p *Impl) EmptyState() error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.DeleteALLStateKeysAndValues()
+// }
 
-// GetStateSnapshot return the state snapshot
-func (p *Impl) GetStateSnapshot() (*state.StateSnapshot, error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetStateSnapshot()
-}
+// // GetStateSnapshot return the state snapshot
+// func (p *Impl) GetStateSnapshot() (*state.StateSnapshot, error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetStateSnapshot()
+// }
 
-// GetStateDelta return the state delta for the requested block number
-func (p *Impl) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error) {
-	p.ledgerWrapper.RLock()
-	defer p.ledgerWrapper.RUnlock()
-	return p.ledgerWrapper.ledger.GetStateDelta(blockNumber)
-}
+// // GetStateDelta return the state delta for the requested block number
+// func (p *Impl) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error) {
+// 	p.ledgerWrapper.RLock()
+// 	defer p.ledgerWrapper.RUnlock()
+// 	return p.ledgerWrapper.ledger.GetStateDelta(blockNumber)
+// }
 
-// PutBlock inserts a raw block into the blockchain at the specified index, nearly no error checking is performed
-func (p *Impl) PutBlock(blockNumber uint64, block *pb.Block) error {
-	p.ledgerWrapper.Lock()
-	defer p.ledgerWrapper.Unlock()
-	return p.ledgerWrapper.ledger.PutRawBlock(block, blockNumber)
-}
+// // PutBlock inserts a raw block into the blockchain at the specified index, nearly no error checking is performed
+// func (p *Impl) PutBlock(blockNumber uint64, block *pb.Block) error {
+// 	p.ledgerWrapper.Lock()
+// 	defer p.ledgerWrapper.Unlock()
+// 	return p.ledgerWrapper.ledger.PutRawBlock(block, blockNumber)
+// }
 
 // NewOpenchainDiscoveryHello constructs a new HelloMessage for sending
 func (p *Impl) NewOpenchainDiscoveryHello() (*pb.Message, error) {
@@ -891,15 +948,15 @@ type Persistor interface {
 
 // Store enables a peer to persist the given key,value pair to the database
 func (p *Impl) Store(key string, value []byte) error {
-	dbhandler := db.GetDataBaseHandler()
+	dbhandler := db.GetGlobalDBHandle()
 
 	//dbg.Infof("add db.PersistCF: <%s> --> <%x>", key, value)
-	return dbhandler.PutValue(db.PersistCF, []byte(key), value, nil)
+	return dbhandler.PutValue(db.PersistCF, []byte(key), value)
 }
 
 // Load enables a peer to read the value that corresponds to the given database key
 func (p *Impl) Load(key string) ([]byte, error) {
-	dbhandler := db.GetDataBaseHandler()
+	dbhandler := db.GetGlobalDBHandle()
 	return dbhandler.GetValue(db.PersistCF, []byte(key))
 }
 

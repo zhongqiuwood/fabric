@@ -21,11 +21,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/testutil"
-	"github.com/tecbot/gorocksdb"
+	"github.com/golang/protobuf/proto"
 )
 
 var testDBWrapper = db.NewTestDBWrapper()
@@ -130,13 +129,13 @@ func (testWrapper *stateImplTestWrapper) prepareWorkingSetAndComputeCryptoHash(s
 	return testWrapper.computeCryptoHash()
 }
 
-func (testWrapper *stateImplTestWrapper) addChangesForPersistence(writeBatch *gorocksdb.WriteBatch) {
+func (testWrapper *stateImplTestWrapper) addChangesForPersistence(writeBatch *db.DBWriteBatch) {
 	err := testWrapper.stateImpl.AddChangesForPersistence(writeBatch)
 	testutil.AssertNoError(testWrapper.t, err, "Error while adding changes to db write-batch")
 }
 
 func (testWrapper *stateImplTestWrapper) persistChangesAndResetInMemoryChanges() {
-	writeBatch := gorocksdb.NewWriteBatch()
+	writeBatch := testDBWrapper.NewWriteBatch()
 	defer writeBatch.Destroy()
 	testWrapper.addChangesForPersistence(writeBatch)
 	testDBWrapper.WriteToDB(testWrapper.t, writeBatch)

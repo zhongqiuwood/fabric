@@ -28,7 +28,6 @@ import (
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
-	"github.com/tecbot/gorocksdb"
 )
 
 func BenchmarkDB(b *testing.B) {
@@ -203,14 +202,15 @@ func BenchmarkLedgerRandomTransactions(b *testing.B) {
 func populateDB(tb testing.TB, kvSize int, totalKeys int, keyPrefix string) {
 	dbWrapper := db.NewTestDBWrapper()
 	dbWrapper.CleanDB(tb)
-	batch := gorocksdb.NewWriteBatch()
+	batch := dbWrapper.NewWriteBatch()
 	for i := 0; i < totalKeys; i++ {
 		key := []byte(keyPrefix + strconv.Itoa(i))
 		value := testutil.ConstructRandomBytes(tb, kvSize-len(key))
 		batch.Put(key, value)
 		if i%1000 == 0 {
 			dbWrapper.WriteToDB(tb, batch)
-			batch = gorocksdb.NewWriteBatch()
+			batch.Destroy()
+			batch = dbWrapper.NewWriteBatch()
 		}
 	}
 	dbWrapper.CloseDB(tb)

@@ -19,10 +19,65 @@ package protos
 import (
 	"encoding/json"
 	"fmt"
+	"hash"
 
-	"github.com/golang/protobuf/proto"
+	bin "encoding/binary"
 	"github.com/abchain/fabric/core/util"
+	"github.com/golang/protobuf/proto"
 )
+
+func TxidFromDigest(digest []byte) string {
+
+	//truncate the digest which is too long
+
+	if len(digest) > 32 {
+		digest = digest[:32]
+	}
+
+	return fmt.Sprintf("%x", digest)
+}
+
+func (t *Transaction) Digest() ([]byte, error) {
+	return t.digest(util.DefaultCryptoHash())
+}
+
+func (t *Transaction) DigestWithAlg(customIDgenAlg string) ([]byte, error) {
+
+	h := util.CryptoHashByAlg(customIDgenAlg)
+	if h == nil {
+		return nil, fmt.Errorf("Wrong hash algorithm was given: %s", customIDgenAlg)
+	} else {
+		return t.digest(h)
+	}
+}
+
+// Digest generate a solid digest for transaction contents,
+// It ensure a bitwise equality to txs regardless the versions or extends in future
+// and the cost should be light on both memory and computation
+func (t *Transaction) digest(h hash.Hash) ([]byte, error) {
+
+	hash := util.NewHashWriter(h)
+
+	err := hash.Write(t.ChaincodeID).Write(t.Payload).Write(t.Metadata).Write(t.Nonce).Error()
+
+	if err != nil {
+		return nil, err
+	}
+
+	//so we do not digest the nano part in ts ...
+	err = bin.Write(h, bin.BigEndian, t.Timestamp.Seconds)
+	if err != nil {
+		return nil, err
+	}
+
+	err = bin.Write(h, bin.BigEndian, int32(t.ConfidentialityLevel))
+	if err != nil {
+		return nil, err
+	}
+
+	//we can add more items for tx in future
+	return h.Sum(nil), nil
+}
 
 // Bytes returns this transaction as an array of bytes.
 func (transaction *Transaction) Bytes() ([]byte, error) {
@@ -43,6 +98,7 @@ func UnmarshallTransaction(transaction []byte) (*Transaction, error) {
 	}
 	return tx, nil
 }
+
 // NewTransaction creates a new transaction. It defines the function to call,
 // the chaincodeID on which the function should be called, and the arguments
 // string. The arguments could be a string of JSON, but there is no strict

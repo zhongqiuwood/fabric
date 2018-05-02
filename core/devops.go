@@ -43,9 +43,9 @@ import (
 var devopsLogger = logging.MustGetLogger("devops")
 
 // NewDevopsServer creates and returns a new Devops server instance.
-func NewDevopsServer(coord peer.MessageHandlerCoordinator) *Devops {
+func NewDevopsServer(peer peer.Peer) *Devops {
 	d := new(Devops)
-	d.coord = coord
+	d.peer = peer
 	d.isSecurityEnabled = viper.GetBool("security.enabled")
 	d.bindingMap = &bindingMap{m: make(map[string]crypto.TransactionHandler)}
 	return d
@@ -59,7 +59,7 @@ type bindingMap struct {
 
 // Devops implementation of Devops services
 type Devops struct {
-	coord             peer.MessageHandlerCoordinator
+	peer              peer.Peer
 	isSecurityEnabled bool
 	bindingMap        *bindingMap
 }
@@ -211,7 +211,7 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 	if devopsLogger.IsEnabledFor(logging.DEBUG) {
 		devopsLogger.Debugf("Sending deploy transaction (%s) to validator", tx.Txid)
 	}
-	resp := d.coord.ExecuteTransaction(tx)
+	resp := d.peer.ExecuteTransaction(tx)
 	if resp.Status == pb.Response_FAILURE {
 		err = fmt.Errorf(string(resp.Msg))
 	}
@@ -227,24 +227,10 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 
 	// Now create the Transactions message and send to Peer.
 	var customIDgenAlg = strings.ToLower(chaincodeInvocationSpec.IdGenerationAlg)
-	var id string
-	var generr error
-	if invoke {
-		if customIDgenAlg != "" {
-			ctorbytes, merr := asn1.Marshal(*chaincodeInvocationSpec.ChaincodeSpec.CtorMsg)
-			if merr != nil {
-				return nil, fmt.Errorf("Error marshalling constructor: %s", merr)
-			}
-			id, generr = util.GenerateIDWithAlg(customIDgenAlg, ctorbytes)
-			if generr != nil {
-				return nil, generr
-			}
-		} else {
-			id = util.GenerateUUID()
-		}
-	} else {
-		id = util.GenerateUUID()
-	}
+
+	// We generate a temporary id for used in work process and update it with
+	// the tx's content
+	id := util.GenerateUUID()
 	devopsLogger.Infof("Transaction ID: %v", id)
 	var transaction *pb.Transaction
 	var err error
@@ -266,10 +252,27 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	if err != nil {
 		return nil, err
 	}
+
+	if invoke {
+		var digest []byte
+		if customIDgenAlg != "" {
+			digest, err = transaction.DigestWithAlg(customIDgenAlg)
+		} else {
+			digest, err = transaction.Digest()
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		transaction.Txid = util.GenerateIDfromDigest(digest)
+		devopsLogger.Debugf("Invocation transaction id updated to (%s) from (%s)", transaction.Txid, id)
+	}
+
 	if devopsLogger.IsEnabledFor(logging.DEBUG) {
 		devopsLogger.Debugf("Sending invocation transaction (%s) to validator", transaction.Txid)
 	}
-	resp := d.coord.ExecuteTransaction(transaction)
+	resp := d.peer.ExecuteTransaction(transaction)
 	if resp.Status == pb.Response_FAILURE {
 		err = fmt.Errorf(string(resp.Msg))
 	} else {
@@ -486,7 +489,7 @@ func (d *Devops) EXP_ExecuteWithBinding(ctx context.Context, executeWithBinding 
 			return nil, fmt.Errorf("Error creating executing with binding:  %s", err)
 		}
 
-		return d.coord.ExecuteTransaction(tx), nil
+		return d.peer.ExecuteTransaction(tx), nil
 		//return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("NOT IMPLEMENTED")}, nil
 
 		//return &pb.Response{Status: pb.Response_SUCCESS, Msg: sigmaOutputBytes}, nil

@@ -454,7 +454,7 @@ func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction 
 	return txs
 }
 
-func (openchainDB *GlobalDataDB) GetIterator(cfName string) *DBIterator {
+func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator {
 
 	cf := openchainDB.cfMap[cfName]
 
@@ -465,14 +465,15 @@ func (openchainDB *GlobalDataDB) GetIterator(cfName string) *DBIterator {
 	opt := gorocksdb.NewDefaultReadOptions()
 	opt.SetFillCache(true)
 	defer opt.Destroy()
-	return &DBIterator{extHandler{nil}, openchainDB.NewIteratorCF(opt, cf)}
+	return openchainDB.NewIteratorCF(opt, cf)
 }
 
 func (txdb *GlobalDataDB) PutGenesisGlobalState(statehash []byte) error {
 
 	newgs := protos.NewGlobalState()
-	newgs.Count = 0
-	newgs.Branched = false
+	//no need to init default values in GO
+	//newgs.Count = 0
+	//newgs.Branched = false
 
 	v, err := newgs.Bytes()
 

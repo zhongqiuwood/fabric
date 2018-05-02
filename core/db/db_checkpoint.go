@@ -20,8 +20,12 @@ func getCheckPointPath(dbname string) string {
 	return util.CanonicalizePath(chkpPath) + dbname
 }
 
-func activeDbName(statehash string) string {
-	return "db_from_" + statehash
+func activeDbName(tag []byte) string {
+	if tag == nil {
+		return "db"
+	} else {
+		return "db_" + string(tag)
+	}
 }
 
 func encodeStatehash(statehash []byte) string {
@@ -57,12 +61,21 @@ func (oc *OpenchainDB) StateSwitch(statehash string) error {
 
 	defer chkp.Close()
 
-	newdbPath := getDBPath(activeDbName(statehash))
+	newtag := util.GenerateBytesUUID()
+	newdbPath := getDBPath(activeDbName(newtag))
 	dbLogger.Infof("[%s] Create new state db on %s", printGID, newdbPath)
 
 	//copy this checkpoint to active db path
 	err = createCheckpoint(chkp, newdbPath)
 	if err != nil {
+		return err
+	}
+
+	//write the new db tag, if we fail here, we just have an dsicarded path
+	err = globalDataDB.put(globalDataDB.persistCF, []byte(currentDBKey), newtag)
+	if err != nil {
+		dbLogger.Errorf("[%s] Can't write globaldb: <%s>. Fail to create new state db at %s",
+			printGID, err, newdbPath)
 		return err
 	}
 

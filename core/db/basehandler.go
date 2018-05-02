@@ -96,8 +96,13 @@ func Start() {
 		panic(err)
 	}
 
+	k, err := globalDataDB.get(globalDataDB.persistCF, []byte(currentDBKey))
+	if err != nil {
+		panic(err)
+	}
+
 	originalDB.db.OpenOpt = opts
-	err = originalDB.db.open(getDBPath("db"))
+	err = originalDB.db.open(getDBPath(activeDbName(k)))
 	if err != nil {
 		panic(err)
 	}
@@ -293,4 +298,3 @@ func makeCopy(src []byte) []byte {
 	copy(dest, src)
 	return dest
 }
-

@@ -168,17 +168,12 @@ func sanityCheck() error {
 	for index := len(noneExistingList) - 1; index >= 0; index-- {
 		stateHash := noneExistingList[index]
 		var err error
-		if lastExisting == nil {
-			ledgerLogger.Infof("Put genesis GlobalState")
-			//			err = db.GetGlobalDBHandle().PutGenesisGlobalState()
-		} else {
 
-			ledgerLogger.Infof("AddGlobalState:")
-			ledgerLogger.Infof("	parentStateHash[%x]", lastExisting)
-			ledgerLogger.Infof("	statehash[%x]", stateHash)
-			// todo: uncomment out AddGlobalState
-			//err = db.GetGlobalDBHandle().AddGlobalState(lastExisting, stateHash)
-		}
+		ledgerLogger.Infof("Add Missed GlobalState:")
+		ledgerLogger.Infof("	parentStateHash[%x]", lastExisting)
+		ledgerLogger.Infof("	statehash[%x]", stateHash)
+		err = db.GetGlobalDBHandle().AddGlobalState(lastExisting, stateHash)
+
 		if err != nil {
 			return err
 		}
@@ -295,11 +290,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	//all commit done, we can add global state
-	if ledger.currentStateHash == nil {
-		dbErr = db.GetGlobalDBHandle().PutGenesisGlobalState(stateHash)
-	} else {
-		dbErr = db.GetGlobalDBHandle().AddGlobalState(ledger.currentStateHash, stateHash)
-	}
+	dbErr = db.GetGlobalDBHandle().AddGlobalState(ledger.currentStateHash, stateHash)
 
 	if dbErr != nil {
 		//should this the correct way to omit StateDuplicatedError?

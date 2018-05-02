@@ -32,6 +32,10 @@ var logger = logging.MustGetLogger("dbscan")
 
 type detailPrinter func(data []byte)
 
+type IDataBaseHandler interface {
+	GetIterator(cfName string) *db.DBIterator
+}
+
 func main() {
 	flagSetName := os.Args[0]
 	flagSet := flag.NewFlagSet(flagSetName, flag.ExitOnError)
@@ -85,8 +89,7 @@ func main() {
 
 }
 
-
-func scan(openchainDB db.IDataBaseHandler, cfName string, printer detailPrinter) (int, int) {
+func scan(openchainDB IDataBaseHandler, cfName string, printer detailPrinter) (int, int) {
 	fmt.Printf("\n================================================================\n")
 	fmt.Printf("====== Dump %s: ====== \n", cfName)
 	fmt.Printf("================================================================\n")

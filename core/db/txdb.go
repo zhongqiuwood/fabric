@@ -454,7 +454,8 @@ func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction 
 	return txs
 }
 
-func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator {
+
+func (openchainDB *GlobalDataDB) GetIterator(cfName string) *DBIterator {
 
 	cf := openchainDB.cfMap[cfName]
 
@@ -465,7 +466,8 @@ func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator 
 	opt := gorocksdb.NewDefaultReadOptions()
 	opt.SetFillCache(true)
 	defer opt.Destroy()
-	return openchainDB.NewIteratorCF(opt, cf)
+
+	return &DBIterator{extHandler{nil}, openchainDB.NewIteratorCF(opt, cf)}
 }
 
 func (txdb *GlobalDataDB) PutGenesisGlobalState(statehash []byte) error {

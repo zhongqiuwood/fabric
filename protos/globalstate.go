@@ -13,6 +13,12 @@ func (gs *GlobalState) Bytes() ([]byte, error) {
 	return data, nil
 }
 
+// Test state is a branch (or a node in the state graphic)
+func (gs *GlobalState) Branched() bool {
+	return len(gs.NextNodeStateHash) > 1 ||
+		len(gs.ParentNodeStateHash) > 1
+}
+
 // NewBlock creates a new Block given the input parameters.
 func NewGlobalState() *GlobalState {
 	gs := new(GlobalState)

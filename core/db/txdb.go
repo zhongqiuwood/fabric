@@ -54,16 +54,20 @@ type GlobalDataDB struct {
 	globalStateLock sync.Mutex
 	//caution: destroy option before cf/db is WRONG but just ok only if it was just "default"
 	//we must keep object alive if we have custom some options (i.e.: merge operators)
-	globalOpt *gorocksdb.Options
+	globalOpt     *gorocksdb.Options
+	useCycleGraph bool
 }
 
 const (
 	update_nextnode = iota
 	update_lastbranch
 	update_nextbranch
+	update_lastnode
 )
 
 type globalstatusMO struct {
+	Name         string
+	IsCycleGraph bool
 }
 
 func decodeMergeValue(b []byte) (uint64, []byte, error) {
@@ -83,7 +87,7 @@ func encodeMergeValue(op byte, count uint64, hash []byte) []byte {
 	return bytes.Join([][]byte{[]byte{op}, buf[:binary.PutUvarint(buf, count)], hash}, nil)
 }
 
-func (mo globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte) ([]byte, bool) {
+func (mo *globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte) ([]byte, bool) {
 	//to tell the true: we are not DARE TO use dblogger in these subroutines so we may just
 	//keep all the error silent ...
 	//REMEMBER: return false may ruin the whole db so we must try our best to keep the data robust
@@ -104,6 +108,11 @@ func (mo globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte)
 	nxtarget := gs.NextBranchNodeStateHash
 	var nxtargetN, lbtargetN uint64
 
+	//this work for both cyclic/acyclic case, because
+	//in acyclic case, the count is just distance from root node
+	//instead of the nearest node
+	lbtargetN = gs.Count
+
 	for _, op := range operands {
 
 		if len(op) < 2 {
@@ -120,21 +129,24 @@ func (mo globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte)
 		case update_nextnode:
 			gs.NextNodeStateHash = append(gs.NextNodeStateHash, h)
 		case update_lastbranch:
-			if n >= gs.Count {
-				continue //skip this op
-			}
-			if n > lbtargetN {
+			if n < lbtargetN { //smaller counts
 				lbtargetN = n
 				lbtarget = h
 			}
 		case update_nextbranch:
 			if n <= gs.Count {
-				continue //skip this op
+				continue //maybe something wrong, skip this op
 			}
-			if nxtargetN == 0 || n > nxtargetN {
+			if nxtargetN == 0 || n < nxtargetN {
 				nxtargetN = n
 				nxtarget = h
 			}
+		case update_lastnode:
+			//should only apply in cycle-graph case
+			if mo.IsCycleGraph {
+				gs.ParentNodeStateHash = append(gs.ParentNodeStateHash, h)
+			}
+
 		}
 	}
 
@@ -142,9 +154,13 @@ func (mo globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte)
 	gs.LastBranchNodeStateHash = lbtarget
 	gs.NextBranchNodeStateHash = nxtarget
 
-	//also update branch status
-	if len(gs.NextNodeStateHash) > 1 {
-		gs.Branched = true
+	//for cycle graph, we update count
+	if mo.IsCycleGraph {
+		if gs.Branched() {
+			gs.Count = 0
+		} else {
+			gs.Count = lbtargetN
+		}
 	}
 
 	ret, err := gs.Bytes()
@@ -166,7 +182,16 @@ func (mo globalstatusMO) PartialMerge(key, leftOperand, rightOperand []byte) ([]
 	opcodeL := int(leftOperand[0])
 	opcodeR := int(rightOperand[0])
 
-	if opcodeL != opcodeR || opcodeL == update_nextnode {
+	if opcodeL != opcodeR {
+		return nil, false
+	}
+
+	switch opcodeL {
+	case update_lastbranch:
+
+	case update_nextbranch:
+
+	default:
 		return nil, false
 	}
 
@@ -182,33 +207,32 @@ func (mo globalstatusMO) PartialMerge(key, leftOperand, rightOperand []byte) ([]
 		return leftOperand, true
 	}
 
-	switch opcodeL {
-	case update_lastbranch:
-		//return the later one
-		if nL < nR {
-			return rightOperand, true
-		} else {
-			return leftOperand, true
-		}
-	case update_nextbranch:
-		//return the early7 one
-		if nL < nR {
-			return leftOperand, true
-		} else {
-			return rightOperand, true
-		}
-	default:
-		return nil, false
+	//smaller n counts
+	if nL < nR {
+		return leftOperand, true
+	} else {
+		return rightOperand, true
 	}
-
 }
-func (mo globalstatusMO) Name() string { return "GolbalStateMO" }
+func (mo *globalstatusMO) Name() string { return mo.Name }
 
 var globalDataDB = &GlobalDataDB{}
 
 func (txdb *GlobalDataDB) open(dbpath string) error {
 
-	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies, nil)
+	//caution: keep it in txdb.globalOpt, DO NOT destroy!
+	globalOpt := DefaultOption()
+	globalOpt.SetMergeOperator(&globalstatusMO{"globalstateMO", txdb.useCycleGraph})
+	txdb.globalOpt = globalOpt
+
+	opts := make([]*gorocksdb.Options, len(txDbColumnfamilies))
+	for i, cf := range txDbColumnfamilies {
+		if cf == GlobalCF {
+			opts[i] = txdb.globalOpt
+		}
+	}
+
+	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies, opts)
 
 	if len(cfhandlers) != len(txDbColumnfamilies) {
 		return errors.New("rocksdb may ruin or not work as expected")
@@ -244,6 +268,8 @@ func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 type gscommiter struct {
 	*gorocksdb.WriteBatch
 	refGS *protos.GlobalState
+	//"backward gs" used for update, only work in cycle-graph
+	refGSBack *protos.GlobalState
 }
 
 type StateDuplicatedError struct {
@@ -262,21 +288,32 @@ func (txdb *GlobalDataDB) addGSCritical(parentStateHash []byte,
 		return nil, fmt.Errorf("No corresponding parent [%x]", parentStateHash)
 	}
 
-	data, _ = txdb.get(txdb.globalCF, statehash)
-	if data != nil {
-		return nil, StateDuplicatedError{fmt.Errorf("state [%x] exist", statehash)}
-	}
-
 	parentgs, err := protos.UnmarshallGS(data)
 	if err != nil {
 		return nil, fmt.Errorf("state of parent [%x] was ruined: %s", parentStateHash, err)
 	}
 
-	newgs := protos.NewGlobalState()
+	data, _ = txdb.get(txdb.globalCF, statehash)
+	var newgs *protos.GlobalState
+	if data != nil {
+		if !txdb.useCycleGraph {
+			return nil, StateDuplicatedError{fmt.Errorf("state [%x] exist", statehash)}
+		}
 
-	newgs.Count = parentgs.Count + 1
-	newgs.ParentNodeStateHash = parentStateHash
-	newgs.LastBranchNodeStateHash = parentgs.LastBranchNodeStateHash
+		parentgs, err := protos.UnmarshallGS(data)
+		if err != nil {
+			return nil, fmt.Errorf("state of parent [%x] was ruined: %s", parentStateHash, err)
+		}
+
+	} else {
+
+		newgs := protos.NewGlobalState()
+
+		newgs.Count = parentgs.Count + 1
+		newgs.ParentNodeStateHash = []byte{parentStateHash}
+		newgs.LastBranchNodeStateHash = parentgs.LastBranchNodeStateHash
+
+	}
 
 	vbytes, err := newgs.Bytes()
 	if err != nil {
@@ -453,7 +490,6 @@ func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction 
 
 	return txs
 }
-
 
 func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator {
 

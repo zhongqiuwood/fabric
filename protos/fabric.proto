@@ -241,9 +241,8 @@ message Response {
 message GlobalState{
     uint64 count = 1;
     repeated bytes  nextNodeStateHash = 3;
-    bytes  parentNodeStateHash = 4;
+    repeated bytes  parentNodeStateHash = 4;
     bytes  lastBranchNodeStateHash = 5;
-    bool   branched = 6;
     bytes  nextBranchNodeStateHash = 7;
 }
 

@@ -26,15 +26,12 @@ import (
 	"github.com/spf13/viper"
 	"github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
+	"github.com/tecbot/gorocksdb"
 )
 
 var logger = logging.MustGetLogger("dbscan")
 
 type detailPrinter func(data []byte)
-
-type IDataBaseHandler interface {
-	GetIterator(cfName string) *db.DBIterator
-}
 
 func main() {
 	flagSetName := os.Args[0]
@@ -79,22 +76,24 @@ func main() {
 
 	defer db.Stop()
 
-	scan(orgdb, db.IndexesCF, nil)
-	scan(orgdb, db.BlockchainCF, blockDetailPrinter)
-	scan(orgdb, db.PersistCF, nil)
+	scan(orgdb.GetIterator(db.IndexesCF).Iterator, db.IndexesCF, nil)
+	scan(orgdb.GetIterator(db.BlockchainCF).Iterator, db.BlockchainCF, blockDetailPrinter)
+	scan(orgdb.GetIterator(db.PersistCF).Iterator, db.PersistCF, nil)
 
-	scan(txdb, db.TxCF, txDetailPrinter)
-	scan(txdb, db.GlobalCF, gsDetailPrinter)
-	scan(txdb, db.PersistCF, nil)
-
+	scan(txdb.GetIterator(db.TxCF), db.TxCF, txDetailPrinter)
+	scan(txdb.GetIterator(db.GlobalCF), db.GlobalCF, gsDetailPrinter)
+	scan(txdb.GetIterator(db.PersistCF), db.PersistCF, nil)
 }
 
-func scan(openchainDB IDataBaseHandler, cfName string, printer detailPrinter) (int, int) {
+func scan(itr *gorocksdb.Iterator, cfName string, printer detailPrinter) {
+
+	if itr == nil {
+		return
+	}
 	fmt.Printf("\n================================================================\n")
 	fmt.Printf("====== Dump %s: ====== \n", cfName)
 	fmt.Printf("================================================================\n")
 
-	itr := openchainDB.GetIterator(cfName)
 	totalKVs := 0
 	itr.SeekToFirst()
 	for ; itr.Valid(); itr.Next() {
@@ -123,7 +122,7 @@ func scan(openchainDB IDataBaseHandler, cfName string, printer detailPrinter) (i
 	}
 	itr.Close()
 
-	return totalKVs, 0
+	return
 }
 
 func txDetailPrinter(valueBytes []byte) {

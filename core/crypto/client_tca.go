@@ -29,9 +29,9 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/abchain/fabric/core/crypto/primitives"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/abchain/fabric/core/crypto/primitives"
 	"golang.org/x/net/context"
 )
 
@@ -46,7 +46,13 @@ func (client *clientImpl) initTCertEngine() (err error) {
 	client.Debugf("TCert batch size [%d]", client.conf.getTCertBatchSize())
 
 	if client.conf.IsMultithreadingEnabled() {
-		client.tCertPool = new(tCertPoolMultithreadingImpl)
+		if client.conf.getTCertReusedEnable() {
+			poolLogger.Warning("mt-tcertpool do not support reusing, apply st-pool")
+			client.tCertPool = new(tCertPoolSingleThreadImpl)
+		} else {
+			client.tCertPool = new(tCertPoolMultithreadingImpl)
+		}
+
 	} else {
 		client.tCertPool = new(tCertPoolSingleThreadImpl)
 	}
@@ -371,7 +377,7 @@ func (client *clientImpl) getTCertFromDER(certBlk *TCertDBBlock) (certBlock *TCe
 		return
 	}
 
-	certBlock = &TCertBlock{&tCertImpl{client, x509Cert, tempSK, certBlk.preK0}, certBlk.attributesHash}
+	certBlock = &TCertBlock{&tCertImpl{client, x509Cert, tempSK, certBlk.preK0}, certBlk.attributesHash, 0}
 
 	return
 }

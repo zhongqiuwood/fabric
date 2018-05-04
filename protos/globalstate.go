@@ -19,6 +19,23 @@ func (gs *GlobalState) Branched() bool {
 		len(gs.ParentNodeStateHash) > 1
 }
 
+func (gs *GlobalState) NextNode() []byte {
+
+	if gs == nil || len(gs.NextNodeStateHash) != 1 {
+		return nil
+	}
+
+	return gs.NextNodeStateHash[0]
+}
+
+func (gs *GlobalState) ParentNode() []byte {
+	if gs == nil || len(gs.ParentNodeStateHash) != 1 {
+		return nil
+	}
+
+	return gs.ParentNodeStateHash[0]
+}
+
 // NewBlock creates a new Block given the input parameters.
 func NewGlobalState() *GlobalState {
 	gs := new(GlobalState)

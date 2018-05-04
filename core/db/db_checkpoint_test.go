@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-func TestCheckPoint(t *testing.T) {
+func TestDBCheckPoint(t *testing.T) {
 
 	orgdb, orgdir := newTestDB("orgdir", nil)
 	t.Log("orgdir:", orgdir)
@@ -66,4 +66,15 @@ func newTestDB(name string, applyOpts func(opts *gorocksdb.Options)) (*gorocksdb
 	opts.SetCreateIfMissing(true)
 	db, _ := gorocksdb.OpenDb(opts, dir)
 	return db, dir
+}
+
+func TestCreateCheckPoint(t *testing.T) {
+
+	Start()
+	defer deleteTestDBPath()
+	defer Stop()
+
+}
+
+func TestSwitchCheckPoint(t *testing.T) {
 }

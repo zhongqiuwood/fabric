@@ -136,7 +136,191 @@ func dumpCF(t *testing.T) {
 	t.Log("---------------------")
 }
 
-func TestTxDBGlobalStateRW(t *testing.T) {
+func testPopulatePath(t *testing.T, parent string, path []string) {
+
+	for _, s := range path {
+
+		err := globalDataDB.AddGlobalState([]byte(parent), []byte(s))
+		if err != nil {
+			t.Fatal("Add state fail", err)
+		}
+
+		parent = s
+	}
+}
+
+func assertTrue(t *testing.T, v bool) {
+	if v {
+		return
+	}
+
+	t.Fatalf("Get unexpected FALSE result")
+}
+
+func assertIntEqual(t *testing.T, v int, exp int) {
+	if v == exp {
+		return
+	}
+
+	t.Fatalf("Value is not equal: get %d, expected %d", v, exp)
+}
+
+func assertByteEqual(t *testing.T, v []byte, expected string) {
+	if expected == "" && v == nil {
+		return
+	} else if string(v) == expected {
+		return
+	}
+
+	t.Fatalf("Value is not equal: get %s, expected %s", string(v), expected)
+}
+
+func TestTxDBGlobalStateBranchRW(t *testing.T) {
+
+	Start()
+	defer deleteTestDBPath()
+	defer Stop()
+
+	err := globalDataDB.PutGenesisGlobalState([]byte("stateroot"))
+	if err != nil {
+		t.Fatal("Add state fail", err)
+	}
+
+	testPopulatePath(t, "stateroot", []string{"s1", "s2", "s3", "s4", "s5", "s6"})
+	dumpCF(t)
+
+	gs := globalDataDB.GetGlobalState([]byte("stateroot"))
+	assertByteEqual(t, gs.NextNode(), "s1")
+	assertByteEqual(t, gs.ParentNode(), "")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
+	assertIntEqual(t, int(gs.Count), 0)
+
+	gs = globalDataDB.GetGlobalState([]byte("s5"))
+	assertByteEqual(t, gs.NextNode(), "s6")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
+	assertIntEqual(t, int(gs.Count), 5)
+
+	//branch 1
+	testPopulatePath(t, "s1", []string{"s11", "s12", "s13"})
+	dumpCF(t)
+
+	gs = globalDataDB.GetGlobalState([]byte("stateroot"))
+	assertByteEqual(t, gs.NextNode(), "s1")
+	assertByteEqual(t, gs.ParentNode(), "")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s1")
+
+	gs = globalDataDB.GetGlobalState([]byte("s5"))
+	assertByteEqual(t, gs.NextNode(), "s6")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+
+	gs = globalDataDB.GetGlobalState([]byte("s6"))
+	assertByteEqual(t, gs.NextNode(), "")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+
+	gs = globalDataDB.GetGlobalState([]byte("s2"))
+	assertByteEqual(t, gs.ParentNode(), "s1")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+
+	gs = globalDataDB.GetGlobalState([]byte("s11"))
+	assertByteEqual(t, gs.NextNode(), "s12")
+	assertByteEqual(t, gs.ParentNode(), "s1")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+	assertIntEqual(t, int(gs.Count), 2)
+
+	gs = globalDataDB.GetGlobalState([]byte("s13"))
+	assertByteEqual(t, gs.ParentNode(), "s12")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+	assertIntEqual(t, int(gs.Count), 4)
+
+	gs = globalDataDB.GetGlobalState([]byte("s1"))
+	assertByteEqual(t, gs.ParentNode(), "stateroot")
+	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s1")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
+
+	//branch 2
+	testPopulatePath(t, "s5", []string{"s51", "s52"})
+	dumpCF(t)
+
+	gs = globalDataDB.GetGlobalState([]byte("s5"))
+	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s5")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+
+	gs = globalDataDB.GetGlobalState([]byte("s6"))
+	assertByteEqual(t, gs.ParentNode(), "s5")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s5")
+	assertIntEqual(t, int(gs.Count), 6)
+
+	gs = globalDataDB.GetGlobalState([]byte("s51"))
+	assertByteEqual(t, gs.ParentNode(), "s5")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s5")
+	assertIntEqual(t, int(gs.Count), 6)
+
+	gs = globalDataDB.GetGlobalState([]byte("s4"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s5")
+	assertIntEqual(t, int(gs.Count), 4)
+
+	gs = globalDataDB.GetGlobalState([]byte("s1"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s1")
+
+	//branch 3
+	testPopulatePath(t, "s1", []string{"s1x1", "s1x2"})
+	dumpCF(t)
+
+	gs = globalDataDB.GetGlobalState([]byte("s4"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s5")
+
+	gs = globalDataDB.GetGlobalState([]byte("s1"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s1")
+
+	gs = globalDataDB.GetGlobalState([]byte("s11"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertIntEqual(t, int(gs.Count), 2)
+
+	gs = globalDataDB.GetGlobalState([]byte("s1x2"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertIntEqual(t, int(gs.Count), 3)
+
+	//branch 4
+	testPopulatePath(t, "s4", []string{"s41", "s42"})
+	dumpCF(t)
+
+	gs = globalDataDB.GetGlobalState([]byte("s4"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s4")
+
+	gs = globalDataDB.GetGlobalState([]byte("s6"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s5")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+
+	gs = globalDataDB.GetGlobalState([]byte("s5"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s4")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s5")
+
+	gs = globalDataDB.GetGlobalState([]byte("s3"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s4")
+
+	gs = globalDataDB.GetGlobalState([]byte("s42"))
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s4")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+
+}
+
+func TestTxDBGlobalStateDAGRandomRW(t *testing.T) {
 
 	Start()
 	defer deleteTestDBPath()
@@ -211,5 +395,59 @@ func TestTxDBGlobalStateRW(t *testing.T) {
 	}
 
 	//test
-	gsr := globalDataDB.GetGlobalState([]byte())
+	gs := globalDataDB.GetGlobalState([]byte("stateroot"))
+	assertIntEqual(t, len(gs.NextNodeStateHash), 3)
+	assertByteEqual(t, gs.ParentNode(), "")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "stateroot")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
+	assertIntEqual(t, int(gs.Count), 0)
+
+	gs = globalDataDB.GetGlobalState([]byte("root1"))
+	assertByteEqual(t, gs.NextNode(), "root2")
+	assertByteEqual(t, gs.ParentNode(), "stateroot")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "root2")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
+	assertIntEqual(t, int(gs.Count), 1)
+
+	gs = globalDataDB.GetGlobalState([]byte("root2"))
+	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
+	assertByteEqual(t, gs.ParentNode(), "root1")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "root2")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
+	assertIntEqual(t, int(gs.Count), 2)
+
+	gs = globalDataDB.GetGlobalState([]byte("root3"))
+	assertByteEqual(t, gs.NextNode(), "")
+	assertByteEqual(t, gs.ParentNode(), "root2")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "root2")
+	assertIntEqual(t, int(gs.Count), 3)
+
+	gs = globalDataDB.GetGlobalState([]byte("root4"))
+	assertByteEqual(t, gs.NextNode(), "root5")
+	assertByteEqual(t, gs.ParentNode(), "stateroot")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
+	assertIntEqual(t, int(gs.Count), 1)
+
+	gs = globalDataDB.GetGlobalState([]byte("root6"))
+	assertByteEqual(t, gs.NextNode(), "")
+	assertByteEqual(t, gs.ParentNode(), "stateroot")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
+	assertIntEqual(t, int(gs.Count), 1)
+
+	gs = globalDataDB.GetGlobalState([]byte("root7"))
+	assertByteEqual(t, gs.NextNode(), "")
+	assertByteEqual(t, gs.ParentNode(), "root2")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "root2")
+	assertIntEqual(t, int(gs.Count), 3)
+
+	gs = globalDataDB.GetGlobalState([]byte("root5"))
+	assertByteEqual(t, gs.NextNode(), "")
+	assertByteEqual(t, gs.ParentNode(), "root4")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
+	assertIntEqual(t, int(gs.Count), 2)
 }

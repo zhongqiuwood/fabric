@@ -66,7 +66,7 @@ const (
 )
 
 type globalstatusMO struct {
-	Name         string
+	MOName       string
 	IsCycleGraph bool
 }
 
@@ -112,6 +112,7 @@ func (mo *globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte
 	//in acyclic case, the count is just distance from root node
 	//instead of the nearest node
 	lbtargetN = gs.Count
+	nxtargetN = 1<<64 - 1 //just uint64 max
 
 	for _, op := range operands {
 
@@ -132,12 +133,17 @@ func (mo *globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte
 			if n < lbtargetN { //smaller counts
 				lbtargetN = n
 				lbtarget = h
+			} else if n == lbtargetN && lbtarget == nil {
+				//this is a special case when gensis state become a node
+				//else n == lbtargetN should indicate no change to lastbranch
+				lbtarget = h
 			}
 		case update_nextbranch:
-			if n <= gs.Count {
+			if n < gs.Count {
+				//equal is OK, means we just set node itself as nextbranch node
 				continue //maybe something wrong, skip this op
 			}
-			if nxtargetN == 0 || n < nxtargetN {
+			if n < nxtargetN {
 				nxtargetN = n
 				nxtarget = h
 			}
@@ -214,7 +220,7 @@ func (mo globalstatusMO) PartialMerge(key, leftOperand, rightOperand []byte) ([]
 		return rightOperand, true
 	}
 }
-func (mo *globalstatusMO) Name() string { return mo.Name }
+func (mo *globalstatusMO) Name() string { return mo.MOName }
 
 var globalDataDB = &GlobalDataDB{}
 
@@ -268,8 +274,16 @@ func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 type gscommiter struct {
 	*gorocksdb.WriteBatch
 	refGS *protos.GlobalState
+	//the gs to be updated use its target hash, only in cycle-graph
+	tailCase bool
 	//"backward gs" used for update, only work in cycle-graph
-	refGSBack *protos.GlobalState
+	refGSAdded *protos.GlobalState
+}
+
+func (c *gscommiter) clear() {
+	if c != nil && c.WriteBatch != nil {
+		c.WriteBatch.Destroy()
+	}
 }
 
 type StateDuplicatedError struct {
@@ -293,16 +307,44 @@ func (txdb *GlobalDataDB) addGSCritical(parentStateHash []byte,
 		return nil, fmt.Errorf("state of parent [%x] was ruined: %s", parentStateHash, err)
 	}
 
+	wb := gorocksdb.NewWriteBatch()
+	cmt := &gscommiter{WriteBatch: wb}
+	defer cmt.clear()
+
+	// the "critical point": that is, node turn into a branch point and its parents and childs
+	// have to be updated, we exit here so multiple updating may happen concurrently, but
+	// this is safe
+	if len(parentgs.NextNodeStateHash) == 1 {
+		cmt.refGS = parentgs
+	}
+
 	data, _ = txdb.get(txdb.globalCF, statehash)
-	var newgs *protos.GlobalState
+
 	if data != nil {
 		if !txdb.useCycleGraph {
 			return nil, StateDuplicatedError{fmt.Errorf("state [%x] exist", statehash)}
 		}
 
-		parentgs, err := protos.UnmarshallGS(data)
+		gs, err := protos.UnmarshallGS(data)
 		if err != nil {
-			return nil, fmt.Errorf("state of parent [%x] was ruined: %s", parentStateHash, err)
+			return nil, fmt.Errorf("state of [%x] was ruined: %s", statehash, err)
+		}
+
+		wb.MergeCF(txdb.globalCF, statehash,
+			encodeMergeValue(update_lastnode, 0, parentStateHash))
+
+		if len(gs.ParentNodeStateHash) == 1 {
+			cmt.refGSAdded = gs
+		}
+
+		//consider this case:
+		// ------- grandparent ---- parent --->---> <current>
+		// when parent state (not a node before) connected to current (it definitiely a node now)
+		// the "backward" path of parent (include parent itself) must be updated
+		// because their "lastbranch" should change from nil to <current>
+		if len(parentgs.NextNodeStateHash) == 0 {
+			cmt.refGS = parentgs
+			cmt.tailCase = true
 		}
 
 	} else {
@@ -310,27 +352,31 @@ func (txdb *GlobalDataDB) addGSCritical(parentStateHash []byte,
 		newgs := protos.NewGlobalState()
 
 		newgs.Count = parentgs.Count + 1
-		newgs.ParentNodeStateHash = []byte{parentStateHash}
-		newgs.LastBranchNodeStateHash = parentgs.LastBranchNodeStateHash
+		newgs.ParentNodeStateHash = [][]byte{parentStateHash}
+		if !parentgs.Branched() && cmt.refGS == nil {
+			newgs.LastBranchNodeStateHash = parentgs.LastBranchNodeStateHash
+		} else {
+			newgs.LastBranchNodeStateHash = parentStateHash
+		}
+
+		vbytes, err := newgs.Bytes()
+		if err != nil {
+			return nil, fmt.Errorf("could not encode state [%x]: %s", statehash, err)
+		}
+
+		wb.PutCF(txdb.globalCF, statehash, vbytes)
 
 	}
 
-	vbytes, err := newgs.Bytes()
-	if err != nil {
-		return nil, fmt.Errorf("could not encode state [%x]: %s", statehash, err)
-	}
-
-	wb := gorocksdb.NewWriteBatch()
-
-	wb.PutCF(txdb.globalCF, statehash, vbytes)
 	wb.MergeCF(txdb.globalCF, parentStateHash,
 		encodeMergeValue(update_nextnode, 0, statehash))
 
-	// the "critical point": that is, node turn into a branch point and its parents and childs
-	// have to be updated, we exit here so multiple updating may happen concurrently, but
-	// this is safe
-	if len(parentgs.NextNodeStateHash) == 1 {
-		return &gscommiter{wb, parentgs}, nil
+	if cmt.refGS != nil || cmt.refGSAdded != nil {
+		//we clear the wb in cmt, so cmt.clear never release the write batch
+		ret := &gscommiter{}
+		*ret = *cmt
+		cmt.WriteBatch = nil
+		return ret, nil
 	}
 
 	err = txdb.BatchCommit(wb)
@@ -342,9 +388,63 @@ func (txdb *GlobalDataDB) addGSCritical(parentStateHash []byte,
 
 }
 
+func (txdb *GlobalDataDB) walkOnGraph(sn *gorocksdb.Snapshot, target []byte,
+	di func(*protos.GlobalState) []byte, c chan *protos.GlobalState) {
+
+	var gs *protos.GlobalState
+	for ; target != nil; target = di(gs) {
+
+		gsbyte, err := txdb.getFromSnapshot(sn, txdb.globalCF, target)
+		if gsbyte == nil {
+			dbLogger.Errorf("Could not found state [%x]", target)
+			break
+		}
+
+		gs, err = protos.UnmarshallGS(gsbyte)
+		if err != nil {
+			dbLogger.Errorf("Decode state [%x] fail: %s", target, err)
+			break
+		}
+
+		c <- gs
+	}
+
+	close(c)
+}
+
+//start from a gs which will change into a node in graph, we update the path which it was in
+func (txdb *GlobalDataDB) updatePath(sn *gorocksdb.Snapshot, wb *gorocksdb.WriteBatch,
+	refGS *protos.GlobalState, refGSKey []byte) {
+
+	//update backward for their "nextbranch"
+	cfront := make(chan *protos.GlobalState, 8)
+
+	gskey := refGS.ParentNode()
+	go txdb.walkOnGraph(sn, gskey, (*protos.GlobalState).ParentNode, cfront)
+
+	for gs := range cfront {
+		wb.MergeCF(txdb.globalCF, gskey, encodeMergeValue(update_nextbranch,
+			refGS.Count, refGSKey))
+		gskey = gs.ParentNode()
+	}
+
+	//update forward for their "lastbranch"
+	cback := make(chan *protos.GlobalState, 8)
+
+	gskey = refGS.NextNode()
+	go txdb.walkOnGraph(sn, gskey, (*protos.GlobalState).NextNode, cback)
+
+	for gs := range cback {
+		wb.MergeCF(txdb.globalCF, gskey, encodeMergeValue(update_lastbranch,
+			gs.Count-refGS.Count, refGSKey))
+		gskey = gs.NextNode()
+	}
+}
+
 func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byte) error {
 
 	cm, err := txdb.addGSCritical(parentStateHash, statehash)
+	defer cm.clear()
 
 	if err != nil {
 		return err
@@ -358,62 +458,25 @@ func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byt
 	sn := txdb.NewSnapshot()
 	defer txdb.ReleaseSnapshot(sn)
 
-	//first we update nextbranch, trace parents ...
-	target := cm.refGS.ParentNodeStateHash
-	for target != nil {
-		gsbyte, err := txdb.getFromSnapshot(sn, txdb.globalCF, target)
-		if gsbyte == nil {
-			dbLogger.Errorf("Could not found state [%x]", target)
-			break
+	if cm.refGS != nil {
+		var targetHash []byte
+		if cm.tailCase {
+			targetHash = statehash
+		} else {
+			targetHash = parentStateHash
 		}
 
-		gs, err := protos.UnmarshallGS(gsbyte)
-		if err != nil {
-			//TODO: should be break the whole commit process?
-			dbLogger.Errorf("Decode state [%x] fail: %s", target, err)
-			break
-		}
-
-		if bytes.Compare(gs.LastBranchNodeStateHash, cm.refGS.LastBranchNodeStateHash) != 0 {
-			//end
-			break
-		}
-
-		cm.MergeCF(txdb.globalCF, target, encodeMergeValue(update_nextbranch,
-			cm.refGS.Count, parentStateHash))
-
-		target = gs.ParentNodeStateHash
+		//parent itself should be update for "nextbrach"
+		cm.MergeCF(txdb.globalCF, parentStateHash, encodeMergeValue(update_nextbranch,
+			cm.refGS.Count, targetHash))
+		txdb.updatePath(sn, cm.WriteBatch, cm.refGS, targetHash)
 	}
 
-	//then we update lastbranch, trace childs ...
-	panic(len(cm.refGS.NextNodeStateHash) != 1) //how do you return the commiter??
-	target = cm.refGS.NextNodeStateHash[0]
-
-	for target != nil {
-		gsbyte, err := txdb.getFromSnapshot(sn, txdb.globalCF, target)
-		if gsbyte == nil {
-			dbLogger.Errorf("Could not found state [%x]", target)
-			break
-		}
-
-		gs, err := protos.UnmarshallGS(gsbyte)
-		if err != nil {
-			dbLogger.Errorf("Decode state [%x] fail: %s", target, err)
-			break
-		}
-
-		if bytes.Compare(gs.LastBranchNodeStateHash, cm.refGS.LastBranchNodeStateHash) != 0 {
-			//end
-			break
-		}
-
-		cm.MergeCF(txdb.globalCF, target, encodeMergeValue(update_lastbranch,
-			cm.refGS.Count, parentStateHash))
-
-		if len(gs.NextNodeStateHash) != 1 {
-			break
-		}
-		target = gs.NextNodeStateHash[0]
+	if cm.refGSAdded != nil {
+		//(overlapped) gs itself should be update for "last brach"
+		cm.MergeCF(txdb.globalCF, statehash, encodeMergeValue(update_lastbranch,
+			0, statehash))
+		txdb.updatePath(sn, cm.WriteBatch, cm.refGSAdded, statehash)
 	}
 
 	err = txdb.BatchCommit(cm.WriteBatch)

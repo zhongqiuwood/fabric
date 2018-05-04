@@ -46,17 +46,25 @@ func createCheckpoint(db *gorocksdb.DB, cpPath string) error {
 	return nil
 }
 
-func (oc *OpenchainDB) StateSwitch(statehash string) error {
+func (oc *OpenchainDB) CheckpointCurrent(statehash []byte) error {
+	statename := encodeStatehash(statehash)
 
-	dbLogger.Infof("[%s] Start state switching to %s", printGID, statehash)
+	return createCheckpoint(oc.db.DB, getCheckPointPath(statename))
+}
+
+func (oc *OpenchainDB) StateSwitch(statehash []byte) error {
+
+	statename := encodeStatehash(statehash)
+
+	dbLogger.Infof("[%s] Start state switching to %s", printGID, statename)
 
 	opts := gorocksdb.NewDefaultOptions()
 	defer opts.Destroy()
 
 	//open checkpoint on read-only mode
-	chkp, err := gorocksdb.OpenDbForReadOnly(opts, getCheckPointPath(statehash), true)
+	chkp, err := gorocksdb.OpenDbForReadOnly(opts, getCheckPointPath(statename), true)
 	if err != nil {
-		return fmt.Errorf("[%s] Open checkpoint [%s] fail: %s", printGID, statehash, err)
+		return fmt.Errorf("[%s] Open checkpoint [%s] fail: %s", printGID, statename, err)
 	}
 
 	defer chkp.Close()
@@ -108,7 +116,7 @@ func (oc *OpenchainDB) StateSwitch(statehash string) error {
 		olddb.dropDB()
 	}
 
-	dbLogger.Infof("[%s] State switch to %s done", printGID, statehash)
+	dbLogger.Infof("[%s] State switch to %s done", printGID, statename)
 
 	return nil
 }

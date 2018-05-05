@@ -168,7 +168,52 @@ func (s *GossipStub) sendTxDigests(refer *PeerAction) {
 		err := handler.SendMessage(message)
 		if err != nil {
 			logger.Errorf("Send digest to peer(%s) failed: %s", id.String(), err)
+		} else {
+			s.peerActions[id.String()].digestSendTime = now
 		}
-		s.peerActions[id.String()].digestSendTime = now
+	}
+}
+
+func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) {
+	var now = time.Now().Unix()
+	var targetIDs []*pb.PeerID
+	if refer.digestSendTime+30 < now {
+		targetIDs = append(targetIDs, refer.id)
+	}
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	for len(targetIDs) < 3 {
+		number := 0
+		rindex := rnd.Intn(len(s.peerActions))
+		macthed := false
+		for _, peer := range s.peerActions {
+			if peer.id == refer.id {
+				number++
+				continue
+			}
+			if number == rindex {
+				macthed = true
+				targetIDs = append(targetIDs, peer.id)
+			}
+			number++
+		}
+		if !macthed {
+			break
+		}
+	}
+	if len(targetIDs) == 0 {
+		logger.Debugf("No update need to send to any peers, with refer(%s)", refer.id.String())
+		return
+	}
+
+	handlers := s.PickHandlers(targetIDs)
+	message := s.model.gossipTxMessage(txs)
+	for i, handler := range handlers {
+		id := targetIDs[i] // TODO: len(handlers) < len(targetIDs)
+		err := handler.SendMessage(message)
+		if err != nil {
+			logger.Errorf("Send update to peer(%s) failed: %s", id.String(), err)
+		} else {
+			s.peerActions[id.String()].updateSendTime = now
+		}
 	}
 }

@@ -122,8 +122,9 @@ func NewGossip(p peer.Peer) {
 			model:      model,
 		}
 	}
+	
 	gossipStub.peerActions = map[string]*PeerAction{}
-
+	gossipStub.model.init()
 }
 
 // GetGossip - gives a reference to a 'singleton' GossipStub

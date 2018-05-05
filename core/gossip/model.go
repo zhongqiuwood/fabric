@@ -31,6 +31,29 @@ type Model struct {
 	nseq   uint64
 }
 
+func (m *Model) init() {
+	mypeer, err := peer.GetPeerEndpoint()
+	m.self = PeerState{
+		id: (mypeer != nil) ? mypeer.ID.String() : "",
+		states: map[string]*StateVersion{},
+	}
+
+	lg := leger.GetLedger()
+	hash := lg.GetCurrentStateHash()
+	block, err := lg.blockchain.getBlockByState(hash)
+	number := 0
+	known := false
+	if( err == nil ) {
+		number = len(block.Txids)
+		known = true
+	}
+	m.self.states["tx"] = &StateVersion{
+		known: known,
+		hash: hash,
+		number: number
+	}
+}
+
 func (m *Model) get(peerID string, catalog string) *StateVersion {
 	state, ok := m.store[peerID]
 	if !ok {

@@ -69,7 +69,7 @@ func (oc *ocDB) dropDB() {
 
 	err := gorocksdb.DestroyDb(oc.dbName, opt)
 
-	if err != nil {
+	if err == nil {
 		dbLogger.Infof("[%s] Drop whole db <%s>", printGID, oc.dbName)
 	} else {
 		dbLogger.Errorf("[%s] Drop whole db <%s> FAIL: %s", printGID, oc.dbName, err)
@@ -96,8 +96,6 @@ func (openchainDB *ocDB) open(dbpath string) error {
 
 	//TODO: custom maxOpenedExtend
 	openchainDB.extendedLock = make(chan int, maxOpenedExtend)
-	//add one reference count
-	openchainDB.extendedLock <- 0
 
 	return nil
 }

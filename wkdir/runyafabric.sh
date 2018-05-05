@@ -282,7 +282,6 @@ function main {
      if [ "$TARGET_PEER_ID" = "" ];then
         runpeers $NUM_N 0 0 $CONSENSUS $NUM_F $TAG_CLEAR
      else
-        #killbyname peer_fabric_$TARGET_PEER_ID
         startpeer vp $TARGET_PEER_ID $CONSENSUS $NUM_F $TAG_CLEAR
         ps -ef|grep "peer_fabric_"|grep -v grep |awk '{print "New processid: "$2 ", " $8}'
      fi

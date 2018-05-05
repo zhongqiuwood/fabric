@@ -109,7 +109,7 @@ func initFileLog() {
 
 	var backendFile *logging.FileLogBackend
 	backendFile = nil
-	outputfile := viper.GetString("logging.outputfile")
+	outputfile := viper.GetString("logging.output.file")
 
 	if outputfile != "" {
 

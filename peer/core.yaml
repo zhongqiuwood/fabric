@@ -88,7 +88,8 @@ logging:
     network:   debug
     chaincode: debug
     version:   warning
-    outputfile: "peer.log"
+    output:
+        #file: "peer.log"
 
 ###############################################################################
 #

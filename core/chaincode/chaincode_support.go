@@ -46,7 +46,7 @@ func (ccs *ChaincodeSupport) LoadNativeChaincode() {
 
 	nativeCcMap = make(map[string]shim.Chaincode)
 	nativeCcMap["mycc"] = &native_chaincode03.SimpleChaincode{}
-	nativeCcMap["mycc1"] = &native_chaincode03.SimpleChaincode{}
+	//nativeCcMap["mycc"] = &native_chaincode03.StateSyncSample{}
 	nativeCcMap["mycc2"] = &native_chaincode03.SimpleChaincode{}
 	ccs.startNativeChaincode()
 }

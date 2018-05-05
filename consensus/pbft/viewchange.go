@@ -22,6 +22,7 @@ import (
 	"reflect"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/abchain/fabric/consensus/util/events"
+	"github.com/abchain/fabric/debugger"
 )
 
 // viewChangeQuorumEvent is returned to the event loop when a new ViewChange message is received which is part of a quorum cert
@@ -173,9 +174,11 @@ func (instance *pbftCore) sendViewChange() events.Event {
 
 	instance.sign(vc)
 
-	logger.Infof("Replica %d sending view-change, v:%d, h:%d, |C|:%d, |P|:%d, |Q|:%d",
+	//debugger.DumpStack()
+	debugger.Log(debugger.NOTICE, "Replica %d sending view-change, v:%d, h:%d, |C|:%d, |P|:%d, |Q|:%d",
 		instance.id, vc.View, vc.H, len(vc.Cset), len(vc.Pset), len(vc.Qset))
 
+	//dumpvc(vc)
 	instance.innerBroadcast(&Message{
 		Payload: &Message_ViewChange{ViewChange: vc},PayloadType: int32(pb.Message_ViewChange_Value),})
 
@@ -183,6 +186,23 @@ func (instance *pbftCore) sendViewChange() events.Event {
 
 	return instance.recvViewChange(vc)
 }
+
+func dumpvc(vc *ViewChange)  {
+
+	debugger.Log(debugger.NOTICE, "dumpvc in =============================")
+	//debugger.Log(debugger.NOTICE, "vc: %+v", vc)
+	debugger.Log(debugger.NOTICE, "H: %d", vc.H)
+	debugger.Log(debugger.NOTICE, "ReplicaId: %d", vc.ReplicaId)
+	debugger.Log(debugger.NOTICE, "View: %d", vc.View)
+	debugger.Log(debugger.NOTICE, "Signature: %+v", vc.Signature)
+
+	debugger.Log(debugger.NOTICE, "Cset: %+v", vc.Cset)
+	debugger.Log(debugger.NOTICE, "Pset: %+v", vc.Pset)
+	debugger.Log(debugger.NOTICE, "Qset: %+v", vc.Qset)
+	debugger.Log(debugger.NOTICE, "dumpvc out ============================")
+
+}
+
 
 func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
 	logger.Infof("Replica %d received view-change from replica %d, v:%d, h:%d, |C|:%d, |P|:%d, |Q|:%d",
@@ -195,6 +215,9 @@ func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
 
 	if vc.View < instance.view {
 		logger.Warningf("Replica %d found view-change message for old view", instance.id)
+
+		debugger.Log(debugger.NOTICE, "checkOldViewCnt: 0")
+
 		return instance.checkOldViewCnt(vc)
 	}
 
@@ -205,6 +228,9 @@ func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
 
 	if _, ok := instance.viewChangeStore[vcidx{vc.View, vc.ReplicaId}]; ok {
 		logger.Warningf("Replica %d already has a view change message for view %d from replica %d", instance.id, vc.View, vc.ReplicaId)
+
+		debugger.Log(debugger.NOTICE, "checkOldViewCnt: 1")
+
 		return instance.checkOldViewCnt(vc)
 	}
 
@@ -281,7 +307,15 @@ func (instance *pbftCore) checkOldViewCnt(vc *ViewChange) events.Event {
 		instance.oldViewCnt[vcidx{vc.View, vc.ReplicaId}] = 0
 
 		// Send ViewChange
+		debugger.Log(debugger.NOTICE, "sendViewChange: v<%d>, instance.N<%d>, instance.id<%d>, instance.oldViewCnt<%+v>",
+			v, instance.N, instance.id, instance.oldViewCnt)
+
 		return instance.sendViewChange()
+	} else {
+
+		debugger.Log(debugger.NOTICE, "do not sendViewChange: v<%d>, instance.N<%d>, instance.id<%d>, instance.oldViewCnt<%+v>",
+			v, instance.N, instance.id, instance.oldViewCnt)
+
 	}
 
 	return nil

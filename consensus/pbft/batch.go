@@ -29,6 +29,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	//"github.com/abchain/fabric/debugger"
+	"github.com/abchain/fabric/debugger"
 )
 
 type obcBatch struct {
@@ -302,6 +303,10 @@ func (op *obcBatch) processMessage(ocMsg *pb.Message, senderHandle *pb.PeerID) e
 		}
 		msg := &Message{}
 		err = proto.Unmarshal(pbftMsg, msg)
+
+		debugger.Log(debugger.NOTICE, "<<<--- pbft recv: <%s> from <%+v>",
+			pb.Consensus_Payload_Type(msg.PayloadType).String(), senderHandle)
+
 		if err != nil {
 			logger.Errorf("Error unpacking payload from message: %s", err)
 			return nil

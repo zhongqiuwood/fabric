@@ -97,10 +97,19 @@ cp -R $CURDIR/* $LOCALSCRIPTS
 # extract the FQN environment and run our common.sh to create the :latest tag
 cat <<EOF > $DOCKERFILE
 FROM $BASENAME
-`for i in \`docker run -i $BASENAME /bin/bash -l -c printenv\`;
-do
-   echo ENV $i
-done`
+#`for i in \`docker run -i $BASENAME /bin/bash -l -c printenv\`;
+#do
+#   echo ENV $i
+#done`
+
+ENV PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/opt/go/bin:/opt/gopath/bin
+ENV PWD=/
+ENV SHLVL=1
+ENV HOME=/root
+ENV GOROOT=/opt/go
+ENV GOPATH=/opt/gopath
+ENV _=/usr/bin/printenv
+
 COPY scripts $REMOTESCRIPTS
 RUN $REMOTESCRIPTS/common.sh
 RUN chmod a+rw -R /opt/gopath

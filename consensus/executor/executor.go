@@ -76,9 +76,9 @@ func (co *coordinatorImpl) ProcessEvent(event events.Event) events.Event {
 			_ = err // TODO This should probably panic, see issue 752
 		}
 
-		co.rawExecutor.ExecTxs(co, et.txs)
+		co.rawExecutor.ExecTxs(co, et.txs) // rawExecutor&consumer both is helper
 
-		co.consumer.Executed(et.tag)
+		co.consumer.Executed(et.tag) //
 	case commitEvent:
 		logger.Debug("Executor is processing an commitEvent")
 		if co.skipInProgress {
@@ -91,7 +91,7 @@ func (co *coordinatorImpl) ProcessEvent(event events.Event) events.Event {
 			return nil
 		}
 
-		_, err := co.rawExecutor.CommitTxBatch(co, et.metadata)
+		_, err := co.rawExecutor.CommitTxBatch(co, et.metadata) //CommitTxBatch2
 		_ = err // TODO This should probably panic, see issue 752
 
 		co.batchInProgress = false

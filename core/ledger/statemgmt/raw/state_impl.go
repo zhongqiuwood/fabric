@@ -76,7 +76,8 @@ func (impl *StateImpl) AddChangesForPersistence(writeBatch *gorocksdb.WriteBatch
 			if value.IsDeleted() {
 				writeBatch.DeleteCF(openchainDB.StateCF, compositeKey)
 			} else {
-				writeBatch.PutCF(openchainDB.StateCF, compositeKey, value.GetValue())
+				//writeBatch.PutCF(openchainDB.StateCF, compositeKey, value.GetValue())
+				db.Putdb("StateImpl.AddChangesForPersistence", writeBatch, openchainDB.StateCF, compositeKey, value.GetValue())
 			}
 		}
 	}

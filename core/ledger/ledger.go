@@ -217,7 +217,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		ledgerLogger.Debug("There were some erroneous transactions. We need to send a 'TX rejected' message here.")
 	}
 
-	ledger.blockchain.Dump(debugger.DEBUG)
+	ledger.DumpBlockChain()
 
 	return nil
 }
@@ -336,7 +336,7 @@ func (ledger *Ledger) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, 
 
 // GetBlockByNumber return a block by block number
 func (ledger *Ledger) DumpBlockChain() {
-	ledger.blockchain.Dump(debugger.DEBUG)
+	ledger.blockchain.Dump(debugger.INFO)
 }
 
 // ApplyStateDelta applies a state delta to the current state. This is an

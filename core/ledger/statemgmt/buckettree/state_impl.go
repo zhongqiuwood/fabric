@@ -23,6 +23,7 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
+	//"github.com/abchain/fabric/debugger"
 )
 
 var logger = logging.MustGetLogger("buckettree")
@@ -236,6 +237,9 @@ func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *gorocksdb.Write
 func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *gorocksdb.WriteBatch) {
 	openchainDB := db.GetDBHandle()
 	affectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
+
+	//debugger.DumpStack()
+
 	for _, affectedBucket := range affectedBuckets {
 		dataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(affectedBucket)
 		for _, dataNode := range dataNodes {
@@ -244,7 +248,9 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *gorocks
 				writeBatch.DeleteCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes())
 			} else {
 				logger.Debugf("Adding data node with value = %#v", dataNode.value)
-				writeBatch.PutCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes(), dataNode.value)
+				//writeBatch.PutCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes(), dataNode.value)
+				db.Putdb("addDataNodeChangesForPersistence", writeBatch, openchainDB.StateCF, dataNode.dataKey.getEncodedBytes(), dataNode.value)
+
 			}
 		}
 	}
@@ -259,7 +265,9 @@ func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *goroc
 			if bucketNode.markedForDeletion {
 				writeBatch.DeleteCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes())
 			} else {
-				writeBatch.PutCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
+				//writeBatch.PutCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
+				db.Putdb("addBucketNodeChangesForPersistence", writeBatch, openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
+
 			}
 		}
 	}

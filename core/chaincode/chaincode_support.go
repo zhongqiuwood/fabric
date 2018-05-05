@@ -46,6 +46,8 @@ func (ccs *ChaincodeSupport) LoadNativeChaincode() {
 
 	nativeCcMap = make(map[string]shim.Chaincode)
 	nativeCcMap["mycc"] = &native_chaincode03.SimpleChaincode{}
+	nativeCcMap["mycc1"] = &native_chaincode03.SimpleChaincode{}
+	nativeCcMap["mycc2"] = &native_chaincode03.SimpleChaincode{}
 	ccs.startNativeChaincode()
 }
 
@@ -54,6 +56,8 @@ func (ccs *ChaincodeSupport) startNativeChaincode() {
 
 	shim.Init(false)
 	go ccs.startNcc("mycc")
+	go ccs.startNcc("mycc1")
+	go ccs.startNcc("mycc2")
 }
 
 

@@ -27,6 +27,7 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
+	"github.com/abchain/fabric/debugger"
 )
 
 var logger = logging.MustGetLogger("state")
@@ -59,7 +60,7 @@ type State struct {
 // NewState constructs a new State. This Initializes encapsulated state implementation
 func NewState() *State {
 	initConfig()
-	logger.Infof("Initializing state implementation [%s]", stateImplName)
+	debugger.Log(debugger.NOTICE, "Initializing state implementation [%s]", stateImplName)
 	switch stateImplName {
 	case buckettreeType:
 		stateImpl = buckettree.NewStateImpl()
@@ -146,7 +147,10 @@ func (state *State) GetRangeScanIterator(chaincodeID string, startKey string, en
 
 // Set sets state to given value for chaincodeID and key. Does not immediately writes to DB
 func (state *State) Set(chaincodeID string, key string, value []byte) error {
-	logger.Debugf("set() chaincodeID=[%s], key=[%s], value=[%#v]", chaincodeID, key, value)
+
+	debugger.Log(debugger.NOTICE, "set() chaincodeID=[%s], key=[%s], value=[%d]", chaincodeID, key, debugger.Byte2int(value))
+	//logger.Debugf("set() chaincodeID=[%s], key=[%s], value=[%#v]", chaincodeID, key, value)
+
 	if !state.txInProgress() {
 		panic("State can be changed only in context of a tx.")
 	}
@@ -298,8 +302,12 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *gor
 
 	serializedStateDelta := state.stateDelta.Marshal()
 	cf := db.GetDBHandle().StateDeltaCF
-	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
+	//logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
+	debugger.Log(debugger.NOTICE, "Adding state-delta corresponding to block number[%d], state.ChaincodeStateDeltas<%+v>",
+		blockNumber, state.stateDelta.ChaincodeStateDeltas)
 	writeBatch.PutCF(cf, encodeStateDeltaKey(blockNumber), serializedStateDelta)
+	//db.Pu tdb("State.AddChangesForPersistence", writeBatch, cf, encodeStateDeltaKey(blockNumber), serializedStateDelta)
+
 	if blockNumber >= state.historyStateDeltaSize {
 		blockNumberToDelete := blockNumber - state.historyStateDeltaSize
 		logger.Debugf("Deleting state-delta corresponding to block number[%d]", blockNumberToDelete)

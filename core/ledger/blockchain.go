@@ -344,12 +344,39 @@ func (blockchain *blockchain) Dump(level int) {
 		if blockErr != nil {
 			return
 		}
+		
+		curHigh := strconv.FormatUint(i + 1, 10)
 		blockHash, _ := block.GetHash()
-		debugger.Log(level, "high[%s]: curHash<%x> prevHash<%x>, ConsensusMetadata<%x>, " +
-			"StateHash<%x>, timp<%+v>, NonHashData<%+v>, Transactions<%+v>",
-			strconv.FormatUint(i + 1, 10),
-			blockHash, block.PreviousBlockHash, block.ConsensusMetadata, block.StateHash,
-			block.Timestamp, block.NonHashData, block.Transactions)
+		debugger.Log(level, "high[%s]: curHash<%x> ",
+			curHigh,
+			blockHash)
+
+		curHigh = "       "
+		debugger.Log(level, "%s: prevHash<%x>",
+			curHigh,
+			block.PreviousBlockHash)
+
+		debugger.Log(level, "%s: ConsensusMetadata<%x>",
+			curHigh,
+			block.ConsensusMetadata)
+
+		debugger.Log(level, "%s: StateHash<%x>",
+			curHigh, block.StateHash)
+
+		debugger.Log(level, "%s: Timestamp<%+v>",
+			curHigh, block.Timestamp)
+
+		debugger.Log(level, "%s: NonHashData<%+v>",
+			curHigh, block.NonHashData)
+
+		debugger.Log(level, "%s: Transactions<%+v>",
+			curHigh, block.Transactions)
+
+		//debugger.Log(level, "%s: prevHash<%x>, ConsensusMetadata<%x>, " +
+		//	"StateHash<%x>, timp<%+v>, NonHashData<%+v>, Transactions<%+v>",
+		//	curHigh,
+		//	block.PreviousBlockHash, block.ConsensusMetadata, block.StateHash,
+		//	block.Timestamp, block.NonHashData, block.Transactions)
 	}
 	debugger.Log(level, "==========================================================================")
 }

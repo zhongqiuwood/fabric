@@ -22,6 +22,7 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/debugger"
 )
 
 type trieNode struct {
@@ -93,6 +94,9 @@ func (trieNode *trieNode) computeCryptoHash() []byte {
 	var cryptoHashContent []byte
 	if trieNode.containsValue() {
 		stateTrieLogger.Debugf("Adding value to hash computation for trieNode [%s]", trieNode)
+
+		debugger.Log(debugger.NOTICE,"Adding value to hash computation for trieNode [%+v]", trieNode)
+
 		key := trieNode.trieKey.getEncodedBytes()
 		cryptoHashContent = append(cryptoHashContent, proto.EncodeVarint(uint64(len(key)))...)
 		cryptoHashContent = append(cryptoHashContent, key...)

@@ -167,7 +167,8 @@ func (stateTrie *StateTrie) AddChangesForPersistence(writeBatch *gorocksdb.Write
 			if err != nil {
 				return err
 			}
-			writeBatch.PutCF(openchainDB.StateCF, changedNode.trieKey.getEncodedBytes(), serializedContent)
+			//writeBatch.PutCF(openchainDB.StateCF, changedNode.trieKey.getEncodedBytes(), serializedContent)
+			db.Putdb("StateTrie.AddChangesForPersistence", writeBatch, openchainDB.StateCF, changedNode.trieKey.getEncodedBytes(), serializedContent)
 		}
 	}
 	stateTrieLogger.Debug("Added changes to DB")

@@ -108,6 +108,9 @@ func serve(args []string) error {
 		grpclog.Fatalf("Failed to create ehub server: %v", err)
 	}
 
+	logger.Infof("========================================================================")
+	logger.Infof("======================== Peer started up ===============================")
+	logger.Infof("========================================================================")
 	logger.Infof("Security enabled status: %t", core.SecurityEnabled())
 	if viper.GetBool("security.privacy") {
 		if core.SecurityEnabled() {

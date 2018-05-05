@@ -223,7 +223,6 @@ func (a sortableUint64Slice) Less(i, j int) bool {
 // =============================================================================
 
 func newPbftCore(id uint64, config *viper.Viper, consumer innerStack, etf events.TimerFactory) *pbftCore {
-	////debugger.Log(2, "pbft call")
 	var err error
 	instance := &pbftCore{}
 	instance.id = id
@@ -1341,6 +1340,9 @@ func (instance *pbftCore) recvFetchRequestBatch(fr *FetchRequestBatch) (err erro
 
 	receiver := fr.ReplicaId
 
+	debugger.Log(debugger.NOTICE, "<<<--- unicast: %s, to vp%d",
+		pb.Consensus_Payload_Type(msg.PayloadType).String(), receiver)
+
 	err = instance.consumer.unicast(msgPacked, receiver, msg.PayloadType)
 
 	return
@@ -1384,13 +1386,23 @@ func (instance *pbftCore) innerBroadcast(msg *Message) error {
 		ignoreidx := rand2.Intn(instance.N)
 		for i := 0; i < instance.N; i++ {
 			if i != ignoreidx && uint64(i) != instance.id { //Pick a random replica and do not send message
+
+				//debugger.Log(debugger.NOTICE, "<<<--- unicast: %s", pb.Consensus_Payload_Type(msg.PayloadType).String())
+
+
+				debugger.Log(debugger.NOTICE, "<<<--- unicast: %s, to vp%d",
+					pb.Consensus_Payload_Type(msg.PayloadType).String(), uint64(i))
+
 				instance.consumer.unicast(msgRaw, uint64(i), msg.PayloadType)
 			} else {
 				logger.Debugf("PBFT byzantine: not broadcasting to replica %v", i)
 			}
 		}
 	} else {
-		//debugger.Log(debugger.INFO, "broadcast: %d", msg.PayloadType)
+		debugger.Log(debugger.NOTICE, "<<<--- broadcast: %s",
+			pb.Consensus_Payload_Type(msg.PayloadType).String())
+				//msg.Payload)
+
 		instance.consumer.broadcast(msgRaw, msg.PayloadType)
 	}
 	return nil

@@ -51,7 +51,7 @@ func Log(level int, format string, args ...interface{}) {
 	pc, _, _, _ := runtime.Caller(1)
 	f := runtime.FuncForPC(pc)
 
-	format = "[gid_" + goidstr() + "] " + action + "" + f.Name() + " :" + format
+	format = "[gid:" + goidstr() + "] " + action + "" + f.Name() + " :" + format
 
 	switch level {
 	case ENTER:

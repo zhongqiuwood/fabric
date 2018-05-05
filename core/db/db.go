@@ -26,6 +26,7 @@ import (
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
 	"github.com/abchain/fabric/core/util"
+	//"github.com/abchain/fabric/debugger"
 )
 
 var dbLogger = logging.MustGetLogger("db")
@@ -44,7 +45,7 @@ const persistCF = "persistCF"
 
 var columnfamilies = []string{
 	blockchainCF, // blocks of the block chain
-	stateCF,      // world state
+	stateCF,      // world state, statehash by Bucket-tree
 	stateDeltaCF, // open transaction state
 	indexesCF,    // tx uuid -> blockno
 	persistCF,    // persistent per-peer state (consensus)
@@ -62,9 +63,17 @@ type OpenchainDB struct {
 
 var openchainDB = create()
 
+func Putdb(context string, w *gorocksdb.WriteBatch, cf *gorocksdb.ColumnFamilyHandle, k, v []byte) {
+	//debugger.Log(debugger.NOTICE, "%s putdb: cf<%s>, k<%x>, v<%x>",
+	//	context, cf.Name, k, v)
+	w.PutCF(cf, k, v)
+}
+
 // Create create an openchainDB instance
 func create() *OpenchainDB {
-	return &OpenchainDB{}
+	res := &OpenchainDB{}
+
+	return  res
 }
 
 // GetDBHandle gets an opened openchainDB singleton. Note that method Start must always be invoked before this method.
@@ -201,10 +210,20 @@ func (openchainDB *OpenchainDB) open() {
 
 	openchainDB.DB = db
 	openchainDB.BlockchainCF = cfHandlers[1]
+	//openchainDB.BlockchainCF.Name = "BlockchainCF"
+
 	openchainDB.StateCF = cfHandlers[2]
+	//openchainDB.StateCF.Name = "StateCF"
+
 	openchainDB.StateDeltaCF = cfHandlers[3]
+	//openchainDB.StateDeltaCF.Name = "StateDeltaCF"
+
 	openchainDB.IndexesCF = cfHandlers[4]
+	//openchainDB.IndexesCF.Name = "IndexesCF"
+
 	openchainDB.PersistCF = cfHandlers[5]
+	//openchainDB.PersistCF.Name = "PersistCF"
+
 }
 
 // Close releases all column family handles and closes rocksdb
@@ -267,6 +286,8 @@ func (openchainDB *OpenchainDB) Get(cfHandler *gorocksdb.ColumnFamilyHandle, key
 func (openchainDB *OpenchainDB) Put(cfHandler *gorocksdb.ColumnFamilyHandle, key []byte, value []byte) error {
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
+
+	//debugger.Log(debugger.INFO, "<<<----------  <%s>: put<%x>: <%x>", cfHandler.Name, key, value)
 	err := openchainDB.DB.PutCF(opt, cfHandler, key, value)
 	if err != nil {
 		dbLogger.Errorf("Error while trying to write key: %s", key)

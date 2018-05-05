@@ -293,7 +293,7 @@ func (d *Handler) HandleMessage(msg *pb.Message) error {
 
 	if d.ToPeerEndpoint != nil && d.ToPeerEndpoint.ID != nil {
 		if msg.Type != pb.Message_DISC_PEERS && msg.Type != pb.Message_DISC_GET_PEERS {
-			debugger.Log(debugger.NOTICE,"Peer handler received message<%s> from <%s>",
+			debugger.Log(debugger.INFO,"<<<--- Peer handler received message<%s> from <%s>",
 				msg.Type.String(), d.ToPeerEndpoint.ID)
 		}
 	}
@@ -327,7 +327,7 @@ func (d *Handler) SendMessage(msg *pb.Message) error {
 		msg.Type != pb.Message_DISC_GET_PEERS &&
 		msg.Type != pb.Message_DISC_HELLO  {
 		if d.ToPeerEndpoint != nil && d.ToPeerEndpoint.ID != nil {
-			debugger.Log(debugger.NOTICE,"Sending msg<%s> payload<%s> to peer <%s>",
+			debugger.Log(debugger.INFO,"<<<--- Sending msg<%s> payload<%s> to peer <%s>",
 				msg.Type.String(),	pb.Consensus_Payload_Type(msg.PayloadType).String(), d.ToPeerEndpoint.ID)
 		}
 	}

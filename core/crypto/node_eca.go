@@ -28,10 +28,10 @@ import (
 	"errors"
 	"io/ioutil"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/abchain/fabric/core/crypto/primitives"
 	"github.com/abchain/fabric/core/crypto/primitives/ecies"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/timestamp"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )

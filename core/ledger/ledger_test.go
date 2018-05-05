@@ -189,7 +189,7 @@ func TestLedgerPutRawBlock(t *testing.T) {
 	block := new(protos.Block)
 	block.PreviousBlockHash = []byte("foo")
 	block.StateHash = []byte("bar")
-	ledger.PutRawBlock(block, 4)
+	ledger.PutBlock(4, block)
 	testutil.AssertEquals(t, ledgerTestWrapper.GetBlockByNumber(4), block)
 
 	ledger.BeginTxBatch(1)
@@ -386,7 +386,7 @@ func TestVerifyChain(t *testing.T) {
 	badBlock.PreviousBlockHash = []byte("evil")
 	for i := uint64(0); i < ledger.GetBlockchainSize(); i++ {
 		goodBlock := ledgerTestWrapper.GetBlockByNumber(i)
-		ledger.PutRawBlock(badBlock, i)
+		ledger.PutBlock(i, badBlock)
 		for lowBlock := uint64(0); lowBlock < ledger.GetBlockchainSize()-1; lowBlock++ {
 			if i == ledger.GetBlockchainSize()-1 {
 				testutil.AssertEquals(t, ledgerTestWrapper.VerifyChain(ledger.GetBlockchainSize()-1, lowBlock), uint64(i))

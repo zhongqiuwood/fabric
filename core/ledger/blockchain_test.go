@@ -50,7 +50,7 @@ func TestBlockchain_Info(t *testing.T) {
 	testutil.AssertEquals(t, blockchainInfo.PreviousBlockHash, previousBlockHash)
 }
 
-func TestBlockChain_SingleBlock(t *testing.T) {
+func testBlockChain_SingleBlock(t *testing.T) {
 	testDBWrapper.CleanDB(t)
 	blockchainTestWrapper := newTestBlockchainWrapper(t)
 	blockchain := blockchainTestWrapper.blockchain
@@ -73,7 +73,21 @@ func TestBlockChain_SingleBlock(t *testing.T) {
 	testutil.AssertEquals(t, blockchainTestWrapper.fetchBlockchainSizeFromDB(), uint64(1))
 }
 
-func TestBlockChain_SimpleChain(t *testing.T) {
+func TestBlockChain_SingleBlockV0(t *testing.T) {
+	defV := protos.DefaultBlockVer()
+
+	protos.SetDefaultBlockVer(0)
+	testBlockChain_SingleBlock(t)
+
+	protos.SetDefaultBlockVer(defV)
+}
+
+func TestBlockChain_SingleBlock(t *testing.T) {
+
+	testBlockChain_SingleBlock(t)
+}
+
+func testBlockChain_SimpleChain(t *testing.T) {
 	testDBWrapper.CleanDB(t)
 	blockchainTestWrapper := newTestBlockchainWrapper(t)
 	blockchain := blockchainTestWrapper.blockchain
@@ -108,7 +122,21 @@ func TestBlockChain_SimpleChain(t *testing.T) {
 	}
 }
 
-func TestBlockChainEmptyChain(t *testing.T) {
+func TestBlockChain_SimpleChainV0(t *testing.T) {
+	defV := protos.DefaultBlockVer()
+
+	protos.SetDefaultBlockVer(0)
+	testBlockChain_SimpleChain(t)
+
+	protos.SetDefaultBlockVer(defV)
+
+}
+
+func TestBlockChain_SimpleChain(t *testing.T) {
+	testBlockChain_SimpleChain(t)
+}
+
+func testBlockChainEmptyChain(t *testing.T) {
 	testDBWrapper.CleanDB(t)
 	blockchainTestWrapper := newTestBlockchainWrapper(t)
 	testutil.AssertEquals(t, blockchainTestWrapper.blockchain.getSize(), uint64(0))
@@ -119,7 +147,21 @@ func TestBlockChainEmptyChain(t *testing.T) {
 	t.Logf("last block = [%s]", block)
 }
 
-func TestBlockchainBlockLedgerCommitTimestamp(t *testing.T) {
+func TestBlockChainEmptyChainV0(t *testing.T) {
+	defV := protos.DefaultBlockVer()
+
+	protos.SetDefaultBlockVer(0)
+	testBlockChainEmptyChain(t)
+
+	protos.SetDefaultBlockVer(defV)
+
+}
+
+func TestBlockChainEmptyChain(t *testing.T) {
+	testBlockChainEmptyChain(t)
+}
+
+func testBlockchainBlockLedgerCommitTimestamp(t *testing.T) {
 	testDBWrapper.CleanDB(t)
 	blockchainTestWrapper := newTestBlockchainWrapper(t)
 	block1 := protos.NewBlock(nil, nil)
@@ -136,4 +178,18 @@ func TestBlockchainBlockLedgerCommitTimestamp(t *testing.T) {
 	if startTime.Seconds >= lastBlock.NonHashData.LocalLedgerCommitTimestamp.Seconds {
 		t.Fatal("Expected block time to be after start time")
 	}
+}
+
+func TestBlockchainBlockLedgerCommitTimestampV0(t *testing.T) {
+	defV := protos.DefaultBlockVer()
+
+	protos.SetDefaultBlockVer(0)
+	testBlockchainBlockLedgerCommitTimestamp(t)
+
+	protos.SetDefaultBlockVer(defV)
+
+}
+
+func TestBlockchainBlockLedgerCommitTimestamp(t *testing.T) {
+	testBlockchainBlockLedgerCommitTimestamp(t)
 }

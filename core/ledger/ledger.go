@@ -28,13 +28,15 @@ import (
 	"github.com/abchain/fabric/events/producer"
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
-	"github.com/tecbot/gorocksdb"
 
+	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/protos"
+	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
+var printGID = flogging.GoRDef
 
 //ErrorType represents the type of a ledger error
 type ErrorType string
@@ -79,9 +81,11 @@ var (
 
 // Ledger - the struct for openchain ledger
 type Ledger struct {
-	blockchain *blockchain
-	state      *state.State
-	currentID  interface{}
+	blockchain       *blockchain
+	txpool           *transactionPool
+	state            *state.State
+	currentID        interface{}
+	currentStateHash []byte
 }
 
 var ledger *Ledger
@@ -98,13 +102,85 @@ func GetLedger() (*Ledger, error) {
 
 // GetNewLedger - gives a reference to a new ledger TODO need better approach
 func GetNewLedger() (*Ledger, error) {
+
 	blockchain, err := newBlockchain()
 	if err != nil {
 		return nil, err
 	}
 
+	txpool, err := newTxPool()
+	if err != nil {
+		return nil, err
+	}
+
 	state := state.NewState()
-	return &Ledger{blockchain, state, nil}, nil
+
+	err = sanityCheck()
+	if err != nil {
+		return nil, err
+	}
+	return &Ledger{blockchain, txpool, state, nil, nil}, nil
+}
+
+func sanityCheck() error {
+
+	size, err := fetchBlockchainSizeFromDB()
+	if err != nil {
+		return err
+	}
+
+	if size == 0 {
+		return nil
+	}
+
+	noneExistingList := make([][]byte, 0)
+	var lastExisting []byte
+
+	for n := size - 1; n >= 0; n-- {
+
+		block, err := fetchBlockFromDB(n)
+		if err != nil {
+			return err
+		}
+
+		if block.StateHash == nil && n == 0 {
+			block.StateHash = []byte("0")
+		}
+
+		gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
+		if gs != nil {
+			lastExisting = block.StateHash
+			ledgerLogger.Infof("Block number [%d] state exists in txdb, statehash: [%x]",
+				n, block.StateHash)
+			break
+		} else {
+			ledgerLogger.Warningf("Block number [%d] state does not exist in txdb, statehash: [%x]",
+				n, block.StateHash)
+			noneExistingList = append(noneExistingList, block.StateHash)
+		}
+
+		// in case of overflow as type n is uint64
+		if n == 0 {
+			break
+		}
+	}
+
+	for index := len(noneExistingList) - 1; index >= 0; index-- {
+		stateHash := noneExistingList[index]
+		var err error
+
+		ledgerLogger.Infof("Add Missed GlobalState:")
+		ledgerLogger.Infof("	parentStateHash[%x]", lastExisting)
+		ledgerLogger.Infof("	statehash[%x]", stateHash)
+		err = db.GetGlobalDBHandle().AddGlobalState(lastExisting, stateHash)
+
+		if err != nil {
+			return err
+		}
+		lastExisting = stateHash
+	}
+
+	return nil
 }
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
@@ -116,6 +192,12 @@ func (ledger *Ledger) BeginTxBatch(id interface{}) error {
 	if err != nil {
 		return err
 	}
+
+	ledger.currentStateHash, err = ledger.state.GetHash()
+	if err != nil {
+		return err
+	}
+
 	ledger.currentID = id
 	return nil
 }
@@ -150,13 +232,20 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	stateHash, err := ledger.state.GetHash()
+
 	if err != nil {
 		ledger.resetForNextTxGroup(false)
 		ledger.blockchain.blockPersistenceStatus(false)
 		return err
 	}
 
-	writeBatch := gorocksdb.NewWriteBatch()
+	//commit transactions first
+	err = ledger.PutTransactions(transactions)
+	if err != nil {
+		return err
+	}
+
+	writeBatch := db.GetDBHandle().NewWriteBatch()
 	defer writeBatch.Destroy()
 	block := protos.NewBlock(transactions, metadata)
 
@@ -191,13 +280,23 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		return err
 	}
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	dbErr := db.GetDBHandle().DB.Write(opt, writeBatch)
+
+	dbErr := writeBatch.BatchCommit()
+
 	if dbErr != nil {
 		ledger.resetForNextTxGroup(false)
 		ledger.blockchain.blockPersistenceStatus(false)
 		return dbErr
+	}
+
+	//all commit done, we can add global state
+	dbErr = db.GetGlobalDBHandle().AddGlobalState(ledger.currentStateHash, stateHash)
+
+	if dbErr != nil {
+		//should this the correct way to omit StateDuplicatedError?
+		if _, ok := dbErr.(db.StateDuplicatedError); !ok {
+			return dbErr
+		}
 	}
 
 	ledger.resetForNextTxGroup(true)
@@ -211,6 +310,17 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	if len(transactionResults) != 0 {
 		ledgerLogger.Debug("There were some erroneous transactions. We need to send a 'TX rejected' message here.")
 	}
+
+	// docp := viper.GetBool("peer.db.perBlockPerCheckpoint")
+	// if protos.CurrentDbVersion == 1 && docp {
+	// 	stringHash := fmt.Sprintf("%x", stateHash)
+	// 	if stringHash == "" && newBlockNumber == 0 {
+	// 		stringHash = "0"
+	// 	}
+
+	// 	db.GetDBHandle().ProduceCheckpoint(newBlockNumber, stringHash)
+	// }
+
 	return nil
 }
 
@@ -312,11 +422,11 @@ func (ledger *Ledger) GetStateSnapshot() (*state.StateSnapshot, error) {
 	dbSnapshot := db.GetDBHandle().GetSnapshot()
 	blockHeight, err := fetchBlockchainSizeFromSnapshot(dbSnapshot)
 	if err != nil {
-		db.GetDBHandle().ReleaseSnapshot(dbSnapshot)
+		dbSnapshot.Release()
 		return nil, err
 	}
 	if 0 == blockHeight {
-		db.GetDBHandle().ReleaseSnapshot(dbSnapshot)
+		dbSnapshot.Release()
 		return nil, fmt.Errorf("Blockchain has no blocks, cannot determine block number")
 	}
 	return ledger.state.GetSnapshot(blockHeight-1, dbSnapshot)
@@ -393,6 +503,32 @@ func (ledger *Ledger) DeleteALLStateKeysAndValues() error {
 	return ledger.state.DeleteState()
 }
 
+/////////////////// transaction related methods /////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////
+func (ledger *Ledger) PutTransactions(txs []*protos.Transaction) error {
+	return ledger.txpool.putTransaction(txs)
+}
+
+// GetTransactionByID return transaction by it's txId
+func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
+	return ledger.txpool.getTransaction(txID)
+}
+
+// GetTransactionByID return transaction by it's txId
+func (ledger *Ledger) GetTransactionsByRange(statehash []byte, beg int, end int) ([]*protos.Transaction, error) {
+
+	blk, err := ledger.blockchain.getBlockByState(statehash)
+	if err != nil {
+		return nil, err
+	}
+
+	if blk.GetTxids() == nil || len(blk.Txids) < end {
+		return nil, ErrOutOfBounds
+	}
+
+	return fetchTxsFromDB(blk.Txids[beg:end]), nil
+}
+
 /////////////////// blockchain related methods /////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -421,19 +557,27 @@ func (ledger *Ledger) GetBlockchainSize() uint64 {
 	return ledger.blockchain.getSize()
 }
 
-// GetTransactionByID return transaction by it's txId
-func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
-	return ledger.blockchain.getTransactionByID(txID)
-}
-
-// PutBlock is just the alias-form of putrawblock
+// PutBlock put a raw block on the chain and also commit the corresponding transactions
 func (ledger *Ledger) PutBlock(blockNumber uint64, block *protos.Block) error {
+
+	//handle different type of block (with or without transaction included)
+	var err error
+	if block.GetTransactions() != nil {
+		err = ledger.txpool.putTransaction(block.Transactions)
+	} else {
+		err = ledger.txpool.commitTransaction(block.GetTxids())
+	}
+
+	if err != nil {
+		return err
+	}
+
 	return ledger.PutRawBlock(block, blockNumber)
 }
 
-// PutRawBlock puts a raw block on the chain. This function should only be
-// used for synchronization between peers.
+// PutRawBlock just puts a raw block on the chain without handling the tx
 func (ledger *Ledger) PutRawBlock(block *protos.Block, blockNumber uint64) error {
+
 	err := ledger.blockchain.persistRawBlock(block, blockNumber)
 	if err != nil {
 		return err

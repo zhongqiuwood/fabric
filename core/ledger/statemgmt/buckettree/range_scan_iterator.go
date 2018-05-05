@@ -19,12 +19,11 @@ package buckettree
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/tecbot/gorocksdb"
 )
 
 // RangeScanIterator implements the interface 'statemgmt.RangeScanIterator'
 type RangeScanIterator struct {
-	dbItr               *gorocksdb.Iterator
+	dbItr               *db.DBIterator
 	chaincodeID         string
 	startKey            string
 	endKey              string
@@ -35,7 +34,7 @@ type RangeScanIterator struct {
 }
 
 func newRangeScanIterator(chaincodeID string, startKey string, endKey string) (*RangeScanIterator, error) {
-	dbItr := db.GetDBHandle().GetStateCFIterator()
+	dbItr := db.GetDBHandle().GetIterator(db.StateCF)
 	itr := &RangeScanIterator{
 		dbItr:       dbItr,
 		chaincodeID: chaincodeID,

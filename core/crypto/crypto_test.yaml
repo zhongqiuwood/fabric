@@ -5,7 +5,7 @@
 ###############################################################################
 server:
         version: "0.1"
-        port: ":50541"
+        port: "localhost:50541"
 
 
 security:
@@ -21,7 +21,7 @@ security:
     tcert:
       batch:
         # The size of the batch of TCerts
-        size:  200
+        size:  32
     level: 256
     hashAlgorithm: SHA3
 

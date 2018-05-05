@@ -17,42 +17,21 @@ limitations under the License.
 package db
 
 import (
+	"errors"
 	"fmt"
-	"io"
-	"os"
-	"path"
-
-	"github.com/abchain/fabric/core/util"
-	"github.com/op/go-logging"
-	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
+	"sync"
 )
 
-var dbLogger = logging.MustGetLogger("db")
-var rocksDBLogLevelMap = map[string]gorocksdb.InfoLogLevel{
-	"debug": gorocksdb.DebugInfoLogLevel,
-	"info":  gorocksdb.InfoInfoLogLevel,
-	"warn":  gorocksdb.WarnInfoLogLevel,
-	"error": gorocksdb.ErrorInfoLogLevel,
-	"fatal": gorocksdb.FatalInfoLogLevel}
-
-const blockchainCF = "blockchainCF"
-const stateCF = "stateCF"
-const stateDeltaCF = "stateDeltaCF"
-const indexesCF = "indexesCF"
-const persistCF = "persistCF"
-
 var columnfamilies = []string{
-	blockchainCF, // blocks of the block chain
-	stateCF,      // world state
-	stateDeltaCF, // open transaction state
-	indexesCF,    // tx uuid -> blockno
-	persistCF,    // persistent per-peer state (consensus)
+	BlockchainCF, // blocks of the block chain
+	StateCF,      // world state
+	StateDeltaCF, // open transaction state
+	IndexesCF,    // tx uuid -> blockno
+	PersistCF,    // persistent per-peer state (consensus)
 }
 
-// OpenchainDB encapsulates rocksdb's structures
-type OpenchainDB struct {
-	DB           *gorocksdb.DB
+type openchainCFs struct {
 	BlockchainCF *gorocksdb.ColumnFamilyHandle
 	StateCF      *gorocksdb.ColumnFamilyHandle
 	StateDeltaCF *gorocksdb.ColumnFamilyHandle
@@ -60,315 +39,319 @@ type OpenchainDB struct {
 	PersistCF    *gorocksdb.ColumnFamilyHandle
 }
 
-var openchainDB = create()
-
-// Create create an openchainDB instance
-func create() *OpenchainDB {
-	return &OpenchainDB{}
+func (c *openchainCFs) feed(cfmap map[string]*gorocksdb.ColumnFamilyHandle) {
+	c.BlockchainCF = cfmap[BlockchainCF]
+	c.StateCF = cfmap[StateCF]
+	c.StateDeltaCF = cfmap[StateDeltaCF]
+	c.IndexesCF = cfmap[IndexesCF]
+	c.PersistCF = cfmap[PersistCF]
 }
 
-// GetDBHandle gets an opened openchainDB singleton. Note that method Start must always be invoked before this method.
-func GetDBHandle() *OpenchainDB {
-	return openchainDB
+type ocDB struct {
+	baseHandler
+	openchainCFs
+	extendedLock chan int //use a channel as locking for opening extend interface
+	dbName       string
+	finalDrop    bool
 }
 
-// Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Start() {
-	openchainDB.open()
+type OpenchainDB struct {
+	db *ocDB
+	sync.RWMutex
 }
 
-// Stop the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Stop() {
-	openchainDB.close()
-}
+var originalDB = &OpenchainDB{db: &ocDB{}}
 
-// GetFromBlockchainCF get value for given key from column family - blockchainCF
-func (openchainDB *OpenchainDB) GetFromBlockchainCF(key []byte) ([]byte, error) {
-	return openchainDB.Get(openchainDB.BlockchainCF, key)
-}
+func (oc *ocDB) dropDB() {
 
-// GetFromBlockchainCFSnapshot get value for given key from column family in a DB snapshot - blockchainCF
-func (openchainDB *OpenchainDB) GetFromBlockchainCFSnapshot(snapshot *gorocksdb.Snapshot, key []byte) ([]byte, error) {
-	return openchainDB.getFromSnapshot(snapshot, openchainDB.BlockchainCF, key)
-}
+	opt := gorocksdb.NewDefaultOptions()
+	defer opt.Destroy()
 
-// GetFromStateCF get value for given key from column family - stateCF
-func (openchainDB *OpenchainDB) GetFromStateCF(key []byte) ([]byte, error) {
-	return openchainDB.Get(openchainDB.StateCF, key)
-}
-
-// GetFromStateDeltaCF get value for given key from column family - stateDeltaCF
-func (openchainDB *OpenchainDB) GetFromStateDeltaCF(key []byte) ([]byte, error) {
-	return openchainDB.Get(openchainDB.StateDeltaCF, key)
-}
-
-// GetFromIndexesCF get value for given key from column family - indexCF
-func (openchainDB *OpenchainDB) GetFromIndexesCF(key []byte) ([]byte, error) {
-	return openchainDB.Get(openchainDB.IndexesCF, key)
-}
-
-// GetBlockchainCFIterator get iterator for column family - blockchainCF
-func (openchainDB *OpenchainDB) GetBlockchainCFIterator() *gorocksdb.Iterator {
-	return openchainDB.GetIterator(openchainDB.BlockchainCF)
-}
-
-// GetStateCFIterator get iterator for column family - stateCF
-func (openchainDB *OpenchainDB) GetStateCFIterator() *gorocksdb.Iterator {
-	return openchainDB.GetIterator(openchainDB.StateCF)
-}
-
-// GetStateCFSnapshotIterator get iterator for column family - stateCF. This iterator
-// is based on a snapshot and should be used for long running scans, such as
-// reading the entire state. Remember to call iterator.Close() when you are done.
-func (openchainDB *OpenchainDB) GetStateCFSnapshotIterator(snapshot *gorocksdb.Snapshot) *gorocksdb.Iterator {
-	return openchainDB.getSnapshotIterator(snapshot, openchainDB.StateCF)
-}
-
-// GetStateDeltaCFIterator get iterator for column family - stateDeltaCF
-func (openchainDB *OpenchainDB) GetStateDeltaCFIterator() *gorocksdb.Iterator {
-	return openchainDB.GetIterator(openchainDB.StateDeltaCF)
-}
-
-// GetSnapshot returns a point-in-time view of the DB. You MUST call snapshot.Release()
-// when you are done with the snapshot.
-func (openchainDB *OpenchainDB) GetSnapshot() *gorocksdb.Snapshot {
-	return openchainDB.DB.NewSnapshot()
-}
-
-func (openchainDB *OpenchainDB) ReleaseSnapshot(snapshot *gorocksdb.Snapshot) {
-	openchainDB.DB.ReleaseSnapshot(snapshot)
-}
-
-func getDBPath() string {
-	dbPath := viper.GetString("peer.fileSystemPath")
-	if dbPath == "" {
-		panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
-	}
-
-	return util.CanonicalizePath(dbPath) + "db"
-}
-
-// Open open underlying rocksdb
-func (openchainDB *OpenchainDB) open() {
-	dbPath := getDBPath()
-	missing, err := dirMissingOrEmpty(dbPath)
-	if err != nil {
-		panic(fmt.Sprintf("Error while trying to open DB: %s", err))
-	}
-	dbLogger.Debugf("Is db path [%s] empty [%t]", dbPath, missing)
-
-	if missing {
-		err = os.MkdirAll(path.Dir(dbPath), 0755)
-		if err != nil {
-			panic(fmt.Sprintf("Error making directory path [%s]: %s", dbPath, err))
-		}
-	}
-
-	opts := gorocksdb.NewDefaultOptions()
-	defer opts.Destroy()
-
-	maxLogFileSize := viper.GetInt("peer.db.maxLogFileSize")
-	if maxLogFileSize > 0 {
-		dbLogger.Infof("Setting rocksdb maxLogFileSize to %d", maxLogFileSize)
-		opts.SetMaxLogFileSize(maxLogFileSize)
-	}
-
-	keepLogFileNum := viper.GetInt("peer.db.keepLogFileNum")
-	if keepLogFileNum > 0 {
-		dbLogger.Infof("Setting rocksdb keepLogFileNum to %d", keepLogFileNum)
-		opts.SetKeepLogFileNum(keepLogFileNum)
-	}
-
-	logLevelStr := viper.GetString("peer.db.loglevel")
-	logLevel, ok := rocksDBLogLevelMap[logLevelStr]
-
-	if ok {
-		dbLogger.Infof("Setting rocks db InfoLogLevel to %d", logLevel)
-		opts.SetInfoLogLevel(logLevel)
-	}
-
-	opts.SetCreateIfMissing(missing)
-	opts.SetCreateIfMissingColumnFamilies(true)
-
-	cfNames := []string{"default"}
-	cfNames = append(cfNames, columnfamilies...)
-	var cfOpts []*gorocksdb.Options
-	for range cfNames {
-		cfOpts = append(cfOpts, opts)
-	}
-
-	db, cfHandlers, err := gorocksdb.OpenDbColumnFamilies(opts, dbPath, cfNames, cfOpts)
+	err := gorocksdb.DestroyDb(oc.dbName, opt)
 
 	if err != nil {
-		panic(fmt.Sprintf("Error opening DB: %s", err))
+		dbLogger.Infof("[%s] Drop whole db <%s>", printGID, oc.dbName)
+	} else {
+		dbLogger.Errorf("[%s] Drop whole db <%s> FAIL: %s", printGID, oc.dbName, err)
 	}
-
-	openchainDB.DB = db
-	openchainDB.BlockchainCF = cfHandlers[1]
-	openchainDB.StateCF = cfHandlers[2]
-	openchainDB.StateDeltaCF = cfHandlers[3]
-	openchainDB.IndexesCF = cfHandlers[4]
-	openchainDB.PersistCF = cfHandlers[5]
-	//we do not use "default" CF so clear it here
-	cfHandlers[0].Destroy()
 }
 
-// Close releases all column family handles and closes rocksdb
-func (openchainDB *OpenchainDB) close() {
-	openchainDB.BlockchainCF.Destroy()
-	openchainDB.StateCF.Destroy()
-	openchainDB.StateDeltaCF.Destroy()
-	openchainDB.IndexesCF.Destroy()
-	openchainDB.PersistCF.Destroy()
-	openchainDB.DB.Close()
+func (openchainDB *ocDB) open(dbpath string) error {
+
+	openchainDB.dbName = dbpath
+
+	cfhandlers := openchainDB.opendb(dbpath, columnfamilies, nil)
+
+	if len(cfhandlers) != len(columnfamilies) {
+		return errors.New("rocksdb may ruin or not work as expected")
+	}
+
+	//feed cfs
+	openchainDB.cfMap = make(map[string]*gorocksdb.ColumnFamilyHandle)
+	for i, cfName := range columnfamilies {
+		openchainDB.cfMap[cfName] = cfhandlers[i]
+	}
+
+	openchainDB.feed(openchainDB.cfMap)
+
+	//TODO: custom maxOpenedExtend
+	openchainDB.extendedLock = make(chan int, maxOpenedExtend)
+	//add one reference count
+	openchainDB.extendedLock <- 0
+
+	return nil
+}
+
+// override methods with rwlock
+func (openchainDB *OpenchainDB) GetValue(cfname string, key []byte) ([]byte, error) {
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+	return openchainDB.db.GetValue(cfname, key)
+}
+
+func (openchainDB *OpenchainDB) DeleteKey(cfname string, key []byte) error {
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+	return openchainDB.db.DeleteKey(cfname, key)
+}
+
+func (openchainDB *OpenchainDB) PutValue(cfname string, key []byte, value []byte) error {
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+	return openchainDB.db.PutValue(cfname, key, value)
+}
+
+//func (orgdb *OpenchainDB) getTxids(blockNumber uint64) []string {
+//
+//	block, err := orgdb.FetchBlockFromDB(blockNumber, false)
+//	if err != nil {
+//		dbg.Errorf("Error Fetch BlockFromDB by blockNumber<%d>. Err: %s", blockNumber, err)
+//		return nil
+//	}
+//
+//	if block == nil {
+//		dbg.Errorf("No such a block, blockNumber<%d>. Err: %s", blockNumber)
+//		return nil
+//	}
+//
+//	return block.Txids
+//}
+
+// func (orgdb *OpenchainDB) FetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
+
+// 	orgdb.RLock()
+// 	defer orgdb.RUnlock()
+
+// 	blockBytes, err := orgdb.db.get(orgdb.db.BlockchainCF, EncodeBlockNumberDBKey(blockNumber))
+// 	if err != nil {
+
+// 		return nil, err
+// 	}
+// 	if blockBytes == nil {
+
+// 		return nil, nil
+// 	}
+// 	block, errUnmarshall := protos.UnmarshallBlock(blockBytes)
+
+// 	return block, errUnmarshall
+// }
+
+func (orgdb *OpenchainDB) GetFromBlockchainCF(key []byte) ([]byte, error) {
+
+	orgdb.RLock()
+	defer orgdb.RUnlock()
+
+	return orgdb.db.get(orgdb.db.BlockchainCF, key)
 }
 
 // DeleteState delets ALL state keys/values from the DB. This is generally
 // only used during state synchronization when creating a new state from
 // a snapshot.
 func (openchainDB *OpenchainDB) DeleteState() error {
-	err := openchainDB.DB.DropColumnFamily(openchainDB.StateCF)
+
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+
+	err := openchainDB.db.DropColumnFamily(openchainDB.db.StateCF)
 	if err != nil {
 		dbLogger.Errorf("Error dropping state CF: %s", err)
 		return err
 	}
-	err = openchainDB.DB.DropColumnFamily(openchainDB.StateDeltaCF)
+	err = openchainDB.db.DropColumnFamily(openchainDB.db.StateDeltaCF)
 	if err != nil {
 		dbLogger.Errorf("Error dropping state delta CF: %s", err)
 		return err
 	}
 	opts := gorocksdb.NewDefaultOptions()
 	defer opts.Destroy()
-	openchainDB.StateCF, err = openchainDB.DB.CreateColumnFamily(opts, stateCF)
+	openchainDB.db.StateCF, err = openchainDB.db.CreateColumnFamily(opts, StateCF)
 	if err != nil {
 		dbLogger.Errorf("Error creating state CF: %s", err)
 		return err
 	}
-	openchainDB.StateDeltaCF, err = openchainDB.DB.CreateColumnFamily(opts, stateDeltaCF)
+	openchainDB.db.StateDeltaCF, err = openchainDB.db.CreateColumnFamily(opts, StateDeltaCF)
 	if err != nil {
 		dbLogger.Errorf("Error creating state delta CF: %s", err)
 		return err
 	}
+
+	openchainDB.db.cfMap[StateCF] = openchainDB.db.StateCF
+	openchainDB.db.cfMap[StateDeltaCF] = openchainDB.db.StateDeltaCF
+
 	return nil
 }
 
-// Get returns the valud for the given column family and key
-func (openchainDB *OpenchainDB) Get(cfHandler *gorocksdb.ColumnFamilyHandle, key []byte) ([]byte, error) {
-	opt := gorocksdb.NewDefaultReadOptions()
-	defer opt.Destroy()
-	slice, err := openchainDB.DB.GetCF(opt, cfHandler, key)
-	if err != nil {
-		dbLogger.Errorf("Error while trying to retrieve key: %s", key)
-		return nil, err
-	}
-	defer slice.Free()
-	if slice.Data() == nil {
-		return nil, nil
-	}
-	data := makeCopy(slice.Data())
-	return data, nil
+const (
+	//the maxium of long-run rocksdb interfaces can be open at the same time
+	maxOpenedExtend = 128
+)
+
+type extHandler struct {
+	*ocDB
 }
 
-// Put saves the key/value in the given column family
-func (openchainDB *OpenchainDB) Put(cfHandler *gorocksdb.ColumnFamilyHandle, key []byte, value []byte) error {
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	err := openchainDB.DB.PutCF(opt, cfHandler, key, value)
-	if err != nil {
-		dbLogger.Errorf("Error while trying to write key: %s", key)
-		return err
-	}
-	return nil
+type DBSnapshot struct {
+	extHandler
+	snapshot *gorocksdb.Snapshot
 }
 
-// Delete delets the given key in the specified column family
-func (openchainDB *OpenchainDB) Delete(cfHandler *gorocksdb.ColumnFamilyHandle, key []byte) error {
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	err := openchainDB.DB.DeleteCF(opt, cfHandler, key)
-	if err != nil {
-		dbLogger.Errorf("Error while trying to delete key: %s", key)
-		return err
-	}
-	return nil
+type DBIterator struct {
+	h extHandler
+	*gorocksdb.Iterator
 }
 
-func (openchainDB *OpenchainDB) getFromSnapshot(snapshot *gorocksdb.Snapshot, cfHandler *gorocksdb.ColumnFamilyHandle, key []byte) ([]byte, error) {
-	opt := gorocksdb.NewDefaultReadOptions()
-	defer opt.Destroy()
-	opt.SetSnapshot(snapshot)
-	slice, err := openchainDB.DB.GetCF(opt, cfHandler, key)
-	if err != nil {
-		dbLogger.Errorf("Error while trying to retrieve key: %s", key)
-		return nil, err
-	}
-	defer slice.Free()
-	data := append([]byte(nil), slice.Data()...)
-	return data, nil
+type DBWriteBatch struct {
+	h extHandler
+	*gorocksdb.WriteBatch
 }
 
+func (openchainDB *OpenchainDB) getExtended() *ocDB {
+
+	openchainDB.RLock()
+	defer openchainDB.RUnlock()
+
+	openchainDB.db.extendedLock <- 0
+	return openchainDB.db
+}
+
+//extend interface
 // GetIterator returns an iterator for the given column family
-func (openchainDB *OpenchainDB) GetIterator(cfHandler *gorocksdb.ColumnFamilyHandle) *gorocksdb.Iterator {
+func (e *extHandler) release() {
+
+	//to make test and some wrapper also work
+	if e.ocDB == nil {
+		return
+	}
+
+	//we "absorb" a lock
+	select {
+	case <-e.extendedLock:
+	default:
+		dbLogger.Infof("[%s] Release current db <%s>", printGID, e.dbName)
+		e.close()
+
+		if e.finalDrop {
+			e.dropDB()
+		}
+	}
+
+}
+
+func (openchainDB *OpenchainDB) NewWriteBatch() *DBWriteBatch {
+	db := openchainDB.getExtended()
+
+	return &DBWriteBatch{extHandler{db}, gorocksdb.NewWriteBatch()}
+}
+
+// GetSnapshot create a point-in-time view of the DB.
+func (openchainDB *OpenchainDB) GetSnapshot() *DBSnapshot {
+
+	db := openchainDB.getExtended()
+
+	return &DBSnapshot{extHandler{db}, db.NewSnapshot()}
+}
+
+func (openchainDB *OpenchainDB) GetIterator(cfName string) *DBIterator {
+
+	db := openchainDB.getExtended()
+
+	cf := db.cfMap[cfName]
+
+	if cf == nil {
+		panic(fmt.Sprintf("Wrong CF Name %s", cfName))
+	}
+
 	opt := gorocksdb.NewDefaultReadOptions()
 	opt.SetFillCache(true)
 	defer opt.Destroy()
-	return openchainDB.DB.NewIteratorCF(opt, cfHandler)
+
+	return &DBIterator{extHandler{db}, db.NewIteratorCF(opt, cf)}
 }
 
-func (openchainDB *OpenchainDB) getSnapshotIterator(snapshot *gorocksdb.Snapshot, cfHandler *gorocksdb.ColumnFamilyHandle) *gorocksdb.Iterator {
-	opt := gorocksdb.NewDefaultReadOptions()
-	defer opt.Destroy()
-	opt.SetSnapshot(snapshot)
-	iter := openchainDB.DB.NewIteratorCF(opt, cfHandler)
-	return iter
+func (e *DBWriteBatch) Destroy() {
+	if e.WriteBatch != nil {
+		e.WriteBatch.Destroy()
+	}
+	e.h.release()
 }
 
-func dirMissingOrEmpty(path string) (bool, error) {
-	dirExists, err := dirExists(path)
-	if err != nil {
-		return false, err
+func (e *DBIterator) Close() {
+	if e.Iterator != nil {
+		e.Iterator.Close()
 	}
-	if !dirExists {
-		return true, nil
-	}
-
-	dirEmpty, err := dirEmpty(path)
-	if err != nil {
-		return false, err
-	}
-	if dirEmpty {
-		return true, nil
-	}
-	return false, nil
+	e.h.release()
 }
 
-func dirExists(path string) (bool, error) {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true, nil
+func (e *DBSnapshot) Release() {
+	if e.snapshot != nil {
+		e.ReleaseSnapshot(e.snapshot)
 	}
-	if os.IsNotExist(err) {
-		return false, nil
-	}
-	return false, err
+	e.release()
 }
 
-func dirEmpty(path string) (bool, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return false, err
-	}
-	defer f.Close()
-
-	_, err = f.Readdir(1)
-	if err == io.EOF {
-		return true, nil
-	}
-	return false, err
+func (e *DBWriteBatch) GetDBHandle() *ocDB {
+	return e.h.ocDB
 }
 
-func makeCopy(src []byte) []byte {
-	dest := make([]byte, len(src))
-	copy(dest, src)
-	return dest
+func (e *DBWriteBatch) BatchCommit() error {
+	return e.h.BatchCommit(e.WriteBatch)
+}
+
+func (e *DBSnapshot) GetSnapshot() *gorocksdb.Snapshot {
+	return e.snapshot
+}
+
+// // Some legacy entries, we make all "fromsnapshot" function becoming simple api (not member func)....
+// func (e *DBSnapshot) FetchBlockchainSizeFromSnapshot() (uint64, error) {
+
+// 	blockNumberBytes, err := e.GetFromBlockchainCFSnapshot(BlockCountKey)
+// 	if err != nil {
+// 		return 0, err
+// 	}
+// 	var blockNumber uint64
+// 	if blockNumberBytes != nil {
+// 		blockNumber = DecodeToUint64(blockNumberBytes)
+// 	}
+// 	return blockNumber, nil
+// }
+
+// GetFromBlockchainCFSnapshot get value for given key from column family in a DB snapshot - blockchainCF
+func (e *DBSnapshot) GetFromBlockchainCFSnapshot(key []byte) ([]byte, error) {
+
+	if e.snapshot == nil {
+		return nil, fmt.Errorf("Snapshot is not inited")
+	}
+	return e.getFromSnapshot(e.snapshot, e.BlockchainCF, key)
+}
+
+// GetStateCFSnapshotIterator get iterator for column family - stateCF. This iterator
+// is based on a snapshot and should be used for long running scans, such as
+// reading the entire state. Remember to call iterator.Close() when you are done.
+func (e *DBSnapshot) GetStateCFSnapshotIterator() *gorocksdb.Iterator {
+
+	if e.snapshot == nil {
+		dbLogger.Error("Snapshot is not inited")
+		return nil
+	}
+	return e.getSnapshotIterator(e.snapshot, e.StateCF)
 }

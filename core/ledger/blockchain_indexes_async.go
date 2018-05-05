@@ -22,7 +22,6 @@ import (
 
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/protos"
-	"github.com/tecbot/gorocksdb"
 )
 
 var lastIndexedBlockKey = []byte{byte(0)}
@@ -99,21 +98,21 @@ func (indexer *blockchainIndexerAsync) start(blockchain *blockchain) error {
 	return nil
 }
 
-func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *gorocksdb.WriteBatch) error {
+func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
 	indexer.blockChan <- blockWrapper{block, blockNumber, blockHash, false}
 	return nil
 }
 
 // createIndexes adds entries into db for creating indexes on various attributes
 func (indexer *blockchainIndexerAsync) createIndexesInternal(block *protos.Block, blockNumber uint64, blockHash []byte) error {
-	openchainDB := db.GetDBHandle()
-	writeBatch := gorocksdb.NewWriteBatch()
+
+	writeBatch := db.GetDBHandle().NewWriteBatch()
 	defer writeBatch.Destroy()
 	addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
-	writeBatch.PutCF(openchainDB.IndexesCF, lastIndexedBlockKey, encodeBlockNumber(blockNumber))
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	err := openchainDB.DB.Write(opt, writeBatch)
+	writeBatch.PutCF(writeBatch.GetDBHandle().IndexesCF,
+		lastIndexedBlockKey, encodeBlockNumber(blockNumber))
+
+	err := writeBatch.BatchCommit()
 	if err != nil {
 		return err
 	}
@@ -129,6 +128,16 @@ func (indexer *blockchainIndexerAsync) fetchBlockNumberByBlockHash(blockHash []b
 	}
 	indexer.indexerState.waitForLastCommittedBlock()
 	return fetchBlockNumberByBlockHashFromDB(blockHash)
+}
+
+func (indexer *blockchainIndexerAsync) fetchBlockNumberByStateHash(stateHash []byte) (uint64, error) {
+	err := indexer.indexerState.checkError()
+	if err != nil {
+		indexLogger.Debug("Async indexer has a previous error. Returing the error")
+		return 0, err
+	}
+	indexer.indexerState.waitForLastCommittedBlock()
+	return fetchBlockNumberByStateHashFromDB(stateHash)
 }
 
 func (indexer *blockchainIndexerAsync) fetchTransactionIndexByID(txID string) (uint64, uint64, error) {
@@ -311,7 +320,7 @@ func (indexerState *blockchainIndexerState) checkError() error {
 }
 
 func fetchLastIndexedBlockNumFromDB() (zerothBlockIndexed bool, lastIndexedBlockNum uint64, err error) {
-	lastIndexedBlockNumberBytes, err := db.GetDBHandle().GetFromIndexesCF(lastIndexedBlockKey)
+	lastIndexedBlockNumberBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, lastIndexedBlockKey)
 	if err != nil {
 		return
 	}

@@ -17,7 +17,6 @@ limitations under the License.
 package state
 
 import (
-	"encoding/binary"
 	"fmt"
 
 	"github.com/abchain/fabric/core/db"
@@ -25,8 +24,8 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
 	"github.com/abchain/fabric/core/ledger/statemgmt/raw"
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
+	"github.com/abchain/fabric/core/util"
 	"github.com/op/go-logging"
-	"github.com/tecbot/gorocksdb"
 )
 
 var logger = logging.MustGetLogger("state")
@@ -269,13 +268,13 @@ func (state *State) getStateDelta() *statemgmt.StateDelta {
 
 // GetSnapshot returns a snapshot of the global state for the current block. stateSnapshot.Release()
 // must be called once you are done.
-func (state *State) GetSnapshot(blockNumber uint64, dbSnapshot *gorocksdb.Snapshot) (*StateSnapshot, error) {
+func (state *State) GetSnapshot(blockNumber uint64, dbSnapshot *db.DBSnapshot) (*StateSnapshot, error) {
 	return newStateSnapshot(blockNumber, dbSnapshot)
 }
 
 // FetchStateDeltaFromDB fetches the StateDelta corrsponding to given blockNumber
 func (state *State) FetchStateDeltaFromDB(blockNumber uint64) (*statemgmt.StateDelta, error) {
-	stateDeltaBytes, err := db.GetDBHandle().GetFromStateDeltaCF(encodeStateDeltaKey(blockNumber))
+	stateDeltaBytes, err := db.GetDBHandle().GetValue(db.StateDeltaCF, encodeStateDeltaKey(blockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -288,7 +287,7 @@ func (state *State) FetchStateDeltaFromDB(blockNumber uint64) (*statemgmt.StateD
 }
 
 // AddChangesForPersistence adds key-value pairs to writeBatch
-func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *gorocksdb.WriteBatch) {
+func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.DBWriteBatch) {
 	logger.Debug("state.addChangesForPersistence()...start")
 	if state.updateStateImpl {
 		state.stateImpl.PrepareWorkingSet(state.stateDelta)
@@ -297,9 +296,10 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *gor
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 
 	serializedStateDelta := state.stateDelta.Marshal()
-	cf := db.GetDBHandle().StateDeltaCF
+	cf := writeBatch.GetDBHandle().StateDeltaCF
 	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
 	writeBatch.PutCF(cf, encodeStateDeltaKey(blockNumber), serializedStateDelta)
+
 	if blockNumber >= state.historyStateDeltaSize {
 		blockNumberToDelete := blockNumber - state.historyStateDeltaSize
 		logger.Debugf("Deleting state-delta corresponding to block number[%d]", blockNumberToDelete)
@@ -327,12 +327,10 @@ func (state *State) CommitStateDelta() error {
 		state.updateStateImpl = false
 	}
 
-	writeBatch := gorocksdb.NewWriteBatch()
+	writeBatch := db.GetDBHandle().NewWriteBatch()
 	defer writeBatch.Destroy()
 	state.stateImpl.AddChangesForPersistence(writeBatch)
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	return db.GetDBHandle().DB.Write(opt, writeBatch)
+	return writeBatch.BatchCommit()
 }
 
 // DeleteState deletes ALL state keys/values from the DB. This is generally
@@ -348,19 +346,9 @@ func (state *State) DeleteState() error {
 }
 
 func encodeStateDeltaKey(blockNumber uint64) []byte {
-	return encodeUint64(blockNumber)
+	return util.EncodeUint64(blockNumber)
 }
 
 func decodeStateDeltaKey(dbkey []byte) uint64 {
-	return decodeToUint64(dbkey)
-}
-
-func encodeUint64(number uint64) []byte {
-	bytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(bytes, number)
-	return bytes
-}
-
-func decodeToUint64(bytes []byte) uint64 {
-	return binary.BigEndian.Uint64(bytes)
+	return util.DecodeToUint64(dbkey)
 }

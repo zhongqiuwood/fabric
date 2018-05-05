@@ -17,10 +17,10 @@ limitations under the License.
 package protos
 
 import (
+	"encoding/binary"
 	"fmt"
-
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/util"
+	"github.com/golang/protobuf/proto"
 )
 
 // NewBlock creates a new block with the specified proposer ID, list of,
@@ -40,43 +40,144 @@ import (
 // 	return block
 // }
 
+type normalizeBlock struct {
+	transactions []*Transaction
+	txids        []string
+}
+
+func (n *normalizeBlock) Resume(block *Block) {
+	block.Transactions = n.transactions
+	block.Txids = n.txids
+}
+
+//Use to make the block become "normalized" without mutate the block
+func makeNormalizeBlock(block *Block) *normalizeBlock {
+	r := &normalizeBlock{block.Transactions, block.Txids}
+	block.Transactions = nil
+
+	if r.txids == nil && r.transactions != nil {
+		block.Txids = make([]string, len(r.transactions))
+		for i, tx := range r.transactions {
+			block.Txids[i] = tx.Txid
+		}
+	}
+
+	return r
+}
+
 // Bytes returns this block as an array of bytes.
-func (block *Block) Bytes() ([]byte, error) {
+func (block *Block) GetBlockBytes() ([]byte, error) {
+
+	normalize := makeNormalizeBlock(block)
+	defer normalize.Resume(block)
+
 	data, err := proto.Marshal(block)
+
 	if err != nil {
-		logger.Errorf("Error marshalling block: %s", err)
 		return nil, fmt.Errorf("Could not marshal block: %s", err)
 	}
+
 	return data, nil
+}
+
+var defaultBlockVersion uint32 = 1
+
+func SetDefaultBlockVer(v uint32) {
+	defaultBlockVersion = v
+}
+
+func DefaultBlockVer() uint32 {
+	return defaultBlockVersion
 }
 
 // NewBlock creates a new Block given the input parameters.
 func NewBlock(transactions []*Transaction, metadata []byte) *Block {
+	return NewBlockV(defaultBlockVersion, transactions, metadata)
+}
+
+// NewBlock creates a new Block given the input parameters.
+func NewBlockV(ver uint32, transactions []*Transaction, metadata []byte) *Block {
 	block := new(Block)
 	block.Transactions = transactions
 	block.ConsensusMetadata = metadata
+
+	block.Version = ver
+
+	if len(block.Transactions) > 0 {
+		block.Txids = make([]string, len(block.Transactions))
+		for i, tx := range block.Transactions {
+			block.Txids[i] = tx.Txid
+		}
+	}
+
 	return block
 }
 
 // GetHash returns the hash of this block.
 func (block *Block) GetHash() ([]byte, error) {
 
-	// copy the block and remove the non-hash data
-	blockBytes, err := block.Bytes()
-	if err != nil {
-		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
+	switch block.Version {
+	case 0:
+		return block.legacyHash()
+	case 1:
+		return block.hashV1()
+	default:
+		return nil, fmt.Errorf("No implement for version", block.Version)
 	}
-	blockCopy, err := UnmarshallBlock(blockBytes)
-	if err != nil {
-		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
-	}
-	blockCopy.NonHashData = nil
+}
 
-	// Hash the block
-	data, err := proto.Marshal(blockCopy)
+func (block *Block) hashV1() ([]byte, error) {
+
+	normalize := makeNormalizeBlock(block)
+	defer normalize.Resume(block)
+
+	h := util.DefaultCryptoHash()
+
+	err := binary.Write(h, binary.BigEndian, block.Version)
+	if err != nil {
+		return nil, err
+	}
+
+	hw := util.NewHashWriter(h)
+
+	err = hw.Write(block.PreviousBlockHash).Write(block.ConsensusMetadata).Error()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, txid := range block.Txids {
+		err = hw.Write([]byte(txid)).Error()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return h.Sum(nil), nil
+
+}
+
+// returns the hash of this block by the legacy way
+func (block *Block) legacyHash() ([]byte, error) {
+
+	//legacy way use special "normalized" process
+	txids := block.Txids
+	nonHashData := block.NonHashData
+
+	resume := func() {
+		block.Txids = txids
+		block.NonHashData = nonHashData
+	}
+
+	block.Txids = nil
+	block.NonHashData = nil
+
+	defer resume()
+
+	data, err := proto.Marshal(block)
 	if err != nil {
 		return nil, fmt.Errorf("Could not calculate hash of block: %s", err)
 	}
+
 	hash := util.ComputeCryptoHash(data)
 	return hash, nil
 }
@@ -102,5 +203,6 @@ func UnmarshallBlock(blockBytes []byte) (*Block, error) {
 		logger.Errorf("Error unmarshalling block: %s", err)
 		return nil, fmt.Errorf("Could not unmarshal block: %s", err)
 	}
+
 	return block, nil
 }

@@ -18,23 +18,21 @@ package ledger
 
 import (
 	"bytes"
-	"encoding/binary"
-	"strconv"
-
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
-	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
+	"strconv"
 )
 
 // Blockchain holds basic information in memory. Operations on Blockchain are not thread-safe
 // TODO synchronize access to in-memory variables
 type blockchain struct {
-	size               uint64
-	previousBlockHash  []byte
-	indexer            blockchainIndexer
-	lastProcessedBlock *lastProcessedBlock
+	size                   uint64
+	previousBlockHash      []byte
+	previousBlockStateHash []byte
+	indexer                blockchainIndexer
+	lastProcessedBlock     *lastProcessedBlock
 }
 
 type lastProcessedBlock struct {
@@ -50,7 +48,7 @@ func newBlockchain() (*blockchain, error) {
 	if err != nil {
 		return nil, err
 	}
-	blockchain := &blockchain{0, nil, nil, nil}
+	blockchain := &blockchain{0, nil, nil, nil, nil}
 	blockchain.size = size
 	if size > 0 {
 		previousBlock, err := fetchBlockFromDB(size - 1)
@@ -62,6 +60,7 @@ func newBlockchain() (*blockchain, error) {
 			return nil, err
 		}
 		blockchain.previousBlockHash = previousBlockHash
+		blockchain.previousBlockStateHash = previousBlock.StateHash
 	}
 
 	err = blockchain.startIndexer()
@@ -108,18 +107,22 @@ func (blockchain *blockchain) getBlockByHash(blockHash []byte) (*protos.Block, e
 	return blockchain.getBlock(blockNumber)
 }
 
-func (blockchain *blockchain) getTransactionByID(txID string) (*protos.Transaction, error) {
-	blockNumber, txIndex, err := blockchain.indexer.fetchTransactionIndexByID(txID)
+func (blockchain *blockchain) getBlockByState(stateHash []byte) (*protos.Block, error) {
+	blockNumber, err := blockchain.indexer.fetchBlockNumberByStateHash(stateHash)
 	if err != nil {
 		return nil, err
 	}
-	block, err := blockchain.getBlock(blockNumber)
-	if err != nil {
-		return nil, err
-	}
-	transaction := block.GetTransactions()[txIndex]
-	return transaction, nil
+	return blockchain.getBlock(blockNumber)
 }
+
+// func (blockchain *blockchain) getTransactionByID(txID string) (*protos.Transaction, error) {
+// 	blockNumber, txIndex, err := blockchain.indexer.fetchTransactionIndexByID(txID)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	return blockchain.getTransaction(blockNumber, txIndex)
+// }
 
 // getTransactions get all transactions in a block identified by block number
 func (blockchain *blockchain) getTransactions(blockNumber uint64) ([]*protos.Transaction, error) {
@@ -127,7 +130,7 @@ func (blockchain *blockchain) getTransactions(blockNumber uint64) ([]*protos.Tra
 	if err != nil {
 		return nil, err
 	}
-	return block.GetTransactions(), nil
+	return fetchTxsFromDB(block.GetTxids()), nil
 }
 
 // getTransactionsByBlockHash get all transactions in a block identified by block hash
@@ -136,25 +139,42 @@ func (blockchain *blockchain) getTransactionsByBlockHash(blockHash []byte) ([]*p
 	if err != nil {
 		return nil, err
 	}
-	return block.GetTransactions(), nil
+	return fetchTxsFromDB(block.GetTxids()), nil
 }
 
 // getTransaction get a transaction identified by block number and index within the block
 func (blockchain *blockchain) getTransaction(blockNumber uint64, txIndex uint64) (*protos.Transaction, error) {
+
 	block, err := blockchain.getBlock(blockNumber)
 	if err != nil {
 		return nil, err
 	}
-	return block.GetTransactions()[txIndex], nil
+
+	txids := block.GetTxids()
+	//out of range
+	if uint64(len(txids)) <= txIndex {
+		return nil, ErrOutOfBounds
+	}
+
+	return fetchTxFromDB(txids[txIndex])
 }
 
 // getTransactionByBlockHash get a transaction identified by block hash and index within the block
 func (blockchain *blockchain) getTransactionByBlockHash(blockHash []byte, txIndex uint64) (*protos.Transaction, error) {
+
 	block, err := blockchain.getBlockByHash(blockHash)
 	if err != nil {
 		return nil, err
 	}
-	return block.GetTransactions()[txIndex], nil
+
+	txids := block.GetTxids()
+	//out of range
+	if uint64(len(txids)) <= txIndex {
+		return nil, ErrOutOfBounds
+	}
+
+	return fetchTxFromDB(txids[txIndex])
+
 }
 
 func (blockchain *blockchain) getBlockchainInfo() (*protos.BlockchainInfo, error) {
@@ -188,7 +208,7 @@ func (blockchain *blockchain) buildBlock(block *protos.Block, stateHash []byte) 
 }
 
 func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Context,
-	block *protos.Block, stateHash []byte, writeBatch *gorocksdb.WriteBatch) (uint64, error) {
+	block *protos.Block, stateHash []byte, writeBatch *db.DBWriteBatch) (uint64, error) {
 	block = blockchain.buildBlock(block, stateHash)
 	if block.NonHashData == nil {
 		block.NonHashData = &protos.NonHashData{LocalLedgerCommitTimestamp: util.CreateUtcTimestamp()}
@@ -200,12 +220,14 @@ func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Conte
 	if err != nil {
 		return 0, err
 	}
-	blockBytes, blockBytesErr := block.Bytes()
+
+	blockBytes, blockBytesErr := block.GetBlockBytes()
 	if blockBytesErr != nil {
 		return 0, blockBytesErr
 	}
-	writeBatch.PutCF(db.GetDBHandle().BlockchainCF, encodeBlockNumberDBKey(blockNumber), blockBytes)
-	writeBatch.PutCF(db.GetDBHandle().BlockchainCF, blockCountKey, encodeUint64(blockNumber+1))
+	cf := writeBatch.GetDBHandle().BlockchainCF
+	writeBatch.PutCF(cf, encodeBlockNumberDBKey(blockNumber), blockBytes)
+	writeBatch.PutCF(cf, blockCountKey, util.EncodeUint64(blockNumber+1))
 	if blockchain.indexer.isSynchronous() {
 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
 	}
@@ -218,7 +240,7 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) {
 		blockchain.size++
 		blockchain.previousBlockHash = blockchain.lastProcessedBlock.blockHash
 		if !blockchain.indexer.isSynchronous() {
-			writeBatch := gorocksdb.NewWriteBatch()
+			writeBatch := db.GetDBHandle().NewWriteBatch()
 			defer writeBatch.Destroy()
 			blockchain.indexer.createIndexes(blockchain.lastProcessedBlock.block,
 				blockchain.lastProcessedBlock.blockNumber, blockchain.lastProcessedBlock.blockHash, writeBatch)
@@ -228,13 +250,14 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) {
 }
 
 func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
-	blockBytes, blockBytesErr := block.Bytes()
+	blockBytes, blockBytesErr := block.GetBlockBytes()
 	if blockBytesErr != nil {
 		return blockBytesErr
 	}
-	writeBatch := gorocksdb.NewWriteBatch()
+	writeBatch := db.GetDBHandle().NewWriteBatch()
 	defer writeBatch.Destroy()
-	writeBatch.PutCF(db.GetDBHandle().BlockchainCF, encodeBlockNumberDBKey(blockNumber), blockBytes)
+	cf := writeBatch.GetDBHandle().BlockchainCF
+	writeBatch.PutCF(cf, encodeBlockNumberDBKey(blockNumber), blockBytes)
 
 	blockHash, err := block.GetHash()
 	if err != nil {
@@ -244,8 +267,8 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 	// Need to check as we support out of order blocks in cases such as block/state synchronization. This is
 	// real blockchain height, not size.
 	if blockchain.getSize() < blockNumber+1 {
-		sizeBytes := encodeUint64(blockNumber + 1)
-		writeBatch.PutCF(db.GetDBHandle().BlockchainCF, blockCountKey, sizeBytes)
+		sizeBytes := util.EncodeUint64(blockNumber + 1)
+		writeBatch.PutCF(cf, blockCountKey, sizeBytes)
 		blockchain.size = blockNumber + 1
 		blockchain.previousBlockHash = blockHash
 	}
@@ -254,9 +277,7 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
 	}
 
-	opt := gorocksdb.NewDefaultWriteOptions()
-	defer opt.Destroy()
-	err = db.GetDBHandle().DB.Write(opt, writeBatch)
+	err = writeBatch.BatchCommit()
 	if err != nil {
 		return err
 	}
@@ -271,7 +292,13 @@ func fetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 	if blockBytes == nil {
 		return nil, nil
 	}
-	return protos.UnmarshallBlock(blockBytes)
+	blk, err := protos.UnmarshallBlock(blockBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	blk.Transactions = fetchTxsFromDB(blk.Txids)
+	return blk, nil
 }
 
 func fetchBlockchainSizeFromDB() (uint64, error) {
@@ -282,17 +309,17 @@ func fetchBlockchainSizeFromDB() (uint64, error) {
 	if bytes == nil {
 		return 0, nil
 	}
-	return decodeToUint64(bytes), nil
+	return util.DecodeToUint64(bytes), nil
 }
 
-func fetchBlockchainSizeFromSnapshot(snapshot *gorocksdb.Snapshot) (uint64, error) {
-	blockNumberBytes, err := db.GetDBHandle().GetFromBlockchainCFSnapshot(snapshot, blockCountKey)
+func fetchBlockchainSizeFromSnapshot(snapshot *db.DBSnapshot) (uint64, error) {
+	blockNumberBytes, err := snapshot.GetFromBlockchainCFSnapshot(blockCountKey)
 	if err != nil {
 		return 0, err
 	}
 	var blockNumber uint64
 	if blockNumberBytes != nil {
-		blockNumber = decodeToUint64(blockNumberBytes)
+		blockNumber = util.DecodeToUint64(blockNumberBytes)
 	}
 	return blockNumber, nil
 }
@@ -300,17 +327,7 @@ func fetchBlockchainSizeFromSnapshot(snapshot *gorocksdb.Snapshot) (uint64, erro
 var blockCountKey = []byte("blockCount")
 
 func encodeBlockNumberDBKey(blockNumber uint64) []byte {
-	return encodeUint64(blockNumber)
-}
-
-func encodeUint64(number uint64) []byte {
-	bytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(bytes, number)
-	return bytes
-}
-
-func decodeToUint64(bytes []byte) uint64 {
-	return binary.BigEndian.Uint64(bytes)
+	return util.EncodeUint64(blockNumber)
 }
 
 func (blockchain *blockchain) String() string {
@@ -330,4 +347,40 @@ func (blockchain *blockchain) String() string {
 		buffer.WriteString(">----------\n")
 	}
 	return buffer.String()
+}
+
+func (blockchain *blockchain) Dump(level int) {
+
+	size := blockchain.getSize()
+	if size == 0 {
+		return
+	}
+
+	ledgerLogger.Infof("========================blockchain height: %d=============================", size-1)
+
+	for i := uint64(0); i < size; i++ {
+		block, blockErr := blockchain.getBlock(i)
+		if blockErr != nil {
+			return
+		}
+		curBlockHash, _ := block.GetHash()
+
+		ledgerLogger.Infof("high[%s]: \n"+
+			"	StateHash<%x>, \n"+
+			"	Transactions<%x>, \n"+
+			"	curBlockHash<%x> \n"+
+			"	prevBlockHash<%x>, \n"+
+			"	ConsensusMetadata<%x>, \n"+
+			"	timp<%+v>, \n"+
+			"	NonHashData<%+v>",
+			strconv.FormatUint(i, 10),
+			block.StateHash,
+			block.Transactions,
+			curBlockHash,
+			block.PreviousBlockHash,
+			block.ConsensusMetadata,
+			block.Timestamp,
+			block.NonHashData)
+	}
+	ledgerLogger.Info("==========================================================================")
 }

@@ -21,8 +21,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/util"
+	"github.com/golang/protobuf/proto"
 )
 
 func Test_Block_CreateNew(t *testing.T) {
@@ -86,5 +86,10 @@ func TestBlockNonHashData(t *testing.T) {
 	}
 	if time2 != block2.NonHashData.LocalLedgerCommitTimestamp {
 		t.Fatalf("Expected time2 and block2 times to be equal, but there were not")
+	}
+	block2.SetPreviousBlockHash([]byte{0, 1, 2})
+	hash3, err := block2.GetHash()
+	if bytes.Compare(hash1, hash3) == 0 {
+		t.Fatalf("Expected block hashes to be NOT equal but get the same")
 	}
 }

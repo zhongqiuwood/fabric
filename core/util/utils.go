@@ -27,16 +27,42 @@ import (
 
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"golang.org/x/crypto/sha3"
+	"hash"
+	"os"
+	"encoding/binary"
 )
 
 type alg struct {
 	hashFun func([]byte) string
 }
 
-const defaultAlg = "sha256"
+type algFactory func() hash.Hash
+
+const defaultAlg = "sha3"
 
 var availableIDgenAlgs = map[string]alg{
 	defaultAlg: alg{GenerateIDfromTxSHAHash},
+}
+
+var availableHashAlgs = map[string]algFactory{
+	defaultAlg: sha3.New256,
+	"sha256":   sha256.New,
+}
+
+func DefaultCryptoHash() hash.Hash {
+	return availableHashAlgs[defaultAlg]()
+}
+
+func CryptoHashByAlg(alg string) hash.Hash {
+	if alg == "" {
+		return DefaultCryptoHash()
+	}
+	factory, ok := availableHashAlgs[alg]
+	if ok {
+		return factory()
+	} else {
+		return nil
+	}
 }
 
 // ComputeCryptoHash should be used in openchain code so that we can change the actual algo used for crypto-hash at one place
@@ -89,9 +115,18 @@ func GenerateHashFromSignature(path string, args []byte) []byte {
 	return ComputeCryptoHash(args)
 }
 
-// GenerateIDfromTxSHAHash generates SHA256 hash using Tx payload
+// Deprecated: GenerateIDfromTxSHAHash generates SHA256 hash using Tx payload
 func GenerateIDfromTxSHAHash(payload []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(payload))
+}
+
+// GenerateIDfromTxSHAHash generates SHA256 hash using Tx payload
+func GenerateIDfromDigest(d []byte) string {
+	if len(d) > 32 {
+		return fmt.Sprintf("%x", d[:32])
+	} else {
+		return fmt.Sprintf("%x", d)
+	}
 }
 
 // GenerateIDWithAlg generates an ID using a custom algorithm
@@ -139,4 +174,73 @@ func ArrayToChaincodeArgs(args []string) [][]byte {
 		bargs[i] = []byte(arg)
 	}
 	return bargs
+}
+
+func MkdirIfNotExist(targetDir string) bool {
+	missing, err := dirMissingOrEmpty(targetDir)
+	if err != nil {
+		panic(fmt.Sprintf("Error while trying to open DB: %s", err))
+	}
+
+	if missing {
+		err = os.MkdirAll(targetDir, 0755)
+		if err != nil {
+			panic(fmt.Sprintf("Error making directory path [%s]: %s", targetDir, err))
+		}
+	}
+	return missing
+}
+
+func dirMissingOrEmpty(path string) (bool, error) {
+	dirExists, err := dirExists(path)
+	if err != nil {
+		return false, err
+	}
+	if !dirExists {
+		return true, nil
+	}
+
+	dirEmpty, err := dirEmpty(path)
+	if err != nil {
+		return false, err
+	}
+	if dirEmpty {
+		return true, nil
+	}
+	return false, nil
+}
+
+func dirExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func dirEmpty(path string) (bool, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+
+	_, err = f.Readdir(1)
+	if err == io.EOF {
+		return true, nil
+	}
+	return false, err
+}
+
+func EncodeUint64(number uint64) []byte {
+	bytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(bytes, number)
+	return bytes
+}
+
+func DecodeToUint64(bytes []byte) uint64 {
+	return binary.BigEndian.Uint64(bytes)
 }

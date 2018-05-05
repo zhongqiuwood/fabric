@@ -39,6 +39,7 @@ func TestStateSnapshot(t *testing.T) {
 
 	// take db snapeshot
 	stateSnapshot := stateTestWrapper.getSnapshot()
+	defer stateSnapshot.Release()
 
 	// delete keys
 	state.TxBegin("txUuid")

@@ -21,7 +21,7 @@ import "github.com/abchain/fabric/core/db"
 func fetchTrieNodeFromDB(key *trieKey) (*trieNode, error) {
 	stateTrieLogger.Debugf("Enter fetchTrieNodeFromDB() for trieKey [%s]", key)
 	openchainDB := db.GetDBHandle()
-	trieNodeBytes, err := openchainDB.GetFromStateCF(key.getEncodedBytes())
+	trieNodeBytes, err := openchainDB.GetValue(db.StateCF, key.getEncodedBytes())
 	if err != nil {
 		stateTrieLogger.Errorf("Error in retrieving trie node from DB for triekey [%s]. Error:%s", key, err)
 		return nil, err

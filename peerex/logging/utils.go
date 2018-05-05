@@ -1,16 +1,44 @@
 package logging
 
 import (
-	"bufio"
+	flog "github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
 	"io"
-	"log"
 	"os"
-	"sync"
 )
 
+var (
+	lowLayerBackend logging.Backend
+	defFormat       logging.Formatter
+
+	defBackend *flog.ModuleLeveled
+)
+
+func init() {
+
+	defFormat := logging.MustStringFormatter(
+		"%{color}%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}",
+	)
+
+	lowLayerBackend = logging.NewLogBackend(os.Stderr, "", 0)
+	backend := logging.NewBackendFormatter(lowLayerBackend, defFormat)
+
+	defBackend = flog.DuplicateLevelBackend(backend)
+
+}
+
 func InitLogger(module string) *logging.Logger {
-	return logging.MustGetLogger(module)
+
+	logger := logging.MustGetLogger(module)
+	logger.SetBackend(defBackend)
+
+	return logger
+}
+
+//logger obtained from InitLogger do not identify to the other used in fabric module
+//we can apply this settings to fabric
+func ApplySetting() {
+	logging.SetBackend(defBackend)
 }
 
 func SetLogFormat(format string) error {
@@ -20,91 +48,17 @@ func SetLogFormat(format string) error {
 		return err
 	}
 
-	logging.DefaultFormatter = f
+	defFormat = f
+
+	defBackend.Backend = logging.NewBackendFormatter(lowLayerBackend, defFormat)
 
 	return nil
 }
 
 func SetBackend(w io.Writer, prefix string, flag int) {
 
-	backend := logging.NewLogBackend(w, prefix, flag)
+	lowLayerBackend = logging.NewLogBackend(os.Stderr, prefix, flag)
 
-	backendFormatter := logging.NewBackendFormatter(backend, logging.DefaultFormatter)
+	defBackend.Backend = logging.NewBackendFormatter(lowLayerBackend, defFormat)
 
-	logging.SetBackend(backendFormatter)
-}
-
-func SetCustomBackends(backend []logging.Backend) {
-
-	backendFormatters := make([]logging.Backend, 0, len(backend))
-
-	for _, be := range backend {
-		backendFormatters = append(backendFormatters,
-			logging.NewBackendFormatter(be, logging.DefaultFormatter))
-	}
-
-	logging.SetBackend(backendFormatters...)
-}
-
-func WrapBackend(w io.Writer, prefix string, flag int) logging.Backend {
-	return logging.NewLogBackend(w, prefix, flag)
-}
-
-// NewLogBackend creates a new LogBackend.
-func NewFileLogBackend(filePath string, prefix string, flag int,
-	flushLevel logging.Level, syncLevel logging.Level) (*FileLogBackend, error) {
-	var backend *FileLogBackend
-	backend = nil
-
-	if flushLevel < syncLevel {
-		syncLevel = syncLevel
-	}
-
-	fileHandler, err := os.Create(filePath)
-	if err != nil {
-		return nil, err
-	} else {
-		w := bufio.NewWriter(fileHandler)
-
-		backend = &FileLogBackend{
-			Logger:     log.New(fileHandler, prefix, flag),
-			file:       fileHandler,
-			writer:     w,
-			flushLevel: flushLevel,
-			syncLevel:  syncLevel}
-	}
-	return backend, nil
-}
-
-// LogBackend utilizes the standard log module.
-type FileLogBackend struct {
-	Logger     *log.Logger
-	file       *os.File
-	writer     *bufio.Writer
-	flushLevel logging.Level
-	syncLevel  logging.Level
-	sync.Mutex
-}
-
-// Log implements the Backend interface.
-func (b *FileLogBackend) Log(level logging.Level, calldepth int, rec *logging.Record) error {
-
-	//output inner is thread-safe so we do not need to lock it
-	err := b.Logger.Output(calldepth+2, rec.Formatted(calldepth+1))
-
-	if err != nil && level <= b.flushLevel {
-
-		b.Lock()
-		defer b.Unlock()
-
-		//notice: leve for flush should be sync first
-		err = b.writer.Flush()
-
-		if err == nil && level <= b.syncLevel {
-			err = b.file.Sync()
-		}
-
-	}
-
-	return err
 }

@@ -3,6 +3,7 @@ package node
 import (
 	"fmt"
 	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/peer/node"
 	"github.com/abchain/fabric/peerex"
 	"github.com/spf13/viper"
@@ -34,6 +35,8 @@ func RunNode(cfg *NodeConfig) {
 	if err != nil {
 		panic(fmt.Errorf("Failed to initialize the crypto layer: %s", err))
 	}
+
+	flogging.LoggingInit("node")
 
 	// run serve
 	node.StartNode(cfg.PostRun)

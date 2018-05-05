@@ -22,7 +22,6 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
-	"github.com/tecbot/gorocksdb"
 )
 
 var stateTrieLogger = logging.MustGetLogger("stateTrie")
@@ -141,7 +140,7 @@ func (stateTrie *StateTrie) processChangedNode(changedNode *trieNode) error {
 }
 
 // AddChangesForPersistence commits current changes to the database
-func (stateTrie *StateTrie) AddChangesForPersistence(writeBatch *gorocksdb.WriteBatch) error {
+func (stateTrie *StateTrie) AddChangesForPersistence(writeBatch *db.DBWriteBatch) error {
 	if stateTrie.recomputeCryptoHash {
 		_, err := stateTrie.ComputeCryptoHash()
 		if err != nil {
@@ -154,8 +153,8 @@ func (stateTrie *StateTrie) AddChangesForPersistence(writeBatch *gorocksdb.Write
 		return nil
 	}
 
-	openchainDB := db.GetDBHandle()
 	lowestLevel := stateTrie.trieDelta.getLowestLevel()
+	openchainDB := writeBatch.GetDBHandle()
 	for level := lowestLevel; level >= 0; level-- {
 		changedNodes := stateTrie.trieDelta.deltaMap[level]
 		for _, changedNode := range changedNodes {
@@ -167,6 +166,7 @@ func (stateTrie *StateTrie) AddChangesForPersistence(writeBatch *gorocksdb.Write
 			if err != nil {
 				return err
 			}
+
 			writeBatch.PutCF(openchainDB.StateCF, changedNode.trieKey.getEncodedBytes(), serializedContent)
 		}
 	}
@@ -180,7 +180,7 @@ func (stateTrie *StateTrie) PerfHintKeyChanged(chaincodeID string, key string) {
 }
 
 // GetStateSnapshotIterator - method implementation for interface 'statemgmt.HashableState'
-func (stateTrie *StateTrie) GetStateSnapshotIterator(snapshot *gorocksdb.Snapshot) (statemgmt.StateSnapshotIterator, error) {
+func (stateTrie *StateTrie) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (statemgmt.StateSnapshotIterator, error) {
 	return newStateSnapshotIterator(snapshot)
 }
 

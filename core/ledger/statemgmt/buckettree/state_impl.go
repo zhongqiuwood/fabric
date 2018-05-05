@@ -22,7 +22,6 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
-	"github.com/tecbot/gorocksdb"
 )
 
 var logger = logging.MustGetLogger("buckettree")
@@ -216,7 +215,7 @@ func computeDataNodesCryptoHash(bucketKey *bucketKey, updatedNodes dataNodes, ex
 }
 
 // AddChangesForPersistence - method implementation for interface 'statemgmt.HashableState'
-func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *gorocksdb.WriteBatch) error {
+func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *db.DBWriteBatch) error {
 
 	if stateImpl.dataNodesDelta == nil {
 		return nil
@@ -233,8 +232,8 @@ func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *gorocksdb.Write
 	return nil
 }
 
-func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *gorocksdb.WriteBatch) {
-	openchainDB := db.GetDBHandle()
+func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *db.DBWriteBatch) {
+	openchainDB := writeBatch.GetDBHandle()
 	affectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
 	for _, affectedBucket := range affectedBuckets {
 		dataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(affectedBucket)
@@ -250,8 +249,8 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *gorocks
 	}
 }
 
-func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *gorocksdb.WriteBatch) {
-	openchainDB := db.GetDBHandle()
+func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *db.DBWriteBatch) {
+	openchainDB := writeBatch.GetDBHandle()
 	secondLastLevel := conf.getLowestLevel() - 1
 	for level := secondLastLevel; level >= 0; level-- {
 		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
@@ -259,7 +258,8 @@ func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *goroc
 			if bucketNode.markedForDeletion {
 				writeBatch.DeleteCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes())
 			} else {
-				writeBatch.PutCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
+				writeBatch.PutCF(openchainDB.StateCF,
+					bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
 			}
 		}
 	}
@@ -292,7 +292,7 @@ func (stateImpl *StateImpl) PerfHintKeyChanged(chaincodeID string, key string) {
 }
 
 // GetStateSnapshotIterator - method implementation for interface 'statemgmt.HashableState'
-func (stateImpl *StateImpl) GetStateSnapshotIterator(snapshot *gorocksdb.Snapshot) (statemgmt.StateSnapshotIterator, error) {
+func (stateImpl *StateImpl) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (statemgmt.StateSnapshotIterator, error) {
 	return newStateSnapshotIterator(snapshot)
 }
 

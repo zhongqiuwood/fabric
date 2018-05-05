@@ -19,18 +19,17 @@ package state
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/tecbot/gorocksdb"
 )
 
 // StateSnapshot encapsulates StateSnapshotIterator given by actual state implementation and the db snapshot
 type StateSnapshot struct {
 	blockNumber  uint64
 	stateImplItr statemgmt.StateSnapshotIterator
-	dbSnapshot   *gorocksdb.Snapshot
+	dbSnapshot   *db.DBSnapshot
 }
 
 // newStateSnapshot creates a new snapshot of the global state for the current block.
-func newStateSnapshot(blockNumber uint64, dbSnapshot *gorocksdb.Snapshot) (*StateSnapshot, error) {
+func newStateSnapshot(blockNumber uint64, dbSnapshot *db.DBSnapshot) (*StateSnapshot, error) {
 	itr, err := stateImpl.GetStateSnapshotIterator(dbSnapshot)
 	if err != nil {
 		return nil, err
@@ -42,7 +41,7 @@ func newStateSnapshot(blockNumber uint64, dbSnapshot *gorocksdb.Snapshot) (*Stat
 // Release the snapshot. This MUST be called when you are done with this resouce.
 func (ss *StateSnapshot) Release() {
 	ss.stateImplItr.Close()
-	db.GetDBHandle().ReleaseSnapshot(ss.dbSnapshot)
+	ss.dbSnapshot.Release()
 }
 
 // Next moves the iterator to the next key/value pair in the state

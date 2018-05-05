@@ -17,10 +17,10 @@ limitations under the License.
 package genesis
 
 import (
-	"sync"
-
+	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/op/go-logging"
+	"sync"
 )
 
 var genesisLogger = logging.MustGetLogger("genesis")
@@ -39,6 +39,15 @@ func MakeGenesis() error {
 
 		if ledger.GetBlockchainSize() == 0 {
 			genesisLogger.Info("Creating genesis block.")
+
+			gensisstate, err := ledger.GetCurrentStateHash()
+			if err != nil {
+				makeGenesisError = err
+				return
+			}
+
+			db.GetGlobalDBHandle().PutGenesisGlobalState(gensisstate)
+
 			if makeGenesisError = ledger.BeginTxBatch(0); makeGenesisError == nil {
 				makeGenesisError = ledger.CommitTxBatch(0, nil, nil, nil)
 			}

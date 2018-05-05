@@ -24,6 +24,17 @@ import (
 	"github.com/spf13/viper"
 )
 
+func TestDefaultLoggingInterface(t *testing.T) {
+
+	defB := flogging.DefaultBackend
+
+	testB := logging.SetBackend(defB)
+
+	if defB != testB {
+		t.Fatal("Not the same interface: %v vs %v", defB, testB)
+	}
+}
+
 func TestLoggingLevelDefault(t *testing.T) {
 	viper.Reset()
 

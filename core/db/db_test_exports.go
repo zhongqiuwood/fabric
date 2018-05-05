@@ -72,11 +72,16 @@ func (testDB *TestDBWrapper) removeDBPath() {
 	os.RemoveAll(dbPath)
 }
 
+func (testDB *TestDBWrapper) NewWriteBatch() *DBWriteBatch {
+	return GetDBHandle().NewWriteBatch()
+
+}
+
 // WriteToDB tests can use this method for persisting a given batch to db
-func (testDB *TestDBWrapper) WriteToDB(t testing.TB, writeBatch *gorocksdb.WriteBatch) {
+func (testDB *TestDBWrapper) WriteToDB(t testing.TB, writeBatch *DBWriteBatch) {
 	opt := gorocksdb.NewDefaultWriteOptions()
 	defer opt.Destroy()
-	err := GetDBHandle().DB.Write(opt, writeBatch)
+	err := GetDBHandle().db.Write(opt, writeBatch.WriteBatch)
 	if err != nil {
 		t.Fatalf("Error while writing to db. Error:%s", err)
 	}
@@ -84,7 +89,7 @@ func (testDB *TestDBWrapper) WriteToDB(t testing.TB, writeBatch *gorocksdb.Write
 
 // GetFromDB gets the value for the given key from default column-family
 func (testDB *TestDBWrapper) GetFromDB(t testing.TB, key []byte) []byte {
-	db := GetDBHandle().DB
+	db := GetDBHandle().db
 	opt := gorocksdb.NewDefaultReadOptions()
 	defer opt.Destroy()
 	slice, err := db.Get(opt, key)
@@ -99,7 +104,7 @@ func (testDB *TestDBWrapper) GetFromDB(t testing.TB, key []byte) []byte {
 // GetFromStateCF tests can use this method for getting value from StateCF column-family
 func (testDB *TestDBWrapper) GetFromStateCF(t testing.TB, key []byte) []byte {
 	openchainDB := GetDBHandle()
-	value, err := openchainDB.GetFromStateCF(key)
+	value, err := openchainDB.GetValue(StateCF, key)
 	if err != nil {
 		t.Fatalf("Error while getting from db. Error:%s", err)
 	}
@@ -109,7 +114,7 @@ func (testDB *TestDBWrapper) GetFromStateCF(t testing.TB, key []byte) []byte {
 // GetFromStateDeltaCF tests can use this method for getting value from StateDeltaCF column-family
 func (testDB *TestDBWrapper) GetFromStateDeltaCF(t testing.TB, key []byte) []byte {
 	openchainDB := GetDBHandle()
-	value, err := openchainDB.GetFromStateDeltaCF(key)
+	value, err := openchainDB.GetValue(StateDeltaCF, key)
 	if err != nil {
 		t.Fatalf("Error while getting from db. Error:%s", err)
 	}
@@ -130,15 +135,16 @@ func (testDB *TestDBWrapper) OpenDB(t testing.TB) {
 func (testDB *TestDBWrapper) GetEstimatedNumKeys(t testing.TB) map[string]string {
 	openchainDB := GetDBHandle()
 	result := make(map[string]string, 5)
-	result["stateCF"] = openchainDB.DB.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.StateCF)
-	result["stateDeltaCF"] = openchainDB.DB.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.StateDeltaCF)
-	result["blockchainCF"] = openchainDB.DB.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.BlockchainCF)
-	result["indexCF"] = openchainDB.DB.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.IndexesCF)
+
+	result["stateCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.db.StateCF)
+	result["stateDeltaCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.db.StateDeltaCF)
+	result["blockchainCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.db.BlockchainCF)
+	result["indexCF"] = openchainDB.db.GetPropertyCF("rocksdb.estimate-num-keys", openchainDB.db.IndexesCF)
 	return result
 }
 
 // GetDBStats returns statistics for the database
 func (testDB *TestDBWrapper) GetDBStats() string {
 	openchainDB := GetDBHandle()
-	return openchainDB.DB.GetProperty("rocksdb.stats")
+	return openchainDB.db.GetProperty("rocksdb.stats")
 }

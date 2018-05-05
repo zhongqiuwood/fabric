@@ -326,7 +326,7 @@ var _ = Describe("Ledger", func() {
 		block.PreviousBlockHash = []byte("foo")
 		block.StateHash = []byte("bar")
 		It("creates a raw block and puts it in the ledger without error", func() {
-			Expect(ledgerPtr.PutRawBlock(block, 4)).To(BeNil())
+			Expect(ledgerPtr.PutBlock(4, block)).To(BeNil())
 		})
 		It("should return the same block that was stored", func() {
 			Expect(ledgerPtr.GetBlockByNumber(4)).To(Equal(block))
@@ -476,7 +476,7 @@ var _ = Describe("Ledger", func() {
 			badBlock.PreviousBlockHash = []byte("evil")
 			for i := uint64(0); i < ledgerPtr.GetBlockchainSize(); i++ {
 				goodBlock, _ := ledgerPtr.GetBlockByNumber(i)
-				ledgerPtr.PutRawBlock(badBlock, i)
+				ledgerPtr.PutBlock(i, badBlock)
 				for lowBlock := uint64(0); lowBlock < ledgerPtr.GetBlockchainSize()-1; lowBlock++ {
 					if i == ledgerPtr.GetBlockchainSize()-1 {
 						Expect(ledgerPtr.VerifyChain(ledgerPtr.GetBlockchainSize()-1, lowBlock)).To(Equal(uint64(i)))
@@ -495,7 +495,7 @@ var _ = Describe("Ledger", func() {
 						Expect(ledgerPtr.VerifyChain(highBlock, 0)).To(Equal(uint64(0)))
 					}
 				}
-				Expect(ledgerPtr.PutRawBlock(goodBlock, i)).To(BeNil())
+				Expect(ledgerPtr.PutBlock(i, goodBlock)).To(BeNil())
 			}
 		})
 		// Test edge cases

@@ -7,11 +7,11 @@ import (
 	"github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
-	"github.com/op/go-logging"
 )
 
 var logger = logging.MustGetLogger("gossip")
 
+// Gossip interface
 type Gossip interface {
 	BroadcastTx([]*pb.Transaction) error
 }
@@ -35,26 +35,31 @@ type GossipStub struct {
 	peerActions map[string]*PeerAction
 }
 
+// GossipHandler struct
 type GossipHandler struct {
-	peerId *pb.PeerID
+	peerID *pb.PeerID
 }
 
 func init() {
 	stub.DefaultFactory = func(id *pb.PeerID) stub.GossipHandler {
 		logger.Debug("create handler for peer", id)
-		gossipStub.peerActions[id.String()] = &PeerAction{
+		action := &PeerAction{
 			id:                 id,
 			digestSeq:          0,
 			digestSendTime:     0,
 			digestResponseTime: 0,
 		}
-		return &GossipHandler{peerId: id}
+		gossipStub.peerActions[id.String()] = action
+		// send initial digests to target
+		gossipStub.sendTxDigests(action, 1)
+		return &GossipHandler{peerID: id}
 	}
 }
 
+// HandleMessage method
 func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 	now := time.Now().Unix()
-	p, ok := gossipStub.peerActions[t.peerId.String()]
+	p, ok := gossipStub.peerActions[t.peerID.String()]
 	if ok {
 		p.activeTime = now
 	}
@@ -63,6 +68,8 @@ func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 		gossipStub.model.applyDigest(m)
 		if ok {
 			p.digestResponseTime = now
+			empty := []*pb.Transaction{}
+			gossipStub.sendTxUpdates(p, empty)
 		}
 	} else if m.GetUpdate() != nil {
 		// process update
@@ -74,17 +81,18 @@ func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 	return nil
 }
 
+// Stop method
 func (t *GossipHandler) Stop() {
 	// remove peer from actions
-	_, ok := gossipStub.peerActions[t.peerId.String()]
+	_, ok := gossipStub.peerActions[t.peerID.String()]
 	if ok {
-		delete(gossipStub.peerActions, t.peerId.String())
+		delete(gossipStub.peerActions, t.peerID.String())
 	}
 }
 
 var gossipStub *GossipStub
 
-//init the singleton of gossipstub
+// NewGossip : init the singleton of gossipstub
 func NewGossip(p peer.Peer) {
 
 	nb, err := p.GetNeighbour()
@@ -124,25 +132,36 @@ func GetGossip() Gossip {
 	return gossipStub
 }
 
+// BroadcastTx method
 func (s *GossipStub) BroadcastTx(txs []*pb.Transaction) error {
-	s.model.updateSelfTxs(txs) // query state as tx.Txid
+	// update self state
+	s.model.updateSelfTxs(txs)
+
+	// update self state to 3 other peers
+	s.sendTxDigests(nil, 3)
 	return nil
 	//return fmt.Errorf("No implement")
 }
 
-func (s *GossipStub) sendTxDigests(refer *PeerAction) {
+// SetModelMerger method
+func (s *GossipStub) SetModelMerger(merger VersionMergerInterface) {
+	s.model.setMerger(merger)
+}
+
+func (s *GossipStub) sendTxDigests(refer *PeerAction, maxn int) {
 	var now = time.Now().Unix()
 	var targetIDs []*pb.PeerID
-	if refer.digestSendTime+30 < now {
+	if refer != nil && refer.digestSendTime+30 < now {
 		targetIDs = append(targetIDs, refer.id)
 	}
+
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for len(targetIDs) < 3 {
+	for len(targetIDs) < maxn {
 		number := 0
 		rindex := rnd.Intn(len(s.peerActions))
 		macthed := false
 		for _, peer := range s.peerActions {
-			if peer.id == refer.id {
+			if refer != nil && eer.id == refer.id {
 				number++
 				continue
 			}
@@ -156,8 +175,9 @@ func (s *GossipStub) sendTxDigests(refer *PeerAction) {
 			break
 		}
 	}
+
 	if len(targetIDs) == 0 {
-		logger.Debugf("No digest need to send to any peers, with refer(%s)", refer.id.String())
+		logger.Debugf("No digest need to send to any peers, with refer(%s)", refer != nil ? refer.id.String() : "")
 		return
 	}
 
@@ -177,16 +197,17 @@ func (s *GossipStub) sendTxDigests(refer *PeerAction) {
 func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) {
 	var now = time.Now().Unix()
 	var targetIDs []*pb.PeerID
-	if refer.digestSendTime+30 < now {
+	if refer != nil && refer.digestSendTime+30 < now {
 		targetIDs = append(targetIDs, refer.id)
 	}
+
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 	for len(targetIDs) < 3 {
 		number := 0
 		rindex := rnd.Intn(len(s.peerActions))
 		macthed := false
 		for _, peer := range s.peerActions {
-			if peer.id == refer.id {
+			if refer != nil && peer.id == refer.id {
 				number++
 				continue
 			}
@@ -200,13 +221,27 @@ func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) {
 			break
 		}
 	}
+
 	if len(targetIDs) == 0 {
-		logger.Debugf("No update need to send to any peers, with refer(%s)", refer.id.String())
+		logger.Debugf("No update need to send to any peers, with refer(%s)", refer != nil ? refer.id.String() : "")
 		return
 	}
 
+	hash := leger.GetLeger().GetCurrentStateHash()
+	if len(targetIDs) == 1 && len(txs) == 0 {
+		// fill transactions with state
+		// at most 3 txs
+		ntxs, nhash, err := s.model.getPeerTransactions(targetIDs[0], 3)
+		if err || len(ntxs) == 0 {
+			logger.Debugf("No update need to send to peer(%s), with error(%s)", targetIDs[0], err)
+			return
+		}
+		txs = ntxs
+		hash = nhash
+	}
+
 	handlers := s.PickHandlers(targetIDs)
-	message := s.model.gossipTxMessage(txs)
+	message := s.model.gossipTxMessage(hash, txs)
 	for i, handler := range handlers {
 		id := targetIDs[i] // TODO: len(handlers) < len(targetIDs)
 		err := handler.SendMessage(message)

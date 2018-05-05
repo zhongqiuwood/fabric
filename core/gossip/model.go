@@ -1,6 +1,7 @@
 package gossip
 
 import (
+	"bytes"
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
@@ -11,7 +12,7 @@ import (
 // StateVersion struct
 type StateVersion struct {
 	known  bool
-	hash   string
+	hash   []byte
 	number uint64
 }
 
@@ -76,6 +77,29 @@ func (m *Model) forEach(iter func(id string, peer *PeerState) error) error {
 	return err
 }
 
+func (m *Model) getPeerTransactions( id string, maxn int ) []*pb.Transaction, []byte, error {
+	state, ok := m.store[id]
+	if !ok {
+		return nil, fmt.Errorf("Peer id(%s) state not found", id)
+	}
+	
+	version, ok := state.states["tx"];
+	if !ok {
+		return nil, fmt.Errorf("Peer id(%s) tx not found", id)
+	}
+
+	txs, err := leger.GetLedger().GetTransactionsByRange(version.hash, version.number + 1, version.number + maxn)
+	if err {
+		return nil, nil, err
+	}
+	return txs, version.hash, nil
+}
+
+func (m *Model) validateTxs(hash []byte, txs []*pb.Transaction) {
+	// TODO: add validate method
+	return true
+}
+
 func (m *Model) applyDigest(message *pb.Gossip) error {
 	if m.merger == nil {
 		return fmt.Errorf("No merger implement")
@@ -111,17 +135,38 @@ func (m *Model) applyDigest(message *pb.Gossip) error {
 }
 
 func (m *Model) applyUpdate(message *pb.Gossip) error {
+	update := message.GetUpdate()
+	txs := []pb.Gossip_Tx{}
+	err := proto.Unmarshal(update.Payload)
+	if err {
+		logger.Errorf("Unmarshal gossip txs error: %s", err)
+		return nil
+	}
+	for _, tx := range txs {
+		if !m.validateTxs(tx.State, tx.Txs.Transactions) {
+			continue
+		}
+		err := leger.GetLedger().PutTransactions(tx.Txs.Transactions)
+		if err {
+			logger.Errorf("Put transactions error: %s", err)
+			continue
+		}
+		m.updateSelf("tx", tx.State, len(tx.Txs.Transactions))
+	}
 	return nil
 }
 
 func (m *Model) updateSelfTxs(txs []*pb.Transaction) {
-	hash := ""
+	hash, err := leger.GetLedger().GetCurrentStateHash()
+	if err {
+		return
+	}
 	m.updateSelf("tx", hash, len(txs))
 }
 
-func (m *Model) updateSelf(catalog string, statehash string, count int) {
+func (m *Model) updateSelf(catalog string, statehash []byte, count int) {
 	if state, ok := m.self.states[catalog]; ok {
-		if state.hash == statehash {
+		if bytes.Compare(state.hash, statehash) == 0 {
 			state.number += uint64(count)
 		} else {
 			m.self.states[catalog] = &StateVersion{known: true, hash: statehash, number: uint64(count)}
@@ -159,7 +204,7 @@ func (m *Model) digestMessage(catalog string, maxn int) *pb.Gossip {
 			continue
 		}
 		dps := &pb.Gossip_Digest_PeerState{
-			State:     []byte(state.hash),
+			State:     state.hash,
 			Num:       state.number,
 			Signature: []byte(""),
 		}
@@ -181,7 +226,7 @@ func (m *Model) digestMessage(catalog string, maxn int) *pb.Gossip {
 	return message
 }
 
-func (m *Model) gossipTxMessage(txs []*pb.Transaction) *pb.Gossip {
+func (m *Model) gossipTxMessage(hash []byte, txs []*pb.Transaction) *pb.Gossip {
 
 	message := &pb.Gossip{}
 	message.Catalog = "tx"
@@ -189,7 +234,7 @@ func (m *Model) gossipTxMessage(txs []*pb.Transaction) *pb.Gossip {
 
 	gossiptx := &pb.Gossip_Tx{}
 	gossiptx.Num = uint32(len(txs))
-	// gossiptx.State = []byte("") TODO: apply state bytes
+	gossiptx.State = hash // TODO: apply state bytes
 	gossiptx.Txs = &pb.TransactionBlock{}
 	gossiptx.Txs.Transactions = txs
 

@@ -1,6 +1,6 @@
 package gossip
 
-// VersionMerger interface
+// VersionMergerInterface interface
 type VersionMergerInterface interface {
 	NeedMerge(local *StateVersion, remote *StateVersion) bool
 }

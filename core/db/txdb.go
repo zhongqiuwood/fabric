@@ -564,14 +564,10 @@ func (openchainDB *GlobalDataDB) ListCheckpoints() (ret [][]byte) {
 	prefix := []byte(checkpointNamePrefix)
 
 	for it.Seek([]byte(prefix)); it.ValidForPrefix(prefix); it.Next() {
-		v := it.Value()
-		defer v.Free()
-
-		// copy data from the slice!
-		vcp := make([]byte, len(v.Data()))
-		copy(vcp, v.Data())
-
-		ret = append(ret, vcp)
+		//Value/Key() in iterator need not to be Free() but its Data()
+		//must be copied
+		//ret = append(ret, it.Value().Data()) --- THIS IS WRONG
+		ret = append(ret, makeCopy(it.Value().Data()))
 	}
 
 	return

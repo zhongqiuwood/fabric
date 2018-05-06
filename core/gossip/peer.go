@@ -1,12 +1,15 @@
 package gossip
 
 import (
+	"fmt"
 	"math/rand"
 	"time"
 
 	"github.com/abchain/fabric/core/gossip/stub"
+	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
+	logging "github.com/op/go-logging"
 )
 
 var logger = logging.MustGetLogger("gossip")
@@ -122,7 +125,7 @@ func NewGossip(p peer.Peer) {
 			model:      model,
 		}
 	}
-	
+
 	gossipStub.peerActions = map[string]*PeerAction{}
 	gossipStub.model.init()
 }
@@ -162,7 +165,7 @@ func (s *GossipStub) sendTxDigests(refer *PeerAction, maxn int) {
 		rindex := rnd.Intn(len(s.peerActions))
 		macthed := false
 		for _, peer := range s.peerActions {
-			if refer != nil && eer.id == refer.id {
+			if refer != nil && peer.id == refer.id {
 				number++
 				continue
 			}
@@ -177,8 +180,13 @@ func (s *GossipStub) sendTxDigests(refer *PeerAction, maxn int) {
 		}
 	}
 
+	referID := ""
+	if refer != nil {
+		referID = refer.id.String()
+	}
+
 	if len(targetIDs) == 0 {
-		logger.Debugf("No digest need to send to any peers, with refer(%s)", refer != nil ? refer.id.String() : "")
+		logger.Debugf("No digest need to send to any peers, with refer(%s)", referID)
 		return
 	}
 
@@ -195,7 +203,7 @@ func (s *GossipStub) sendTxDigests(refer *PeerAction, maxn int) {
 	}
 }
 
-func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) {
+func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) error {
 	var now = time.Now().Unix()
 	var targetIDs []*pb.PeerID
 	if refer != nil && refer.digestSendTime+30 < now {
@@ -223,19 +231,31 @@ func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) {
 		}
 	}
 
+	referID := ""
+	if refer != nil {
+		referID = refer.id.String()
+	}
 	if len(targetIDs) == 0 {
-		logger.Debugf("No update need to send to any peers, with refer(%s)", refer != nil ? refer.id.String() : "")
-		return
+		logger.Debugf("No update need to send to any peers, with refer(%s)", referID)
+		return fmt.Errorf("No peers")
 	}
 
-	hash := leger.GetLeger().GetCurrentStateHash()
+	lg, err := ledger.GetLedger()
+	if err != nil {
+		return err
+	}
+
+	hash, err := lg.GetCurrentStateHash()
+	if err != nil {
+		return err
+	}
 	if len(targetIDs) == 1 && len(txs) == 0 {
 		// fill transactions with state
 		// at most 3 txs
-		ntxs, nhash, err := s.model.getPeerTransactions(targetIDs[0], 3)
-		if err || len(ntxs) == 0 {
+		ntxs, nhash, err := s.model.getPeerTransactions(targetIDs[0].String(), 3)
+		if err != nil || len(ntxs) == 0 {
 			logger.Debugf("No update need to send to peer(%s), with error(%s)", targetIDs[0], err)
-			return
+			return err
 		}
 		txs = ntxs
 		hash = nhash
@@ -252,4 +272,6 @@ func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) {
 			s.peerActions[id.String()].updateSendTime = now
 		}
 	}
+
+	return nil
 }

@@ -6,6 +6,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 )
 
@@ -32,25 +34,28 @@ type Model struct {
 }
 
 func (m *Model) init() {
-	mypeer, err := peer.GetPeerEndpoint()
 	m.self = PeerState{
-		id: (mypeer != nil) ? mypeer.ID.String() : "",
+		id:     "",
 		states: map[string]*StateVersion{},
 	}
 
-	lg := leger.GetLedger()
-	hash := lg.GetCurrentStateHash()
-	block, err := lg.blockchain.getBlockByState(hash)
-	number := 0
-	known := false
-	if( err == nil ) {
-		number = len(block.Txids)
-		known = true
+	mypeer, err := peer.GetPeerEndpoint()
+	if err != nil {
+		m.self.id = mypeer.ID.String()
 	}
+
+	lg, err := ledger.GetLedger()
+	hash, err := lg.GetCurrentStateHash()
+	//block, err := lg.blockchain.getBlockByState(hash)
+	number := 0
+	known := true
+	// if err == nil {
+	// 	number = len(block.Txids)
+	// }
 	m.self.states["tx"] = &StateVersion{
-		known: known,
-		hash: hash,
-		number: number
+		known:  known,
+		hash:   hash,
+		number: uint64(number),
 	}
 }
 
@@ -100,25 +105,30 @@ func (m *Model) forEach(iter func(id string, peer *PeerState) error) error {
 	return err
 }
 
-func (m *Model) getPeerTransactions( id string, maxn int ) []*pb.Transaction, []byte, error {
+func (m *Model) getPeerTransactions(id string, maxn int) ([]*pb.Transaction, []byte, error) {
 	state, ok := m.store[id]
 	if !ok {
-		return nil, fmt.Errorf("Peer id(%s) state not found", id)
-	}
-	
-	version, ok := state.states["tx"];
-	if !ok {
-		return nil, fmt.Errorf("Peer id(%s) tx not found", id)
+		return nil, nil, fmt.Errorf("Peer id(%s) state not found", id)
 	}
 
-	txs, err := leger.GetLedger().GetTransactionsByRange(version.hash, version.number + 1, version.number + maxn)
-	if err {
+	version, ok := state.states["tx"]
+	if !ok {
+		return nil, nil, fmt.Errorf("Peer id(%s) tx not found", id)
+	}
+
+	lg, err := ledger.GetLedger()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	txs, err := lg.GetTransactionsByRange(version.hash, int(version.number)+1, int(version.number)+maxn)
+	if err != nil {
 		return nil, nil, err
 	}
 	return txs, version.hash, nil
 }
 
-func (m *Model) validateTxs(hash []byte, txs []*pb.Transaction) {
+func (m *Model) validateTxs(hash []byte, txs []*pb.Transaction) bool {
 	// TODO: add validate method
 	return true
 }
@@ -138,7 +148,7 @@ func (m *Model) applyDigest(message *pb.Gossip) error {
 			continue
 		}
 		peer, ok := m.store[id]
-		remote := &StateVersion{hash: string(state.State[:len(state.State)]), number: state.Num}
+		remote := &StateVersion{hash: state.State, number: state.Num}
 		if m.crypto != nil && !m.crypto.Verify(id, message.Catalog, state) {
 			continue
 		}
@@ -158,33 +168,49 @@ func (m *Model) applyDigest(message *pb.Gossip) error {
 }
 
 func (m *Model) applyUpdate(message *pb.Gossip) error {
+	lg, err := ledger.GetLedger()
+	if err != nil {
+		return err
+	}
+
 	update := message.GetUpdate()
-	txs := []pb.Gossip_Tx{}
-	err := proto.Unmarshal(update.Payload)
-	if err {
-		logger.Errorf("Unmarshal gossip txs error: %s", err)
-		return nil
-	}
-	for _, tx := range txs {
-		if !m.validateTxs(tx.State, tx.Txs.Transactions) {
-			continue
+	switch message.Catalog {
+	case "tx":
+		txs := &pb.Gossip_Tx{}
+		err = proto.Unmarshal(update.Payload, txs)
+		if err != nil {
+			logger.Errorf("Unmarshal gossip txs error: %s", err)
+			return nil
 		}
-		err := leger.GetLedger().PutTransactions(tx.Txs.Transactions)
-		if err {
-			logger.Errorf("Put transactions error: %s", err)
-			continue
+		if !m.validateTxs(txs.State, txs.Txs.Transactions) {
+			return fmt.Errorf("Validate tx failed")
 		}
-		m.updateSelf("tx", tx.State, len(tx.Txs.Transactions))
+		err := lg.PutTransactions(txs.Txs.Transactions)
+		if err != nil {
+			return fmt.Errorf("Put transactions error: %s", err)
+		}
+		m.updateSelf("tx", txs.State, len(txs.Txs.Transactions))
+		break
+
+	default:
+		return fmt.Errorf("Update catalog(%s) not implement", message.Catalog)
 	}
+
 	return nil
 }
 
-func (m *Model) updateSelfTxs(txs []*pb.Transaction) {
-	hash, err := leger.GetLedger().GetCurrentStateHash()
-	if err {
-		return
+func (m *Model) updateSelfTxs(txs []*pb.Transaction) error {
+	lg, err := ledger.GetLedger()
+	if err != nil {
+		return err
+	}
+
+	hash, err := lg.GetCurrentStateHash()
+	if err != nil {
+		return err
 	}
 	m.updateSelf("tx", hash, len(txs))
+	return nil
 }
 
 func (m *Model) updateSelf(catalog string, statehash []byte, count int) {

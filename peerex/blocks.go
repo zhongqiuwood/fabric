@@ -3,7 +3,7 @@ package peerex
 import (
 	"encoding/base64"
 	"fmt"
-	pb "github.com/abchain/fabric/protos"
+	pb "github.com/abchain/wood/fabric/protos"
 	proto "github.com/golang/protobuf/proto"
 )
 

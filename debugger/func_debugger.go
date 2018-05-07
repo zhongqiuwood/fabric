@@ -34,6 +34,11 @@ const (
 	NOTICE int = 5
 )
 
+
+func Infof(format string, args ...interface{}) {
+	Log(INFO, format, args ...)
+}
+
 func Log(level int, format string, args ...interface{}) {
 	if logger == nil {
 		return

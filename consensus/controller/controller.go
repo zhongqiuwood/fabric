@@ -22,9 +22,9 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 
-	"github.com/abchain/fabric/consensus"
-	"github.com/abchain/fabric/consensus/noops"
-	"github.com/abchain/fabric/consensus/pbft"
+	"github.com/abchain/wood/fabric/consensus"
+	"github.com/abchain/wood/fabric/consensus/noops"
+	"github.com/abchain/wood/fabric/consensus/pbft"
 )
 
 var logger *logging.Logger // package-level logger

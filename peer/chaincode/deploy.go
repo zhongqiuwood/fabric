@@ -21,7 +21,7 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/abchain/fabric/peer/common"
+	"github.com/abchain/wood/fabric/peer/common"
 	"github.com/spf13/cobra"
 )
 

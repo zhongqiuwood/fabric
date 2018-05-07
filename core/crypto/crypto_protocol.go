@@ -17,7 +17,7 @@ limitations under the License.
 package crypto
 
 import (
-	obc "github.com/abchain/fabric/protos"
+	obc "github.com/abchain/wood/fabric/protos"
 )
 
 type nodeProtocol interface {

@@ -1,8 +1,8 @@
 package peerex
 
 import (
-	_ "github.com/abchain/fabric/peer/common"
-	"github.com/abchain/fabric/core/comm"
+	_ "github.com/abchain/wood/fabric/peer/common"
+	"github.com/abchain/wood/fabric/core/comm"
 	"google.golang.org/grpc"
 	"github.com/spf13/viper"
 )

@@ -34,9 +34,9 @@ import (
 	"path/filepath"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/util"
-	membersrvc "github.com/abchain/fabric/membersrvc/protos"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/util"
+	membersrvc "github.com/abchain/wood/fabric/membersrvc/protos"
 
 	_ "fmt"
 

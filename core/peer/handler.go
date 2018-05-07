@@ -25,9 +25,9 @@ import (
 	"github.com/looplab/fsm"
 	"github.com/spf13/viper"
 
-	"github.com/abchain/fabric/core/ledger/statemgmt"
-	pb "github.com/abchain/fabric/protos"
-	"github.com/abchain/fabric/debugger"
+	"github.com/abchain/wood/fabric/core/ledger/statemgmt"
+	pb "github.com/abchain/wood/fabric/protos"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 const DefaultSyncSnapshotTimeout time.Duration = 60 * time.Second
@@ -78,11 +78,13 @@ func NewPeerHandler(coord MessageHandlerCoordinator, stream ChatStream, initiate
 			{Name: pb.Message_DISC_PEERS.String(), Src: []string{"established"}, Dst: "established"},
 			{Name: pb.Message_SYNC_BLOCK_ADDED.String(), Src: []string{"established"}, Dst: "established"},
 			{Name: pb.Message_SYNC_GET_BLOCKS.String(), Src: []string{"established"}, Dst: "established"},
-			{Name: pb.Message_SYNC_BLOCKS.String(), Src: []string{"established"}, Dst: "established"},
+			{Name: pb.Message_SYNC_GET_BLOCKS_RESP.String(), Src: []string{"established"}, Dst: "established"},
 			{Name: pb.Message_SYNC_STATE_GET_SNAPSHOT.String(), Src: []string{"established"}, Dst: "established"},
 			{Name: pb.Message_SYNC_STATE_SNAPSHOT.String(), Src: []string{"established"}, Dst: "established"},
 			{Name: pb.Message_SYNC_STATE_GET_DELTAS.String(), Src: []string{"established"}, Dst: "established"},
 			{Name: pb.Message_SYNC_STATE_DELTAS.String(), Src: []string{"established"}, Dst: "established"},
+			{Name: pb.Message_SYNC_GET_STATE_HASH.String(), Src: []string{"established"}, Dst: "established"},
+			{Name: pb.Message_SYNC_GET_STATE_HASH_RESP.String(), Src: []string{"established"}, Dst: "established"},
 		},
 		fsm.Callbacks{
 			"enter_state":                                           func(e *fsm.Event) { d.enterState(e) },
@@ -91,11 +93,13 @@ func NewPeerHandler(coord MessageHandlerCoordinator, stream ChatStream, initiate
 			"before_" + pb.Message_DISC_PEERS.String():              func(e *fsm.Event) { d.beforePeers(e) },
 			"before_" + pb.Message_SYNC_BLOCK_ADDED.String():        func(e *fsm.Event) { d.beforeBlockAdded(e) },
 			"before_" + pb.Message_SYNC_GET_BLOCKS.String():         func(e *fsm.Event) { d.beforeSyncGetBlocks(e) },
-			"before_" + pb.Message_SYNC_BLOCKS.String():             func(e *fsm.Event) { d.beforeSyncBlocks(e) },
+			"before_" + pb.Message_SYNC_GET_BLOCKS_RESP.String():    func(e *fsm.Event) { d.beforeSyncBlocks(e) },
 			"before_" + pb.Message_SYNC_STATE_GET_SNAPSHOT.String(): func(e *fsm.Event) { d.beforeSyncStateGetSnapshot(e) },
 			"before_" + pb.Message_SYNC_STATE_SNAPSHOT.String():     func(e *fsm.Event) { d.beforeSyncStateSnapshot(e) },
 			"before_" + pb.Message_SYNC_STATE_GET_DELTAS.String():   func(e *fsm.Event) { d.beforeSyncStateGetDeltas(e) },
 			"before_" + pb.Message_SYNC_STATE_DELTAS.String():       func(e *fsm.Event) { d.beforeSyncStateDeltas(e) },
+			"before_" + pb.Message_SYNC_GET_STATE_HASH.String():         func(e *fsm.Event) { d.beforeGetStateHash(e) },
+			"before_" + pb.Message_SYNC_GET_STATE_HASH_RESP.String():    func(e *fsm.Event) { d.beforeGetStateHashResp(e) },
 		},
 	)
 
@@ -379,6 +383,7 @@ func (d *Handler) RequestBlocks(syncBlockRange *pb.SyncBlockRange) (<-chan *pb.S
 	return d.syncBlocksRequestHandler.channel, nil
 }
 
+// i was asked for blocks by someone
 func (d *Handler) beforeSyncGetBlocks(e *fsm.Event) {
 	peerLogger.Debugf("Received message: %s", e.Event)
 	msg, ok := e.Args[0].(*pb.Message)
@@ -397,6 +402,8 @@ func (d *Handler) beforeSyncGetBlocks(e *fsm.Event) {
 	go d.sendBlocks(syncBlockRange)
 }
 
+
+// someone sent blocks to me that i've asked for
 func (d *Handler) beforeSyncBlocks(e *fsm.Event) {
 	peerLogger.Debugf("Received message: %s", e.Event)
 	msg, ok := e.Args[0].(*pb.Message)
@@ -468,12 +475,32 @@ func (d *Handler) sendBlocks(syncBlockRange *pb.SyncBlockRange) {
 			peerLogger.Errorf("Error marshalling syncBlocks for BlockNum = %d: %s", currBlockNum, err)
 			break
 		}
-		if err := d.SendMessage(&pb.Message{Type: pb.Message_SYNC_BLOCKS, Payload: syncBlocksBytes}); err != nil {
+		if err := d.SendMessage(&pb.Message{Type: pb.Message_SYNC_GET_BLOCKS_RESP, Payload: syncBlocksBytes}); err != nil {
 			peerLogger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
 			break
 		}
 	}
 }
+
+
+// ----------------------------------------------------------------------------
+//
+//  State sync state hash functionality
+//
+//
+// ----------------------------------------------------------------------------
+
+func (d *Handler) beforeGetStateHash(e *fsm.Event) {
+
+	debugger.Infof("haha,bye,beforeGetStateHash")
+	panic("beforeGetStateHash")
+}
+
+func (d *Handler) beforeGetStateHashResp(e *fsm.Event) {
+
+}
+
+
 
 // ----------------------------------------------------------------------------
 //

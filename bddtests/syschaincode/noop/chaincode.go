@@ -20,9 +20,9 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/abchain/fabric/core/chaincode/shim"
-	ld "github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
+	ld "github.com/abchain/wood/fabric/core/ledger"
+	"github.com/abchain/wood/fabric/protos"
 )
 
 var logger = shim.NewLogger("noop")

@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/abchain/fabric/examples/chaincode/go/utxo/consensus"
+	"github.com/abchain/wood/fabric/examples/chaincode/go/utxo/consensus"
 )
 
 // UTXO includes the storage for the chaincode API or an in memory

@@ -21,7 +21,7 @@ import (
 	mrand "math/rand"
 	"time"
 
-	pb "github.com/abchain/fabric/membersrvc/protos"
+	pb "github.com/abchain/wood/fabric/membersrvc/protos"
 )
 
 const letterBytes = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"

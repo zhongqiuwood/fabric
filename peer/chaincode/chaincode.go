@@ -19,7 +19,7 @@ package chaincode
 import (
 	"fmt"
 
-	"github.com/abchain/fabric/peer/common"
+	"github.com/abchain/wood/fabric/peer/common"
 	"github.com/op/go-logging"
 	"github.com/spf13/cobra"
 )

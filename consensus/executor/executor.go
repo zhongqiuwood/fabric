@@ -17,13 +17,13 @@ limitations under the License.
 package executor
 
 import (
-	"github.com/abchain/fabric/consensus"
-	"github.com/abchain/fabric/consensus/util/events"
-	"github.com/abchain/fabric/core/peer/statetransfer"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/consensus"
+	"github.com/abchain/wood/fabric/consensus/util/events"
+	"github.com/abchain/wood/fabric/core/peer/statetransfer"
+	pb "github.com/abchain/wood/fabric/protos"
 
 	"github.com/op/go-logging"
-	"github.com/abchain/fabric/debugger"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 var logger *logging.Logger // package-level logger

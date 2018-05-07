@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/abchain/fabric/core/chaincode/shim"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
 )
 
 // AuthorizableCounterChaincode is an example that use Attribute Based Access Control to control the access to a counter by users with an specific role.

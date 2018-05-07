@@ -23,9 +23,9 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/ptypes/empty"
-	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/util"
-	"github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/ledger"
+	"github.com/abchain/wood/fabric/core/util"
+	"github.com/abchain/wood/fabric/protos"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 )

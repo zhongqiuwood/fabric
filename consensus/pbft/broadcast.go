@@ -21,8 +21,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/abchain/fabric/consensus"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/consensus"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 type communicator interface {

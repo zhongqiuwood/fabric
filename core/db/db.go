@@ -25,8 +25,8 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
-	"github.com/abchain/fabric/core/util"
-	//"github.com/abchain/fabric/debugger"
+	"github.com/abchain/wood/fabric/core/util"
+	//"github.com/abchain/wood/fabric/debugger"
 )
 
 var dbLogger = logging.MustGetLogger("db")
@@ -42,6 +42,13 @@ const stateCF = "stateCF"
 const stateDeltaCF = "stateDeltaCF"
 const indexesCF = "indexesCF"
 const persistCF = "persistCF"
+
+const BlockchainCF = blockchainCF
+const StateCF = stateCF
+const StateDeltaCF = stateDeltaCF
+const IndexesCF = indexesCF
+const PersistCF = persistCF
+const TxCF = "txCF"
 
 var columnfamilies = []string{
 	blockchainCF, // blocks of the block chain

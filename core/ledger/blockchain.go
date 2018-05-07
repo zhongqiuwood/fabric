@@ -21,12 +21,12 @@ import (
 	"encoding/binary"
 	"strconv"
 
-	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/core/util"
-	"github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/db"
+	"github.com/abchain/wood/fabric/core/util"
+	"github.com/abchain/wood/fabric/protos"
 	"github.com/tecbot/gorocksdb"
 	"golang.org/x/net/context"
-	"github.com/abchain/fabric/debugger"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 // Blockchain holds basic information in memory. Operations on Blockchain are not thread-safe
@@ -339,6 +339,7 @@ func (blockchain *blockchain) Dump(level int) {
 
 	debugger.Log(level, "========================blockchain height: %d=============================", size)
 
+	return
 	for i := uint64(0); i < size; i++ {
 		block, blockErr := blockchain.getBlock(i)
 		if blockErr != nil {

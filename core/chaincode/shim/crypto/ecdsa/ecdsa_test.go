@@ -19,7 +19,7 @@ package ecdsa
 import (
 	"testing"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 )
 
 func TestSignatureVerifier(t *testing.T) {

@@ -24,8 +24,8 @@ package main
 
 import (
 	"fmt"
-	"github.com/abchain/fabric/core/chaincode/shim"
-	"github.com/abchain/fabric/peer/chaincode/native/go/native_chaincode03/impl"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
+	"github.com/abchain/wood/fabric/peer/chaincode/native/go/native_chaincode03/impl"
 )
 
 func main() {

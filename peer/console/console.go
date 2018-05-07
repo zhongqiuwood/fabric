@@ -4,10 +4,10 @@ import (
 	_ "github.com/spf13/viper"
 	"github.com/spf13/cobra"
 	
-	"github.com/abchain/fabric/peer/chaincode"
-	"github.com/abchain/fabric/peer/network"
-	"github.com/abchain/fabric/peer/node"
-	"github.com/abchain/fabric/peer/version"
+	"github.com/abchain/wood/fabric/peer/chaincode"
+	"github.com/abchain/wood/fabric/peer/network"
+	"github.com/abchain/wood/fabric/peer/node"
+	"github.com/abchain/wood/fabric/peer/version"
 )
 
 type  consoleForPeer struct{

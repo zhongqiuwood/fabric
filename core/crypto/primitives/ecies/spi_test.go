@@ -24,7 +24,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 )
 
 type TestParameters struct {

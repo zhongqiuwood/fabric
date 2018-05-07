@@ -20,9 +20,9 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/crypto/utils"
-	obc "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
+	obc "github.com/abchain/wood/fabric/protos"
 )
 
 // DecryptQueryResult is used to decrypt the result of a query transaction

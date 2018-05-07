@@ -24,10 +24,10 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/abchain/fabric/core/crypto/utils"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
 
 	// Required to successfully initialized the driver
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 	_ "github.com/mattn/go-sqlite3"
 )
 

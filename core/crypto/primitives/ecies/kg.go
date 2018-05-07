@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 )
 
 type keyGeneratorParameterImpl struct {

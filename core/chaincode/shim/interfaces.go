@@ -19,7 +19,7 @@ package shim
 
 import (
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/abchain/fabric/core/chaincode/shim/crypto/attr"
+	"github.com/abchain/wood/fabric/core/chaincode/shim/crypto/attr"
 )
 
 // Chaincode interface must be implemented by all chaincodes. The fabric runs

@@ -12,8 +12,8 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 
-	"github.com/abchain/fabric/core/util"
-	"github.com/abchain/fabric/flogging"
+	"github.com/abchain/wood/fabric/core/util"
+	"github.com/abchain/wood/fabric/flogging"
 )
 
 var logger = logging.MustGetLogger("clientcore")
@@ -94,7 +94,7 @@ func (g GlobalConfig) InitGlobal(stdlog bool) error {
 		// Path to look for the config file in based on GOPATH
 		gopath := os.Getenv("GOPATH")
 		for _, p := range filepath.SplitList(gopath) {
-			peerpath := filepath.Join(p, "src/github.com/abchain/fabric/peer")
+			peerpath := filepath.Join(p, "src/github.com/abchain/wood/fabric/peer")
 			g.ConfigPath = append(g.ConfigPath, peerpath)
 		}
 	}

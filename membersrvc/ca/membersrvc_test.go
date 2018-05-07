@@ -25,7 +25,7 @@ import (
 
 	"fmt"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 	"google.golang.org/grpc"
 
 	"time"

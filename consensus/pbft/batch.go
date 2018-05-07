@@ -20,16 +20,16 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/abchain/fabric/consensus"
-	"github.com/abchain/fabric/consensus/util/events"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/consensus"
+	"github.com/abchain/wood/fabric/consensus/util/events"
+	pb "github.com/abchain/wood/fabric/protos"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
-	//"github.com/abchain/fabric/debugger"
-	"github.com/abchain/fabric/debugger"
+	//"github.com/abchain/wood/fabric/debugger"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 type obcBatch struct {
@@ -304,7 +304,8 @@ func (op *obcBatch) processMessage(ocMsg *pb.Message, senderHandle *pb.PeerID) e
 		msg := &Message{}
 		err = proto.Unmarshal(pbftMsg, msg)
 
-		debugger.Log(debugger.NOTICE, "<<<--- pbft recv: <%s> from <%+v>",
+		level := debugger.DEBUG
+		debugger.Log(level, "<<<--- pbft recv: <%s> from <%+v>",
 			pb.Consensus_Payload_Type(msg.PayloadType).String(), senderHandle)
 
 		if err != nil {

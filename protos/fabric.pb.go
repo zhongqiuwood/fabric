@@ -123,7 +123,7 @@ const (
 	Message_DISC_NEWMSG             Message_Type = 5
 	Message_CHAIN_TRANSACTION       Message_Type = 6
 	Message_SYNC_GET_BLOCKS         Message_Type = 11
-	Message_SYNC_BLOCKS             Message_Type = 12
+	Message_SYNC_GET_BLOCKS_RESP    Message_Type = 12
 	Message_SYNC_BLOCK_ADDED        Message_Type = 13
 	Message_SYNC_STATE_GET_SNAPSHOT Message_Type = 14
 	Message_SYNC_STATE_SNAPSHOT     Message_Type = 15
@@ -131,7 +131,8 @@ const (
 	Message_SYNC_STATE_DELTAS       Message_Type = 17
 	Message_RESPONSE                Message_Type = 20
 	Message_CONSENSUS               Message_Type = 21
-	Message_ON_BLOCK_ADDED          Message_Type = 22
+	Message_SYNC_GET_STATE_HASH          Message_Type = 22
+	Message_SYNC_GET_STATE_HASH_RESP     Message_Type = 23
 )
 
 var Message_Type_name = map[int32]string{
@@ -143,7 +144,7 @@ var Message_Type_name = map[int32]string{
 	5:  "DISC_NEWMSG",
 	6:  "CHAIN_TRANSACTION",
 	11: "SYNC_GET_BLOCKS",
-	12: "SYNC_BLOCKS",
+	12: "SYNC_GET_BLOCKS_RESP",
 	13: "SYNC_BLOCK_ADDED",
 	14: "SYNC_STATE_GET_SNAPSHOT",
 	15: "SYNC_STATE_SNAPSHOT",
@@ -151,7 +152,8 @@ var Message_Type_name = map[int32]string{
 	17: "SYNC_STATE_DELTAS",
 	20: "RESPONSE",
 	21: "CONSENSUS",
-	22: "ON_BLOCK_ADDED",
+	22: "SYNC_GET_STATE_HASH",
+	23: "SYNC_GET_STATE_HASH_RESP",
 }
 var Message_Type_value = map[string]int32{
 	"UNDEFINED":               0,
@@ -162,7 +164,7 @@ var Message_Type_value = map[string]int32{
 	"DISC_NEWMSG":             5,
 	"CHAIN_TRANSACTION":       6,
 	"SYNC_GET_BLOCKS":         11,
-	"SYNC_BLOCKS":             12,
+	"SYNC_GET_BLOCKS_RESP":    12,
 	"SYNC_BLOCK_ADDED":        13,
 	"SYNC_STATE_GET_SNAPSHOT": 14,
 	"SYNC_STATE_SNAPSHOT":     15,
@@ -170,7 +172,8 @@ var Message_Type_value = map[string]int32{
 	"SYNC_STATE_DELTAS":       17,
 	"RESPONSE":                20,
 	"CONSENSUS":               21,
-	"ON_BLOCK_ADDED":          22,
+	"SYNC_GET_STATE_HASH":          22,
+	"SYNC_GET_STATE_HASH_RESP":     23,
 }
 
 func (x Message_Type) String() string {

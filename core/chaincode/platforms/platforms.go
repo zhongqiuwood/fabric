@@ -20,10 +20,10 @@ import (
 	"archive/tar"
 	"fmt"
 
-	"github.com/abchain/fabric/core/chaincode/platforms/car"
-	"github.com/abchain/fabric/core/chaincode/platforms/golang"
-	"github.com/abchain/fabric/core/chaincode/platforms/java"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/chaincode/platforms/car"
+	"github.com/abchain/wood/fabric/core/chaincode/platforms/golang"
+	"github.com/abchain/wood/fabric/core/chaincode/platforms/java"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 // Interface for validating the specification and and writing the package for

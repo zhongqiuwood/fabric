@@ -22,7 +22,7 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
-	pb "github.com/abchain/fabric/protos"
+	pb "github.com/abchain/wood/fabric/protos"
 	"github.com/looplab/fsm"
 )
 

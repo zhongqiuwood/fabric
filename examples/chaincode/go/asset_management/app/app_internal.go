@@ -22,14 +22,14 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/abchain/fabric/core/chaincode"
-	"github.com/abchain/fabric/core/chaincode/platforms"
-	"github.com/abchain/fabric/core/config"
-	"github.com/abchain/fabric/core/container"
-	"github.com/abchain/fabric/core/crypto"
-	"github.com/abchain/fabric/core/peer"
-	"github.com/abchain/fabric/core/util"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/chaincode"
+	"github.com/abchain/wood/fabric/core/chaincode/platforms"
+	"github.com/abchain/wood/fabric/core/config"
+	"github.com/abchain/wood/fabric/core/container"
+	"github.com/abchain/wood/fabric/core/crypto"
+	"github.com/abchain/wood/fabric/core/peer"
+	"github.com/abchain/wood/fabric/core/util"
+	pb "github.com/abchain/wood/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
@@ -141,7 +141,7 @@ func deployInternal(deployer crypto.Client, adminCert crypto.CertificateHandler)
 	// Prepare the spec. The metadata includes the identity of the administrator
 	spec := &pb.ChaincodeSpec{
 		Type:        1,
-		ChaincodeID: &pb.ChaincodeID{Path: "github.com/abchain/fabric/examples/chaincode/go/asset_management"},
+		ChaincodeID: &pb.ChaincodeID{Path: "github.com/abchain/wood/fabric/examples/chaincode/go/asset_management"},
 		//ChaincodeID:          &pb.ChaincodeID{Name: chaincodeName},
 		CtorMsg:              &pb.ChaincodeInput{Args: util.ToChaincodeArgs("init")},
 		Metadata:             adminCert.GetCertificate(),

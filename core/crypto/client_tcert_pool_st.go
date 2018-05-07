@@ -22,7 +22,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 )
 
 //TCertBlock is an object that include the generated TCert and the attributes used to generate it.

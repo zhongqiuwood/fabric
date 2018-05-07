@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/abchain/fabric/consensus"
-	"github.com/abchain/fabric/consensus/util/events"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/consensus"
+	"github.com/abchain/wood/fabric/consensus/util/events"
+	pb "github.com/abchain/wood/fabric/protos"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/spf13/viper"

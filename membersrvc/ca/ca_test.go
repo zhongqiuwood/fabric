@@ -23,8 +23,8 @@ import (
 
 	"database/sql"
 
-	"github.com/abchain/fabric/core/crypto"
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 	"github.com/spf13/viper"
 )
 

@@ -23,9 +23,9 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/abchain/fabric/core/container/ccintf"
-	"github.com/abchain/fabric/core/container/dockercontroller"
-	"github.com/abchain/fabric/core/container/inproccontroller"
+	"github.com/abchain/wood/fabric/core/container/ccintf"
+	"github.com/abchain/wood/fabric/core/container/dockercontroller"
+	"github.com/abchain/wood/fabric/core/container/inproccontroller"
 )
 
 //abstract virtual image for supporting arbitrary virual machines

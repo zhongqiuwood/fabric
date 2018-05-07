@@ -7,8 +7,8 @@ import (
 	"io/ioutil"
 	"time"
 
-	"github.com/abchain/fabric/core/util"
-	pb "github.com/abchain/fabric/membersrvc/protos"
+	"github.com/abchain/wood/fabric/core/util"
+	pb "github.com/abchain/wood/fabric/membersrvc/protos"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

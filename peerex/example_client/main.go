@@ -7,10 +7,10 @@ import (
 
 	arghelper "github.com/mattn/go-shellwords"
 
-	fabricpeer_comm "github.com/abchain/fabric/peer/common"
-	"github.com/abchain/fabric/peer/console"
-	"github.com/abchain/fabric/peerex"
-	fabric_pb "github.com/abchain/fabric/protos"
+	fabricpeer_comm "github.com/abchain/wood/fabric/peer/common"
+	"github.com/abchain/wood/fabric/peer/console"
+	"github.com/abchain/wood/fabric/peerex"
+	fabric_pb "github.com/abchain/wood/fabric/protos"
 )
 
 var default_conn peerex.ClientConn

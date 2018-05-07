@@ -21,9 +21,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/core/ledger/perfstat"
-	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/wood/fabric/core/db"
+	"github.com/abchain/wood/fabric/core/ledger/perfstat"
+	"github.com/abchain/wood/fabric/core/ledger/statemgmt"
 )
 
 var defaultBucketCacheMaxSize = 100 // MBs

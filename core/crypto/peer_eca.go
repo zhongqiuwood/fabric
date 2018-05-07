@@ -21,9 +21,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/crypto/utils"
-	membersrvc "github.com/abchain/fabric/membersrvc/protos"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
+	membersrvc "github.com/abchain/wood/fabric/membersrvc/protos"
 	"golang.org/x/net/context"
 )
 

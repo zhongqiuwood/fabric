@@ -21,7 +21,7 @@ import (
 
 	"github.com/op/go-logging"
 
-	pb "github.com/abchain/fabric/protos"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 var logger *logging.Logger // package-level logger

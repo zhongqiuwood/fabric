@@ -26,7 +26,7 @@ import (
 	"testing"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/abchain/fabric/examples/chaincode/go/utxo/consensus"
+	"github.com/abchain/wood/fabric/examples/chaincode/go/utxo/consensus"
 )
 
 // func TestMain(m *testing.M) {

@@ -28,7 +28,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/wood/fabric/core/util"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 )

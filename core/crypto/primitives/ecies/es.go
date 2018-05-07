@@ -17,8 +17,8 @@ limitations under the License.
 package ecies
 
 import (
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/crypto/utils"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
 )
 
 type encryptionSchemeImpl struct {

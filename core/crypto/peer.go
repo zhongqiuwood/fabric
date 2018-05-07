@@ -19,7 +19,7 @@ package crypto
 import (
 	"sync"
 
-	"github.com/abchain/fabric/core/crypto/utils"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
 )
 
 // Private types and variables

@@ -17,8 +17,8 @@ limitations under the License.
 package pbft
 
 import (
-	"github.com/abchain/fabric/consensus/util/events"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/consensus/util/events"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 // --------------------------------------------------------------

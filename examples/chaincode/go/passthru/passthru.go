@@ -21,8 +21,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/abchain/fabric/core/chaincode/shim"
-	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
+	"github.com/abchain/wood/fabric/core/util"
 )
 
 // PassthruChaincode passes thru invoke and query to another chaincode where

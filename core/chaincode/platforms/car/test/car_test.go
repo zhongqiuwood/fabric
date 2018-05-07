@@ -20,10 +20,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/abchain/fabric/core/config"
-	"github.com/abchain/fabric/core/container"
-	"github.com/abchain/fabric/core/util"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/config"
+	"github.com/abchain/wood/fabric/core/container"
+	"github.com/abchain/wood/fabric/core/util"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 func TestMain(m *testing.M) {

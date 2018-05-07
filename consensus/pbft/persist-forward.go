@@ -17,7 +17,7 @@ limitations under the License.
 package pbft
 
 import (
-	"github.com/abchain/fabric/consensus"
+	"github.com/abchain/wood/fabric/consensus"
 )
 
 type persistForward struct {

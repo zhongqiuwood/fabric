@@ -19,7 +19,7 @@ package genesis
 import (
 	"sync"
 
-	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/wood/fabric/core/ledger"
 	"github.com/op/go-logging"
 )
 

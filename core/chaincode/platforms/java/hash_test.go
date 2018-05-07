@@ -21,7 +21,7 @@ import (
 
 	"encoding/hex"
 
-	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/wood/fabric/core/util"
 
 	"bytes"
 	"os"

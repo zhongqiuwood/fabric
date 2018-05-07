@@ -19,7 +19,7 @@ package util
 import (
 	"testing"
 
-	"github.com/abchain/fabric/metadata"
+	"github.com/abchain/wood/fabric/metadata"
 )
 
 func TestUtil_DockerfileTemplateParser(t *testing.T) {

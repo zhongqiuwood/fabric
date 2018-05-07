@@ -27,9 +27,9 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"
 
-	"github.com/abchain/fabric/core/chaincode"
-	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/chaincode"
+	"github.com/abchain/wood/fabric/core/ledger"
+	"github.com/abchain/wood/fabric/protos"
 	"github.com/spf13/viper"
 )
 

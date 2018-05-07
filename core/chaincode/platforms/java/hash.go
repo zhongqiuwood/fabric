@@ -27,9 +27,9 @@ import (
 	"strings"
 
 	"github.com/golang/protobuf/proto"
-	cutil "github.com/abchain/fabric/core/container/util"
-	"github.com/abchain/fabric/core/util"
-	pb "github.com/abchain/fabric/protos"
+	cutil "github.com/abchain/wood/fabric/core/container/util"
+	"github.com/abchain/wood/fabric/core/util"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 //hashFilesInDir computes h=hash(h,file bytes) for each file in a directory

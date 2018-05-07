@@ -20,9 +20,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"reflect"
-	pb "github.com/abchain/fabric/protos"
-	"github.com/abchain/fabric/consensus/util/events"
-	"github.com/abchain/fabric/debugger"
+	pb "github.com/abchain/wood/fabric/protos"
+	"github.com/abchain/wood/fabric/consensus/util/events"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 // viewChangeQuorumEvent is returned to the event loop when a new ViewChange message is received which is part of a quorum cert
@@ -205,31 +205,32 @@ func dumpvc(vc *ViewChange)  {
 
 
 func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
-	logger.Infof("Replica %d received view-change from replica %d, v:%d, h:%d, |C|:%d, |P|:%d, |Q|:%d",
+
+	logger.Debugf("Replica %d received view-change from replica %d, v:%d, h:%d, |C|:%d, |P|:%d, |Q|:%d",
 		instance.id, vc.ReplicaId, vc.View, vc.H, len(vc.Cset), len(vc.Pset), len(vc.Qset))
 
 	if err := instance.verify(vc); err != nil {
-		logger.Warningf("Replica %d found incorrect signature in view-change message: %s", instance.id, err)
+		logger.Debugf("Replica %d found incorrect signature in view-change message: %s", instance.id, err)
 		return nil
 	}
 
 	if vc.View < instance.view {
-		logger.Warningf("Replica %d found view-change message for old view", instance.id)
+		logger.Debugf("Replica %d found view-change message for old view", instance.id)
 
-		debugger.Log(debugger.NOTICE, "checkOldViewCnt: 0")
+		//debugger.Log(debugger.NOTICE, "checkOldViewCnt: 0")
 
 		return instance.checkOldViewCnt(vc)
 	}
 
 	if !instance.correctViewChange(vc) {
-		logger.Warningf("Replica %d found view-change message incorrect", instance.id)
+		logger.Debugf("Replica %d found view-change message incorrect", instance.id)
 		return nil
 	}
 
 	if _, ok := instance.viewChangeStore[vcidx{vc.View, vc.ReplicaId}]; ok {
-		logger.Warningf("Replica %d already has a view change message for view %d from replica %d", instance.id, vc.View, vc.ReplicaId)
+		logger.Debugf("Replica %d already has a view change message for view %d from replica %d", instance.id, vc.View, vc.ReplicaId)
 
-		debugger.Log(debugger.NOTICE, "checkOldViewCnt: 1")
+		//debugger.Log(debugger.NOTICE, "checkOldViewCnt: 1")
 
 		return instance.checkOldViewCnt(vc)
 	}
@@ -256,7 +257,7 @@ func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
 
 	// We only enter this if there are enough view change messages _greater_ than our current view
 	if len(replicas) >= instance.f+1 {
-		logger.Infof("Replica %d received f+1 view-change messages, triggering view-change to view %d",
+		logger.Debugf("Replica %d received f+1 view-change messages, triggering view-change to view %d",
 			instance.id, minView)
 		// subtract one, because sendViewChange() increments
 		instance.view = minView - 1
@@ -283,8 +284,13 @@ func (instance *pbftCore) recvViewChange(vc *ViewChange) events.Event {
 
 func (instance *pbftCore) checkOldViewCnt(vc *ViewChange) events.Event {
 
+	level := debugger.DEBUG
+	debugger.Log(level, "<<------------- checkOldViewCnt in")
+	defer debugger.Log(level, "<<------------- checkOldViewCnt out")
+
 	// Ignore
 	if vc.ReplicaId == instance.id {
+		debugger.Log(level, "vc.ReplicaId == instance.id")
 		return nil
 	}
 
@@ -302,18 +308,18 @@ func (instance *pbftCore) checkOldViewCnt(vc *ViewChange) events.Event {
 	}
 
 	// Over
-	if v > 10 && (v % uint64(instance.N) == instance.id) {
+	if v > 1 && (v % uint64(instance.N) == instance.id) {
 		// Reset cnt
 		instance.oldViewCnt[vcidx{vc.View, vc.ReplicaId}] = 0
 
 		// Send ViewChange
-		debugger.Log(debugger.NOTICE, "sendViewChange: v<%d>, instance.N<%d>, instance.id<%d>, instance.oldViewCnt<%+v>",
+		debugger.Log(level, "sendViewChange: v<%d>, instance.N<%d>, instance.id<%d>, instance.oldViewCnt<%+v>",
 			v, instance.N, instance.id, instance.oldViewCnt)
 
 		return instance.sendViewChange()
 	} else {
 
-		debugger.Log(debugger.NOTICE, "do not sendViewChange: v<%d>, instance.N<%d>, instance.id<%d>, instance.oldViewCnt<%+v>",
+		debugger.Log(level, "do not sendViewChange: v<%d>, instance.N<%d>, instance.id<%d>, instance.oldViewCnt<%+v>",
 			v, instance.N, instance.id, instance.oldViewCnt)
 
 	}
@@ -388,14 +394,14 @@ func (instance *pbftCore) processNewView() events.Event {
 	}
 
 	if instance.activeView {
-		logger.Infof("Replica %d ignoring new-view from %d, v:%d: we are active in view %d",
+		logger.Debugf("Replica %d ignoring new-view from %d, v:%d: we are active in view %d",
 			instance.id, nv.ReplicaId, nv.View, instance.view)
 		return nil
 	}
 
 	cp, ok, replicas := instance.selectInitialCheckpoint(nv.Vset)
 	if !ok {
-		logger.Warningf("Replica %d could not determine initial checkpoint: %+v",
+		logger.Debugf("Replica %d could not determine initial checkpoint: %+v",
 			instance.id, instance.viewChangeStore)
 		return instance.sendViewChange()
 	}
@@ -452,7 +458,7 @@ func (instance *pbftCore) processNewView() events.Event {
 
 	msgList := instance.assignSequenceNumbers(nv.Vset, cp.SequenceNumber)
 	if msgList == nil {
-		logger.Warningf("Replica %d could not assign sequence numbers: %+v",
+		logger.Debugf("Replica %d could not assign sequence numbers: %+v",
 			instance.id, instance.viewChangeStore)
 		return instance.sendViewChange()
 	}
@@ -468,7 +474,7 @@ func (instance *pbftCore) processNewView() events.Event {
 	}
 
 	if speculativeLastExec < cp.SequenceNumber {
-		logger.Warningf("Replica %d missing base checkpoint %d (%s), our most recent execution %d", instance.id, cp.SequenceNumber, cp.Id, speculativeLastExec)
+		logger.Debugf("Replica %d missing base checkpoint %d (%s), our most recent execution %d", instance.id, cp.SequenceNumber, cp.Id, speculativeLastExec)
 
 		snapshotID, err := base64.StdEncoding.DecodeString(cp.Id)
 		if nil != err {
@@ -501,10 +507,10 @@ func (instance *pbftCore) processNewView() events.Event {
 			}
 
 			if _, ok := instance.reqBatchStore[d]; !ok {
-				logger.Warningf("Replica %d missing assigned, non-checkpointed request batch %s",
+				logger.Debugf("Replica %d missing assigned, non-checkpointed request batch %s",
 					instance.id, d)
 				if _, ok := instance.missingReqBatches[d]; !ok {
-					logger.Warningf("Replica %v requesting to fetch batch %s",
+					logger.Debugf("Replica %v requesting to fetch batch %s",
 						instance.id, d)
 					newReqBatchMissing = true
 					instance.missingReqBatches[d] = true
@@ -523,7 +529,7 @@ func (instance *pbftCore) processNewView() events.Event {
 }
 
 func (instance *pbftCore) processNewView2(nv *NewView) events.Event {
-	logger.Infof("Replica %d accepting new-view to view %d", instance.id, instance.view)
+	logger.Debugf("Replica %d accepting new-view to view %d", instance.id, instance.view)
 
 	instance.stopTimer()
 	instance.nullRequestTimer.Stop()

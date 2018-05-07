@@ -19,7 +19,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/abchain/fabric/core/chaincode/shim"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
 )
 
 func checkInit(t *testing.T, stub *shim.MockStub, args []string) {

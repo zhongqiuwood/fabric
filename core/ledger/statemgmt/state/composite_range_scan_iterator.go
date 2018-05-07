@@ -17,7 +17,7 @@ limitations under the License.
 package state
 
 import (
-	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/wood/fabric/core/ledger/statemgmt"
 )
 
 // CompositeRangeScanIterator - an implementation of interface 'statemgmt.RangeScanIterator'

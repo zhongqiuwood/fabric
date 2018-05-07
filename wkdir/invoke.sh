@@ -1,12 +1,25 @@
 #!/bin/bash
 
 
-FABRIC_TOP=${GOPATH}/src/github.com/abchain/fabric
+FABRIC_PATH=github.com/abchain/wood/fabric
+FABRIC_TOP=${GOPATH}/src/$FABRIC_PATH
 BUILD_BIN=${FABRIC_TOP}/build/bin
 
 ACTION=$1
 CCNAME=$2
-PEER_ID=0
+PEER_ID=$3
+
+if [ "$PEER_ID" = "" ];then
+    PEER_ID=0
+fi
+
+if [ "$CCNAME" = "" ];then
+    CCNAME=mycc
+fi
+
+if [ "$ACTION" = "" ];then
+    ACTION=i
+fi
 
 function deployAndInvoke {
     ./deploy.sh $CCNAME
@@ -15,14 +28,6 @@ function deployAndInvoke {
             -c '{"Args":["invoke", "a", "b", "1"]}'
 }
 
-if [ $# -eq 0 ]; then
-    ACTION=i
-    CCNAME=mycc
-fi
-
-if [ $# -eq 1 ]; then
-    CCNAME=mycc
-fi
 
 if [ ! -f ${BUILD_BIN}/peer ]; then
     ${FABRIC_TOP}/scripts/dev/buildpeer.sh

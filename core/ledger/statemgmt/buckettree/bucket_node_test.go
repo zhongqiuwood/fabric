@@ -19,7 +19,7 @@ package buckettree
 import (
 	"testing"
 
-	"github.com/abchain/fabric/core/ledger/testutil"
+	"github.com/abchain/wood/fabric/core/ledger/testutil"
 )
 
 func TestBucketNodeComputeHash(t *testing.T) {

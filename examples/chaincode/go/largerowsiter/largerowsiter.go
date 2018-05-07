@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/abchain/fabric/core/chaincode/shim"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
 )
 
 const (

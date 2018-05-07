@@ -29,8 +29,8 @@ import (
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
-	pb "github.com/abchain/fabric/membersrvc/protos"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	pb "github.com/abchain/wood/fabric/membersrvc/protos"
 )
 
 var acapLogger = logging.MustGetLogger("acap")

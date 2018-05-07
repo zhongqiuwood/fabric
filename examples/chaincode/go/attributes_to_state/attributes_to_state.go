@@ -20,8 +20,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/abchain/fabric/core/chaincode/shim"
-	"github.com/abchain/fabric/core/chaincode/shim/crypto/attr"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
+	"github.com/abchain/wood/fabric/core/chaincode/shim/crypto/attr"
 )
 
 // Attributes2State demonstrates how to read attributes from TCerts.

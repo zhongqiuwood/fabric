@@ -37,7 +37,9 @@ DB_VERSION=0
 #DB_VERSION=$3
 #TAG_CLEAR=$4
 
-FABRIC_TOP=${GOPATH}/src/github.com/abchain/fabric
+FABRIC_PATH=github.com/abchain/wood/fabric
+FABRIC_TOP=${GOPATH}/src/$FABRIC_PATH
+
 BUILD_BIN=${FABRIC_TOP}/build/bin
 PEER_BINARY=peer
 CONSENSUS=pbft
@@ -138,7 +140,7 @@ function buildpeer {
     fi
 
     CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/github.com/abchain/fabric/build/bin go install github.com/abchain/fabric/peer
+        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/peer
 
     if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
         echo 'Failed to build '${BUILD_BIN}/${PEER_BINARY}
@@ -162,7 +164,7 @@ function buildpeerex {
     fi
 
     CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/github.com/abchain/fabric/build/bin go install github.com/abchain/fabric/examples/chaincode/go/embedded
+        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/examples/chaincode/go/embedded
 
     if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
         echo 'Failed to build '${BUILD_BIN}/${PEER_BINARY}

@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/abchain/fabric/core/chaincode/shim"
-	ex02 "github.com/abchain/fabric/examples/chaincode/go/chaincode_example02"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
+	ex02 "github.com/abchain/wood/fabric/examples/chaincode/go/chaincode_example02"
 )
 
 // this is the response to any successful Invoke() on chaincode_example04

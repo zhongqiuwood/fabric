@@ -19,7 +19,7 @@ package state
 import (
 	"testing"
 
-	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/wood/fabric/core/ledger/statemgmt"
 )
 
 func TestCompositeRangeScanIterator(t *testing.T) {

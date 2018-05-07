@@ -17,9 +17,9 @@ limitations under the License.
 package system_chaincode
 
 import (
-	"github.com/abchain/fabric/core/system_chaincode/api"
+	"github.com/abchain/wood/fabric/core/system_chaincode/api"
 	//import system chain codes here
-	"github.com/abchain/fabric/bddtests/syschaincode/noop"
+	"github.com/abchain/wood/fabric/bddtests/syschaincode/noop"
 )
 
 //see systemchaincode_test.go for an example using "sample_syscc"
@@ -27,7 +27,7 @@ var systemChaincodes = []*api.SystemChaincode{
 	{
 		Enabled:   true,
 		Name:      "noop",
-		Path:      "github.com/abchain/fabric/bddtests/syschaincode/noop",
+		Path:      "github.com/abchain/wood/fabric/bddtests/syschaincode/noop",
 		InitArgs:  [][]byte{},
 		Chaincode: &noop.SystemChaincode{},
 	}}

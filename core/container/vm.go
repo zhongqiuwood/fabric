@@ -24,9 +24,9 @@ import (
 	"golang.org/x/net/context"
 	//	"io/ioutil"
 
-	"github.com/abchain/fabric/core/chaincode/platforms"
-	cutil "github.com/abchain/fabric/core/container/util"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/chaincode/platforms"
+	cutil "github.com/abchain/wood/fabric/core/container/util"
+	pb "github.com/abchain/wood/fabric/protos"
 	"github.com/fsouza/go-dockerclient"
 	"github.com/op/go-logging"
 )

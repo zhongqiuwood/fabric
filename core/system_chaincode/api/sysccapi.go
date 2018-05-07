@@ -21,11 +21,11 @@ import (
 
 	"golang.org/x/net/context"
 
-	"github.com/abchain/fabric/core/chaincode"
-	"github.com/abchain/fabric/core/chaincode/shim"
-	"github.com/abchain/fabric/core/container/inproccontroller"
-	"github.com/abchain/fabric/core/peer"
-	"github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/chaincode"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
+	"github.com/abchain/wood/fabric/core/container/inproccontroller"
+	"github.com/abchain/wood/fabric/core/peer"
+	"github.com/abchain/wood/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 )

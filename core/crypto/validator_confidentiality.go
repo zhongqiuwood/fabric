@@ -21,9 +21,9 @@ import (
 	"errors"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/crypto/utils"
-	obc "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
+	obc "github.com/abchain/wood/fabric/protos"
 )
 
 func (validator *validatorImpl) deepCloneTransaction(tx *obc.Transaction) (*obc.Transaction, error) {

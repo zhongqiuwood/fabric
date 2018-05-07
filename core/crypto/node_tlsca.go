@@ -17,7 +17,7 @@ limitations under the License.
 package crypto
 
 import (
-	membersrvc "github.com/abchain/fabric/membersrvc/protos"
+	membersrvc "github.com/abchain/wood/fabric/membersrvc/protos"
 
 	"crypto/ecdsa"
 	"crypto/rand"
@@ -27,8 +27,8 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/util"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )

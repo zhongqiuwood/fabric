@@ -21,9 +21,9 @@ import (
 
 	"fmt"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/crypto/utils"
-	obc "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
+	obc "github.com/abchain/wood/fabric/protos"
 )
 
 // Public Struct

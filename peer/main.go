@@ -29,14 +29,14 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/abchain/fabric/core"
-	"github.com/abchain/fabric/core/crypto"
-	"github.com/abchain/fabric/flogging"
-	"github.com/abchain/fabric/peer/chaincode"
-	"github.com/abchain/fabric/peer/network"
-	"github.com/abchain/fabric/peer/node"
-	"github.com/abchain/fabric/peer/version"
-	"github.com/abchain/fabric/debugger"
+	"github.com/abchain/wood/fabric/core"
+	"github.com/abchain/wood/fabric/core/crypto"
+	"github.com/abchain/wood/fabric/flogging"
+	"github.com/abchain/wood/fabric/peer/chaincode"
+	"github.com/abchain/wood/fabric/peer/network"
+	"github.com/abchain/wood/fabric/peer/node"
+	"github.com/abchain/wood/fabric/peer/version"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 var logger = logging.MustGetLogger("main")
@@ -93,7 +93,7 @@ func main() {
 		// Path to look for the config file in based on GOPATH
 		gopath := os.Getenv("GOPATH")
 		for _, p := range filepath.SplitList(gopath) {
-			peerpath := filepath.Join(p, "src/github.com/abchain/fabric/peer")
+			peerpath := filepath.Join(p, "src/github.com/abchain/wood/fabric/peer")
 			viper.AddConfigPath(peerpath)
 		}
 	}

@@ -19,8 +19,8 @@ package common
 import (
 	"fmt"
 
-	"github.com/abchain/fabric/core/peer"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/peer"
+	pb "github.com/abchain/wood/fabric/protos"
 	"github.com/spf13/cobra"
 )
 

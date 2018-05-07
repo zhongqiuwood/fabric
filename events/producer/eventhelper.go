@@ -17,7 +17,7 @@ limitations under the License.
 package producer
 
 import (
-	ehpb "github.com/abchain/fabric/protos"
+	ehpb "github.com/abchain/wood/fabric/protos"
 )
 
 //CreateBlockEvent creates a Event from a Block

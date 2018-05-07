@@ -22,8 +22,8 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/abchain/fabric/core/crypto"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/crypto"
+	pb "github.com/abchain/wood/fabric/protos"
 	"github.com/op/go-logging"
 	"google.golang.org/grpc"
 )

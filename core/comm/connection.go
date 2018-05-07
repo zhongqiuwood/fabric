@@ -10,7 +10,7 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	
-	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/wood/fabric/core/util"
 )
 
 const defaultTimeout = time.Second * 3

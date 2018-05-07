@@ -17,11 +17,11 @@ limitations under the License.
 package crypto
 
 import (
-	membersrvc "github.com/abchain/fabric/membersrvc/protos"
+	membersrvc "github.com/abchain/wood/fabric/membersrvc/protos"
 
 	"errors"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 )

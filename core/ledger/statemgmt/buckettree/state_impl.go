@@ -19,11 +19,11 @@ package buckettree
 import (
 	"bytes"
 
-	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/wood/fabric/core/db"
+	"github.com/abchain/wood/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
-	//"github.com/abchain/fabric/debugger"
+	//"github.com/abchain/wood/fabric/debugger"
 )
 
 var logger = logging.MustGetLogger("buckettree")

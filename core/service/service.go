@@ -12,11 +12,11 @@ import (
 	"google.golang.org/grpc/grpclog"		
 	"github.com/spf13/viper"
 	
-	"github.com/abchain/fabric/core"
-	"github.com/abchain/fabric/core/rest"
-	"github.com/abchain/fabric/core/comm"
-	"github.com/abchain/fabric/core/util"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core"
+	"github.com/abchain/wood/fabric/core/rest"
+	"github.com/abchain/wood/fabric/core/comm"
+	"github.com/abchain/wood/fabric/core/util"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 var serviceLogger = logging.MustGetLogger("service")

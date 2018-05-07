@@ -20,7 +20,7 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
-	openchainUtil "github.com/abchain/fabric/core/util"
+	openchainUtil "github.com/abchain/wood/fabric/core/util"
 )
 
 type bucketNode struct {

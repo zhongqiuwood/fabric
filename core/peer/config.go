@@ -35,7 +35,7 @@ import (
 
 	"github.com/spf13/viper"
 
-	pb "github.com/abchain/fabric/protos"
+	pb "github.com/abchain/wood/fabric/protos"
 	"strings"
 )
 

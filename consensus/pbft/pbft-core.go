@@ -24,16 +24,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/abchain/fabric/consensus"
-	"github.com/abchain/fabric/consensus/util/events"
-	_ "github.com/abchain/fabric/core" // Needed for logging format init
+	"github.com/abchain/wood/fabric/consensus"
+	"github.com/abchain/wood/fabric/consensus/util/events"
+	_ "github.com/abchain/wood/fabric/core" // Needed for logging format init
 	"github.com/op/go-logging"
 
-	pb "github.com/abchain/fabric/protos"
+	pb "github.com/abchain/wood/fabric/protos"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/spf13/viper"
-	"github.com/abchain/fabric/debugger"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 // =============================================================================
@@ -843,13 +843,13 @@ func (instance *pbftCore) recvPrepare(prep *Prepare) error {
 		instance.id, prep.ReplicaId, prep.View, prep.SequenceNumber)
 
 	if instance.primary(prep.View) == prep.ReplicaId {
-		logger.Warningf("Replica %d received prepare from primary, ignoring", instance.id)
+		logger.Debugf("Replica %d received prepare from primary, ignoring", instance.id)
 		return nil
 	}
 
 	if !instance.inWV(prep.View, prep.SequenceNumber) {
 		if prep.SequenceNumber != instance.h && !instance.skipInProgress {
-			logger.Warningf("Replica %d ignoring prepare for view=%d/seqNo=%d: not in-wv, in view %d, low water mark %d", instance.id, prep.View, prep.SequenceNumber, instance.view, instance.h)
+			logger.Debugf("Replica %d ignoring prepare for view=%d/seqNo=%d: not in-wv, in view %d, low water mark %d", instance.id, prep.View, prep.SequenceNumber, instance.view, instance.h)
 		} else {
 			// This is perfectly normal
 			logger.Debugf("Replica %d ignoring prepare for view=%d/seqNo=%d: not in-wv, in view %d, low water mark %d", instance.id, prep.View, prep.SequenceNumber, instance.view, instance.h)
@@ -861,7 +861,7 @@ func (instance *pbftCore) recvPrepare(prep *Prepare) error {
 
 	for _, prevPrep := range cert.prepare {
 		if prevPrep.ReplicaId == prep.ReplicaId {
-			logger.Warningf("Ignoring duplicate prepare from %d", prep.ReplicaId)
+			logger.Debugf("Ignoring duplicate prepare from %d", prep.ReplicaId)
 			return nil
 		}
 	}
@@ -1212,7 +1212,7 @@ func (instance *pbftCore) witnessCheckpointWeakCert(chkpt *Checkpoint) {
 	if instance.skipInProgress {
 		logger.Debugf("Replica %d is catching up and witnessed a weak certificate for checkpoint %d, weak cert attested to by %d of %d (%v)",
 			instance.id, chkpt.SequenceNumber, i, instance.replicaCount, checkpointMembers)
-		// The view should not be set to active, this should be handled by the yet unimplemented SUSPECT, see https://github.com/abchain/fabric/issues/1120
+		// The view should not be set to active, this should be handled by the yet unimplemented SUSPECT, see https://github.com/abchain/wood/fabric/issues/1120
 		instance.retryStateTransfer(target)
 	}
 }

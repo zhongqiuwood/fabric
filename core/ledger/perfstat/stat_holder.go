@@ -31,7 +31,7 @@ import (
 const enableStats = false
 const printPeriodically = true
 const printInterval = 10000 //Millisecond
-const commonPrefix = "github.com/abchain/fabric/core/ledger"
+const commonPrefix = "github.com/abchain/wood/fabric/core/ledger"
 const commonPrefixLen = len(commonPrefix)
 
 var holder *statsHolder

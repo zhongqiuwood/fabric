@@ -26,8 +26,8 @@ import (
 	"strings"
 	"time"
 
-	cutil "github.com/abchain/fabric/core/container/util"
-	pb "github.com/abchain/fabric/protos"
+	cutil "github.com/abchain/wood/fabric/core/container/util"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 func download(path string) (string, error) {

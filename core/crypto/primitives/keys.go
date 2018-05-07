@@ -25,7 +25,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/abchain/fabric/core/crypto/utils"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
 )
 
 // PrivateKeyToDER marshals a private key to der

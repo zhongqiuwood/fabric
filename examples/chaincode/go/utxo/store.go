@@ -20,8 +20,8 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/abchain/fabric/core/chaincode/shim"
-	"github.com/abchain/fabric/examples/chaincode/go/utxo/util"
+	"github.com/abchain/wood/fabric/core/chaincode/shim"
+	"github.com/abchain/wood/fabric/examples/chaincode/go/utxo/util"
 )
 
 // Store struct uses a chaincode stub for state access

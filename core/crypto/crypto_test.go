@@ -17,7 +17,7 @@ limitations under the License.
 package crypto
 
 import (
-	obc "github.com/abchain/fabric/protos"
+	obc "github.com/abchain/wood/fabric/protos"
 	"github.com/op/go-logging"
 
 	"bytes"
@@ -33,11 +33,11 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/abchain/fabric/core/crypto/attributes"
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/crypto/utils"
-	"github.com/abchain/fabric/core/util"
-	"github.com/abchain/fabric/membersrvc/ca"
+	"github.com/abchain/wood/fabric/core/crypto/attributes"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
+	"github.com/abchain/wood/fabric/core/util"
+	"github.com/abchain/wood/fabric/membersrvc/ca"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"

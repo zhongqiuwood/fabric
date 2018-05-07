@@ -26,13 +26,13 @@ import (
 
 	"database/sql"
 
-	"github.com/abchain/fabric/flogging"
+	"github.com/abchain/wood/fabric/flogging"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 
 	"github.com/golang/protobuf/ptypes/timestamp"
-	pb "github.com/abchain/fabric/membersrvc/protos"
+	pb "github.com/abchain/wood/fabric/membersrvc/protos"
 )
 
 var acaLogger = logging.MustGetLogger("aca")

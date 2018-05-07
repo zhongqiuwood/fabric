@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/db"
+	"github.com/abchain/wood/fabric/protos"
 	"github.com/tecbot/gorocksdb"
 )
 

@@ -20,8 +20,8 @@ import (
 	"fmt"
 
 	"github.com/golang/protobuf/proto"
-	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/db"
+	"github.com/abchain/wood/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/tecbot/gorocksdb"
 )

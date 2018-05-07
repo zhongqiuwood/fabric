@@ -21,7 +21,7 @@ import (
 	"testing"
 	"time"
 
-	pb "github.com/abchain/fabric/protos"
+	pb "github.com/abchain/wood/fabric/protos"
 )
 
 type mockMsg struct {

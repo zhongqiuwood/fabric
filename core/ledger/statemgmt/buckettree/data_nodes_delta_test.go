@@ -20,8 +20,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/abchain/fabric/core/ledger/testutil"
+	"github.com/abchain/wood/fabric/core/ledger/statemgmt"
+	"github.com/abchain/wood/fabric/core/ledger/testutil"
 )
 
 func TestDataNodesSort(t *testing.T) {

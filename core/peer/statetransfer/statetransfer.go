@@ -23,14 +23,14 @@ import (
 	"sort"
 	"time"
 
-	_ "github.com/abchain/fabric/core" // Logging format init
+	_ "github.com/abchain/wood/fabric/core" // Logging format init
 
-	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/abchain/fabric/core/peer"
-	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/wood/fabric/core/ledger/statemgmt"
+	"github.com/abchain/wood/fabric/core/peer"
+	pb "github.com/abchain/wood/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
-	"github.com/abchain/fabric/debugger"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 // =============================================================================
@@ -99,6 +99,7 @@ type coordinatorImpl struct {
 // If the call returns an error, a boolean is included which indicates if the error may be transient and the caller should retry
 func (sts *coordinatorImpl) SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool) {
 
+	debugger.DumpStack()
 	debugger.Log(debugger.NOTICE, "in: Syncing_to_block<%d> with peers %v, target %x", blockNumber, peerIDs, blockHash)
 
 	defer debugger.Log(debugger.NOTICE, "out: Syncing_to_block<%d>", blockNumber)
@@ -419,7 +420,9 @@ func (sts *coordinatorImpl) syncBlocks(highBlock, lowBlock uint64, highHash []by
 
 func (sts *coordinatorImpl) syncBlockchainToTarget(blockSyncReq *blockSyncReq) {
 
-	logger.Debugf("Processing a blockSyncReq to block %d through %d", blockSyncReq.blockNumber, blockSyncReq.reportOnBlock)
+	debugger.Infof("Processing a blockSyncReq<%+v> blockSyncReq to block %d through %d",
+		blockSyncReq,
+		blockSyncReq.blockNumber, blockSyncReq.reportOnBlock)
 
 	blockchainSize := sts.peerInstance.GetBlockchainSize()
 
@@ -597,11 +600,18 @@ func (sts *coordinatorImpl) blockThread() {
 	toggle := toggleOn
 
 	for {
+
+		logger.Infof("Housing keeping. Blocked waiting for messages!!!!!!!!!!!!!!!!!!!!!")
+
 		select {
 		case blockSyncReq := <-sts.blockSyncReq:
+			logger.Infof("Recv messages: <blockSyncReq := <-sts.blockSyncReq:>!!!!!!!!!!!!!!!!!!!!!")
+
 			sts.syncBlockchainToTarget(blockSyncReq)
 			toggle = toggleOn
 		case <-toggle:
+			logger.Infof("Recv messages: < <-toggle >!!!!!!!!!!!!!!!!!!!!!")
+
 			// If there is no target to sync to, make sure the rest of the chain is valid
 			if !sts.verifyAndRecoverBlockchain() {
 				// There is more verification to be done, so loop
@@ -651,14 +661,18 @@ func (sts *coordinatorImpl) attemptStateTransfer(blockNumber uint64, peerIDs []*
 
 	select {
 	case sts.blockSyncReq <- req:
+		debugger.Infof("<<<----------- sts.blockSyncReq <- req:")
+
 	case <-sts.threadExit:
-		logger.Debug("Received request to exit while calling thread waiting for block sync reply")
+		debugger.Infof("Received request to exit while calling thread waiting for block sync reply")
 		return fmt.Errorf("Interrupted with request to exit while waiting for block sync reply."), false
 	}
 
-	logger.Debugf("State transfer thread waiting for block sync to complete")
+	debugger.Infof("<<<----------- State transfer thread waiting for block sync to complete")
 	select {
 	case err = <-blockReplyChannel:
+		debugger.Infof("<<<----------- err = <-blockReplyChannel, err=%s", err)
+
 	case <-sts.threadExit:
 		return fmt.Errorf("Interrupted while waiting for block sync reply"), false
 	}

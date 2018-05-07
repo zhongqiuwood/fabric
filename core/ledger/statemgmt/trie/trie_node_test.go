@@ -19,7 +19,7 @@ package trie
 import (
 	"testing"
 
-	"github.com/abchain/fabric/core/ledger/testutil"
+	"github.com/abchain/wood/fabric/core/ledger/testutil"
 )
 
 func TestTrieNode_MarshalUnmarshal_NoValue_NoChildren(t *testing.T) {

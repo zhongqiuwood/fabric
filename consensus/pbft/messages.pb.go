@@ -31,7 +31,7 @@ import "fmt"
 import "math"
 import (
 	google_protobuf "github.com/golang/protobuf/ptypes/timestamp"
-	"github.com/abchain/fabric/debugger"
+	"github.com/abchain/wood/fabric/debugger"
 )
 
 // Reference imports to suppress errors if they are not otherwise used.

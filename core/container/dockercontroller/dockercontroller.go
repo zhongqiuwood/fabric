@@ -23,8 +23,8 @@ import (
 	"strings"
 
 	"github.com/fsouza/go-dockerclient"
-	"github.com/abchain/fabric/core/container/ccintf"
-	cutil "github.com/abchain/fabric/core/container/util"
+	"github.com/abchain/wood/fabric/core/container/ccintf"
+	cutil "github.com/abchain/wood/fabric/core/container/util"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"

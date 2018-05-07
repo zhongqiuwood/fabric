@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
 )
 
 func newKeyGeneratorParameter(r io.Reader, curve elliptic.Curve) (primitives.KeyGeneratorParameters, error) {

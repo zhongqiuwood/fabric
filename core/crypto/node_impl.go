@@ -20,8 +20,8 @@ import (
 	"crypto/ecdsa"
 	"crypto/x509"
 
-	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/crypto/utils"
+	"github.com/abchain/wood/fabric/core/crypto/primitives"
+	"github.com/abchain/wood/fabric/core/crypto/utils"
 )
 
 // Public Struct

@@ -59,16 +59,19 @@ func (m *Model) init() {
 		logger.Errorf("Get block chain info error: %s", err)
 		return
 	}
-	block, err := lg.GetBlockByNumber(chain.Height)
+	block, err := lg.GetBlockByNumber(chain.Height - 1)
 	if err != nil {
 		logger.Errorf("Get block info info error: %s", err)
 		return
 	}
 
+	number := len(block.Txids)
+	logger.Infof("Current state hash(%x/%x), block height(%d), number(%d)", hash, chain.CurrentBlockHash, chain.Height, number)
+
 	m.self.states["tx"] = &StateVersion{
 		known:  true,
 		hash:   hash,
-		number: uint64(len(block.Txids)),
+		number: uint64(number),
 	}
 }
 

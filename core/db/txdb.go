@@ -573,6 +573,15 @@ func (openchainDB *GlobalDataDB) ListCheckpoints() (ret [][]byte) {
 	return
 }
 
+func (openchainDB *GlobalDataDB) GetDBVersion() int {
+	v, _ := openchainDB.GetValue(PersistCF, []byte(currentVersionKey))
+	if len(v) == 0 {
+		return 0
+	}
+
+	return int(v[0])
+}
+
 func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator {
 
 	cf := openchainDB.cfMap[cfName]

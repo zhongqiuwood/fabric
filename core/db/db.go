@@ -287,6 +287,11 @@ func (openchainDB *OpenchainDB) GetIterator(cfName string) *DBIterator {
 }
 
 func (e *DBWriteBatch) Destroy() {
+
+	if e == nil {
+		return
+	}
+
 	if e.WriteBatch != nil {
 		e.WriteBatch.Destroy()
 	}
@@ -294,6 +299,11 @@ func (e *DBWriteBatch) Destroy() {
 }
 
 func (e *DBIterator) Close() {
+
+	if e == nil {
+		return
+	}
+
 	if e.Iterator != nil {
 		e.Iterator.Close()
 	}
@@ -301,6 +311,11 @@ func (e *DBIterator) Close() {
 }
 
 func (e *DBSnapshot) Release() {
+
+	if e == nil {
+		return
+	}
+
 	if e.snapshot != nil {
 		e.ReleaseSnapshot(e.snapshot)
 	}

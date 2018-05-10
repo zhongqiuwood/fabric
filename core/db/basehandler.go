@@ -32,6 +32,7 @@ const StateDeltaCF = "stateDeltaCF"
 const IndexesCF = "indexesCF"
 
 const currentDBKey = "currentDB"
+const currentVersionKey = "currentVer"
 
 // base class of db handler and txdb handler
 type baseHandler struct {

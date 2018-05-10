@@ -69,7 +69,7 @@ func (oc *ocDB) dropDB() {
 
 	err := gorocksdb.DestroyDb(oc.dbName, opt)
 
-	if err != nil {
+	if err == nil {
 		dbLogger.Infof("[%s] Drop whole db <%s>", printGID, oc.dbName)
 	} else {
 		dbLogger.Errorf("[%s] Drop whole db <%s> FAIL: %s", printGID, oc.dbName, err)
@@ -96,8 +96,6 @@ func (openchainDB *ocDB) open(dbpath string) error {
 
 	//TODO: custom maxOpenedExtend
 	openchainDB.extendedLock = make(chan int, maxOpenedExtend)
-	//add one reference count
-	openchainDB.extendedLock <- 0
 
 	return nil
 }
@@ -289,6 +287,11 @@ func (openchainDB *OpenchainDB) GetIterator(cfName string) *DBIterator {
 }
 
 func (e *DBWriteBatch) Destroy() {
+
+	if e == nil {
+		return
+	}
+
 	if e.WriteBatch != nil {
 		e.WriteBatch.Destroy()
 	}
@@ -296,6 +299,11 @@ func (e *DBWriteBatch) Destroy() {
 }
 
 func (e *DBIterator) Close() {
+
+	if e == nil {
+		return
+	}
+
 	if e.Iterator != nil {
 		e.Iterator.Close()
 	}
@@ -303,6 +311,11 @@ func (e *DBIterator) Close() {
 }
 
 func (e *DBSnapshot) Release() {
+
+	if e == nil {
+		return
+	}
+
 	if e.snapshot != nil {
 		e.ReleaseSnapshot(e.snapshot)
 	}

@@ -554,6 +554,34 @@ func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction 
 	return txs
 }
 
+func (openchainDB *GlobalDataDB) ListCheckpoints() (ret [][]byte) {
+
+	ret = make([][]byte, 0)
+
+	it := openchainDB.GetIterator(PersistCF)
+	defer it.Close()
+
+	prefix := []byte(checkpointNamePrefix)
+
+	for it.Seek([]byte(prefix)); it.ValidForPrefix(prefix); it.Next() {
+		//Value/Key() in iterator need not to be Free() but its Data()
+		//must be copied
+		//ret = append(ret, it.Value().Data()) --- THIS IS WRONG
+		ret = append(ret, makeCopy(it.Value().Data()))
+	}
+
+	return
+}
+
+func (openchainDB *GlobalDataDB) GetDBVersion() int {
+	v, _ := openchainDB.GetValue(PersistCF, []byte(currentVersionKey))
+	if len(v) == 0 {
+		return 0
+	}
+
+	return int(v[0])
+}
+
 func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator {
 
 	cf := openchainDB.cfMap[cfName]
@@ -572,6 +600,24 @@ func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator 
 func (txdb *GlobalDataDB) PutGenesisGlobalState(statehash []byte) error {
 
 	newgs := protos.NewGlobalState()
+
+	//if you connect root gs from tail, you got some wired situtation:
+	//there is a cycle without any node so walkPath method will not stop
+	//we avoid this case by setting a "dummy" gs which is never accessed
+	if txdb.useCycleGraph {
+		dummygs := protos.NewGlobalState()
+		dummygs.NextNodeStateHash = [][]byte{statehash}
+		v, err := dummygs.Bytes()
+		if err != nil {
+			return err
+		}
+		err = txdb.PutValue(GlobalCF, []byte("DUMMYGS#"), v)
+		if err != nil {
+			return err
+		}
+		newgs.ParentNodeStateHash = [][]byte{[]byte("DUMMYGS#")}
+	}
+
 	v, err := newgs.Bytes()
 
 	if err == nil {

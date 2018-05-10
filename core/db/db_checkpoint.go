@@ -46,10 +46,23 @@ func createCheckpoint(db *gorocksdb.DB, cpPath string) error {
 	return nil
 }
 
+const checkpointNamePrefix = "checkpoint."
+
 func (oc *OpenchainDB) CheckpointCurrent(statehash []byte) error {
 	statename := encodeStatehash(statehash)
 
-	return createCheckpoint(oc.db.DB, getCheckPointPath(statename))
+	//todo: can use persist data to check if checkpoint is existed
+	err := createCheckpoint(oc.db.DB, getCheckPointPath(statename))
+	if err != nil {
+		return err
+	}
+
+	err = globalDataDB.PutValue(PersistCF, []byte(checkpointNamePrefix+statename), statehash)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (oc *OpenchainDB) StateSwitch(statehash []byte) error {
@@ -60,16 +73,30 @@ func (oc *OpenchainDB) StateSwitch(statehash []byte) error {
 
 	opts := gorocksdb.NewDefaultOptions()
 	defer opts.Destroy()
+	opts.SetCreateIfMissing(false)
+	opts.SetCreateIfMissingColumnFamilies(false)
 
-	//open checkpoint on read-only mode
-	chkp, err := gorocksdb.OpenDbForReadOnly(opts, getCheckPointPath(statename), true)
+	//open checkpoint. CAUTION: you CAN NOT build checkpoint from RO-opened db
+	cfname := append(columnfamilies, "default")
+	cfopts := make([]*gorocksdb.Options, len(cfname))
+	for i, _ := range cfopts {
+		cfopts[i] = opts
+	}
+	chkp, cfhandles, err := gorocksdb.OpenDbColumnFamilies(opts,
+		getCheckPointPath(statename), cfname, cfopts)
 	if err != nil {
 		return fmt.Errorf("[%s] Open checkpoint [%s] fail: %s", printGID, statename, err)
 	}
 
-	defer chkp.Close()
+	clear := func() {
+		for _, cf := range cfhandles {
+			cf.Destroy()
+		}
+		chkp.Close()
+	}
+	defer clear()
 
-	newtag := util.GenerateBytesUUID()
+	newtag := []byte(util.GenerateUUID())
 	newdbPath := getDBPath(activeDbName(newtag))
 	dbLogger.Infof("[%s] Create new state db on %s", printGID, newdbPath)
 
@@ -110,6 +137,7 @@ func (oc *OpenchainDB) StateSwitch(statehash []byte) error {
 	olddb.finalDrop = false //DATA RACE? No, it should be SAFE
 	select {
 	case <-olddb.extendedLock:
+		dbLogger.Infof("[%s] Delay release current db <%s>", printGID, olddb.dbName)
 	default:
 		dbLogger.Infof("[%s] Release current db <%s>", printGID, olddb.dbName)
 		olddb.close()

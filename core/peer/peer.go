@@ -946,18 +946,20 @@ type Persistor interface {
 	Load(key string) ([]byte, error)
 }
 
+const PeerStoreKeyPrefix = "peer."
+
 // Store enables a peer to persist the given key,value pair to the database
 func (p *Impl) Store(key string, value []byte) error {
 	dbhandler := db.GetGlobalDBHandle()
 
 	//dbg.Infof("add db.PersistCF: <%s> --> <%x>", key, value)
-	return dbhandler.PutValue(db.PersistCF, []byte(key), value)
+	return dbhandler.PutValue(db.PersistCF, []byte(PeerStoreKeyPrefix+key), value)
 }
 
 // Load enables a peer to read the value that corresponds to the given database key
 func (p *Impl) Load(key string) ([]byte, error) {
 	dbhandler := db.GetGlobalDBHandle()
-	return dbhandler.GetValue(db.PersistCF, []byte(key))
+	return dbhandler.GetValue(db.PersistCF, []byte(PeerStoreKeyPrefix+key))
 }
 
 // =============================================================================

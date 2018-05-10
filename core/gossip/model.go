@@ -141,9 +141,23 @@ func (m *Model) getPeerTransactions(id string, maxn int) ([]*pb.Transaction, []b
 	return txs, version.hash, nil
 }
 
-func (m *Model) validateTxs(hash []byte, txs []*pb.Transaction) bool {
+func (m *Model) validateTxs(hash []byte, txs []*pb.Transaction) []*pb.Transaction {
 	// TODO: add validate method
-	return true
+	newTxs := []*pb.Transaction{}
+	lg, err := ledger.GetLedger()
+	if err != nil {
+		logger.Errorf("Get ledger to validate error: %s", err)
+		return newTxs
+	}
+	for _, tx := range txs {
+		_, err := lg.GetTransactionByID(tx.Txid)
+		if err == nil {
+			// tx already exists
+			continue
+		}
+		newTxs = append(newTxs, tx)
+	}
+	return newTxs
 }
 
 func (m *Model) applyDigest(message *pb.Gossip) error {
@@ -195,14 +209,15 @@ func (m *Model) applyUpdate(message *pb.Gossip) error {
 			logger.Errorf("Unmarshal gossip txs error: %s", err)
 			return nil
 		}
-		if !m.validateTxs(txs.State, txs.Txs.Transactions) {
+		ntxs := m.validateTxs(txs.State, txs.Txs.Transactions)
+		if len(ntxs) == 0 {
 			return fmt.Errorf("Validate tx failed")
 		}
-		err := lg.PutTransactions(txs.Txs.Transactions)
+		err := lg.PutTransactions(ntxs)
 		if err != nil {
 			return fmt.Errorf("Put transactions error: %s", err)
 		}
-		m.updateSelf("tx", txs.State, len(txs.Txs.Transactions))
+		m.updateSelf("tx", txs.State, len(ntxs))
 		break
 
 	default:

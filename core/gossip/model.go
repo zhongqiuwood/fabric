@@ -45,17 +45,30 @@ func (m *Model) init() {
 	}
 
 	lg, err := ledger.GetLedger()
+	if err != nil {
+		logger.Errorf("Get ledger error: %s", err)
+		return
+	}
 	hash, err := lg.GetCurrentStateHash()
-	//block, err := lg.blockchain.getBlockByState(hash)
-	number := 0
-	known := true
-	// if err == nil {
-	// 	number = len(block.Txids)
-	// }
+	if err != nil {
+		logger.Errorf("Get current state hash error: %s", err)
+		return
+	}
+	chain, err := lg.GetBlockchainInfo()
+	if err != nil {
+		logger.Errorf("Get block chain info error: %s", err)
+		return
+	}
+	block, err := lg.GetBlockByNumber(chain.Height)
+	if err != nil {
+		logger.Errorf("Get block info info error: %s", err)
+		return
+	}
+
 	m.self.states["tx"] = &StateVersion{
-		known:  known,
+		known:  true,
 		hash:   hash,
-		number: uint64(number),
+		number: uint64(len(block.Txids)),
 	}
 }
 

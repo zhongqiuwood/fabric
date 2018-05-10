@@ -72,7 +72,7 @@ func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 		if ok {
 			p.digestResponseTime = now
 			empty := []*pb.Transaction{}
-			gossipStub.sendTxUpdates(p, empty)
+			gossipStub.sendTxUpdates(p, empty, 1)
 		}
 	} else if m.GetUpdate() != nil {
 		// process update
@@ -143,6 +143,9 @@ func (s *GossipStub) BroadcastTx(txs []*pb.Transaction) error {
 
 	// update self state to 3 other peers
 	s.sendTxDigests(nil, 3)
+
+	// broadcast tx to other peers
+	s.sendTxUpdates(nil, txs, 3)
 	return nil
 	//return fmt.Errorf("No implement")
 }
@@ -155,7 +158,7 @@ func (s *GossipStub) SetModelMerger(merger VersionMergerInterface) {
 func (s *GossipStub) sendTxDigests(refer *PeerAction, maxn int) {
 	var now = time.Now().Unix()
 	var targetIDs []*pb.PeerID
-	if refer != nil && refer.digestSendTime+30 < now {
+	if refer != nil && refer.digestSendTime+10 < now {
 		targetIDs = append(targetIDs, refer.id)
 	}
 
@@ -203,31 +206,34 @@ func (s *GossipStub) sendTxDigests(refer *PeerAction, maxn int) {
 	}
 }
 
-func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) error {
+func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction, maxn int) error {
 	var now = time.Now().Unix()
 	var targetIDs []*pb.PeerID
-	if refer != nil && refer.digestSendTime+30 < now {
+	if refer != nil && refer.updateSendTime+10 < now {
 		targetIDs = append(targetIDs, refer.id)
 	}
 
-	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-	for len(targetIDs) < 3 {
-		number := 0
-		rindex := rnd.Intn(len(s.peerActions))
-		macthed := false
-		for _, peer := range s.peerActions {
-			if refer != nil && peer.id == refer.id {
+	if len(targetIDs) == 0 || len(txs) > 0 {
+		// no targets or txs not empty
+		rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+		for len(targetIDs) < maxn {
+			number := 0
+			rindex := rnd.Intn(len(s.peerActions))
+			macthed := false
+			for _, peer := range s.peerActions {
+				if refer != nil && peer.id == refer.id {
+					number++
+					continue
+				}
+				if number == rindex {
+					macthed = true
+					targetIDs = append(targetIDs, peer.id)
+				}
 				number++
-				continue
 			}
-			if number == rindex {
-				macthed = true
-				targetIDs = append(targetIDs, peer.id)
+			if !macthed {
+				break
 			}
-			number++
-		}
-		if !macthed {
-			break
 		}
 	}
 
@@ -259,6 +265,11 @@ func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction) err
 		}
 		txs = ntxs
 		hash = nhash
+	}
+
+	if len(txs) == 0 {
+		// no txs send
+		return fmt.Errorf("No txs send")
 	}
 
 	handlers := s.PickHandlers(targetIDs)

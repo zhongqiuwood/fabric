@@ -7,6 +7,8 @@ import (
 	pb "github.com/abchain/fabric/protos"
 )
 
+const PeerStoreKeyPrefix = "peer."
+
 // BlockChainAccessor interface for retreiving blocks by block number
 type BlockChainAccessor interface {
 	GetBlockByNumber(blockNumber uint64) (*pb.Block, error)

@@ -202,11 +202,22 @@ func updateDBToV1() error {
 		return fmt.Errorf("Reconstruct blockchain fail: %s", err)
 	}
 
+	cf := db.GetGlobalDBHandle().GetCFByName(db.PersistCF)
+	if cf == nil {
+		panic("Globaldb has no persistCF")
+	}
+
 	//copying keys in persistCF for required content
 	//currently it just the peer-persisted content in 0.6, which have no
 	//any prefix and we need to add PeerStoreKeyPrefix on it
 	itr := db.GetDBHandle().GetIterator(db.PersistCF)
 	defer itr.Close()
+
+	wb := db.GetGlobalDBHandle().NewWriteBatch()
+	defer wb.Destroy()
+
+	var peerKeyMove uint
+	wbatch := uint(128)
 
 	for ; itr.Valid(); itr.Next() {
 
@@ -233,12 +244,24 @@ func updateDBToV1() error {
 		} else {
 			//treat it as peer persisted data and move
 			newk := bytes.Join([][]byte{[]byte(PeerStoreKeyPrefix), k}, nil)
-			err = db.GetGlobalDBHandle().PutValue(db.PersistCF, newk, itr.Value().Data())
-			if err != nil {
-				return fmt.Errorf("Write persist cf fail: %s", err)
-			}
-		}
+			wb.PutCF(cf, newk, itr.Value().Data())
+			peerKeyMove++
 
+			if peerKeyMove%wbatch == 0 {
+				err = db.GetGlobalDBHandle().BatchCommit(wb)
+				if err != nil {
+					return fmt.Errorf("Batch commit persistcf fail: %s", err)
+				}
+			}
+
+		}
+	}
+
+	if peerKeyMove%wbatch != 0 {
+		err = db.GetGlobalDBHandle().BatchCommit(wb)
+		if err != nil {
+			return fmt.Errorf("Last batch commit persistcf fail: %s", err)
+		}
 	}
 
 	return nil

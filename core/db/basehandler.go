@@ -163,6 +163,10 @@ func (h *baseHandler) delete(cf *gorocksdb.ColumnFamilyHandle, key []byte) error
 	return err
 }
 
+func (h *baseHandler) GetCFByName(cfName string) *gorocksdb.ColumnFamilyHandle {
+	return h.cfMap[cfName]
+}
+
 func (h *baseHandler) GetValue(cfName string, key []byte) ([]byte, error) {
 	cf, ok := h.cfMap[cfName]
 	if !ok {
@@ -179,6 +183,10 @@ func (h *baseHandler) PutValue(cfName string, key []byte, value []byte) error {
 	}
 
 	return h.put(cf, key, value)
+}
+
+func (h *baseHandler) NewWriteBatch() *gorocksdb.WriteBatch {
+	return gorocksdb.NewWriteBatch()
 }
 
 func (h *baseHandler) BatchCommit(writeBatch *gorocksdb.WriteBatch) error {

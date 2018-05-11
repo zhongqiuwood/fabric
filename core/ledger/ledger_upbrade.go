@@ -232,6 +232,11 @@ func updateDBToV1() error {
 			//we do not need to move consensus kv
 		} else {
 			//treat it as peer persisted data and move
+			newk := bytes.Join([][]byte{[]byte(PeerStoreKeyPrefix), k}, nil)
+			err = db.GetGlobalDBHandle().PutValue(db.PersistCF, newk, itr.Value().Data())
+			if err != nil {
+				return fmt.Errorf("Write persist cf fail: %s", err)
+			}
 		}
 
 	}

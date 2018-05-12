@@ -257,6 +257,10 @@ func (txdb *GlobalDataDB) open(dbpath string) error {
 
 func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 
+	if statehash == nil {
+		return nil
+	}
+
 	data, _ := txdb.get(txdb.globalCF, statehash)
 	if data != nil {
 		gs, err := protos.UnmarshallGS(data)
@@ -580,6 +584,10 @@ func (openchainDB *GlobalDataDB) GetDBVersion() int {
 	}
 
 	return int(v[0])
+}
+
+func (openchainDB *GlobalDataDB) UpdateDBVersion(v int) error {
+	return openchainDB.PutValue(PersistCF, []byte(currentVersionKey), []byte{byte(v)})
 }
 
 func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator {

@@ -10,6 +10,78 @@ import (
 	_ "strconv"
 )
 
+const dbVersion = db.DBVersion
+
+func UpgradeLedger(checkonly bool) error {
+
+	v := db.GetGlobalDBHandle().GetDBVersion()
+	ledgerLogger.Info("Current DB Version is", v)
+
+	if v == dbVersion {
+		return nil
+	} else if v > dbVersion {
+		return fmt.Errorf("Encounter version %d which is higher than expected (%d)", v, dbVersion)
+	} else if checkonly {
+		return fmt.Errorf("Old Version: %d, needs update to %d", v, dbVersion)
+	}
+
+	//low version, need update
+	ledgerLogger.Infof("Start upgrading db from version %d to %d, this may require several steps ...", v, dbVersion)
+
+	if len(ledger_updater) < dbVersion {
+		panic("No enough upgrader provided")
+	}
+
+	ledgerLogger.Infof("Backuping ...")
+	tag, err := db.Backup()
+
+	if err != nil {
+		return fmt.Errorf("Backup current db fail: %s", err)
+	}
+
+	defer func() {
+
+		if err != nil {
+			ledgerLogger.Warningf("Current db may be ruined and a backup exist with tag %d,", tag)
+			ledgerLogger.Warningf("Consult with your technique supporter for data recovery")
+		}
+	}()
+
+	for ; v < dbVersion; v++ {
+		ledgerLogger.Infof("Upgrading db from ver.%d to ver.%d", v, v+1)
+		err = ledger_updater[v]()
+		if err != nil {
+			ledgerLogger.Error("Upgrade fail", err)
+			return err
+		}
+	}
+
+	//done, write new version
+	err = db.GetGlobalDBHandle().UpdateDBVersion(dbVersion)
+	if err != nil {
+		return fmt.Errorf("Final write db version fail: %s", err)
+	}
+
+	ledgerLogger.Infof("Upgrade finish!")
+
+	bakpath := db.GetBackupPath(tag)
+
+	for _, path := range bakpath {
+		droperr := db.DropDB(path)
+		if droperr != nil {
+			ledgerLogger.Warningf("Clear backup created in upgrading fail: %s, need manually delete", droperr)
+		}
+	}
+
+	return nil
+}
+
+/*
+   on reconstruction, this require a bunch of memory to accommodate the whole
+   chains. i.e: 10M blocks require ~320MB memory (for 256bit hash) but this
+   should be enough for a very long era (even ethereum currently [2018] has only
+   ~5M blocks)
+*/
 type reconstructInfo struct {
 	begin   uint64
 	newhash [][]byte
@@ -112,7 +184,7 @@ func reconstructBlockChain() (err error, r *reconstructInfo) {
 		bytesAfter = bytesAfter + uint64(len(blockBytes))
 	}
 
-	ledgerLogger.Infof("Reconstruct block hash, from %d bytes to %d bytes",
+	ledgerLogger.Infof("Reconstruct blockchain, from %d bytes to %d bytes",
 		bytesBefore, bytesAfter)
 
 	return
@@ -266,3 +338,5 @@ func updateDBToV1() error {
 
 	return nil
 }
+
+var ledger_updater = []func() error{updateDBToV1}

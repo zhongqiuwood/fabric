@@ -19,6 +19,8 @@ var rocksDBLogLevelMap = map[string]gorocksdb.InfoLogLevel{
 	"error": gorocksdb.ErrorInfoLogLevel,
 	"fatal": gorocksdb.FatalInfoLogLevel}
 
+const DBVersion = 1
+
 // cf in txdb
 const TxCF = "txCF"
 const GlobalCF = "globalCF"
@@ -102,8 +104,24 @@ func Start() {
 		panic(err)
 	}
 
+	orgDBPath := getDBPath(activeDbName(k))
+
+	//check if db is just created
+	roOpt := gorocksdb.NewDefaultOptions()
+	defer roOpt.Destroy()
+	roDB, err := gorocksdb.OpenDbForReadOnly(roOpt, orgDBPath, false)
+	if err != nil {
+		dbLogger.Info("New DB is open")
+		err = globalDataDB.UpdateDBVersion(DBVersion)
+		if err != nil {
+			panic(err)
+		}
+	} else {
+		roDB.Close()
+	}
+
 	originalDB.db.OpenOpt = opts
-	err = originalDB.db.open(getDBPath(activeDbName(k)))
+	err = originalDB.db.open(orgDBPath)
 	if err != nil {
 		panic(err)
 	}
@@ -114,6 +132,52 @@ func Start() {
 func Stop() {
 	originalDB.db.close()
 	globalDataDB.close()
+}
+
+func DropDB(path string) error {
+
+	opt := gorocksdb.NewDefaultOptions()
+	defer opt.Destroy()
+
+	return gorocksdb.DestroyDb(path, opt)
+}
+
+func GetCurrentDBPath() []string {
+	return []string{
+		getDBPath("txdb"),
+		originalDB.db.dbName,
+	}
+}
+
+//generate paths for backuping, only understanded by this package
+func GetBackupPath(tag string) []string {
+
+	return []string{
+		getDBPath("txdb_" + tag + "_bak"),
+		getDBPath("db_" + tag + "_bak"),
+	}
+}
+
+func Backup() (tag string, err error) {
+
+	tag = util.GenerateUUID()
+	paths := GetBackupPath(tag)
+
+	if len(paths) < 2 {
+		panic("Not match backup paths with backup expected")
+	}
+
+	err = createCheckpoint(globalDataDB.DB, paths[0])
+	if err != nil {
+		return
+	}
+
+	err = createCheckpoint(originalDB.db.DB, paths[1])
+	if err != nil {
+		return
+	}
+
+	return
 }
 
 func (h *baseHandler) get(cf *gorocksdb.ColumnFamilyHandle, key []byte) ([]byte, error) {

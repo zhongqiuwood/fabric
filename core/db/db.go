@@ -64,10 +64,7 @@ var originalDB = &OpenchainDB{db: &ocDB{}}
 
 func (oc *ocDB) dropDB() {
 
-	opt := gorocksdb.NewDefaultOptions()
-	defer opt.Destroy()
-
-	err := gorocksdb.DestroyDb(oc.dbName, opt)
+	err := DropDB(oc.dbName)
 
 	if err == nil {
 		dbLogger.Infof("[%s] Drop whole db <%s>", printGID, oc.dbName)

@@ -95,7 +95,11 @@ var once sync.Once
 // GetLedger - gives a reference to a 'singleton' ledger
 func GetLedger() (*Ledger, error) {
 	once.Do(func() {
-		ledger, ledgerError = GetNewLedger()
+		//check version before obtain ledger ...
+		ledgerError = UpgradeLedger(true)
+		if ledgerError == nil {
+			ledger, ledgerError = GetNewLedger()
+		}
 	})
 	return ledger, ledgerError
 }
@@ -126,7 +130,7 @@ func sanityCheck() error {
 
 	size, err := fetchBlockchainSizeFromDB()
 	if err != nil {
-		return err
+		return fmt.Errorf("Fetch size fail: %s", err)
 	}
 
 	if size == 0 {
@@ -136,15 +140,11 @@ func sanityCheck() error {
 	noneExistingList := make([][]byte, 0)
 	var lastExisting []byte
 
-	for n := size - 1; n >= 0; n-- {
+	for n := size - 1; n != 0; n-- {
 
 		block, err := fetchBlockFromDB(n)
 		if err != nil {
-			return err
-		}
-
-		if block.StateHash == nil && n == 0 {
-			block.StateHash = []byte("0")
+			return fmt.Errorf("Fetch block fail: %s", err)
 		}
 
 		gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
@@ -158,26 +158,32 @@ func sanityCheck() error {
 				n, block.StateHash)
 			noneExistingList = append(noneExistingList, block.StateHash)
 		}
+	}
 
-		// in case of overflow as type n is uint64
-		if n == 0 {
-			break
+	//so we have all blocks missed in global state (except for the gensis)
+	//so we just start from a new gensis state
+	if lastExisting == nil {
+		block, err := fetchBlockFromDB(0)
+		if err != nil {
+			return fmt.Errorf("Fetch gensis block fail: %s", err)
+		}
+		err = db.GetGlobalDBHandle().PutGenesisGlobalState(block.StateHash)
+		if err != nil {
+			return fmt.Errorf("Put genesis state fail: %s", err)
 		}
 	}
 
-	for index := len(noneExistingList) - 1; index >= 0; index-- {
-		stateHash := noneExistingList[index]
-		var err error
+	for len(noneExistingList) > 0 {
 
-		ledgerLogger.Infof("Add Missed GlobalState:")
-		ledgerLogger.Infof("	parentStateHash[%x]", lastExisting)
-		ledgerLogger.Infof("	statehash[%x]", stateHash)
+		pos := len(noneExistingList) - 1
+		stateHash := noneExistingList[pos]
 		err = db.GetGlobalDBHandle().AddGlobalState(lastExisting, stateHash)
-
 		if err != nil {
-			return err
+			return fmt.Errorf("Put global state fail: %s", err)
 		}
 		lastExisting = stateHash
+		noneExistingList = noneExistingList[:pos]
+		ledgerLogger.Infof("Sanity check add Missed GlobalState [%x]:", stateHash)
 	}
 
 	return nil

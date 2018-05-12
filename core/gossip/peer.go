@@ -34,6 +34,7 @@ type PeerAction struct {
 type GossipStub struct {
 	*pb.StreamStub
 	peer.Discoverer
+	ledger      *ledger.Ledger
 	model       *Model
 	peerActions map[string]*PeerAction
 }
@@ -51,6 +52,8 @@ func init() {
 			digestSeq:          0,
 			digestSendTime:     0,
 			digestResponseTime: 0,
+			updateSendTime:     0,
+			updateReceiveTime:  0,
 		}
 		gossipStub.peerActions[id.String()] = action
 		// send initial digests to target
@@ -63,22 +66,29 @@ func init() {
 func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 	now := time.Now().Unix()
 	p, ok := gossipStub.peerActions[t.peerID.String()]
-	if ok {
-		p.activeTime = now
+	if !ok {
+		return fmt.Errorf("Peer not found")
 	}
+
+	p.activeTime = now
 	if m.GetDigest() != nil {
 		// process digest
-		gossipStub.model.applyDigest(m)
-		if ok {
+		err := gossipStub.model.applyDigest(t.peerID, m)
+		if err != nil {
+			// send digest if last diest send time ok
+			gossipStub.sendTxDigests(p, 1)
+
+			// mark and send update to peer
 			p.digestResponseTime = now
 			empty := []*pb.Transaction{}
 			gossipStub.sendTxUpdates(p, empty, 1)
 		}
 	} else if m.GetUpdate() != nil {
 		// process update
-		gossipStub.model.applyUpdate(m)
-		if ok {
+		txs, err := gossipStub.model.applyUpdate(t.peerID, m)
+		if err != nil {
 			p.digestResponseTime = now
+			gossipStub.ledger.PutTransactions(txs)
 		}
 	}
 	return nil
@@ -126,8 +136,40 @@ func NewGossip(p peer.Peer) {
 		}
 	}
 
+	peerID := ""
+	mypeer, err := p.GetPeerEndpoint()
+	if err != nil {
+		peerID = mypeer.ID.String()
+	}
+
+	lg, err := ledger.GetLedger()
+	if err != nil {
+		logger.Errorf("Get ledger error: %s", err)
+		return
+	}
+	state, err := lg.GetCurrentStateHash()
+	if err != nil {
+		logger.Errorf("Get current state hash error: %s", err)
+		return
+	}
+	chain, err := lg.GetBlockchainInfo()
+	if err != nil {
+		logger.Errorf("Get block chain info error: %s", err)
+		return
+	}
+	block, err := lg.GetBlockByNumber(chain.Height - 1)
+	if err != nil {
+		logger.Errorf("Get block info info error: %s", err)
+		return
+	}
+
+	number := len(block.Txids)
+	logger.Infof("Peer(%s), current state hash(%x/%x), block height(%d), number(%d)",
+		peerID, state, chain.CurrentBlockHash, chain.Height, number)
+
+	gossipStub.ledger = lg
 	gossipStub.peerActions = map[string]*PeerAction{}
-	gossipStub.model.init()
+	gossipStub.model.init(peerID, state, uint64(number))
 }
 
 // GetGossip - gives a reference to a 'singleton' GossipStub
@@ -138,8 +180,13 @@ func GetGossip() Gossip {
 
 // BroadcastTx method
 func (s *GossipStub) BroadcastTx(txs []*pb.Transaction) error {
+	state, err := s.ledger.GetCurrentStateHash()
+	if err != nil {
+		return err
+	}
+
 	// update self state
-	s.model.updateSelfTxs(txs)
+	s.model.updateSelfTxs(state, txs)
 
 	// update self state to 3 other peers
 	s.sendTxDigests(nil, 3)
@@ -147,7 +194,6 @@ func (s *GossipStub) BroadcastTx(txs []*pb.Transaction) error {
 	// broadcast tx to other peers
 	s.sendTxUpdates(nil, txs, 3)
 	return nil
-	//return fmt.Errorf("No implement")
 }
 
 // SetModelMerger method
@@ -206,11 +252,11 @@ func (s *GossipStub) sendTxDigests(refer *PeerAction, maxn int) {
 	}
 }
 
-func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction, maxn int) error {
+func (s *GossipStub) sendTxUpdates(referer *PeerAction, txs []*pb.Transaction, maxn int) error {
 	var now = time.Now().Unix()
 	var targetIDs []*pb.PeerID
-	if refer != nil && refer.updateSendTime+10 < now {
-		targetIDs = append(targetIDs, refer.id)
+	if referer != nil && referer.updateSendTime+10 < now {
+		targetIDs = append(targetIDs, referer.id)
 	}
 
 	if len(targetIDs) == 0 || len(txs) > 0 {
@@ -221,7 +267,7 @@ func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction, max
 			rindex := rnd.Intn(len(s.peerActions))
 			macthed := false
 			for _, peer := range s.peerActions {
-				if refer != nil && peer.id == refer.id {
+				if referer != nil && peer.id == referer.id {
 					number++
 					continue
 				}
@@ -237,34 +283,34 @@ func (s *GossipStub) sendTxUpdates(refer *PeerAction, txs []*pb.Transaction, max
 		}
 	}
 
-	referID := ""
-	if refer != nil {
-		referID = refer.id.String()
+	refererID := ""
+	if referer != nil {
+		refererID = referer.id.String()
 	}
 	if len(targetIDs) == 0 {
-		logger.Debugf("No update need to send to any peers, with refer(%s)", referID)
+		logger.Debugf("No update need to send to any peers, with referer(%s)", refererID)
 		return fmt.Errorf("No peers")
 	}
 
-	lg, err := ledger.GetLedger()
-	if err != nil {
-		return err
-	}
-
-	hash, err := lg.GetCurrentStateHash()
+	hash, err := s.ledger.GetCurrentStateHash()
 	if err != nil {
 		return err
 	}
 	if len(targetIDs) == 1 && len(txs) == 0 {
 		// fill transactions with state
+		txstate, err := s.model.getPeerTxState(targetIDs[0].String())
+		if err != nil {
+			logger.Debugf("No update need to send to peer(%s), with error(%s)", targetIDs[0], err)
+			return err
+		}
 		// at most 3 txs
-		ntxs, nhash, err := s.model.getPeerTransactions(targetIDs[0].String(), 3)
+		ntxs, err := s.ledger.GetTransactionsByRange(txstate.hash, int(txstate.number)+1, int(txstate.number)+4)
 		if err != nil || len(ntxs) == 0 {
 			logger.Debugf("No update need to send to peer(%s), with error(%s)", targetIDs[0], err)
 			return err
 		}
 		txs = ntxs
-		hash = nhash
+		hash = txstate.hash
 	}
 
 	if len(txs) == 0 {

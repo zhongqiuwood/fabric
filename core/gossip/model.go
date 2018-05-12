@@ -6,8 +6,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 
-	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 )
 
@@ -33,45 +31,16 @@ type Model struct {
 	nseq   uint64
 }
 
-func (m *Model) init() {
+func (m *Model) init(id string, state []byte, number uint64) {
 	m.self = PeerState{
-		id:     "",
+		id:     id,
 		states: map[string]*StateVersion{},
 	}
 
-	mypeer, err := peer.GetPeerEndpoint()
-	if err != nil {
-		m.self.id = mypeer.ID.String()
-	}
-
-	lg, err := ledger.GetLedger()
-	if err != nil {
-		logger.Errorf("Get ledger error: %s", err)
-		return
-	}
-	hash, err := lg.GetCurrentStateHash()
-	if err != nil {
-		logger.Errorf("Get current state hash error: %s", err)
-		return
-	}
-	chain, err := lg.GetBlockchainInfo()
-	if err != nil {
-		logger.Errorf("Get block chain info error: %s", err)
-		return
-	}
-	block, err := lg.GetBlockByNumber(chain.Height - 1)
-	if err != nil {
-		logger.Errorf("Get block info info error: %s", err)
-		return
-	}
-
-	number := len(block.Txids)
-	logger.Infof("Current state hash(%x/%x), block height(%d), number(%d)", hash, chain.CurrentBlockHash, chain.Height, number)
-
 	m.self.states["tx"] = &StateVersion{
 		known:  true,
-		hash:   hash,
-		number: uint64(number),
+		hash:   state,
+		number: number,
 	}
 }
 
@@ -121,41 +90,26 @@ func (m *Model) forEach(iter func(id string, peer *PeerState) error) error {
 	return err
 }
 
-func (m *Model) getPeerTransactions(id string, maxn int) ([]*pb.Transaction, []byte, error) {
+func (m *Model) getPeerTxState(id string) (*StateVersion, error) {
 	state, ok := m.store[id]
 	if !ok {
-		return nil, nil, fmt.Errorf("Peer id(%s) state not found", id)
+		return nil, fmt.Errorf("Peer id(%s) state not found", id)
 	}
 
 	version, ok := state.states["tx"]
 	if !ok {
-		return nil, nil, fmt.Errorf("Peer id(%s) tx not found", id)
+		return nil, fmt.Errorf("Peer id(%s) tx not found", id)
 	}
-
-	lg, err := ledger.GetLedger()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	txs, err := lg.GetTransactionsByRange(version.hash, int(version.number)+1, int(version.number)+maxn)
-	if err != nil {
-		return nil, nil, err
-	}
-	return txs, version.hash, nil
+	return version, nil
 }
 
 func (m *Model) validateTxs(hash []byte, txs []*pb.Transaction) []*pb.Transaction {
 	// TODO: add validate method
 	newTxs := []*pb.Transaction{}
-	lg, err := ledger.GetLedger()
-	if err != nil {
-		logger.Errorf("Get ledger to validate error: %s", err)
-		return newTxs
-	}
 	for _, tx := range txs {
-		_, err := lg.GetTransactionByID(tx.Txid)
-		if err == nil {
-			// tx already exists
+		ok := m.crypto.ValidateTx(tx)
+		if !ok {
+			// tx already exists or error
 			continue
 		}
 		newTxs = append(newTxs, tx)
@@ -163,7 +117,7 @@ func (m *Model) validateTxs(hash []byte, txs []*pb.Transaction) []*pb.Transactio
 	return newTxs
 }
 
-func (m *Model) applyDigest(message *pb.Gossip) error {
+func (m *Model) applyDigest(referer *pb.PeerID, message *pb.Gossip) error {
 	if m.merger == nil {
 		return fmt.Errorf("No merger implement")
 	}
@@ -179,7 +133,7 @@ func (m *Model) applyDigest(message *pb.Gossip) error {
 		}
 		peer, ok := m.store[id]
 		remote := &StateVersion{hash: state.State, number: state.Num}
-		if m.crypto != nil && !m.crypto.Verify(id, message.Catalog, state) {
+		if m.crypto != nil && !m.crypto.Verify(referer.String(), id, message.Catalog, state) {
 			continue
 		}
 		if !ok {
@@ -197,50 +151,53 @@ func (m *Model) applyDigest(message *pb.Gossip) error {
 	return nil
 }
 
-func (m *Model) applyUpdate(message *pb.Gossip) error {
-	lg, err := ledger.GetLedger()
-	if err != nil {
-		return err
-	}
+func (m *Model) applyUpdate(referer *pb.PeerID, message *pb.Gossip) ([]*pb.Transaction, error) {
+	// lg, err := ledger.GetLedger()
+	// if err != nil {
+	// 	return nil, err
+	// }
 
+	ntxs := []*pb.Transaction{}
 	update := message.GetUpdate()
 	switch message.Catalog {
 	case "tx":
 		txs := &pb.Gossip_Tx{}
-		err = proto.Unmarshal(update.Payload, txs)
+		err := proto.Unmarshal(update.Payload, txs)
 		if err != nil {
 			logger.Errorf("Unmarshal gossip txs error: %s", err)
-			return nil
+			return nil, err
 		}
-		ntxs := m.validateTxs(txs.State, txs.Txs.Transactions)
+		ntxs = m.validateTxs(txs.State, txs.Txs.Transactions)
 		if len(ntxs) == 0 {
-			return fmt.Errorf("Validate tx failed")
+			return nil, fmt.Errorf("Validate tx failed")
 		}
-		err := lg.PutTransactions(ntxs)
-		if err != nil {
-			return fmt.Errorf("Put transactions error: %s", err)
-		}
+		// trim ledger
+		// err := lg.PutTransactions(ntxs)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("Put transactions error: %s", err)
+		// }
 		m.updateSelf("tx", txs.State, len(ntxs))
 		break
 
 	default:
-		return fmt.Errorf("Update catalog(%s) not implement", message.Catalog)
+		return nil, fmt.Errorf("Update catalog(%s) not implement", message.Catalog)
 	}
 
-	return nil
+	return ntxs, nil
 }
 
-func (m *Model) updateSelfTxs(txs []*pb.Transaction) error {
-	lg, err := ledger.GetLedger()
-	if err != nil {
-		return err
-	}
+func (m *Model) updateSelfTxs(state []byte, txs []*pb.Transaction) error {
+	// trim ledger
+	// lg, err := ledger.GetLedger()
+	// if err != nil {
+	// 	return err
+	// }
 
-	hash, err := lg.GetCurrentStateHash()
-	if err != nil {
-		return err
-	}
-	m.updateSelf("tx", hash, len(txs))
+	// hash, err := lg.GetCurrentStateHash()
+	// if err != nil {
+	// 	return err
+	// }
+	m.updateSelf("tx", state, len(txs))
 	return nil
 }
 

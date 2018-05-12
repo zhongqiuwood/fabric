@@ -6,7 +6,8 @@ import (
 
 // CryptoInterface interface
 type CryptoInterface interface {
-	Verify(peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool
+	ValidateTx(tx *pb.Transaction) bool
+	Verify(refererID string, peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool
 	Sign(catelog string, message *pb.Gossip_Digest_PeerState) error
 }
 
@@ -15,8 +16,13 @@ type CryptoImpl struct {
 	CryptoInterface
 }
 
+// ValidateTx function
+func (c *CryptoImpl) ValidateTx(tx *pb.Transaction) bool {
+	return true
+}
+
 // Verify function
-func (c *CryptoImpl) Verify(peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool {
+func (c *CryptoImpl) Verify(refererID string, peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool {
 	return true
 }
 

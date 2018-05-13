@@ -447,6 +447,11 @@ func (ledger *Ledger) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, 
 	return ledger.state.FetchStateDeltaFromDB(blockNumber)
 }
 
+func (ledger *Ledger) GetGlobalState(statehash []byte) *protos.GlobalState {
+	return db.GetGlobalDBHandle().GetGlobalState(statehash)
+}
+
+
 // ApplyStateDelta applies a state delta to the current state. This is an
 // in memory change only. You must call ledger.CommitStateDelta to persist
 // the change to the DB.
@@ -666,6 +671,35 @@ func (ledger *Ledger) resetForNextTxGroup(txCommited bool) {
 	ledgerLogger.Debug("resetting ledger state for next transaction batch")
 	ledger.currentID = nil
 	ledger.state.ClearInMemoryChanges(txCommited)
+}
+
+func (ledger *Ledger) Switch2MostRecentCheckpoint(fromBlockNumber uint64) (uint64, error) {
+
+	//startNumber := uint64(0)
+	//
+	//block, _:= ledger.GetBlockByNumber(fromBlockNumber)
+	//
+	//gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
+	//
+	//if gs.LastBranchNodeStateHash != nil {
+	//
+	//	db.GetDBHandle().StateSwitch(gs.LastBranchNodeStateHash)
+	//
+	//	startNumber = db.GetGlobalDBHandle().GetGlobalState(gs.LastBranchNodeStateHash).Count
+	//
+	//} else {
+	//	block, _= ledger.GetBlockByNumber(1)
+	//	db.GetDBHandle().StateSwitch(block.StateHash)
+	//}
+
+	//
+	//gs.Branched()
+	//
+	//stateHash := db.GetGlobalDBHandle().GetGlobalState()
+	//db.GetDBHandle().StateSwitch()
+
+	//return db.GetGlobalDBHandle().GetGlobalState(statehash)
+	return 0, nil
 }
 
 func sendProducerBlockEvent(block *protos.Block) {

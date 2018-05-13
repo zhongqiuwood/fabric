@@ -61,6 +61,16 @@ type PartialStack interface {
 	GetRemoteLedger(receiver *pb.PeerID) (peer.RemoteLedger, error)
 }
 
+type policyImpl struct {
+	// todo: to be produced by consensus framework
+	startBlockNumber uint64
+	endBlockNumber uint64
+}
+
+type SyncPolicy interface {
+	GetPolicyInstance() *policyImpl
+}
+
 // Coordinator is used to initiate state transfer.  Start must be called before use, and Stop should be called to free allocated resources
 type Coordinator interface {
 	Start() // Start the block transfer go routine
@@ -68,6 +78,7 @@ type Coordinator interface {
 
 	// SyncToTarget attempts to move the state to the given target, returning an error, and whether this target might succeed if attempted at a later time
 	SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool)
+	SyncToTargetByPolicy(policy SyncPolicy, peerIDs []*pb.PeerID) (error, bool)
 }
 
 // coordinatorImpl is the structure used to manage the state of state transfer
@@ -103,6 +114,9 @@ type coordinatorImpl struct {
 // If the peerIDs are nil, then all peers are assumed to have the given block.
 // If the call returns an error, a boolean is included which indicates if the error may be transient and the caller should retry
 func (sts *coordinatorImpl) SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool) {
+
+	return sts.SyncToTargetByPolicy(sts, peerIDs)
+
 	logger.Infof("Syncing to target %x for block number %d with peers %v", blockHash, blockNumber, peerIDs)
 
 	if !sts.inProgress {
@@ -211,6 +225,7 @@ type blockSyncReq struct {
 	reportOnBlock  uint64
 	replyChan      chan error
 	firstBlockHash []byte
+	policy         SyncPolicy
 }
 
 type blockRange struct {
@@ -602,7 +617,7 @@ func (sts *coordinatorImpl) blockThread() {
 	for {
 		select {
 		case blockSyncReq := <-sts.blockSyncReq:
-			sts.syncBlockchainToTarget(blockSyncReq)
+			sts.syncByPolicy(blockSyncReq)
 			toggle = toggleOn
 		case <-toggle:
 			// If there is no target to sync to, make sure the rest of the chain is valid
@@ -893,4 +908,243 @@ func (sts *coordinatorImpl) GetRemoteStateDeltas(replicaID *pb.PeerID, start, fi
 		Start: start,
 		End:   finish,
 	})
+}
+
+
+// GetRemoteBlocks will return a channel to stream blocks from the desired replicaID
+func (sts *coordinatorImpl) GetRemoteStateHash(replicaID *pb.PeerID, requestType, blockNumber uint64) (<-chan *pb.SyncStateHash, error) {
+	remoteLedger, err := sts.stack.GetRemoteLedger(replicaID)
+	if nil != err {
+		return nil, err
+	}
+	return remoteLedger.RequestStateHash(&pb.SyncStateHashRequest{
+		Flag: requestType,
+		BlockNumber:   blockNumber,
+	})
+}
+
+func (sts *coordinatorImpl) playStateUpToBlockNumberByPolicy(currentStateBlockNumber, toBlockNumber uint64, peerIDs []*pb.PeerID) error {
+	logger.Infof("Attempting to play state forward from %v to block %d", peerIDs, toBlockNumber)
+	var stateHash []byte
+
+	action := func(peerID *pb.PeerID) error {
+
+		var deltaMessages <-chan *pb.SyncStateDeltas
+		for {
+
+			intermediateBlock := currentStateBlockNumber + 1 + sts.maxStateDeltaRange
+			if intermediateBlock > toBlockNumber {
+				intermediateBlock = toBlockNumber
+			}
+			logger.Infof("Requesting state delta range from %d to %d", currentStateBlockNumber+1, intermediateBlock)
+			var err error
+			deltaMessages, err = sts.GetRemoteStateDeltas(peerID, currentStateBlockNumber+1, intermediateBlock)
+
+			if err != nil {
+				return fmt.Errorf("Received an error while trying to get the state deltas for blocks %d through %d from %v", currentStateBlockNumber+1, intermediateBlock, peerID)
+			}
+
+			for currentStateBlockNumber < intermediateBlock {
+				select {
+				case deltaMessage, ok := <-deltaMessages:
+					if !ok {
+						return fmt.Errorf("Was only able to recover to block number %d when desired to recover to %d", currentStateBlockNumber, toBlockNumber)
+					}
+
+					if deltaMessage.Range.Start != currentStateBlockNumber+1 || deltaMessage.Range.End < deltaMessage.Range.Start || deltaMessage.Range.End > toBlockNumber {
+						return fmt.Errorf("Received a state delta from %v either in the wrong order (backwards) or not next in sequence, aborting, start=%d, end=%d", peerID, deltaMessage.Range.Start, deltaMessage.Range.End)
+					}
+
+					logger.Infof("Received state delta range from %d to %d", deltaMessage.Range.Start, deltaMessage.Range.End)
+
+					for _, delta := range deltaMessage.Deltas {
+						umDelta := &statemgmt.StateDelta{}
+						if err := umDelta.Unmarshal(delta); nil != err {
+							return fmt.Errorf("Received a corrupt state delta from %v : %s", peerID, err)
+						}
+						sts.ledger.ApplyStateDelta(deltaMessage, umDelta)
+
+						if sts.ledger.CommitStateDelta(deltaMessage) != nil {
+							sts.stateValid = false
+							return fmt.Errorf("Played state forward according to %v, hashes matched, but failed to commit, invalidated state", peerID)
+						}
+
+						logger.Infof("<<--- Moved state from %d to %d", currentStateBlockNumber, currentStateBlockNumber+1)
+
+						currentStateBlockNumber++
+
+						if currentStateBlockNumber == toBlockNumber {
+							logger.Infof("Caught up to block %d", currentStateBlockNumber)
+							return nil
+						}
+					}
+
+				case <-time.After(sts.StateDeltaRequestTimeout):
+					logger.Warningf("Timed out during state delta recovery from %v", peerID)
+					return fmt.Errorf("timed out during state delta recovery from %v", peerID)
+				}
+			}
+		}
+
+	}
+
+	err := sts.tryOverPeers(peerIDs, action)
+	logger.Debugf("State is now valid at block %d and hash %x", currentStateBlockNumber, stateHash)
+	return err
+}
+
+func (sts *coordinatorImpl) getSyncTargetBlockNumber(peerIDs []*pb.PeerID) (uint64, uint64, error) {
+
+	targetBlockNumber := uint64(0)
+	endBlockNumber := uint64(0)
+
+	action := func(peerID *pb.PeerID) error {
+
+		blockHeightChan, err := sts.GetRemoteStateHash(peerID, 0, 0)
+
+		if err != nil {
+			return err
+		}
+
+		timer := time.NewTimer(sts.StateSnapshotRequestTimeout)
+		targetHeight := sts.ledger.GetBlockchainSize()
+
+		logger.Infof("Local Blockchain Height <%d>", targetHeight)
+
+		select {
+		case response, ok := <-blockHeightChan:
+			if !ok {
+				return fmt.Errorf("had block channel close : %s", err)
+			}
+			logger.Infof("Remote peer<%s> Blockchain Height <%d>", peerID, response.BlockHeight)
+
+			endBlockNumber = response.BlockHeight - 1
+			if response.BlockHeight < targetHeight {
+				targetHeight = response.BlockHeight
+			}
+		case <-timer.C:
+			return fmt.Errorf("Timed out during getSyncTargetBlockNumber from %v", peerID)
+		}
+
+		var start uint64 = 0
+		end := targetHeight
+		for {
+
+			if targetBlockNumber == (start + end) / 2 {
+				break
+			}
+
+			targetBlockNumber = (start + end) / 2
+			blockHeightChan, err = sts.GetRemoteStateHash(peerID, 1, targetBlockNumber)
+
+			if err != nil {
+				return err
+			}
+
+			select {
+			case response, ok := <-blockHeightChan:
+				if !ok {
+					return fmt.Errorf("had block channel close : %s", err)
+				}
+
+				if sts.ledger.GetGlobalState(response.StateHash) != nil {
+					start = targetBlockNumber
+				} else {
+					end = targetBlockNumber
+					if targetBlockNumber == 1 {
+						return fmt.Errorf("Has no identical state hash with peer: %v", peerID)
+					}
+				}
+
+				logger.Infof("targetHeight<%d>, start<%d>, end<%d>, targetBlockNumber<%d>",
+					targetHeight, start, end, targetBlockNumber)
+			case <-timer.C:
+				return fmt.Errorf("Timed out during get SyncTargetBlockNumber from %v", peerID)
+			}
+		}
+		return nil
+	}
+
+	result := sts.tryOverPeers(peerIDs, action)
+
+	return targetBlockNumber, endBlockNumber, result
+}
+
+func (sts *coordinatorImpl) SyncToTargetByPolicy(policy SyncPolicy, peerIDs []*pb.PeerID) (error, bool) {
+
+	sts.currentStateBlockNumber = sts.ledger.GetBlockchainSize() - 1
+	sts.attemptStateTransferByPolicy(policy, peerIDs)
+	return nil, true
+}
+
+func (sts *coordinatorImpl) syncByPolicy(request *blockSyncReq) {
+
+	if request.policy == nil {
+		sts.syncBlockchainToTarget(request)
+	} else {
+		sts.syncStateToTargetByPolicy(request)
+	}
+}
+
+
+func (sts *coordinatorImpl) syncStateToTargetByPolicy(blockSyncReq *blockSyncReq) {
+
+	startBlockNumber, endBlockNumber, err := sts.getSyncTargetBlockNumber(blockSyncReq.peerIDs)
+
+	currentStateBlockNumber := startBlockNumber + 1
+
+	// todo: switch to most recent checkpoint from currentStateBlockNumber
+
+	//currentStateBlockNumber = sts.ledger.Switch2MostRecentCheckpoint(startBlockNumber) + 1
+
+	logger.Infof("Start syncing from block <%d> to <%d>", currentStateBlockNumber, endBlockNumber)
+
+	if err == nil {
+		err = sts.playStateUpToBlockNumberByPolicy(currentStateBlockNumber, endBlockNumber, blockSyncReq.peerIDs)
+	}
+
+	if nil != blockSyncReq.replyChan {
+		logger.Infof("Replying to blockSyncReq on reply channel with : %s", err)
+		blockSyncReq.replyChan <- err
+	}
+}
+
+func (sts *coordinatorImpl) GetPolicyInstance() *policyImpl {
+	return nil
+}
+
+func (sts *coordinatorImpl) attemptStateTransferByPolicy(syncPolicy SyncPolicy, peerIDs []*pb.PeerID) (error, bool) {
+	var err error
+
+	blockReplyChannel := make(chan error)
+
+	req := &blockSyncReq{
+		peerIDs:        peerIDs,
+		reportOnBlock:  sts.currentStateBlockNumber,
+		replyChan:      blockReplyChannel,
+		policy:         syncPolicy,
+	}
+
+	select {
+	case sts.blockSyncReq <- req:
+
+	case <-sts.threadExit:
+		logger.Infof("Received request to exit while calling thread waiting for block sync reply")
+		return fmt.Errorf("Interrupted with request to exit while waiting for block sync reply."), false
+	}
+
+	select {
+	case err = <-blockReplyChannel:
+	case <-sts.threadExit:
+		return fmt.Errorf("Interrupted while waiting for block sync reply"), false
+	}
+	logger.Debugf("State transfer thread continuing")
+
+	if err != nil {
+		return fmt.Errorf("Could not retrieve all blocks as recent as requested: %s", err), true
+	}
+
+	sts.stateValid = true
+
+	return nil, true
 }

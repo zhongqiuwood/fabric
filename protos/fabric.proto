@@ -221,6 +221,8 @@ message Message {
 
         RESPONSE = 20;
         CONSENSUS = 21;
+        SYNC_STATE_HASH_REQUEST = 22;
+        SYNC_STATE_HASH = 23;
     }
     Type type = 1;
     google.protobuf.Timestamp timestamp = 2;
@@ -303,4 +305,18 @@ message SyncStateDeltasRequest {
 message SyncStateDeltas {
     SyncBlockRange range = 1;
     repeated bytes deltas = 2;
+}
+
+
+////////////////////////////////
+message SyncStateHashRequest {
+  uint64 correlationId = 1;
+  uint64 flag = 2;
+  uint64 blockNumber = 3;
+}
+
+message SyncStateHash {
+  SyncStateHashRequest request = 1;
+  uint64 blockHeight = 2;
+  bytes stateHash = 3;
 }

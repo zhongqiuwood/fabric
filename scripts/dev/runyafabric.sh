@@ -1,29 +1,69 @@
 #!/bin/bash
 
-CONSENSUS_INPUT=$1
-NUM_F=$2
-DB_VERSION=$3
-TAG_CLEAR=$4
+while getopts "i:k:c:f:r:" opt; do
+  case $opt in
+    i)
+      echo "TARGET_PEER_ID = $OPTARG"
+      TARGET_PEER_ID=$OPTARG
+      ;;
+    k)
+      echo "TARGET_STOPPED_PEER_ID = $OPTARG"
+      TARGET_STOPPED_PEER_ID=$OPTARG
+      NUM_F=$OPTARG
+      ;;
+    c)
+      echo "CONSENSUS_INPUT = $OPTARG"
+      CONSENSUS_INPUT=$OPTARG
+      ;;
+    r)
+      echo "TAG_CLEAR = $OPTARG"
+      TAG_CLEAR=$OPTARG
+      ;;
+    f)
+      echo "NUM_F = $OPTARG"
+      NUM_F=$OPTARG
+      ;;
+    \?)
+      echo "Invalid option: -$OPTARG"
+      ;;
+  esac
+done
+
+
+DB_VERSION=0
+
+#CONSENSUS_INPUT=$1
+#NUM_F=$2
+#DB_VERSION=$3
+#TAG_CLEAR=$4
 
 FABRIC_TOP=${GOPATH}/src/github.com/abchain/fabric
 BUILD_BIN=${FABRIC_TOP}/build/bin
+#PEER_BINARY=peer
 PEER_BINARY=embedded
 CONSENSUS=pbft
 
-if [ $# -eq 0 ]; then
-    echo "runyafabric.sh <n | p> <f> <0 | 1, db version> <clearlog | clearall>"
+if [ "$NUM_F" = "" ]; then
+    echo "runyafabric.sh  -c <p|n> -f NUM_F -r -i TARGET_PEER_ID"
     exit
 fi
 
-let NUM_N=$NUM_F*3+1
 
+let NUM_N=$NUM_F*3+1
 if [ "$CONSENSUS_INPUT" = "n" ];then
     CONSENSUS=noops
     let NUM_N=$NUM_F
 fi
 
 function clearLog {
-        echo 'a' > err_nohup_peer0.json
+    echo 'a' > err_nohup_peer0.json
+    echo 'a' > err_nohup_peer1.json
+    echo 'a' > err_nohup_peer2.json
+    echo 'a' > err_nohup_peer3.json
+    echo 'a' > peer0.json
+    echo 'a' > peer1.json
+    echo 'a' > peer2.json
+    echo 'a' > peer3.json
 }
 
 function runpeers {
@@ -35,7 +75,6 @@ function runpeers {
     ACTION_CLEAR=$6
     export CORE_PEER_VALIDATOR_TRUSTEDVALIDATORS=$8
 
-    TAG_CLEAR="clear"
     if [ $# -eq 0 ]; then
         echo "runpeers.sh <#vp> <#lvp> <#nvp> <pbft | noops> <f> <clear>"
         exit
@@ -55,10 +94,11 @@ function runpeers {
         rm -rf /var/hyperledger/production*
     fi
 
+    #buildpeer
     buildpeerex
 
-    if [ ! -f ${BUILD_BIN}/embedded ]; then
-        echo 'No such a file: '${BUILD_BIN}'/embedded'
+    if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
+        echo 'No such a file: '${BUILD_BIN}'/${PEER_BINARY}'
         exit -1
     fi
 
@@ -87,6 +127,31 @@ function runpeers {
     ps -ef|grep "peer_fabric_"|grep -v grep |awk '{print "New processid: "$2 ", " $8}'
 }
 
+
+function buildpeer {
+
+    if [ ! -d ${BUILD_BIN} ]; then
+        mkdir -p ${BUILD_BIN}
+    fi
+
+    if [ -f ${BUILD_BIN}/${PEER_BINARY} ]; then
+        rm ${BUILD_BIN}/${PEER_BINARY}
+    fi
+
+    CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
+        GOBIN=${GOPATH}/src/github.com/abchain/fabric/build/bin go install github.com/abchain/fabric/peer
+
+    if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
+        echo 'Failed to build '${BUILD_BIN}/${PEER_BINARY}
+        exit -1
+    fi
+
+    if [ ! -L ${BUILD_BIN}/peerex ]; then
+        cd ${BUILD_BIN}
+        ln -s ${PEER_BINARY} peerex
+    fi
+}
+
 function buildpeerex {
 
     if [ ! -d ${BUILD_BIN} ]; then
@@ -100,12 +165,10 @@ function buildpeerex {
     CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
         GOBIN=${GOPATH}/src/github.com/abchain/fabric/build/bin go install github.com/abchain/fabric/examples/chaincode/go/embedded
 
-
     if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
         echo 'Failed to build '${BUILD_BIN}/${PEER_BINARY}
         exit -1
     fi
-
 
     if [ ! -L ${BUILD_BIN}/peerex ]; then
         cd ${BUILD_BIN}
@@ -159,7 +222,6 @@ function startpeer {
         echo "The lead peer <$FULL_PEER_ID> started up with <$CONSENSUS> consensus"
     fi
 
-
     if [ "$CONSENSUS" = "$TAG_PBFT" ];then
         export CORE_PBFT_GENERAL_N=$NUM_N
         export CORE_PBFT_GENERAL_F=$NUM_F
@@ -170,7 +232,7 @@ function startpeer {
     export CORE_PEER_VALIDATOR_CONSENSUS_PLUGIN=$CONSENSUS
 
     export CORE_LOGGING_OUTPUT_FILE=peer${PEER_ID}.json
-    #export CORE_LOGGING_OUTPUTFILE=${FULL_PEER_ID}.json
+    export CORE_LOGGING_OUTPUTFILE=peer${PEER_ID}.json
 
     export CORE_CLI_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}52
     export CORE_REST_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}50
@@ -212,39 +274,18 @@ function startpeer {
     nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start > /dev/null 2>err_nohup_peer${PEER_ID}.json &
 }
 
-
 function main {
-    runpeers $NUM_N 0 0 $CONSENSUS $NUM_F $TAG_CLEAR
-}
+     if [ "$TARGET_STOPPED_PEER_ID" != "" ];then
+        killbyname peer_fabric_$TARGET_STOPPED_PEER_ID
+        exit
+     fi
 
+     if [ "$TARGET_PEER_ID" = "" ];then
+        runpeers $NUM_N 0 0 $CONSENSUS $NUM_F $TAG_CLEAR
+     else
+        startpeer vp $TARGET_PEER_ID $CONSENSUS $NUM_F $TAG_CLEAR
+        ps -ef|grep "peer_fabric_"|grep -v grep |awk '{print "New processid: "$2 ", " $8}'
+     fi
+}
 
 main
-exit
-
-
-#========================================
-medias=(x c v)
-
-function count {
-
-for m in ${medias[*]}; do
-    echo "$m article :"
- done
-
-}
-
-medias=(x c v)
-
-function count2 {
-
-for i in 1 5 10 20 50 100 200 400 600 800 1000 2000 5000 10000 20000 50000 100000; do
-    echo "$i element article :"
-done
-
-}
-
-for media in ${medias[@]}; do
-        echo "hh ${media}"
-done
-
-count2

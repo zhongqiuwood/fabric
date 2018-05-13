@@ -79,6 +79,7 @@ type StateRetriever interface {
 type RemoteLedger interface {
 	BlocksRetriever
 	StateRetriever
+	RequestStateHash(height *pb.SyncStateHashRequest) (<-chan *pb.SyncStateHash, error)
 }
 
 // // MessageHandlerCoordinator responsible for coordinating between the registered MessageHandler's

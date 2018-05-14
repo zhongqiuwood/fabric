@@ -88,6 +88,14 @@ func (blockchain *blockchain) getLastBlock() (*protos.Block, error) {
 	return blockchain.getBlock(blockchain.size - 1)
 }
 
+// getLastBlock get last block in blockchain
+func (blockchain *blockchain) getLastRawBlock() (*protos.Block, error) {
+	if blockchain.size == 0 {
+		return nil, nil
+	}
+	return blockchain.getRawBlock(blockchain.size - 1)
+}
+
 // getSize number of blocks in blockchain
 func (blockchain *blockchain) getSize() uint64 {
 	return blockchain.size
@@ -98,6 +106,12 @@ func (blockchain *blockchain) getBlock(blockNumber uint64) (*protos.Block, error
 	return fetchBlockFromDB(blockNumber)
 }
 
+// getBlock get block at arbitrary height in block chain but without transactions,
+// this can save many IO but gethash may return wrong value for legacy blocks
+func (blockchain *blockchain) getRawBlock(blockNumber uint64) (*protos.Block, error) {
+	return fetchRawBlockFromDB(blockNumber)
+}
+
 // getBlockByHash get block by block hash
 func (blockchain *blockchain) getBlockByHash(blockHash []byte) (*protos.Block, error) {
 	blockNumber, err := blockchain.indexer.fetchBlockNumberByBlockHash(blockHash)
@@ -105,6 +119,15 @@ func (blockchain *blockchain) getBlockByHash(blockHash []byte) (*protos.Block, e
 		return nil, err
 	}
 	return blockchain.getBlock(blockNumber)
+}
+
+// getBlockByHash get raw block (block without transaction datas) by block hash
+func (blockchain *blockchain) getRawBlockByHash(blockHash []byte) (*protos.Block, error) {
+	blockNumber, err := blockchain.indexer.fetchBlockNumberByBlockHash(blockHash)
+	if err != nil {
+		return nil, err
+	}
+	return blockchain.getRawBlock(blockNumber)
 }
 
 func (blockchain *blockchain) getBlockByState(stateHash []byte) (*protos.Block, error) {
@@ -126,7 +149,7 @@ func (blockchain *blockchain) getBlockByState(stateHash []byte) (*protos.Block, 
 
 // getTransactions get all transactions in a block identified by block number
 func (blockchain *blockchain) getTransactions(blockNumber uint64) ([]*protos.Transaction, error) {
-	block, err := blockchain.getBlock(blockNumber)
+	block, err := blockchain.getRawBlock(blockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +158,7 @@ func (blockchain *blockchain) getTransactions(blockNumber uint64) ([]*protos.Tra
 
 // getTransactionsByBlockHash get all transactions in a block identified by block hash
 func (blockchain *blockchain) getTransactionsByBlockHash(blockHash []byte) ([]*protos.Transaction, error) {
-	block, err := blockchain.getBlockByHash(blockHash)
+	block, err := blockchain.getRawBlockByHash(blockHash)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +168,7 @@ func (blockchain *blockchain) getTransactionsByBlockHash(blockHash []byte) ([]*p
 // getTransaction get a transaction identified by block number and index within the block
 func (blockchain *blockchain) getTransaction(blockNumber uint64, txIndex uint64) (*protos.Transaction, error) {
 
-	block, err := blockchain.getBlock(blockNumber)
+	block, err := blockchain.getRawBlock(blockNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -162,7 +185,7 @@ func (blockchain *blockchain) getTransaction(blockNumber uint64, txIndex uint64)
 // getTransactionByBlockHash get a transaction identified by block hash and index within the block
 func (blockchain *blockchain) getTransactionByBlockHash(blockHash []byte, txIndex uint64) (*protos.Transaction, error) {
 
-	block, err := blockchain.getBlockByHash(blockHash)
+	block, err := blockchain.getRawBlockByHash(blockHash)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +205,7 @@ func (blockchain *blockchain) getBlockchainInfo() (*protos.BlockchainInfo, error
 		return &protos.BlockchainInfo{Height: 0}, nil
 	}
 
-	lastBlock, err := blockchain.getLastBlock()
+	lastBlock, err := blockchain.getLastRawBlock()
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +215,12 @@ func (blockchain *blockchain) getBlockchainInfo() (*protos.BlockchainInfo, error
 }
 
 func (blockchain *blockchain) getBlockchainInfoForBlock(height uint64, block *protos.Block) *protos.BlockchainInfo {
+	//we prepare block is "raw", so we must obtain transaction for legacy blocks
+	if block.Version == 0 && block.Transactions == nil {
+		//CAUTION: this also mutate the input block
+		block.Transactions = fetchTxsFromDB(block.Txids)
+	}
+
 	hash, _ := block.GetHash()
 	info := &protos.BlockchainInfo{
 		Height:            height,
@@ -284,7 +313,10 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 	return nil
 }
 
-func fetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
+var panicLegacyBlockBytes = true
+
+func fetchRawBlockFromDB(blockNumber uint64) (*protos.Block, error) {
+
 	blockBytes, err := db.GetDBHandle().GetFromBlockchainCF(encodeBlockNumberDBKey(blockNumber))
 	if err != nil {
 		return nil, err
@@ -297,8 +329,27 @@ func fetchBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 		return nil, err
 	}
 
-	blk.Transactions = fetchTxsFromDB(blk.Txids)
+	//panic for "legacy" blockbytes, which include transactions data ...
+	if blk.Version == 0 && blk.Transactions != nil && panicLegacyBlockBytes {
+		panic("DB for blockchain still use legacy bytes, need upgrade first")
+	}
+
 	return blk, nil
+}
+
+func fetchBlockFromDB(blockNumber uint64) (blk *protos.Block, err error) {
+
+	blk, err = fetchRawBlockFromDB(blockNumber)
+	if err != nil {
+		return
+	}
+
+	if blk == nil {
+		return nil, nil
+	}
+
+	blk.Transactions = fetchTxsFromDB(blk.Txids)
+	return
 }
 
 func fetchBlockchainSizeFromDB() (uint64, error) {
@@ -334,7 +385,7 @@ func (blockchain *blockchain) String() string {
 	var buffer bytes.Buffer
 	size := blockchain.getSize()
 	for i := uint64(0); i < size; i++ {
-		block, blockErr := blockchain.getBlock(i)
+		block, blockErr := blockchain.getRawBlock(i)
 		if blockErr != nil {
 			return ""
 		}
@@ -359,7 +410,7 @@ func (blockchain *blockchain) Dump(level int) {
 	ledgerLogger.Infof("========================blockchain height: %d=============================", size-1)
 
 	for i := uint64(0); i < size; i++ {
-		block, blockErr := blockchain.getBlock(i)
+		block, blockErr := blockchain.getRawBlock(i)
 		if blockErr != nil {
 			return
 		}
@@ -375,7 +426,7 @@ func (blockchain *blockchain) Dump(level int) {
 			"	NonHashData<%+v>",
 			strconv.FormatUint(i, 10),
 			block.StateHash,
-			block.Transactions,
+			block.Txids,
 			curBlockHash,
 			block.PreviousBlockHash,
 			block.ConsensusMetadata,

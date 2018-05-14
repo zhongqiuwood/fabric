@@ -161,6 +161,9 @@ func (noop *NoopIndexer) createIndexes(block *protos.Block, blockNumber uint64, 
 func (noop *NoopIndexer) fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error) {
 	return 0, nil
 }
+func (noop *NoopIndexer) fetchBlockNumberByStateHash(blockHash []byte) (uint64, error) {
+	return 0, nil
+}
 func (noop *NoopIndexer) fetchTransactionIndexByID(txID string) (uint64, uint64, error) {
 	return 0, 0, nil
 }

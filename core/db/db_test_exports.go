@@ -148,3 +148,7 @@ func (testDB *TestDBWrapper) GetDBStats() string {
 	openchainDB := GetDBHandle()
 	return openchainDB.db.GetProperty("rocksdb.stats")
 }
+
+func (testDB *TestDBWrapper) PutGenesisGlobalState(state []byte) error {
+	return GetGlobalDBHandle().PutGenesisGlobalState(state)
+}

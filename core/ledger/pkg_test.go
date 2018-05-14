@@ -30,6 +30,8 @@ import (
 var testParams []string
 
 func TestMain(m *testing.M) {
+	//temporary disable panic for old fashion block bytes
+	panicLegacyBlockBytes = false
 	testParams = testutil.ParseTestParams()
 	testutil.SetupTestConfig()
 	os.Exit(m.Run())
@@ -172,6 +174,10 @@ func createFreshDBAndTestLedgerWrapper(tb testing.TB) *ledgerTestWrapper {
 	testDBWrapper.CleanDB(tb)
 	ledger, err := GetNewLedger()
 	testutil.AssertNoError(tb, err, "Error while constructing ledger")
+	gensisstate, err := ledger.GetCurrentStateHash()
+	testutil.AssertNoError(tb, err, "Error while get gensis state")
+	err = testDBWrapper.PutGenesisGlobalState(gensisstate)
+	testutil.AssertNoError(tb, err, "Error while add gensis state")
 	return &ledgerTestWrapper{ledger, tb}
 }
 

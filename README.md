@@ -12,11 +12,13 @@ The original readme can be found [here](https://github.com/hyperledger/fabric/bl
 
 ## Release of 0.8
 
-* Refactoring ledger package, towards a novel framework for consensus
+* Refactoring ledger package, towards a novel framework of consensus
 
-* Mutiplex p2p communication instead of the sole chat stream
+* Stream mutiplexing on p2p communication instead of the sole chat stream
 
 * New mode for reusing transaction certification
+
+* Gossip-base transaction flows (alpha version)
 
 * Lots of code refoctoring
 

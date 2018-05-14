@@ -142,7 +142,7 @@ func sanityCheck() error {
 
 	for n := size - 1; n != 0; n-- {
 
-		block, err := fetchBlockFromDB(n)
+		block, err := fetchRawBlockFromDB(n)
 		if err != nil {
 			return fmt.Errorf("Fetch block fail: %s", err)
 		}
@@ -163,7 +163,7 @@ func sanityCheck() error {
 	//so we have all blocks missed in global state (except for the gensis)
 	//so we just start from a new gensis state
 	if lastExisting == nil {
-		block, err := fetchBlockFromDB(0)
+		block, err := fetchRawBlockFromDB(0)
 		if err != nil {
 			return fmt.Errorf("Fetch gensis block fail: %s", err)
 		}

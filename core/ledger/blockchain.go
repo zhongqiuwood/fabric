@@ -215,11 +215,9 @@ func (blockchain *blockchain) getBlockchainInfo() (*protos.BlockchainInfo, error
 }
 
 func (blockchain *blockchain) getBlockchainInfoForBlock(height uint64, block *protos.Block) *protos.BlockchainInfo {
-	//we prepare block is "raw", so we must obtain transaction for legacy blocks
-	if block.Version == 0 && block.Transactions == nil {
-		//CAUTION: this also mutate the input block
-		block.Transactions = fetchTxsFromDB(block.Txids)
-	}
+
+	//when get hash, we must prepare for a incoming "raw" block (hash is not )
+	block = compatibleLegacyBlock(block)
 
 	hash, _ := block.GetHash()
 	info := &protos.BlockchainInfo{
@@ -313,7 +311,23 @@ func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber u
 	return nil
 }
 
-var panicLegacyBlockBytes = true
+//compatibleLegacy switch and following funcs is used for some case when we must
+//use a db with legacy bytes of blocks (i.e. in testing)
+var compatibleLegacy = false
+
+func compatibleLegacyBlock(block *protos.Block) *protos.Block {
+
+	if !compatibleLegacy {
+		return block
+	}
+
+	if block.Version == 0 && block.Transactions == nil {
+		//CAUTION: this also mutate the input block
+		block.Transactions = fetchTxsFromDB(block.Txids)
+	}
+
+	return block
+}
 
 func fetchRawBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 
@@ -330,7 +344,7 @@ func fetchRawBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 	}
 
 	//panic for "legacy" blockbytes, which include transactions data ...
-	if blk.Version == 0 && blk.Transactions != nil && panicLegacyBlockBytes {
+	if blk.Version == 0 && blk.Transactions != nil && !compatibleLegacy {
 		panic("DB for blockchain still use legacy bytes, need upgrade first")
 	}
 
@@ -348,7 +362,16 @@ func fetchBlockFromDB(blockNumber uint64) (blk *protos.Block, err error) {
 		return nil, nil
 	}
 
-	blk.Transactions = fetchTxsFromDB(blk.Txids)
+	if blk.Transactions == nil {
+		blk.Transactions = fetchTxsFromDB(blk.Txids)
+	} else if blk.Txids == nil {
+		//only for compatible with the legacy block bytes
+		blk.Txids = make([]string, len(blk.Transactions))
+		for i, tx := range blk.Transactions {
+			blk.Txids[i] = tx.Txid
+		}
+	}
+
 	return
 }
 

@@ -189,10 +189,13 @@ func (indexer *blockchainIndexerAsync) indexPendingBlocks() error {
 
 func (indexer *blockchainIndexerAsync) fetchBlockFromDBAndCreateIndexes(blockNumber uint64) error {
 	blockchain := indexer.blockchain
-	blockToIndex, errBlockFetch := blockchain.getBlock(blockNumber)
+	blockToIndex, errBlockFetch := blockchain.getRawBlock(blockNumber)
 	if errBlockFetch != nil {
 		return errBlockFetch
 	}
+
+	//when get hash, we must prepare for a incoming "raw" block (hash is not )
+	blockToIndex = compatibleLegacyBlock(blockToIndex)
 
 	blockHash, errBlockHash := blockToIndex.GetHash()
 	if errBlockHash != nil {

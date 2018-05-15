@@ -31,7 +31,7 @@ var testParams []string
 
 func TestMain(m *testing.M) {
 	//temporary disable panic for old fashion block bytes
-	panicLegacyBlockBytes = false
+	compatibleLegacy = true
 	testParams = testutil.ParseTestParams()
 	testutil.SetupTestConfig()
 	os.Exit(m.Run())

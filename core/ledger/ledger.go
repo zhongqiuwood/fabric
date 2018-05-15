@@ -146,6 +146,9 @@ func sanityCheck() error {
 		if err != nil {
 			return fmt.Errorf("Fetch block fail: %s", err)
 		}
+		if block == nil {
+			return fmt.Errorf("Block %d is not exist yet", n)
+		}
 
 		gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
 		if gs != nil {
@@ -184,6 +187,37 @@ func sanityCheck() error {
 		lastExisting = stateHash
 		noneExistingList = noneExistingList[:pos]
 		ledgerLogger.Infof("Sanity check add Missed GlobalState [%x]:", stateHash)
+	}
+
+	return nil
+}
+
+func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
+
+	s := db.GetGlobalDBHandle().GetGlobalState(parent)
+
+	if s == nil {
+		ledgerLogger.Warningf("Try to add state in unexist global state [%x], we execute a sanity check",
+			parent)
+
+		//sanityCheck should be thread safe
+		err := sanityCheck()
+		if err != nil {
+			ledgerLogger.Errorf("Sanity check fail in add globalstate: %s", err)
+			return err
+		}
+	}
+
+	err := db.GetGlobalDBHandle().AddGlobalState(parent, state)
+
+	if err != nil {
+		//should this the correct way to omit StateDuplicatedError?
+		if _, ok := err.(db.StateDuplicatedError); !ok {
+			ledgerLogger.Errorf("Add globalstate fail: %s", err)
+			return err
+		}
+
+		ledgerLogger.Warningf("Try to add existed globalstate: %x", state)
 	}
 
 	return nil
@@ -296,13 +330,10 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	//all commit done, we can add global state
-	dbErr = db.GetGlobalDBHandle().AddGlobalState(ledger.currentStateHash, stateHash)
+	dbErr = ledger.AddGlobalState(ledger.currentStateHash, stateHash)
 
 	if dbErr != nil {
-		//should this the correct way to omit StateDuplicatedError?
-		if _, ok := dbErr.(db.StateDuplicatedError); !ok {
-			return dbErr
-		}
+		return dbErr
 	}
 
 	ledger.resetForNextTxGroup(true)

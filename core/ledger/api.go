@@ -23,6 +23,7 @@ type BlockChainModifier interface {
 	CommitStateDelta(id interface{}) error
 	EmptyState() error
 	PutBlock(blockNumber uint64, block *pb.Block) error
+	AddGlobalState(parent []byte, state []byte) error
 }
 
 // BlockChainUtil interface for interrogating the block chain

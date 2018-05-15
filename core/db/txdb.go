@@ -257,9 +257,7 @@ func (txdb *GlobalDataDB) open(dbpath string) error {
 
 func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 
-	if statehash == nil {
-		return nil
-	}
+	//notice: rocksdb can even accept nil as kil
 
 	data, _ := txdb.get(txdb.globalCF, statehash)
 	if data != nil {

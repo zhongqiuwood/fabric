@@ -555,6 +555,10 @@ func (mock *MockLedger) GetCurrentStateHash() ([]byte, error) {
 	return []byte(fmt.Sprintf("%d", mock.state)), nil
 }
 
+func (mock *MockLedger) AddGlobalState([]byte, []byte) error {
+	return nil
+}
+
 func (mock *MockLedger) VerifyBlockchain(start, finish uint64) (uint64, error) {
 	current := start
 

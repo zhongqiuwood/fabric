@@ -10,6 +10,18 @@ The original readme can be found [here](https://github.com/hyperledger/fabric/bl
 
 * Use rocksdb 5.10
 
+## Release of 0.8
+
+* Refactoring ledger package, towards a novel framework of consensus
+
+* Stream mutiplexing on p2p communication instead of the sole chat stream
+
+* New mode for reusing transaction certification
+
+* Gossip-base transaction flows (alpha version)
+
+* Lots of code refoctoring
+
 ## Release of 0.7
 
 * Many bug fixes since fabric 0.6, ready to production
@@ -36,5 +48,5 @@ The original readme can be found [here](https://github.com/hyperledger/fabric/bl
 
 
 ## License <a name="license"></a>
-The Hyperledger Project uses the [Apache License Version 2.0](LICENSE) software
+The Abchain Project uses the [Apache License Version 2.0](LICENSE) software
 license.

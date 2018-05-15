@@ -125,7 +125,10 @@ func TestLedgerGetTempStateHashWithTxDeltaStateHashes(t *testing.T) {
 	if ok {
 		t.Fatalf("Entry for a failed Tx should not be present in txDeltaHashes map")
 	}
-	ledger.CommitTxBatch(1, []*protos.Transaction{}, nil, []byte("proof"))
+	err := ledger.CommitTxBatch(1, []*protos.Transaction{}, nil, []byte("proof"))
+	if err != nil {
+		t.Fatalf("Commit fail: %s", err)
+	}
 
 	ledger.BeginTxBatch(2)
 	ledger.TxBegin("txUuid1")
@@ -133,7 +136,7 @@ func TestLedgerGetTempStateHashWithTxDeltaStateHashes(t *testing.T) {
 	ledger.TxFinished("txUuid1", true)
 	_, txDeltaHashes, _ = ledger.GetTempStateHashWithTxDeltaStateHashes()
 	if len(txDeltaHashes) != 1 {
-		t.Fatalf("Entries in txDeltaHashes map should only be from current batch")
+		t.Fatalf("Entries in txDeltaHashes map should only be from current batch (get %v)", txDeltaHashes)
 	}
 }
 

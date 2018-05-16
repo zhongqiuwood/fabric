@@ -86,6 +86,7 @@ type Ledger struct {
 	state            *state.State
 	currentID        interface{}
 	currentStateHash []byte
+	snapshotMap      *dbsnapshotMap
 }
 
 var ledger *Ledger
@@ -119,11 +120,15 @@ func GetNewLedger() (*Ledger, error) {
 
 	state := state.NewState()
 
+
+	snapshotMap := newSnapshotMap()
+
 	err = sanityCheck()
 	if err != nil {
 		return nil, err
 	}
-	return &Ledger{blockchain, txpool, state, nil, nil}, nil
+	return &Ledger{blockchain, txpool, state,
+	nil, nil, snapshotMap}, nil
 }
 
 func sanityCheck() error {
@@ -570,6 +575,27 @@ func (ledger *Ledger) GetTransactionsByRange(statehash []byte, beg int, end int)
 
 	return fetchTxsFromDB(blk.Txids[beg:end]), nil
 }
+
+
+func (ledger *Ledger) GetBlockByNumberBySnapshot(syncid string, blockNumber uint64) (*protos.Block, error) {
+	return ledger.snapshotMap.GetBlockByNumber(syncid, blockNumber)
+}
+
+func (ledger *Ledger) GetBlockchainSizeBySnapshot(syncid string) (uint64, error) {
+	return ledger.snapshotMap.GetBlockchainSize(syncid)
+}
+
+func (ledger *Ledger) GetStateDeltaBySnapshot(syncid string, blockNumber uint64) (*statemgmt.StateDelta, error) {
+
+	size, _ := ledger.snapshotMap.GetBlockchainSize(syncid)
+
+	if blockNumber >= size {
+		return nil, ErrOutOfBounds
+	}
+
+	return ledger.snapshotMap.GetStateDelta(syncid, blockNumber)
+}
+
 
 /////////////////// blockchain related methods /////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////

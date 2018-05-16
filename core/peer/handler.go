@@ -848,7 +848,7 @@ func (d *Handler) beforeSyncStateHashRequest(e *fsm.Event) {
 func (d *Handler) sendStateHash(req *pb.SyncStateHashRequest) {
 	peerLogger.Debugf("Sending SyncStateHashRequest for CorrelationId: %d", req.CorrelationId)
 
-	block, err := d.ledger.GetBlockByNumber(req.BlockNumber)
+	block, err := d.ledger.GetBlockByNumberBySnapshot(req.Syncid, req.BlockNumber)
 
 	if nil != err {
 		peerLogger.Warningf("Could not retrieve block %d: %s",
@@ -868,7 +868,7 @@ func (d *Handler) sendStateHash(req *pb.SyncStateHashRequest) {
 func (d *Handler) sendBlockHeight(req *pb.SyncStateHashRequest) {
 	peerLogger.Debugf("Sending Block Height for CorrelationId: %d", req.CorrelationId)
 
-	blockChainInfo, err := d.ledger.GetBlockchainInfo()
+	blockChainHeight, err := d.ledger.GetBlockchainSizeBySnapshot(req.Syncid)
 
 	if err != nil {
 		peerLogger.Errorf("Error getting GetBlockchainInfo for CorrelationId %d: %s",
@@ -876,12 +876,9 @@ func (d *Handler) sendBlockHeight(req *pb.SyncStateHashRequest) {
 		return
 	}
 
-	blockChainInfo.CurrentBlockHash = nil
-	blockChainInfo.PreviousBlockHash = nil
-
 	resp := &pb.SyncStateHash{
 		Request: req,
-		BlockHeight: blockChainInfo.Height,
+		BlockHeight: blockChainHeight,
 	}
 
 	d.submitMessage(pb.Message_SYNC_STATE_HASH, resp)

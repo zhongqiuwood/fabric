@@ -54,7 +54,6 @@ service:
 #    LOGGING section
 #
 ###############################################################################
-logging:
 
     # Default logging levels are specified here for each of the three peer
     # commands 'node', 'network' and 'chaincode'. For commands that have
@@ -80,15 +79,17 @@ logging:
     #
     # Developers: Please see fabric/docs/Setup/logging-control.md for more
     # options.
-    level: debug
-    client: debug
+logging:
+    level: info
+    client: info
 
-    peer:      debug
-    node:      info
-    network:   debug
-    chaincode: debug
+    peer:      info
+    node: info:consensus/statetransfer,consensus/executor=debug
+    network:   info
+    chaincode: info
     version:   warning
     output:
+        directory: /home/peer
         file: "peer.log"
         postfix: false
 

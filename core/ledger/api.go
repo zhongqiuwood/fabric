@@ -24,11 +24,8 @@ type BlockChainModifier interface {
 	CommitStateDelta(id interface{}) error
 	EmptyState() error
 	PutBlock(blockNumber uint64, block *pb.Block) error
-<<<<<<< HEAD
 	Switch2MostRecentCheckpoint(fromBlockNumber uint64) (uint64, error)
-=======
 	AddGlobalState(parent []byte, state []byte) error
->>>>>>> 4fcb28ce391dd8a71fe8947d81d779dffd57ccf2
 }
 
 // BlockChainUtil interface for interrogating the block chain

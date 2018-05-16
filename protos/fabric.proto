@@ -311,8 +311,9 @@ message SyncStateDeltas {
 ////////////////////////////////
 message SyncStateHashRequest {
   uint64 correlationId = 1;
-  uint64 flag = 2;
-  uint64 blockNumber = 3;
+  string syncid = 2;
+  uint64 flag = 3;
+  uint64 blockNumber = 4;
 }
 
 message SyncStateHash {

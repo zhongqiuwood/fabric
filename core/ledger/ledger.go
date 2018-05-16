@@ -272,10 +272,15 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	stateHash, err := ledger.state.GetHash()
+	commitDone := false
+	defer func() {
+		if !commitDone {
+			ledger.resetForNextTxGroup(false)
+			ledger.blockchain.blockPersistenceStatus(false)
+		}
+	}()
 
 	if err != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return err
 	}
 
@@ -315,8 +320,6 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	block.NonHashData = &protos.NonHashData{ChaincodeEvents: ccEvents}
 	newBlockNumber, err := ledger.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
 	if err != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return err
 	}
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
@@ -324,8 +327,6 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	dbErr := writeBatch.BatchCommit()
 
 	if dbErr != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return dbErr
 	}
 
@@ -336,6 +337,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		return dbErr
 	}
 
+	commitDone = true
 	ledger.resetForNextTxGroup(true)
 	ledger.blockchain.blockPersistenceStatus(true)
 

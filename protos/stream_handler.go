@@ -99,7 +99,8 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 
 func (h *StreamHandler) handleWrite(stream grpc.Stream) {
 
-	for m := range h.writeQueue {
+	var m proto.Message
+	for m = range h.writeQueue {
 
 		err := h.BeforeSendMessage(m)
 		if err == nil {

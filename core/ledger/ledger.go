@@ -223,6 +223,35 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 	return nil
 }
 
+func (ledger *Ledger) SwitchToCheckpointState(statehash []byte) error {
+
+	//startNumber := uint64(0)
+	//
+	//block, _:= ledger.GetBlockByNumber(fromBlockNumber)
+	//
+	//gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
+	//
+	//if gs.LastBranchNodeStateHash != nil {
+	//
+	//	db.GetDBHandle().StateSwitch(gs.LastBranchNodeStateHash)
+	//
+	//	startNumber = db.GetGlobalDBHandle().GetGlobalState(gs.LastBranchNodeStateHash).Count
+	//
+	//} else {
+	//	block, _= ledger.GetBlockByNumber(1)
+	//	db.GetDBHandle().StateSwitch(block.StateHash)
+	//}
+
+	//
+	//gs.Branched()
+	//
+	//stateHash := db.GetGlobalDBHandle().GetGlobalState()
+	//db.GetDBHandle().StateSwitch()
+
+	//return db.GetGlobalDBHandle().GetGlobalState(statehash)
+	return nil
+}
+
 /////////////////// Transaction-batch related methods ///////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -478,6 +507,10 @@ func (ledger *Ledger) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, 
 		return nil, ErrOutOfBounds
 	}
 	return ledger.state.FetchStateDeltaFromDB(blockNumber)
+}
+
+func (ledger *Ledger) GetGlobalState(statehash []byte) *protos.GlobalState {
+	return db.GetGlobalDBHandle().GetGlobalState(statehash)
 }
 
 // ApplyStateDelta applies a state delta to the current state. This is an

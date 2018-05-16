@@ -75,6 +75,14 @@ func LoggingFileInit(fpath string) error {
 	outputfile := viper.GetString("logging.output.file")
 	if outputfile != "" {
 
+		directory := viper.GetString("logging.output.directory")
+		if directory != "" {
+			_, err := os.Stat(directory)
+			if err == nil {
+				fpath = directory
+			}
+		}
+
 		if fpath == "" {
 			return errors.New("No filesystem path is specified but require log-to-file")
 		}

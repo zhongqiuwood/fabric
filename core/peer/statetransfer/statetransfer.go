@@ -710,7 +710,13 @@ func (sts *coordinatorImpl) attemptStateTransfer(blockNumber uint64, peerIDs []*
 func (sts *coordinatorImpl) playStateUpToBlockNumber(toBlockNumber uint64, peerIDs []*pb.PeerID) error {
 	logger.Debugf("Attempting to play state forward from %v to block %d", peerIDs, toBlockNumber)
 	var stateHash []byte
-	err := sts.tryOverPeers(peerIDs, func(peerID *pb.PeerID) error {
+	lastStateHash, err := sts.ledger.GetCurrentStateHash()
+	if err != nil {
+		logger.Errorf("Could not compute first state hash for some reason: %s, abort", err)
+		return err
+	}
+
+	err = sts.tryOverPeers(peerIDs, func(peerID *pb.PeerID) error {
 
 		var deltaMessages <-chan *pb.SyncStateDeltas
 		for {
@@ -760,6 +766,9 @@ func (sts *coordinatorImpl) playStateUpToBlockNumber(toBlockNumber uint64, peerI
 							logger.Debugf("Played state forward from %v to block %d with StateHash (%x), block has StateHash (%x)", peerID, deltaMessage.Range.End, stateHash, testBlock.StateHash)
 							if bytes.Equal(testBlock.StateHash, stateHash) {
 								success = true
+								//add new statehash, and we omit errors
+								sts.ledger.AddGlobalState(lastStateHash, stateHash)
+								lastStateHash = stateHash
 							}
 						}
 

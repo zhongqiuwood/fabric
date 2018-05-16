@@ -41,6 +41,7 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt/state"
+	syncstub "github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 )
@@ -161,7 +162,11 @@ type Impl struct {
 	//	handlerFactory HandlerFactory
 	handlerMap *handlerMap
 	//	ledgerWrapper *ledgerWrapper
-	gossipStub    *pb.StreamStub
+	//  each stubs ...
+	streamStubs map[string]*pb.StreamStub
+	gossipStub  *pb.StreamStub
+	syncStub    *pb.StreamStub
+
 	random        *rand.Rand
 	secHelper     crypto.Peer
 	engine        Engine
@@ -260,9 +265,14 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 		}
 	}
 
-	//todo: init all streaming stubs, these maybe moved into engine or else
-	peer.gossipStub = pb.NewStreamStub(&gossipstub.GossipFactory{})
+	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory())
+	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory())
 
+	//mapping of all streamstubs above:
+	peer.streamStubs = map[string]*pb.StreamStub{
+		"gossip": peer.gossipStub,
+		"sync":   peer.syncStub,
+	}
 	// peer.handlerFactory = peer.engine.GetHandlerFactory()
 	// if peer.handlerFactory == nil {
 	// 	return nil, errors.New("Cannot supply nil handler factory")
@@ -280,6 +290,10 @@ func (p *Impl) Chat(stream pb.Peer_ChatServer) error {
 
 func (p *Impl) GossipIn(stream pb.Peer_GossipInServer) error {
 	return p.gossipStub.HandleServer(stream)
+}
+
+func (p *Impl) SyncIn(stream pb.Peer_SyncInServer) error {
+	return p.syncStub.HandleServer(stream)
 }
 
 // ProcessTransaction implementation of the ProcessTransaction RPC function
@@ -398,11 +412,8 @@ func getHandlerKeyFromPeerEndpoint(peerEndpoint *pb.PeerEndpoint) *pb.PeerID {
 }
 
 func (p *Impl) GetStreamStub(name string) *pb.StreamStub {
-	if name == "gossip" {
-		return p.gossipStub
-	}
 
-	return nil
+	return p.streamStubs[name]
 }
 
 func (p *Impl) GetDiscoverer() (Discoverer, error) {
@@ -439,16 +450,15 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 	if v == nil {
 		peerLogger.Errorf("No connection can be found in context")
 	} else {
-		conn := v.(*grpc.ClientConn)
-
-		go func() {
-			peerLogger.Debugf("start gossip stream %s", key)
-			err := p.gossipStub.HandleClient(conn, key)
-			if err != nil {
-				peerLogger.Errorf("gossip client stream %s fail: %s", key, err)
-			}
-		}()
-
+		for name, stub := range p.streamStubs {
+			go func(conn *grpc.ClientConn, k *pb.PeerID) {
+				peerLogger.Debugf("start streamhandler %s for peer %s", name, key.GetName())
+				err := stub.HandleClient(conn, k)
+				if err != nil {
+					peerLogger.Errorf("streamhandler %s fail: %s", name, err)
+				}
+			}(v.(*grpc.ClientConn), key)
+		}
 	}
 
 	return nil
@@ -946,20 +956,18 @@ type Persistor interface {
 	Load(key string) ([]byte, error)
 }
 
-const PeerStoreKeyPrefix = "peer."
-
 // Store enables a peer to persist the given key,value pair to the database
 func (p *Impl) Store(key string, value []byte) error {
 	dbhandler := db.GetGlobalDBHandle()
 
 	//dbg.Infof("add db.PersistCF: <%s> --> <%x>", key, value)
-	return dbhandler.PutValue(db.PersistCF, []byte(PeerStoreKeyPrefix+key), value)
+	return dbhandler.PutValue(db.PersistCF, []byte(ledger.PeerStoreKeyPrefix+key), value)
 }
 
 // Load enables a peer to read the value that corresponds to the given database key
 func (p *Impl) Load(key string) ([]byte, error) {
 	dbhandler := db.GetGlobalDBHandle()
-	return dbhandler.GetValue(db.PersistCF, []byte(PeerStoreKeyPrefix+key))
+	return dbhandler.GetValue(db.PersistCF, []byte(ledger.PeerStoreKeyPrefix+key))
 }
 
 // =============================================================================

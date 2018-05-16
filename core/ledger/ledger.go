@@ -95,7 +95,11 @@ var once sync.Once
 // GetLedger - gives a reference to a 'singleton' ledger
 func GetLedger() (*Ledger, error) {
 	once.Do(func() {
-		ledger, ledgerError = GetNewLedger()
+		//check version before obtain ledger ...
+		ledgerError = UpgradeLedger(true)
+		if ledgerError == nil {
+			ledger, ledgerError = GetNewLedger()
+		}
 	})
 	return ledger, ledgerError
 }
@@ -126,7 +130,7 @@ func sanityCheck() error {
 
 	size, err := fetchBlockchainSizeFromDB()
 	if err != nil {
-		return err
+		return fmt.Errorf("Fetch size fail: %s", err)
 	}
 
 	if size == 0 {
@@ -136,15 +140,14 @@ func sanityCheck() error {
 	noneExistingList := make([][]byte, 0)
 	var lastExisting []byte
 
-	for n := size - 1; n >= 0; n-- {
+	for n := size - 1; n != 0; n-- {
 
-		block, err := fetchBlockFromDB(n)
+		block, err := fetchRawBlockFromDB(n)
 		if err != nil {
-			return err
+			return fmt.Errorf("Fetch block fail: %s", err)
 		}
-
-		if block.StateHash == nil && n == 0 {
-			block.StateHash = []byte("0")
+		if block == nil {
+			return fmt.Errorf("Block %d is not exist yet", n)
 		}
 
 		gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
@@ -158,28 +161,95 @@ func sanityCheck() error {
 				n, block.StateHash)
 			noneExistingList = append(noneExistingList, block.StateHash)
 		}
+	}
 
-		// in case of overflow as type n is uint64
-		if n == 0 {
-			break
+	//so we have all blocks missed in global state (except for the gensis)
+	//so we just start from a new gensis state
+	if lastExisting == nil {
+		block, err := fetchRawBlockFromDB(0)
+		if err != nil {
+			return fmt.Errorf("Fetch gensis block fail: %s", err)
+		}
+		err = db.GetGlobalDBHandle().PutGenesisGlobalState(block.StateHash)
+		if err != nil {
+			return fmt.Errorf("Put genesis state fail: %s", err)
 		}
 	}
 
-	for index := len(noneExistingList) - 1; index >= 0; index-- {
-		stateHash := noneExistingList[index]
-		var err error
+	for len(noneExistingList) > 0 {
 
-		ledgerLogger.Infof("Add Missed GlobalState:")
-		ledgerLogger.Infof("	parentStateHash[%x]", lastExisting)
-		ledgerLogger.Infof("	statehash[%x]", stateHash)
+		pos := len(noneExistingList) - 1
+		stateHash := noneExistingList[pos]
 		err = db.GetGlobalDBHandle().AddGlobalState(lastExisting, stateHash)
-
 		if err != nil {
-			return err
+			return fmt.Errorf("Put global state fail: %s", err)
 		}
 		lastExisting = stateHash
+		noneExistingList = noneExistingList[:pos]
+		ledgerLogger.Infof("Sanity check add Missed GlobalState [%x]:", stateHash)
 	}
 
+	return nil
+}
+
+func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
+
+	s := db.GetGlobalDBHandle().GetGlobalState(parent)
+
+	if s == nil {
+		ledgerLogger.Warningf("Try to add state in unexist global state [%x], we execute a sanity check",
+			parent)
+
+		//sanityCheck should be thread safe
+		err := sanityCheck()
+		if err != nil {
+			ledgerLogger.Errorf("Sanity check fail in add globalstate: %s", err)
+			return err
+		}
+	}
+
+	err := db.GetGlobalDBHandle().AddGlobalState(parent, state)
+
+	if err != nil {
+		//should this the correct way to omit StateDuplicatedError?
+		if _, ok := err.(db.StateDuplicatedError); !ok {
+			ledgerLogger.Errorf("Add globalstate fail: %s", err)
+			return err
+		}
+
+		ledgerLogger.Warningf("Try to add existed globalstate: %x", state)
+	}
+
+	ledgerLogger.Info("Add globalstate [%x] on parent [%x]", state, parent)
+	return nil
+}
+
+func (ledger *Ledger) SwitchToCheckpointState(statehash []byte) error {
+
+	//startNumber := uint64(0)
+	//
+	//block, _:= ledger.GetBlockByNumber(fromBlockNumber)
+	//
+	//gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
+	//
+	//if gs.LastBranchNodeStateHash != nil {
+	//
+	//	db.GetDBHandle().StateSwitch(gs.LastBranchNodeStateHash)
+	//
+	//	startNumber = db.GetGlobalDBHandle().GetGlobalState(gs.LastBranchNodeStateHash).Count
+	//
+	//} else {
+	//	block, _= ledger.GetBlockByNumber(1)
+	//	db.GetDBHandle().StateSwitch(block.StateHash)
+	//}
+
+	//
+	//gs.Branched()
+	//
+	//stateHash := db.GetGlobalDBHandle().GetGlobalState()
+	//db.GetDBHandle().StateSwitch()
+
+	//return db.GetGlobalDBHandle().GetGlobalState(statehash)
 	return nil
 }
 
@@ -232,10 +302,15 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	stateHash, err := ledger.state.GetHash()
+	commitDone := false
+	defer func() {
+		if !commitDone {
+			ledger.resetForNextTxGroup(false)
+			ledger.blockchain.blockPersistenceStatus(false)
+		}
+	}()
 
 	if err != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return err
 	}
 
@@ -275,8 +350,6 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	block.NonHashData = &protos.NonHashData{ChaincodeEvents: ccEvents}
 	newBlockNumber, err := ledger.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
 	if err != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return err
 	}
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
@@ -284,21 +357,17 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	dbErr := writeBatch.BatchCommit()
 
 	if dbErr != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return dbErr
 	}
 
 	//all commit done, we can add global state
-	dbErr = db.GetGlobalDBHandle().AddGlobalState(ledger.currentStateHash, stateHash)
+	dbErr = ledger.AddGlobalState(ledger.currentStateHash, stateHash)
 
 	if dbErr != nil {
-		//should this the correct way to omit StateDuplicatedError?
-		if _, ok := dbErr.(db.StateDuplicatedError); !ok {
-			return dbErr
-		}
+		return dbErr
 	}
 
+	commitDone = true
 	ledger.resetForNextTxGroup(true)
 	ledger.blockchain.blockPersistenceStatus(true)
 
@@ -439,6 +508,10 @@ func (ledger *Ledger) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, 
 		return nil, ErrOutOfBounds
 	}
 	return ledger.state.FetchStateDeltaFromDB(blockNumber)
+}
+
+func (ledger *Ledger) GetGlobalState(statehash []byte) *protos.GlobalState {
+	return db.GetGlobalDBHandle().GetGlobalState(statehash)
 }
 
 // ApplyStateDelta applies a state delta to the current state. This is an

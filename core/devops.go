@@ -254,6 +254,14 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	}
 
 	if invoke {
+
+		//if sec is not enable, nonce may be empty and we lost randomness,
+		//so we use the generated txid as nonce, but short
+		if transaction.Nonce == nil {
+			//TODO: better implement
+			transaction.Nonce = []byte(id)[:8]
+		}
+
 		var digest []byte
 		if customIDgenAlg != "" {
 			digest, err = transaction.DigestWithAlg(customIDgenAlg)

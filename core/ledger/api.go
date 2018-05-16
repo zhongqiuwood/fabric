@@ -7,6 +7,8 @@ import (
 	pb "github.com/abchain/fabric/protos"
 )
 
+const PeerStoreKeyPrefix = "peer."
+
 // BlockChainAccessor interface for retreiving blocks by block number
 type BlockChainAccessor interface {
 	GetBlockByNumber(blockNumber uint64) (*pb.Block, error)
@@ -29,8 +31,15 @@ type BlockChainUtil interface {
 	VerifyBlockchain(start, finish uint64) (uint64, error)
 }
 
-// StateAccessor interface for retreiving blocks by block number
+// StateAccessor interface for query states of current history and global
 type StateAccessor interface {
 	GetStateSnapshot() (*state.StateSnapshot, error)
 	GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error)
+	GetGlobalState(statehash []byte) *pb.GlobalState
+}
+
+// StateManager interface for manage history view and global states
+type StateManager interface {
+	AddGlobalState(parent []byte, state []byte) error
+	SwitchToCheckpointState(statehash []byte) error
 }

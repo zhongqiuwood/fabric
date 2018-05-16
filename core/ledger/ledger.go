@@ -220,6 +220,7 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 		ledgerLogger.Warningf("Try to add existed globalstate: %x", state)
 	}
 
+	ledgerLogger.Info("Add globalstate [%x] on parent [%x]", state, parent)
 	return nil
 }
 

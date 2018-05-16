@@ -37,19 +37,24 @@ func (h *GossipHandlerImpl) OnWriteError(e error) {
 	logger.Error("Gossip handler encounter writer error:", e)
 }
 
-var DefaultFactory func(*pb.PeerID) GossipHandler
+type GossipFactory func(*pb.PeerID) GossipHandler
 
-type GossipFactory struct{}
+var DefaultFactory GossipFactory
 
-func (t *GossipFactory) NewStreamHandlerImpl(id *pb.PeerID, initiated bool) (pb.StreamHandlerImpl, error) {
-	if DefaultFactory == nil {
+func GetDefaultFactory() pb.StreamHandlerFactory { return DefaultFactory }
+
+func (t GossipFactory) NewStreamHandlerImpl(id *pb.PeerID, initiated bool) (pb.StreamHandlerImpl, error) {
+	if t == nil {
 		return nil, fmt.Errorf("No default factory")
 	}
 
-	return &GossipHandlerImpl{DefaultFactory(id)}, nil
+	return &GossipHandlerImpl{t(id)}, nil
 }
 
-func (t *GossipFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, error) {
+func (t GossipFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, error) {
+	if t == nil {
+		return nil, fmt.Errorf("No default factory")
+	}
 
 	serverClient := pb.NewPeerClient(conn)
 	ctx := context.Background()

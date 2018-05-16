@@ -8,11 +8,40 @@ import (
 	"sync"
 )
 
+/*
+
+  a streamhandler factory include two methods:
+
+  1. Stream creator: generate a stream from given connection
+  2. Handler creator: generate a handler which is binded to specified peer, with a bool parameter indicate
+     it should act as client or server (may be omitted in a bi-directory session)
+
+*/
 type StreamHandlerFactory interface {
-	NewStreamHandlerImpl(*PeerID, bool) (StreamHandlerImpl, error)
 	NewClientStream(*grpc.ClientConn) (grpc.ClientStream, error)
+	NewStreamHandlerImpl(*PeerID, bool) (StreamHandlerImpl, error)
 }
 
+/*
+
+  each streamhandler implement exposed following methods for working in a streaming, it supposed message with
+  certain type is transmitted in the stream and each end handle this message by a streamhandler implement:
+
+  Tag: providing a string tag for the implement
+  EnableLoss: indicate the message transmitted in stream can be dropped for any reason (send buffer full, bad
+			  linking, deliberately omitted by the other side ...)
+  NewMessage: provided a prototype object of the transamitted message for receiving and handling later in a HandleMessage call
+  HandleMessage: handling a message received from the other side. The object was allocated before in a NewMessage call and
+			  the wire data was parsed and put into it
+  BeforeSendMessage: when a message is ready to send to the other side (by calling SendMessage in a StreamHandler), this method
+			  is called to give handler a last chance for dropping (by return a non-nil error) the message or do any statistics
+			  jobs. Method MAY be called in different thread so you must protect your data from any racing
+  OnWriteError: method is called if any error raised in sending message
+  Stop: when the stream is broken this method is called and no more calling will be made on this handler
+
+  *** All calling to the methods (except for BeforeSendMessage) are ensured being raised in the same thread ***
+
+*/
 type StreamHandlerImpl interface {
 	Tag() string
 	EnableLoss() bool

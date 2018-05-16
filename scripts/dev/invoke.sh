@@ -40,7 +40,8 @@ if [ "$ACTION" = "i" ];then
 fi
 
 if [ "$ACTION" = "q" ];then
-    ./querya.sh $CCNAME
+    CORE_PEER_LOCALADDR=127.0.0.1:2056 ${FABRIC_TOP}/build/bin/peer chaincode query -n $CCNAME -c '{"Args":["query", "a"]}'
+    CORE_PEER_LOCALADDR=127.0.0.1:2056 ${FABRIC_TOP}/build/bin/peer chaincode query -n $CCNAME -c '{"Args":["query", "b"]}'
     exit
 fi
 

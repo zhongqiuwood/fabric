@@ -224,6 +224,35 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 	return nil
 }
 
+func (ledger *Ledger) SwitchToCheckpointState(statehash []byte) error {
+
+	//startNumber := uint64(0)
+	//
+	//block, _:= ledger.GetBlockByNumber(fromBlockNumber)
+	//
+	//gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
+	//
+	//if gs.LastBranchNodeStateHash != nil {
+	//
+	//	db.GetDBHandle().StateSwitch(gs.LastBranchNodeStateHash)
+	//
+	//	startNumber = db.GetGlobalDBHandle().GetGlobalState(gs.LastBranchNodeStateHash).Count
+	//
+	//} else {
+	//	block, _= ledger.GetBlockByNumber(1)
+	//	db.GetDBHandle().StateSwitch(block.StateHash)
+	//}
+
+	//
+	//gs.Branched()
+	//
+	//stateHash := db.GetGlobalDBHandle().GetGlobalState()
+	//db.GetDBHandle().StateSwitch()
+
+	//return db.GetGlobalDBHandle().GetGlobalState(statehash)
+	return nil
+}
+
 /////////////////// Transaction-batch related methods ///////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
 
@@ -273,10 +302,15 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	stateHash, err := ledger.state.GetHash()
+	commitDone := false
+	defer func() {
+		if !commitDone {
+			ledger.resetForNextTxGroup(false)
+			ledger.blockchain.blockPersistenceStatus(false)
+		}
+	}()
 
 	if err != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return err
 	}
 
@@ -316,8 +350,6 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	block.NonHashData = &protos.NonHashData{ChaincodeEvents: ccEvents}
 	newBlockNumber, err := ledger.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
 	if err != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return err
 	}
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
@@ -325,8 +357,6 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	dbErr := writeBatch.BatchCommit()
 
 	if dbErr != nil {
-		ledger.resetForNextTxGroup(false)
-		ledger.blockchain.blockPersistenceStatus(false)
 		return dbErr
 	}
 
@@ -337,6 +367,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		return dbErr
 	}
 
+	commitDone = true
 	ledger.resetForNextTxGroup(true)
 	ledger.blockchain.blockPersistenceStatus(true)
 
@@ -477,6 +508,10 @@ func (ledger *Ledger) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, 
 		return nil, ErrOutOfBounds
 	}
 	return ledger.state.FetchStateDeltaFromDB(blockNumber)
+}
+
+func (ledger *Ledger) GetGlobalState(statehash []byte) *protos.GlobalState {
+	return db.GetGlobalDBHandle().GetGlobalState(statehash)
 }
 
 // ApplyStateDelta applies a state delta to the current state. This is an

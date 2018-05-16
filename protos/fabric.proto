@@ -129,6 +129,9 @@ service Peer {
     // This can't be achieve by protobuf and we had to imple it manually
     rpc GossipIn(stream Gossip) returns (stream Gossip) {}
 
+    // Request a new stream for state syncing
+    rpc SyncIn(stream SyncMsg) returns (stream SyncMsg) {}
+
     // Process a transaction from a remote source.
     rpc ProcessTransaction(Transaction) returns (Response) {}
 
@@ -221,8 +224,6 @@ message Message {
 
         RESPONSE = 20;
         CONSENSUS = 21;
-        SYNC_STATE_HASH_REQUEST = 22;
-        SYNC_STATE_HASH = 23;
     }
     Type type = 1;
     google.protobuf.Timestamp timestamp = 2;
@@ -307,6 +308,31 @@ message SyncStateDeltas {
     repeated bytes deltas = 2;
 }
 
+// Like chat, stateSync wrap messages used in a syncing session
+message SyncMsg {
+    enum Type {
+        UNDEFINED = 0;
+
+        SYNC_STATE_NOTIFY = 1;
+        SYNC_STATE_OPT = 2;
+
+        SYNC_SESSION_START = 5;
+        SYNC_SESSION_QUERY = 6;
+        SYNC_SESSION_RESPONSE = 7;
+
+        SYNC_SESSION_GET_BLOCKS = 11;
+        SYNC_SESSION_BLOCKS = 12;
+
+        SYNC_SESSION_GET_SNAPSHOT = 14;
+        SYNC_SESSION_SNAPSHOT = 15;
+        SYNC_SESSION_GET_DELTAS = 16;
+        SYNC_SESSION_DELTAS = 17;
+    }
+    Type type = 1;
+    uint64 correlationId = 2;
+    bytes payload = 3;  
+}
+
 
 ////////////////////////////////
 message SyncStateHashRequest {
@@ -315,9 +341,14 @@ message SyncStateHashRequest {
   uint64 flag = 3;
   uint64 blockNumber = 4;
 }
+message SyncStateQuery {
+  uint32  id = 1;
+  bytes statehash = 2;
+}
 
-message SyncStateHash {
-  SyncStateHashRequest request = 1;
-  uint64 blockHeight = 2;
-  bytes stateHash = 3;
+message SyncStateResp {
+  uint32  id = 1;
+  bool   postive     = 3;
+  uint64 blockHeight = 4;
+
 }

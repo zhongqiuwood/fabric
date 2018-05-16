@@ -66,8 +66,10 @@ It has these top-level messages:
 	SyncStateSnapshot
 	SyncStateDeltasRequest
 	SyncStateDeltas
+	SyncMsg
 	SyncStateHashRequest
-	SyncStateHash
+	SyncStateQuery
+	SyncStateResp
 	ServerStatus
 */
 package protos

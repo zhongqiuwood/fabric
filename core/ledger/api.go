@@ -14,7 +14,6 @@ type BlockChainAccessor interface {
 	GetBlockByNumber(blockNumber uint64) (*pb.Block, error)
 	GetBlockchainSize() uint64
 	GetCurrentStateHash() (stateHash []byte, err error)
-	GetGlobalState(statehash []byte) *pb.GlobalState
 }
 
 // BlockChainModifier interface for applying changes to the block chain
@@ -24,8 +23,6 @@ type BlockChainModifier interface {
 	CommitStateDelta(id interface{}) error
 	EmptyState() error
 	PutBlock(blockNumber uint64, block *pb.Block) error
-	Switch2MostRecentCheckpoint(fromBlockNumber uint64) (uint64, error)
-	AddGlobalState(parent []byte, state []byte) error
 }
 
 // BlockChainUtil interface for interrogating the block chain
@@ -34,8 +31,15 @@ type BlockChainUtil interface {
 	VerifyBlockchain(start, finish uint64) (uint64, error)
 }
 
-// StateAccessor interface for retreiving blocks by block number
+// StateAccessor interface for query states of current history and global
 type StateAccessor interface {
 	GetStateSnapshot() (*state.StateSnapshot, error)
 	GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, error)
+	GetGlobalState(statehash []byte) *pb.GlobalState
+}
+
+// StateManager interface for manage history view and global states
+type StateManager interface {
+	AddGlobalState(parent []byte, state []byte) error
+	SwitchToCheckpointState(statehash []byte) error
 }

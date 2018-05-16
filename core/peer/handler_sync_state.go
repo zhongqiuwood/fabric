@@ -39,31 +39,6 @@ func (sh *syncHandler) shouldHandle(correlationID uint64) bool {
 
 //-----------------------------------------------------------------------------
 //
-// Sync State Hash Handler
-//
-//-----------------------------------------------------------------------------
-
-type syncStateHashHandler struct {
-	syncHandler
-	channel chan *pb.SyncStateHash
-}
-
-func (sbh *syncStateHashHandler) reset() {
-	if sbh.channel != nil {
-		close(sbh.channel)
-	}
-	sbh.channel = make(chan *pb.SyncStateHash, 50)
-	sbh.correlationID++
-}
-
-func newSyncStateHashHandler() *syncStateHashHandler {
-	sbh := &syncStateHashHandler{}
-	sbh.reset()
-	return sbh
-}
-
-//-----------------------------------------------------------------------------
-//
 // Sync Blocks Handler
 //
 //-----------------------------------------------------------------------------

@@ -48,7 +48,6 @@ type Handler struct {
 	snapshotRequestHandler        *syncStateSnapshotRequestHandler
 	syncStateDeltasRequestHandler *syncStateDeltasHandler
 	syncBlocksRequestHandler      *syncBlocksRequestHandler
-	stateHashHandler              *syncStateHashHandler
 	syncSnapshotTimeout           time.Duration
 	lastIgnoredSnapshotCID        *uint64
 	ledger                        *ledger.Ledger
@@ -76,9 +75,6 @@ func NewPeerHandler(coord *Impl, stream ChatStream, initiatedStream bool) (Messa
 	d.snapshotRequestHandler = newSyncStateSnapshotRequestHandler()
 	d.syncStateDeltasRequestHandler = newSyncStateDeltasHandler()
 	d.syncBlocksRequestHandler = newSyncBlocksRequestHandler()
-
-	d.stateHashHandler = newSyncStateHashHandler()
-
 	d.FSM = fsm.NewFSM(
 		"created",
 		fsm.Events{
@@ -92,8 +88,6 @@ func NewPeerHandler(coord *Impl, stream ChatStream, initiatedStream bool) (Messa
 			{Name: pb.Message_SYNC_STATE_SNAPSHOT.String(), Src: []string{"established"}, Dst: "established"},
 			{Name: pb.Message_SYNC_STATE_GET_DELTAS.String(), Src: []string{"established"}, Dst: "established"},
 			{Name: pb.Message_SYNC_STATE_DELTAS.String(), Src: []string{"established"}, Dst: "established"},
-			{Name: pb.Message_SYNC_STATE_HASH_REQUEST.String(), Src: []string{"established"}, Dst: "established"},
-			{Name: pb.Message_SYNC_STATE_HASH.String(), Src: []string{"established"}, Dst: "established"},
 		},
 		fsm.Callbacks{
 			"enter_state":                                           func(e *fsm.Event) { d.enterState(e) },
@@ -107,8 +101,6 @@ func NewPeerHandler(coord *Impl, stream ChatStream, initiatedStream bool) (Messa
 			"before_" + pb.Message_SYNC_STATE_SNAPSHOT.String():     func(e *fsm.Event) { d.beforeSyncStateSnapshot(e) },
 			"before_" + pb.Message_SYNC_STATE_GET_DELTAS.String():   func(e *fsm.Event) { d.beforeSyncStateGetDeltas(e) },
 			"before_" + pb.Message_SYNC_STATE_DELTAS.String():       func(e *fsm.Event) { d.beforeSyncStateDeltas(e) },
-			"before_" + pb.Message_SYNC_STATE_HASH_REQUEST.String():   func(e *fsm.Event) { d.beforeSyncStateHashRequest(e) },
-			"before_" + pb.Message_SYNC_STATE_HASH.String():           func(e *fsm.Event) { d.beforeSyncStateHash(e) },
 		},
 	)
 
@@ -322,9 +314,7 @@ func (d *Handler) when(stateToCheck string) bool {
 
 // HandleMessage handles the Openchain messages for the Peer.
 func (d *Handler) HandleMessage(msg *pb.Message) error {
-	if d.dumpMessage(msg) {
-		peerLogger.Infof(" <<<-----   Receiving Message of type: %s ", msg.Type)
-	}
+	peerLogger.Debugf("Handling Message of type: %s ", msg.Type)
 	if d.FSM.Cannot(msg.Type.String()) {
 		return fmt.Errorf("Peer FSM cannot handle message (%s) with payload size (%d) while in state: %s", msg.Type.String(), len(msg.Payload), d.FSM.Current())
 	}
@@ -339,30 +329,13 @@ func (d *Handler) HandleMessage(msg *pb.Message) error {
 	return nil
 }
 
-func (d *Handler) dumpMessage(msg *pb.Message) bool {
-
-	if msg.Type == pb.Message_DISC_HELLO ||
-		msg.Type == pb.Message_DISC_DISCONNECT ||
-		msg.Type == pb.Message_DISC_GET_PEERS ||
-		msg.Type == pb.Message_DISC_PEERS ||
-		msg.Type == pb.Message_CONSENSUS ||
-		msg.Type == pb.Message_DISC_NEWMSG {
-		return false
-	}
-	return true
-}
-
 // SendMessage sends a message to the remote PEER through the stream
 func (d *Handler) SendMessage(msg *pb.Message) error {
 	//make sure Sends are serialized. Also make sure everyone uses SendMessage
 	//instead of calling Send directly on the grpc stream
 	d.chatMutex.Lock()
 	defer d.chatMutex.Unlock()
-
-	if d.dumpMessage(msg) {
-		peerLogger.Infof(" <<<-----  Sending message to stream of type: %s ", msg.Type)
-	}
-
+	peerLogger.Debugf("Sending message to stream of type: %s ", msg.Type)
 	err := d.ChatStream.Send(msg)
 	if err != nil {
 		return fmt.Errorf("Error Sending message through ChatStream: %s", err)
@@ -798,150 +771,148 @@ func (d *Handler) beforeSyncStateDeltas(e *fsm.Event) {
 }
 
 
+
 //-----------------------------------------------------------------------------
 //
 // Sync StateHash
 //
 //-----------------------------------------------------------------------------
-func (d *Handler) RequestStateHash(req *pb.SyncStateHashRequest) (<-chan *pb.SyncStateHash, error) {
-
-	channalHandler := d.stateHashHandler
-
-	channalHandler.Lock()
-	defer channalHandler.Unlock()
-	// Reset the handler
-	channalHandler.reset()
-	req.CorrelationId = channalHandler.correlationID
-
-	err := d.submitMessage(pb.Message_SYNC_STATE_HASH_REQUEST, req)
-
-	if err != nil {
-		return nil, fmt.Errorf("Error submit Message_SYNC_STATE_HASH_REQUEST during RequestStateHash: %s", err)
-	}
-
-	return channalHandler.channel, nil
-}
-
-// BlockHeight request
-func (d *Handler) beforeSyncStateHashRequest(e *fsm.Event) {
-	peerLogger.Debugf("Received message: %s", e.Event)
-	msg, ok := e.Args[0].(*pb.Message)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-
-	req := &pb.SyncStateHashRequest{}
-	err := proto.Unmarshal(msg.Payload, req)
-	if err != nil {
-		e.Cancel(fmt.Errorf("Error unmarshalling SyncStateHashRequest in beforeSyncStateHashRequest: %s", err))
-		return
-	}
-
-	if req.Flag == 0 {
-		go d.sendBlockHeight(req)
-	} else if req.Flag == 1 {
-		go d.sendStateHash(req)
-	}
-}
-
-func (d *Handler) sendStateHash(req *pb.SyncStateHashRequest) {
-	peerLogger.Debugf("Sending SyncStateHashRequest for CorrelationId: %d", req.CorrelationId)
-
-	block, err := d.ledger.GetBlockByNumberBySnapshot(req.Syncid, req.BlockNumber)
-
-	if nil != err {
-		peerLogger.Warningf("Could not retrieve block %d: %s",
-			req.BlockNumber, err)
-		return
-	}
-
-	resp := &pb.SyncStateHash{
-		Request: req,
-		StateHash: block.StateHash,
-	}
-
-	d.submitMessage(pb.Message_SYNC_STATE_HASH, resp)
-}
-
-
-func (d *Handler) sendBlockHeight(req *pb.SyncStateHashRequest) {
-	peerLogger.Debugf("Sending Block Height for CorrelationId: %d", req.CorrelationId)
-
-	blockChainHeight, err := d.ledger.GetBlockchainSizeBySnapshot(req.Syncid)
-
-	if err != nil {
-		peerLogger.Errorf("Error getting GetBlockchainInfo for CorrelationId %d: %s",
-			req.CorrelationId, err)
-		return
-	}
-
-	resp := &pb.SyncStateHash{
-		Request: req,
-		BlockHeight: blockChainHeight,
-	}
-
-	d.submitMessage(pb.Message_SYNC_STATE_HASH, resp)
-}
-
-func (d *Handler) submitMessage(t pb.Message_Type, msg proto.Message) error {
-
-	msgBytes, err := proto.Marshal(msg)
-	if err == nil {
-		err = d.SendMessage(&pb.Message{Type: t, Payload: msgBytes})
-	}
-	if err != nil {
-		peerLogger.Errorf("Failed to submit Message<%s><%+v> to <%s>, error: %s",
-			t.String(), msg, d.ToPeerEndpoint, err)
-	}
-	return err
-}
-
-func (d *Handler) beforeSyncStateHash(e *fsm.Event) {
-	peerLogger.Debugf("Received message: %s", e.Event)
-	msg, ok := e.Args[0].(*pb.Message)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-	// Forward the received SyncStateDeltas to the channel
-	response := &pb.SyncStateHash{}
-	err := proto.Unmarshal(msg.Payload, response)
-	if err != nil {
-		e.Cancel(fmt.Errorf("Error unmarshalling SyncStateHash in beforeSyncStateHash: %s", err))
-		return
-	}
-	peerLogger.Infof("Received SyncStateHash: <%+v>", response)
-
-	// Send the message onto the channel, allow for the fact that channel may be closed on send attempt.
-	defer func() {
-		if x := recover(); x != nil {
-			peerLogger.Errorf("Error sending SyncStateHash to channel: %v", x)
-		}
-	}()
-
-	channalHandler := d.stateHashHandler
-	// Use non-blocking send, will WARN and close channel if missed message.
-	channalHandler.Lock()
-	defer channalHandler.Unlock()
-	if channalHandler.shouldHandle(response.Request.CorrelationId) {
-		select {
-		case channalHandler.channel <- response:
-		default:
-			peerLogger.Warningf("Did NOT send SyncStateHash message to channel for CorrelationId %d, " +
-				"closing channel as the message has been discarded", response.Request.CorrelationId)
-			channalHandler.reset()
-		}
-	} else {
-		peerLogger.Warningf("Ignoring SyncStateHash message<%+v>, as current correlationId = %d",
-			response,
-			channalHandler.correlationID)
-	}
-
-}
-
-
-
+//func (d *Handler) RequestStateHash(req *pb.SyncStateHashRequest) (<-chan *pb.SyncStateHash, error) {
+//
+//	channalHandler := d.stateHashHandler
+//
+//	channalHandler.Lock()
+//	defer channalHandler.Unlock()
+//	// Reset the handler
+//	channalHandler.reset()
+//	req.CorrelationId = channalHandler.correlationID
+//
+//	err := d.submitMessage(pb.Message_SYNC_STATE_HASH_REQUEST, req)
+//
+//	if err != nil {
+//		return nil, fmt.Errorf("Error submit Message_SYNC_STATE_HASH_REQUEST during RequestStateHash: %s", err)
+//	}
+//
+//	return channalHandler.channel, nil
+//}
+//
+//// BlockHeight request
+//func (d *Handler) beforeSyncStateHashRequest(e *fsm.Event) {
+//	peerLogger.Debugf("Received message: %s", e.Event)
+//	msg, ok := e.Args[0].(*pb.Message)
+//	if !ok {
+//		e.Cancel(fmt.Errorf("Received unexpected message type"))
+//		return
+//	}
+//
+//	req := &pb.SyncStateHashRequest{}
+//	err := proto.Unmarshal(msg.Payload, req)
+//	if err != nil {
+//		e.Cancel(fmt.Errorf("Error unmarshalling SyncStateHashRequest in beforeSyncStateHashRequest: %s", err))
+//		return
+//	}
+//
+//	if req.Flag == 0 {
+//		go d.sendBlockHeight(req)
+//	} else if req.Flag == 1 {
+//		go d.sendStateHash(req)
+//	}
+//}
+//
+//func (d *Handler) sendStateHash(req *pb.SyncStateHashRequest) {
+//	peerLogger.Debugf("Sending SyncStateHashRequest for CorrelationId: %d", req.CorrelationId)
+//
+//	block, err := d.ledger.GetBlockByNumberBySnapshot(req.Syncid, req.BlockNumber)
+//
+//	if nil != err {
+//		peerLogger.Warningf("Could not retrieve block %d: %s",
+//			req.BlockNumber, err)
+//		return
+//	}
+//
+//	resp := &pb.SyncStateHash{
+//		Request: req,
+//		StateHash: block.StateHash,
+//	}
+//
+//	d.submitMessage(pb.Message_SYNC_STATE_HASH, resp)
+//}
+//
+//
+//func (d *Handler) sendBlockHeight(req *pb.SyncStateHashRequest) {
+//	peerLogger.Debugf("Sending Block Height for CorrelationId: %d", req.CorrelationId)
+//
+//	blockChainHeight, err := d.ledger.GetBlockchainSizeBySnapshot(req.Syncid)
+//
+//	if err != nil {
+//		peerLogger.Errorf("Error getting GetBlockchainInfo for CorrelationId %d: %s",
+//			req.CorrelationId, err)
+//		return
+//	}
+//
+//	resp := &pb.SyncStateHash{
+//		Request: req,
+//		BlockHeight: blockChainHeight,
+//	}
+//
+//	d.submitMessage(pb.Message_SYNC_STATE_HASH, resp)
+//}
+//
+//func (d *Handler) submitMessage(t pb.Message_Type, msg proto.Message) error {
+//
+//	msgBytes, err := proto.Marshal(msg)
+//	if err == nil {
+//		err = d.SendMessage(&pb.Message{Type: t, Payload: msgBytes})
+//	}
+//	if err != nil {
+//		peerLogger.Errorf("Failed to submit Message<%s><%+v> to <%s>, error: %s",
+//			t.String(), msg, d.ToPeerEndpoint, err)
+//	}
+//	return err
+//}
+//
+//func (d *Handler) beforeSyncStateHash(e *fsm.Event) {
+//	peerLogger.Debugf("Received message: %s", e.Event)
+//	msg, ok := e.Args[0].(*pb.Message)
+//	if !ok {
+//		e.Cancel(fmt.Errorf("Received unexpected message type"))
+//		return
+//	}
+//	// Forward the received SyncStateDeltas to the channel
+//	response := &pb.SyncStateHash{}
+//	err := proto.Unmarshal(msg.Payload, response)
+//	if err != nil {
+//		e.Cancel(fmt.Errorf("Error unmarshalling SyncStateHash in beforeSyncStateHash: %s", err))
+//		return
+//	}
+//	peerLogger.Infof("Received SyncStateHash: <%+v>", response)
+//
+//	// Send the message onto the channel, allow for the fact that channel may be closed on send attempt.
+//	defer func() {
+//		if x := recover(); x != nil {
+//			peerLogger.Errorf("Error sending SyncStateHash to channel: %v", x)
+//		}
+//	}()
+//
+//	channalHandler := d.stateHashHandler
+//	// Use non-blocking send, will WARN and close channel if missed message.
+//	channalHandler.Lock()
+//	defer channalHandler.Unlock()
+//	if channalHandler.shouldHandle(response.Request.CorrelationId) {
+//		select {
+//		case channalHandler.channel <- response:
+//		default:
+//			peerLogger.Warningf("Did NOT send SyncStateHash message to channel for CorrelationId %d, " +
+//				"closing channel as the message has been discarded", response.Request.CorrelationId)
+//			channalHandler.reset()
+//		}
+//	} else {
+//		peerLogger.Warningf("Ignoring SyncStateHash message<%+v>, as current correlationId = %d",
+//			response,
+//			channalHandler.correlationID)
+//	}
+//
+//}
 
 
 

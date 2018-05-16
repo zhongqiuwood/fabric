@@ -124,7 +124,7 @@ func (m *Model) applyDigest(referer *pb.PeerID, message *pb.Gossip) error {
 
 	digest := message.GetDigest()
 	if digest == nil {
-		return fmt.Errorf("Message not diest with catalog(%s)", message.Catalog)
+		return fmt.Errorf("Message not digest with catalog(%s)", message.Catalog)
 	}
 
 	for id, state := range digest.Data {
@@ -159,6 +159,10 @@ func (m *Model) applyUpdate(referer *pb.PeerID, message *pb.Gossip) ([]*pb.Trans
 
 	ntxs := []*pb.Transaction{}
 	update := message.GetUpdate()
+	if update == nil {
+		return nil, fmt.Errorf("Message not update with catalog(%s)", message.Catalog)
+	}
+
 	switch message.Catalog {
 	case "tx":
 		txs := &pb.Gossip_Tx{}
@@ -234,7 +238,9 @@ func (m *Model) digestMessage(catalog string, maxn int) *pb.Gossip {
 	message.Catalog = catalog
 	message.Seq = m.nseq
 
-	digest := &pb.Gossip_Digest{}
+	digest := &pb.Gossip_Digest{
+		Data: map[string]*pb.Gossip_Digest_PeerState{},
+	}
 	for id, peer := range m.store {
 		state, ok := peer.states[catalog]
 		if !ok {

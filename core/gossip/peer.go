@@ -113,6 +113,7 @@ func NewGossip(p peer.Peer) {
 
 	model := &Model{
 		merger: &VersionMergerDummy{},
+		crypto: &CryptoImpl{},
 	}
 	if err != nil {
 

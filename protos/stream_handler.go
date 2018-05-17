@@ -83,17 +83,16 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 		return fmt.Errorf("Streamhandler %s has been killed", h.tag)
 	}
 
-	if h.enableLoss {
-		select {
-		case h.writeQueue <- m:
-			return nil
-		default:
+	select {
+	case h.writeQueue <- m:
+		return nil
+	default:
+		if !h.enableLoss {
 			return fmt.Errorf("Streamhandler %s's write channel full, rejecting", h.tag)
 		}
-	} else {
-		h.writeQueue <- m
-		return nil
 	}
+
+	return nil
 
 }
 

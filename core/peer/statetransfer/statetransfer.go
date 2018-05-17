@@ -52,6 +52,7 @@ type LedgerStack interface {
 	ledger.BlockChainAccessor
 	ledger.BlockChainModifier
 	ledger.BlockChainUtil
+	ledger.StateManager
 }
 
 // PartialStack is a subset of peer.Neighbour functionality which is necessary to perform state transfer

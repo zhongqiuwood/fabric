@@ -343,12 +343,12 @@ message SyncStateHashRequest {
 }
 message SyncStateQuery {
   uint32  id = 1;
-  bytes statehash = 2;
+  uint64  blockHeight = 2;
 }
 
 message SyncStateResp {
   uint32  id = 1;
   bool   postive     = 3;
-  uint64 blockHeight = 4;
-
+  bytes  statehash   = 4;
+  uint64  blockHeight = 5;
 }

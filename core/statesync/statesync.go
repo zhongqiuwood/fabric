@@ -6,6 +6,8 @@ import (
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/statesync/stub"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
+	"github.com/looplab/fsm"
 	"github.com/op/go-logging"
 	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
@@ -15,13 +17,10 @@ import (
 var logger = logging.MustGetLogger("statesync")
 
 func init() {
-	stub.DefaultFactory = func(id *pb.PeerID) pb.StreamHandlerImpl {
-		logger.Debug("create handler for peer", id)
-		return &StateSyncHandler{peerId: id}
-	}
+	stub.DefaultFactory = newStateSyncHandler
 }
 
-var syncer *StateSync
+var stateSyncCore *StateSync
 var syncerErr error
 var once sync.Once
 
@@ -32,19 +31,19 @@ func GetNewStateSync(p peer.Peer) (*StateSync, error) {
 		return nil, fmt.Errorf("peer have no sync streamstub")
 	}
 
-	return &StateSync{stub}
+	return &StateSync{StreamStub: stub}, nil
 }
 
 // gives a reference to a singleton
 func GetStateSync() (*StateSync, error) {
-	return syncer, syncerErr
+	return stateSyncCore, syncerErr
 }
 
 func NewStateSync(p peer.Peer) {
 	logger.Debug("State sync module inited")
 
 	once.Do(func() {
-		syncer, syncerErr = GetNewStateSync(p)
+		stateSyncCore, syncerErr = GetNewStateSync(p)
 		if syncerErr != nil {
 			logger.Error("Create new state syncer fail:", syncerErr)
 		}
@@ -53,6 +52,9 @@ func NewStateSync(p peer.Peer) {
 
 type StateSync struct {
 	*pb.StreamStub
+	sync.RWMutex
+	curCorrrelation uint64
+	curTask         context.Context
 }
 
 type syncOpt struct {
@@ -62,33 +64,117 @@ func NewSyncOption() *syncOpt {
 	return new(syncOpt)
 }
 
-//main entry for statesync: it is sync, thread-unsafe and NOT re-entriable, but you can call IsBusy
+type ErrInProcess struct {
+	error
+}
+
+type ErrHandlerFatal struct {
+	error
+}
+
+//main entry for statesync: it is synchronous and NOT re-entriable, but you can call IsBusy
 //at another thread and check its status
 func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt) error {
+
+	s.Lock()
+	if s.curTask != nil {
+		s.Unlock()
+		return &ErrInProcess{fmt.Errorf("Another task is running")}
+	}
+
+	s.curTask = ctx
+	s.curCorrrelation++
+	s.Unlock()
+
+	defer func() {
+		s.Lock()
+		s.curTask = nil
+		s.Unlock()
+	}()
 
 	return fmt.Errorf("Not implied")
 }
 
-type StateSyncHandler struct {
-	*handler
+//if busy, return current correlation Id, els return 0
+func (s *StateSync) IsBusy() uint64 {
+
+	s.RLock()
+	defer s.RUnlock()
+
+	if s.curTask == nil {
+		return uint64(0)
+	} else {
+		return s.curCorrrelation
+	}
 }
 
-func (h *StateSyncHandler) Tag() string { return "StateSync" }
+type stateSyncHandler struct {
+	peerId  *pb.PeerID
+	handler *fsm.FSM
+	server  *stateServer
+	client  *syncer
+	stream  *pb.StreamHandler
+	sync.Once
+}
 
-func (h *StateSyncHandler) EnableLoss() bool { return false }
+func newStateSyncHandler(id *pb.PeerID) pb.StreamHandlerImpl {
+	logger.Debug("create handler for peer", id)
+	h := &stateSyncHandler{
+		peerId: id,
+	}
 
-func (h *StateSyncHandler) NewMessage() proto.Message { return new(pb.SyncMsg) }
+	h.handler = newHandler(h)
+	return h
+}
 
-func (h *StateSyncHandler) HandleMessage(m proto.Message) error {
+//this should be call with a stateSyncHandler whose HandleMessage is called at least once
+func pickStreamHandler(h *stateSyncHandler) *pb.StreamHandler {
+
+	if syncerErr != nil {
+		return nil
+	}
+
+	streams := stateSyncCore.PickHandlers([]*pb.PeerID{h.peerId})
+	h.Do(func() {
+		if len(streams) > 0 {
+			h.stream = streams[0]
+		}
+
+	})
+
+	return h.stream
+
+}
+
+func (h *stateSyncHandler) Stop() { return }
+
+func (h *stateSyncHandler) Tag() string { return "StateSync" }
+
+func (h *stateSyncHandler) EnableLoss() bool { return false }
+
+func (h *stateSyncHandler) NewMessage() proto.Message { return new(pb.SyncMsg) }
+
+func (h *stateSyncHandler) HandleMessage(m proto.Message) error {
 
 	wrapmsg := m.(*pb.SyncMsg)
 
-	//return h.HandleMessage()
-}
+	err := h.handler.Event(wrapmsg.Type.String(), wrapmsg)
 
-func (h *StateSyncHandler) BeforeSendMessage(proto.Message) error {
+	//CAUTION: DO NOT return error in non-fatal case or you will end the stream
+	if err != nil {
+
+		if _, ok := err.(*ErrHandlerFatal); ok {
+			return err
+		}
+		logger.Errorf("Handle sync message fail: %s", err)
+	}
+
 	return nil
 }
-func (h *StateSyncHandler) OnWriteError(e error) {
+
+func (h *stateSyncHandler) BeforeSendMessage(proto.Message) error {
+	return nil
+}
+func (h *stateSyncHandler) OnWriteError(e error) {
 	logger.Error("Sync handler encounter writer error:", e)
 }

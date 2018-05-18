@@ -57,6 +57,10 @@ type Peer interface {
 	GetStreamStub(string) *pb.StreamStub
 }
 
+type StreamFilter interface {
+	QualitifiedPeer(*pb.PeerEndpoint) bool
+}
+
 type Neighbour interface {
 	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
 	Unicast(*pb.Message, *pb.PeerID) error
@@ -163,9 +167,10 @@ type Impl struct {
 	handlerMap *handlerMap
 	//	ledgerWrapper *ledgerWrapper
 	//  each stubs ...
-	streamStubs map[string]*pb.StreamStub
-	gossipStub  *pb.StreamStub
-	syncStub    *pb.StreamStub
+	streamStubs   map[string]*pb.StreamStub
+	streamFilters map[string]StreamFilter
+	gossipStub    *pb.StreamStub
+	syncStub      *pb.StreamStub
 
 	random        *rand.Rand
 	secHelper     crypto.Peer
@@ -235,6 +240,12 @@ type Engine interface {
 
 // NewPeerWithEngine returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
 func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactory) (peer *Impl, err error) {
+
+	self, err := GetPeerEndpoint()
+	if err != nil {
+		return nil, fmt.Errorf("Could not load info of self peer")
+	}
+
 	peer = new(Impl)
 	peerNodes := peer.initDiscovery()
 
@@ -272,6 +283,10 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	peer.streamStubs = map[string]*pb.StreamStub{
 		"gossip": peer.gossipStub,
 		"sync":   peer.syncStub,
+	}
+
+	peer.streamFilters = map[string]StreamFilter{
+		"sync": syncstub.StreamFilter{self},
 	}
 	// peer.handlerFactory = peer.engine.GetHandlerFactory()
 	// if peer.handlerFactory == nil {
@@ -451,6 +466,13 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 		peerLogger.Errorf("No connection can be found in context")
 	} else {
 		for name, stub := range p.streamStubs {
+
+			//do filter first
+			ep, _ := messageHandler.To()
+			if filter, ok := p.streamFilters[name]; ok && !filter.QualitifiedPeer(&ep) {
+				continue
+			}
+
 			go func(conn *grpc.ClientConn, k *pb.PeerID) {
 				peerLogger.Debugf("start streamhandler %s for peer %s", name, key.GetName())
 				err := stub.HandleClient(conn, k)

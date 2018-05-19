@@ -5,6 +5,7 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/looplab/fsm"
 	"golang.org/x/net/context"
 )
 
@@ -26,6 +27,22 @@ func newSyncer(ctx context.Context, h *stateSyncHandler) (s *syncer) {
 	}
 	return
 }
+
+func (sts *syncer) leaveSyncLocating(e *fsm.Event) {}
+
+func (sts *syncer) leaveSyncBlocks(e *fsm.Event) {}
+
+func (sts *syncer) leaveSyncStateSnapshot(e *fsm.Event) {}
+
+func (sts *syncer) leaveSyncStateDeltas(e *fsm.Event) {}
+
+func (sts *syncer) afterSyncResponse(e *fsm.Event) {}
+
+func (sts *syncer) afterSyncBlocks(e *fsm.Event) {}
+
+func (sts *syncer) afterSyncStateSnapshot(e *fsm.Event) {}
+
+func (sts *syncer) afterSyncStateDeltas(e *fsm.Event) {}
 
 func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 

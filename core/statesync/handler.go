@@ -1,29 +1,48 @@
 package statesync
 
 import (
+	pb "github.com/abchain/fabric/protos"
 	"github.com/looplab/fsm"
 )
 
+var syncPhase = []string{"synclocating", "syncdelta", "syncblock", "syncsnapshot"}
+
 func newHandler(h *stateSyncHandler) *fsm.FSM {
 
-	return nil
-	// return fsm.NewFSM(
-	// 	"created",
-	// 	fsm.Events{
-	// 		{Name: "HELLO", Src: []string{"created"}, Dst: "established"},
-	// 		{Name: "GET_PEERS", Src: []string{"established"}, Dst: "established"},
-	// 		{Name: "PEERS", Src: []string{"established"}, Dst: "established"},
-	// 		{Name: "PING", Src: []string{"established"}, Dst: "established"},
-	// 		{Name: "DISCONNECT", Src: []string{"created", "established"}, Dst: "closed"},
-	// 	},
-	// 	fsm.Callbacks{
-	// 		"enter_state":  func(e *fsm.Event) { d.enterState(e) },
-	// 		"before_HELLO": func(e *fsm.Event) { d.beforeHello(e) },
-	// 		"after_HELLO":  func(e *fsm.Event) { d.afterHello(e) },
-	// 		"before_PING":  func(e *fsm.Event) { d.beforePing(e) },
-	// 		"after_PING":   func(e *fsm.Event) { d.afterPing(e) },
-	// 	},
-	// )
+	return fsm.NewFSM(
+		"idle",
+		fsm.Events{
+			{Name: pb.SyncMsg_SYNC_STATE_NOTIFY.String(), Src: []string{"idle"}, Dst: "idle"},
+			{Name: pb.SyncMsg_SYNC_STATE_OPT.String(), Src: []string{"idle"}, Dst: "idle"},
+			//serving phase
+			{Name: pb.SyncMsg_SYNC_SESSION_START.String(), Src: []string{"idle"}, Dst: "serve"},
+			{Name: pb.SyncMsg_SYNC_SESSION_QUERY.String(), Src: []string{"serve"}, Dst: "serve"},
+			{Name: pb.SyncMsg_SYNC_SESSION_GET_BLOCKS.String(), Src: []string{"serve"}, Dst: "serve"},
+			{Name: pb.SyncMsg_SYNC_SESSION_GET_SNAPSHOT.String(), Src: []string{"serve"}, Dst: "serve"},
+			{Name: pb.SyncMsg_SYNC_SESSION_GET_DELTAS.String(), Src: []string{"serve"}, Dst: "serve"},
+			{Name: pb.SyncMsg_SYNC_SESSION_END.String(), Src: []string{"serve"}, Dst: "idle"},
+			//syncing phase
+			{Name: pb.SyncMsg_SYNC_SESSION_RESPONSE.String(), Src: []string{"synchandshake"}, Dst: "synclocating"},
+			{Name: pb.SyncMsg_SYNC_SESSION_BLOCKS.String(), Src: []string{"syncblock"}, Dst: "syncblock"},
+			{Name: pb.SyncMsg_SYNC_SESSION_SNAPSHOT.String(), Src: []string{"syncsnapshot"}, Dst: "syncsnapshot"},
+			{Name: pb.SyncMsg_SYNC_SESSION_DELTAS.String(), Src: []string{"syncdelta"}, Dst: "syncdelta"},
+			{Name: "GetBlock", Src: syncPhase, Dst: "syncdelta"},
+			{Name: "GetSnapshot", Src: syncPhase, Dst: "syncdelta"},
+			{Name: "GetDelta", Src: syncPhase, Dst: "syncdelta"},
+			{Name: "SyncBegin", Src: []string{"idle"}, Dst: "synchandshake"},
+			{Name: "SyncFinish", Src: syncPhase, Dst: "idle"},
+		},
+		fsm.Callbacks{
+			"after_" + pb.SyncMsg_SYNC_SESSION_BLOCKS.String():   func(e *fsm.Event) { h.client.afterSyncBlocks(e) },
+			"after_" + pb.SyncMsg_SYNC_SESSION_SNAPSHOT.String(): func(e *fsm.Event) { h.client.afterSyncStateSnapshot(e) },
+			"after_" + pb.SyncMsg_SYNC_SESSION_DELTAS.String():   func(e *fsm.Event) { h.client.afterSyncStateDeltas(e) },
+			"after_" + pb.SyncMsg_SYNC_SESSION_RESPONSE.String(): func(e *fsm.Event) { h.client.afterSyncResponse(e) },
+			"leave_synclocating":                                 func(e *fsm.Event) { h.client.leaveSyncLocating(e) },
+			"leave_syncblock":                                    func(e *fsm.Event) { h.client.leaveSyncBlocks(e) },
+			"leave_syncsnapshot":                                 func(e *fsm.Event) { h.client.leaveSyncStateSnapshot(e) },
+			"leave_syncdelta":                                    func(e *fsm.Event) { h.client.leaveSyncStateDeltas(e) },
+		},
+	)
 
 }
 

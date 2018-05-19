@@ -86,6 +86,8 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 	s.curCorrrelation++
 	s.Unlock()
 
+	// qiu: ask peer for state
+
 	defer func() {
 		s.Lock()
 		s.curTask = nil

@@ -229,6 +229,7 @@ func (s *StreamStub) HandleClient(conn *grpc.ClientConn, peerid *PeerID) error {
 		return err
 	}
 
+	// himpl is stateSyncHandler or GossipHandlerImpl
 	himpl, err := s.NewStreamHandlerImpl(peerid, true)
 
 	if err != nil {

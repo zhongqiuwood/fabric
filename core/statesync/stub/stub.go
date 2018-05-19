@@ -9,7 +9,7 @@ import (
 
 type SyncFactory func(*pb.PeerID) pb.StreamHandlerImpl
 
-var DefaultFactory SyncFactory
+var DefaultFactory SyncFactory // newStateSyncHandler
 
 func GetDefaultFactory() pb.StreamHandlerFactory { return DefaultFactory }
 
@@ -18,7 +18,7 @@ func (t SyncFactory) NewStreamHandlerImpl(id *pb.PeerID, initiated bool) (pb.Str
 		return nil, fmt.Errorf("No default factory")
 	}
 
-	return t(id), nil
+	return t(id), nil // invoke newStateSyncHandler and return stateSyncHandler
 }
 
 func (t SyncFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, error) {

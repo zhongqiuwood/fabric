@@ -57,13 +57,6 @@ type StateSync struct {
 	curTask         context.Context
 }
 
-type syncOpt struct {
-}
-
-func NewSyncOption() *syncOpt {
-	return new(syncOpt)
-}
-
 type ErrInProcess struct {
 	error
 }

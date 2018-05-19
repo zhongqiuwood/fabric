@@ -3,8 +3,10 @@ package protos
 import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
+	"math/rand"
 	"sync"
 )
 
@@ -198,6 +200,94 @@ func (s *StreamStub) unRegisterHandler(peerid *PeerID) {
 	}
 }
 
+func shuffle(in []*PeerID) []*PeerID {
+
+	//ad-hoc random shuffle incoming peers
+	l := len(in)
+	if l < 2 {
+		return in
+	}
+
+	var swapTo int
+	for i, id := range in[:l-1] {
+		swapTo = rand.Intn(l-i) + i
+		if swapTo != i {
+			in[i] = in[swapTo]
+			in[swapTo] = id
+		}
+	}
+
+	return in
+}
+
+type PickedStreamHandler struct {
+	Id        *PeerID
+	WorkError error
+	*StreamHandler
+}
+
+func (s *StreamStub) deliverHandlers(ctx context.Context, peerids []*PeerID, out chan *PickedStreamHandler) {
+
+	for _, id := range peerids {
+		s.handlerMap.Lock()
+		h, ok := s.handlerMap.m[*id]
+		s.handlerMap.Unlock()
+		if ok {
+			select {
+			case out <- &PickedStreamHandler{id, nil, h}:
+			case <-ctx.Done():
+				return
+			}
+		}
+
+	}
+
+	close(out)
+	return
+}
+
+//pick handlers by random from given peerids, whether candidates to be choosed is decided
+//at each time before it was delivered. This is oftenn used by a range statement
+func (s *StreamStub) OverHandlers(ctx context.Context, peerids []*PeerID) chan *PickedStreamHandler {
+	peerids = shuffle(peerids)
+	outchan := make(chan *PickedStreamHandler)
+	go s.deliverHandlers(ctx, peerids, outchan)
+	return outchan
+}
+
+//like OverHandlers, but pick all handlers which streamsub owns in callingtime
+func (s *StreamStub) OverAllHandlers(ctx context.Context) chan *PickedStreamHandler {
+	s.handlerMap.Lock()
+
+	ids := make([]*PeerID, 0, len(s.handlerMap.m))
+	for k, _ := range s.handlerMap.m {
+		//CAUTION: &k is point to same address
+		kcopy := k
+		ids = append(ids, &kcopy)
+	}
+
+	s.handlerMap.Unlock()
+
+	return s.OverHandlers(ctx, ids)
+}
+
+//an entry mimic that in statetransfer package
+func (s *StreamStub) TryOverHandlers(peerids []*PeerID,
+	do func(*PickedStreamHandler) error) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	for p := range s.OverHandlers(ctx, peerids) {
+		err := do(p)
+		if err == nil {
+			cancel()
+			break
+		} else {
+			logger.Warningf("tryOverHandlers: loop error from %v : %s", p.Id, err)
+		}
+	}
+}
+
 func (s *StreamStub) PickHandlers(peerids []*PeerID) []*StreamHandler {
 
 	s.handlerMap.Lock()
@@ -213,6 +303,41 @@ func (s *StreamStub) PickHandlers(peerids []*PeerID) []*StreamHandler {
 	}
 
 	return ret
+}
+
+func (s *StreamStub) Broadcast(ctx context.Context, m proto.Message) (err error,
+	ret []*PickedStreamHandler) {
+
+	var bcWG sync.WaitGroup
+	retchan := make(chan *PickedStreamHandler)
+
+	//we always exhault all handlers so just use background context
+	for h := range s.OverAllHandlers(context.Background()) {
+		bcWG.Add(1)
+		go func(h *PickedStreamHandler, retchan chan *PickedStreamHandler) {
+			defer bcWG.Done()
+			h.WorkError = h.SendMessage(m)
+			retchan <- h
+		}(h, retchan)
+	}
+
+	wchan := make(chan error)
+	go func(w chan error) {
+		bcWG.Wait()
+		w <- nil
+	}(wchan)
+
+	for {
+		select {
+		case r := <-retchan:
+			ret = append(ret, r)
+		case <-wchan: //all done
+			return nil, ret
+		case <-ctx.Done():
+			return fmt.Errorf("Broadcasting is canceled"), ret
+		}
+	}
+
 }
 
 func (s *StreamStub) HandleClient(conn *grpc.ClientConn, peerid *PeerID) error {

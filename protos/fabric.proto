@@ -319,6 +319,7 @@ message SyncMsg {
         SYNC_SESSION_START = 5;
         SYNC_SESSION_QUERY = 6;
         SYNC_SESSION_RESPONSE = 7;
+        SYNC_SESSION_END = 8;
 
         SYNC_SESSION_GET_BLOCKS = 11;
         SYNC_SESSION_BLOCKS = 12;

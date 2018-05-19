@@ -31,6 +31,20 @@ type Model struct {
 	nseq   uint64
 }
 
+func newDefaultModel() *Model {
+	m := &Model{
+		self: PeerState{
+			id:     "",
+			states: map[string]*StateVersion{},
+		},
+		store:  map[string]*PeerState{},
+		merger: &VersionMergerDummy{},
+		crypto: &CryptoImpl{},
+		nseq:   0,
+	}
+	return m
+}
+
 func (m *Model) init(id string, state []byte, number uint64) {
 	m.self = PeerState{
 		id:     id,
@@ -127,6 +141,7 @@ func (m *Model) applyDigest(referer *pb.PeerID, message *pb.Gossip) error {
 		return fmt.Errorf("Message not digest with catalog(%s)", message.Catalog)
 	}
 
+	logger.Debugf("Apply digest(%s) with %d items", message.Catalog, len(digest.Data))
 	for id, state := range digest.Data {
 		if id == m.self.id {
 			continue
@@ -134,17 +149,20 @@ func (m *Model) applyDigest(referer *pb.PeerID, message *pb.Gossip) error {
 		peer, ok := m.store[id]
 		remote := &StateVersion{hash: state.State, number: state.Num}
 		if m.crypto != nil && !m.crypto.Verify(referer.String(), id, message.Catalog, state) {
+			logger.Infof("New state id(%s), catalog(%s), state(%x) verify failed", id, message.Catalog, state.State)
 			continue
 		}
 		if !ok {
 			newPeer := PeerState{id: id, states: map[string]*StateVersion{}}
 			newPeer.states[message.Catalog] = remote
 			m.store[id] = &newPeer
+			logger.Debugf("Apply peer(%s) new state with remote(%x,%d)", id, remote.hash, remote.number)
 			continue
 		}
 		local, ok := peer.states[message.Catalog]
 		if !ok || m.merger.NeedMerge(local, remote) {
 			peer.states[message.Catalog] = remote
+			logger.Debugf("Apply peer(%s), new state with local(%x,%d), remote(%x,%d)", id, local.hash, local.number, remote.hash, remote.number)
 		}
 	}
 
@@ -173,7 +191,7 @@ func (m *Model) applyUpdate(referer *pb.PeerID, message *pb.Gossip) ([]*pb.Trans
 		}
 		ntxs = m.validateTxs(txs.State, txs.Txs.Transactions)
 		if len(ntxs) == 0 {
-			return nil, fmt.Errorf("Validate tx failed")
+			return nil, fmt.Errorf("Validate tx failed, ntxs(%d)", len(txs.Txs.Transactions))
 		}
 		// trim ledger
 		// err := lg.PutTransactions(ntxs)
@@ -181,6 +199,7 @@ func (m *Model) applyUpdate(referer *pb.PeerID, message *pb.Gossip) ([]*pb.Trans
 		// 	return nil, fmt.Errorf("Put transactions error: %s", err)
 		// }
 		m.updateSelf("tx", txs.State, len(ntxs))
+		logger.Debugf("Apply %d updates with state(%x)", len(ntxs), txs.State)
 		break
 
 	default:
@@ -206,6 +225,8 @@ func (m *Model) updateSelfTxs(state []byte, txs []*pb.Transaction) error {
 }
 
 func (m *Model) updateSelf(catalog string, statehash []byte, count int) {
+	logger.Debugf("Apply self catalog(%s) state(%x) with count(%d)", catalog, statehash, count)
+
 	if state, ok := m.self.states[catalog]; ok {
 		if bytes.Compare(state.hash, statehash) == 0 {
 			state.number += uint64(count)

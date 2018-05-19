@@ -111,10 +111,7 @@ func NewGossip(p peer.Peer) {
 	nb, err := p.GetNeighbour()
 	logger.Debug("Gossip module inited")
 
-	model := &Model{
-		merger: &VersionMergerDummy{},
-		crypto: &CryptoImpl{},
-	}
+	model := newDefaultModel()
 	if err != nil {
 
 		logger.Errorf("No neighbour for this peer (%s), gossip run without access control", err)

@@ -14,6 +14,8 @@ The original readme can be found [here](https://github.com/hyperledger/fabric/bl
 
 * Refactoring ledger package, towards a novel framework of consensus
 
+    **User upgraded from 0.7 or older legacy version should be install dbupgrade utility and run first**
+
 * Stream mutiplexing on p2p communication instead of the sole chat stream
 
 * New mode for reusing transaction certification

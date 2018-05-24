@@ -129,6 +129,9 @@ service Peer {
     // This can't be achieve by protobuf and we had to imple it manually
     rpc GossipIn(stream Gossip) returns (stream Gossip) {}
 
+    // Request a new stream for state syncing
+    rpc SyncIn(stream SyncMsg) returns (stream SyncMsg) {}
+
     // Process a transaction from a remote source.
     rpc ProcessTransaction(Transaction) returns (Response) {}
 
@@ -303,4 +306,44 @@ message SyncStateDeltasRequest {
 message SyncStateDeltas {
     SyncBlockRange range = 1;
     repeated bytes deltas = 2;
+}
+
+// Like chat, stateSync wrap messages used in a syncing session
+message SyncMsg {
+    enum Type {
+        UNDEFINED = 0;
+
+        SYNC_STATE_NOTIFY = 1;
+        SYNC_STATE_OPT = 2;
+
+        SYNC_SESSION_START = 5;
+        SYNC_SESSION_QUERY = 6;
+        SYNC_SESSION_RESPONSE = 7;
+        SYNC_SESSION_END = 8;
+
+        SYNC_SESSION_GET_BLOCKS = 11;
+        SYNC_SESSION_BLOCKS = 12;
+
+        SYNC_SESSION_GET_SNAPSHOT = 14;
+        SYNC_SESSION_SNAPSHOT = 15;
+        SYNC_SESSION_GET_DELTAS = 16;
+        SYNC_SESSION_DELTAS = 17;
+    }
+    Type type = 1;
+    uint64 correlationId = 2;
+    bytes payload = 3;  
+}
+
+
+////////////////////////////////
+message SyncStateQuery {
+  uint32  id = 1;
+  uint64  blockHeight = 2;
+}
+
+message SyncStateResp {
+  uint32  id = 1;
+  bool   postive     = 3;
+  bytes  statehash   = 4;
+  uint64  blockHeight = 5;
 }

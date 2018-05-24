@@ -230,14 +230,14 @@ func TestSwitchCheckPoint(t *testing.T) {
 		}
 		v, ok := chkret[int(ckn[3])]
 		if v || !ok {
-			t.Fatalf("Invalid ret", chkret)
+			t.Fatalf("Invalid ret: %v", chkret)
 		}
 		chkret[int(ckn[3])] = true
 	}
 
 	for _, v := range chkret {
 		if !v {
-			t.Fatalf("Invalid ret", chkret)
+			t.Fatalf("Invalid ret: %v", chkret)
 		}
 	}
 }

@@ -3,16 +3,47 @@ package protos
 import (
 	"fmt"
 	"github.com/golang/protobuf/proto"
+	"golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"io"
+	"math/rand"
 	"sync"
 )
 
+/*
+
+  a streamhandler factory include two methods:
+
+  1. Stream creator: generate a stream from given connection
+  2. Handler creator: generate a handler which is binded to specified peer, with a bool parameter indicate
+     it should act as client or server (may be omitted in a bi-directory session)
+
+*/
 type StreamHandlerFactory interface {
-	NewStreamHandlerImpl(*PeerID, bool) (StreamHandlerImpl, error)
 	NewClientStream(*grpc.ClientConn) (grpc.ClientStream, error)
+	NewStreamHandlerImpl(*PeerID, bool) (StreamHandlerImpl, error)
 }
 
+/*
+
+  each streamhandler implement exposed following methods for working in a streaming, it supposed message with
+  certain type is transmitted in the stream and each end handle this message by a streamhandler implement:
+
+  Tag: providing a string tag for the implement
+  EnableLoss: indicate the message transmitted in stream can be dropped for any reason (send buffer full, bad
+			  linking, deliberately omitted by the other side ...)
+  NewMessage: provided a prototype object of the transamitted message for receiving and handling later in a HandleMessage call
+  HandleMessage: handling a message received from the other side. The object was allocated before in a NewMessage call and
+			  the wire data was parsed and put into it
+  BeforeSendMessage: when a message is ready to send to the other side (by calling SendMessage in a StreamHandler), this method
+			  is called to give handler a last chance for dropping (by return a non-nil error) the message or do any statistics
+			  jobs. Method MAY be called in different thread so you must protect your data from any racing
+  OnWriteError: method is called if any error raised in sending message
+  Stop: when the stream is broken this method is called and no more calling will be made on this handler
+
+  *** All calling to the methods (except for BeforeSendMessage) are ensured being raised in the same thread ***
+
+*/
 type StreamHandlerImpl interface {
 	Tag() string
 	EnableLoss() bool
@@ -54,23 +85,23 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 		return fmt.Errorf("Streamhandler %s has been killed", h.tag)
 	}
 
-	if h.enableLoss {
-		select {
-		case h.writeQueue <- m:
-			return nil
-		default:
+	select {
+	case h.writeQueue <- m:
+		return nil
+	default:
+		if !h.enableLoss {
 			return fmt.Errorf("Streamhandler %s's write channel full, rejecting", h.tag)
 		}
-	} else {
-		h.writeQueue <- m
-		return nil
 	}
+
+	return nil
 
 }
 
 func (h *StreamHandler) handleWrite(stream grpc.Stream) {
 
-	for m := range h.writeQueue {
+	var m proto.Message
+	for m = range h.writeQueue {
 
 		err := h.BeforeSendMessage(m)
 		if err == nil {
@@ -169,6 +200,94 @@ func (s *StreamStub) unRegisterHandler(peerid *PeerID) {
 	}
 }
 
+func shuffle(in []*PeerID) []*PeerID {
+
+	//ad-hoc random shuffle incoming peers
+	l := len(in)
+	if l < 2 {
+		return in
+	}
+
+	var swapTo int
+	for i, id := range in[:l-1] {
+		swapTo = rand.Intn(l-i) + i
+		if swapTo != i {
+			in[i] = in[swapTo]
+			in[swapTo] = id
+		}
+	}
+
+	return in
+}
+
+type PickedStreamHandler struct {
+	Id        *PeerID
+	WorkError error
+	*StreamHandler
+}
+
+func (s *StreamStub) deliverHandlers(ctx context.Context, peerids []*PeerID, out chan *PickedStreamHandler) {
+
+	for _, id := range peerids {
+		s.handlerMap.Lock()
+		h, ok := s.handlerMap.m[*id]
+		s.handlerMap.Unlock()
+		if ok {
+			select {
+			case out <- &PickedStreamHandler{id, nil, h}:
+			case <-ctx.Done():
+				return
+			}
+		}
+
+	}
+
+	close(out)
+	return
+}
+
+//pick handlers by random from given peerids, whether candidates to be choosed is decided
+//at each time before it was delivered. This is oftenn used by a range statement
+func (s *StreamStub) OverHandlers(ctx context.Context, peerids []*PeerID) chan *PickedStreamHandler {
+	peerids = shuffle(peerids)
+	outchan := make(chan *PickedStreamHandler)
+	go s.deliverHandlers(ctx, peerids, outchan)
+	return outchan
+}
+
+//like OverHandlers, but pick all handlers which streamsub owns in callingtime
+func (s *StreamStub) OverAllHandlers(ctx context.Context) chan *PickedStreamHandler {
+	s.handlerMap.Lock()
+
+	ids := make([]*PeerID, 0, len(s.handlerMap.m))
+	for k, _ := range s.handlerMap.m {
+		//CAUTION: &k is point to same address
+		kcopy := k
+		ids = append(ids, &kcopy)
+	}
+
+	s.handlerMap.Unlock()
+
+	return s.OverHandlers(ctx, ids)
+}
+
+//an entry mimic that in statetransfer package
+func (s *StreamStub) TryOverHandlers(peerids []*PeerID,
+	do func(*PickedStreamHandler) error) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	for p := range s.OverHandlers(ctx, peerids) {
+		err := do(p)
+		if err == nil {
+			cancel()
+			break
+		} else {
+			logger.Warningf("tryOverHandlers: loop error from %v : %s", p.Id, err)
+		}
+	}
+}
+
 func (s *StreamStub) PickHandlers(peerids []*PeerID) []*StreamHandler {
 
 	s.handlerMap.Lock()
@@ -184,6 +303,41 @@ func (s *StreamStub) PickHandlers(peerids []*PeerID) []*StreamHandler {
 	}
 
 	return ret
+}
+
+func (s *StreamStub) Broadcast(ctx context.Context, m proto.Message) (err error,
+	ret []*PickedStreamHandler) {
+
+	var bcWG sync.WaitGroup
+	retchan := make(chan *PickedStreamHandler)
+
+	//we always exhault all handlers so just use background context
+	for h := range s.OverAllHandlers(context.Background()) {
+		bcWG.Add(1)
+		go func(h *PickedStreamHandler, retchan chan *PickedStreamHandler) {
+			defer bcWG.Done()
+			h.WorkError = h.SendMessage(m)
+			retchan <- h
+		}(h, retchan)
+	}
+
+	wchan := make(chan error)
+	go func(w chan error) {
+		bcWG.Wait()
+		w <- nil
+	}(wchan)
+
+	for {
+		select {
+		case r := <-retchan:
+			ret = append(ret, r)
+		case <-wchan: //all done
+			return nil, ret
+		case <-ctx.Done():
+			return fmt.Errorf("Broadcasting is canceled"), ret
+		}
+	}
+
 }
 
 func (s *StreamStub) HandleClient(conn *grpc.ClientConn, peerid *PeerID) error {

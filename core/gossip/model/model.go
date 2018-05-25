@@ -5,22 +5,21 @@ import (
 )
 
 //Base concept in gossip protocol
-type Digest interface {
-	Merge(Digest) Digest
+type Digest interface{}
+
+//Any peer we known owns a state (in fact, different peer may share the same status.
+//in that case, method MUST prepare for being called with the same update data)
+//state can be merged
+type Status interface {
+	GenDigest() Digest
+	Merge(Status) error
+	MakeUpdate(Update, Digest) Update
 }
 
 //Update is the content of a reconciliation, it can be apply to any local peer
 //state with PickUp method
 type Update interface {
-	PickUp(Digest) interface{}
-}
-
-//Any peer we known owns a state (in fact, different peer may share the same status.
-//in that case, method MUST prepare for being called with the same update data)
-type Status interface {
-	GenDigest() Digest
-	ApplyUpdate(interface{}) error
-	MakeUpdate(Update, Digest) Update
+	PickUp(Digest) Status
 }
 
 type Peer struct {
@@ -67,7 +66,7 @@ func (m *Model) RecvUpdate(r Update) {
 	defer m.RUnlock()
 
 	for _, p := range m.Peers {
-		p.ApplyUpdate(r.PickUp(p.GenDigest()))
+		p.Merge(r.PickUp(p.GenDigest()))
 
 	}
 }

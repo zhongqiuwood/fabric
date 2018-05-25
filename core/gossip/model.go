@@ -262,6 +262,20 @@ func (m *Model) digestMessage(catalog string, maxn int) *pb.Gossip {
 	digest := &pb.Gossip_Digest{
 		Data: map[string]*pb.Gossip_Digest_PeerState{},
 	}
+
+	// my self
+	state, ok := m.self.states[catalog]
+	if ok {
+		dps := &pb.Gossip_Digest_PeerState{
+			State:     state.hash,
+			Num:       state.number,
+			Signature: []byte(""),
+		}
+		m.crypto.Sign(catalog, dps)
+		digest.Data[m.self.id] = dps
+	}
+
+	// other peers
 	for id, peer := range m.store {
 		state, ok := peer.states[catalog]
 		if !ok {

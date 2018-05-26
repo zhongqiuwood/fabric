@@ -41,7 +41,8 @@ type PeerAction struct {
 	updateReceiveTime  int64
 
 	// security state
-	invalidTxCount int
+	totalTxCount   int64
+	invalidTxCount int64
 	invalidTxTime  int64
 
 	// histories
@@ -58,10 +59,11 @@ type TxMarkupState struct {
 
 // TxQuota struct
 type TxQuota struct {
-	maxUpdateCount int
-	maxMessageSize int64 // bytes
-	historyExpired int64 // seconds
-	updateExpired  int64 // seconds
+	maxDigestRobust int
+	maxDigestPeers  int
+	maxMessageSize  int64 // bytes
+	historyExpired  int64 // seconds
+	updateExpired   int64 // seconds
 }
 
 // GossipStub struct
@@ -93,13 +95,8 @@ func init() {
 		}
 
 		action := &PeerAction{
-			id:                 id,
-			digestSeq:          0,
-			digestSendTime:     0,
-			digestResponseTime: 0,
-			updateSendTime:     0,
-			updateReceiveTime:  0,
-			messageHistories:   []*PeerHistoryMessage{},
+			id:               id,
+			messageHistories: []*PeerHistoryMessage{},
 		}
 		gossipStub.peerActions[id.String()] = action
 		// send initial digests to target
@@ -145,6 +142,7 @@ func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 			p.invalidTxTime = now
 		} else {
 			p.digestResponseTime = now
+			p.totalTxCount += int64(len(txs))
 			gossipStub.ledger.PutTransactions(txs)
 			gossipStub.updatePeerQuota(p, m.Catalog, int64(len(m.GetUpdate().Payload)), txs)
 		}
@@ -230,10 +228,11 @@ func NewGossip(p peer.Peer) {
 	gossipStub.model.init(peerID, state, uint64(number))
 
 	// default quota
+	gossipStub.txQuota.maxDigestRobust = 100
+	gossipStub.txQuota.maxDigestPeers = 100
 	gossipStub.txQuota.maxMessageSize = 100 * 1024 * 1024 // 100MB
-	gossipStub.txQuota.maxUpdateCount = 100
-	gossipStub.txQuota.historyExpired = 600 // 10 minutes
-	gossipStub.txQuota.updateExpired = 30   // 30 seconds
+	gossipStub.txQuota.historyExpired = 600               // 10 minutes
+	gossipStub.txQuota.updateExpired = 30                 // 30 seconds
 }
 
 // GetGossip - gives a reference to a 'singleton' GossipStub
@@ -432,15 +431,22 @@ func (s *GossipStub) validatePeerMessage(peer *PeerAction, message *pb.Gossip) e
 	now := time.Now().Unix()
 
 	// block for robust consideration
-	// 3 invalid txs and last invalid tx during 1 hour
-	if peer.invalidTxCount > 3 && peer.invalidTxTime+s.txQuota.historyExpired > now {
-		// add to black list
+	if (peer.invalidTxCount > 3 && peer.invalidTxTime+s.txQuota.historyExpired > now) ||
+		(peer.invalidTxCount > 10 && peer.invalidTxCount*5 > peer.totalTxCount) {
+		// more than 3 invalid txs and the last invalid tx during 1 hour
+		// or
+		// more than 10 invalid txs and more than 20% invalid txs comparing with total txs
+		// then add this peer to black list
 		gossipStub.blackPeerIDs[peer.id.String()] = now
 		return fmt.Errorf("Peer blocked by robust consideration")
 	}
 
 	if message.GetUpdate() != nil {
 		size = int64(len(message.GetUpdate().Payload))
+	} else if message.GetDigest() != nil {
+		if len(message.GetDigest().Data) > s.txQuota.maxDigestPeers {
+			return fmt.Errorf("Message blocked by max digest count(%d) overflow", s.txQuota.maxDigestPeers)
+		}
 	}
 
 	// clear expired histories
@@ -457,17 +463,17 @@ func (s *GossipStub) validatePeerMessage(peer *PeerAction, message *pb.Gossip) e
 
 	// check total size quota
 	totalSize := int64(0)
-	updateCount := 0
+	digestCount := 0
 	for _, item := range peer.messageHistories {
 		totalSize += item.size
-		if item.updated {
-			updateCount++
+		if !item.updated {
+			digestCount++
 		}
 	}
 	if totalSize >= s.txQuota.maxMessageSize {
-		return fmt.Errorf("Peer blocked by total message size overflow quota")
-	} else if updateCount > s.txQuota.maxUpdateCount {
-		return fmt.Errorf("Peer blocked by update count overflow quota")
+		return fmt.Errorf("Message blocked by total message size overflow quota")
+	} else if digestCount > s.txQuota.maxDigestRobust {
+		return fmt.Errorf("Message blocked by digest robust overflow quota")
 	}
 
 	// add to history

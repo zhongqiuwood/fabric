@@ -17,26 +17,62 @@ var logger = logging.MustGetLogger("gossip")
 // Gossip interface
 type Gossip interface {
 	BroadcastTx([]*pb.Transaction) error
+	SetTxQuota(quota TxQuota) TxQuota
+	NotifyTxError(txid string, err error)
+}
+
+// PeerHistoryMessage struct
+type PeerHistoryMessage struct {
+	time int64
+	size int64
 }
 
 // PeerAction struct
 type PeerAction struct {
-	id                 *pb.PeerID
+	id *pb.PeerID
+
+	// message state
 	activeTime         int64
 	digestSeq          uint64
 	digestSendTime     int64
 	digestResponseTime int64
 	updateSendTime     int64
 	updateReceiveTime  int64
+
+	// security state
+	invalidTxCount   int
+	invalidTxTime    int64
+	totalMessageSize int64
+
+	// histories
+	messageHistories []*PeerHistoryMessage
+}
+
+// TxMarkupState struct
+type TxMarkupState struct {
+	peerID  string
+	txid    string
+	catalog string
+	time    int64
+}
+
+// TxQuota struct
+type TxQuota struct {
+	maxUpdateCount int
+	maxMessageSize int64 // bytes
+	historyExpired int64 // seconds
 }
 
 // GossipStub struct
 type GossipStub struct {
 	*pb.StreamStub
 	peer.Discoverer
-	ledger      *ledger.Ledger
-	model       *Model
-	peerActions map[string]*PeerAction
+	ledger         *ledger.Ledger
+	model          *Model
+	peerActions    map[string]*PeerAction
+	blackPeerIDs   map[string]int64
+	txMarkupStates map[string]*TxMarkupState
+	txQuota        TxQuota
 }
 
 // GossipHandler struct
@@ -47,6 +83,14 @@ type GossipHandler struct {
 func init() {
 	stub.DefaultFactory = func(id *pb.PeerID) stub.GossipHandler {
 		logger.Debug("create handler for peer", id)
+
+		// check black list
+		btime, ok := gossipStub.blackPeerIDs[id.String()]
+		if ok {
+			logger.Infof("Block peer(%s) connection by black list from time(%d)", id, btime)
+			return nil
+		}
+
 		action := &PeerAction{
 			id:                 id,
 			digestSeq:          0,
@@ -54,6 +98,7 @@ func init() {
 			digestResponseTime: 0,
 			updateSendTime:     0,
 			updateReceiveTime:  0,
+			messageHistories:   []*PeerHistoryMessage{},
 		}
 		gossipStub.peerActions[id.String()] = action
 		// send initial digests to target
@@ -70,11 +115,19 @@ func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 		return fmt.Errorf("Peer not found")
 	}
 
+	err := gossipStub.validatePeerMessage(p, m)
+	if err != nil {
+		return err
+	}
+
 	p.activeTime = now
 	if m.GetDigest() != nil {
 		// process digest
 		err := gossipStub.model.applyDigest(t.peerID, m)
 		if err != nil {
+			p.invalidTxCount++
+			p.invalidTxTime = now
+		} else {
 			// send digest if last diest send time ok
 			gossipStub.sendTxDigests(p, 1)
 
@@ -87,8 +140,12 @@ func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
 		// process update
 		txs, err := gossipStub.model.applyUpdate(t.peerID, m)
 		if err != nil {
+			p.invalidTxCount++
+			p.invalidTxTime = now
+		} else {
 			p.digestResponseTime = now
 			gossipStub.ledger.PutTransactions(txs)
+			gossipStub.updatePeerQuota(p, m.Catalog, int64(len(m.GetUpdate().Payload)), txs)
 		}
 	}
 	return nil
@@ -167,7 +224,14 @@ func NewGossip(p peer.Peer) {
 
 	gossipStub.ledger = lg
 	gossipStub.peerActions = map[string]*PeerAction{}
+	gossipStub.blackPeerIDs = map[string]int64{}
+	gossipStub.txMarkupStates = map[string]*TxMarkupState{}
 	gossipStub.model.init(peerID, state, uint64(number))
+
+	// default quota
+	gossipStub.txQuota.maxMessageSize = 100 * 1024 * 1024 // 100MB
+	gossipStub.txQuota.maxUpdateCount = 100
+	gossipStub.txQuota.historyExpired = 600 // 10 minutes
 }
 
 // GetGossip - gives a reference to a 'singleton' GossipStub
@@ -192,6 +256,35 @@ func (s *GossipStub) BroadcastTx(txs []*pb.Transaction) error {
 	// broadcast tx to other peers
 	s.sendTxUpdates(nil, txs, 3)
 	return nil
+}
+
+// NotifyTxError method
+func (s *GossipStub) NotifyTxError(txid string, err error) {
+	// TODO: markup tx
+	if err == nil {
+		return
+	}
+
+	markup, ok := s.txMarkupStates[txid]
+	if !ok {
+		return
+	}
+
+	delete(s.txMarkupStates, txid)
+	peer, ok := s.peerActions[markup.peerID]
+	if !ok {
+		return
+	}
+
+	peer.invalidTxCount++
+	peer.invalidTxTime = time.Now().Unix()
+}
+
+// SetTxQuota method, return old quota
+func (s *GossipStub) SetTxQuota(quota TxQuota) TxQuota {
+	old := s.txQuota
+	s.txQuota = quota
+	return old
 }
 
 // SetModelMerger method
@@ -329,4 +422,83 @@ func (s *GossipStub) sendTxUpdates(referer *PeerAction, txs []*pb.Transaction, m
 	}
 
 	return nil
+}
+
+func (s *GossipStub) validatePeerMessage(peer *PeerAction, message *pb.Gossip) error {
+
+	size := int64(0)
+	now := time.Now().Unix()
+	expireTime := now - s.txQuota.historyExpired
+
+	// block for robust consideration
+	// 3 invalid txs and last invalid tx during 1 hour
+	if peer.invalidTxCount > 3 && peer.invalidTxTime+s.txQuota.historyExpired > now {
+		// add to black list
+		gossipStub.blackPeerIDs[peer.id.String()] = now
+		return fmt.Errorf("Peer blocked by robust consideration")
+	}
+
+	if message.GetUpdate() != nil {
+		size = int64(len(message.GetUpdate().Payload))
+	}
+
+	// clear expired histories
+	deleted := -1
+	for i, item := range peer.messageHistories {
+		if item.time > expireTime {
+			break
+		}
+		deleted = i
+	}
+	if deleted >= 0 {
+		peer.messageHistories = peer.messageHistories[deleted+1:]
+	}
+
+	peer.totalMessageSize = 0
+	for _, item := range peer.messageHistories {
+		peer.totalMessageSize += item.size
+	}
+
+	if peer.totalMessageSize >= s.txQuota.maxMessageSize ||
+		len(peer.messageHistories) >= s.txQuota.maxUpdateCount {
+		return fmt.Errorf("Peer blocked by total message size overflow quota")
+	}
+
+	peer.messageHistories = append(peer.messageHistories, &PeerHistoryMessage{
+		time: now,
+		size: size,
+	})
+
+	return nil
+}
+
+func (s *GossipStub) updatePeerQuota(peer *PeerAction, catalog string, size int64, txs []*pb.Transaction) {
+
+	now := time.Now().Unix()
+	expireTime := now - s.txQuota.historyExpired
+
+	// clear expired
+	expiredTxids := []string{}
+	for _, markup := range s.txMarkupStates {
+		if markup.time < expireTime {
+			expiredTxids = append(expiredTxids, markup.txid)
+		}
+	}
+	if len(expiredTxids) > 0 {
+		logger.Debugf("Clear %d expired tx markup state items", len(expiredTxids))
+		for _, txid := range expiredTxids {
+			delete(s.txMarkupStates, txid)
+		}
+	}
+
+	// update
+	for _, tx := range txs {
+		markup := &TxMarkupState{
+			peerID:  peer.id.String(),
+			txid:    tx.Txid,
+			catalog: catalog,
+			time:    now,
+		}
+		s.txMarkupStates[tx.Txid] = markup
+	}
 }

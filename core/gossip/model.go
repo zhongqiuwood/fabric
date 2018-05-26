@@ -138,7 +138,7 @@ func (m *Model) applyDigest(referer *pb.PeerID, message *pb.Gossip) error {
 
 	digest := message.GetDigest()
 	if digest == nil {
-		return fmt.Errorf("Message not digest with catalog(%s)", message.Catalog)
+		return nil
 	}
 
 	logger.Debugf("Apply digest(%s) with %d items", message.Catalog, len(digest.Data))
@@ -149,8 +149,7 @@ func (m *Model) applyDigest(referer *pb.PeerID, message *pb.Gossip) error {
 		peer, ok := m.store[id]
 		remote := &StateVersion{hash: state.State, number: state.Num}
 		if m.crypto != nil && !m.crypto.Verify(referer.String(), id, message.Catalog, state) {
-			logger.Infof("New state id(%s), catalog(%s), state(%x) verify failed", id, message.Catalog, state.State)
-			continue
+			return fmt.Errorf("New state id(%s), catalog(%s), state(%x) verify failed", id, message.Catalog, state.State)
 		}
 		if !ok {
 			newPeer := PeerState{id: id, states: map[string]*StateVersion{}}

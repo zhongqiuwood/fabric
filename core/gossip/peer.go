@@ -61,6 +61,7 @@ type TxQuota struct {
 	maxUpdateCount int
 	maxMessageSize int64 // bytes
 	historyExpired int64 // seconds
+	updateExpired  int64 // seconds
 }
 
 // GossipStub struct
@@ -232,6 +233,7 @@ func NewGossip(p peer.Peer) {
 	gossipStub.txQuota.maxMessageSize = 100 * 1024 * 1024 // 100MB
 	gossipStub.txQuota.maxUpdateCount = 100
 	gossipStub.txQuota.historyExpired = 600 // 10 minutes
+	gossipStub.txQuota.updateExpired = 30   // 30 seconds
 }
 
 // GetGossip - gives a reference to a 'singleton' GossipStub
@@ -428,7 +430,6 @@ func (s *GossipStub) validatePeerMessage(peer *PeerAction, message *pb.Gossip) e
 
 	size := int64(0)
 	now := time.Now().Unix()
-	expireTime := now - s.txQuota.historyExpired
 
 	// block for robust consideration
 	// 3 invalid txs and last invalid tx during 1 hour
@@ -445,7 +446,7 @@ func (s *GossipStub) validatePeerMessage(peer *PeerAction, message *pb.Gossip) e
 	// clear expired histories
 	deleted := -1
 	for i, item := range peer.messageHistories {
-		if item.time > expireTime {
+		if item.time+s.txQuota.updateExpired > now {
 			break
 		}
 		deleted = i

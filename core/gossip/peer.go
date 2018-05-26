@@ -23,8 +23,9 @@ type Gossip interface {
 
 // PeerHistoryMessage struct
 type PeerHistoryMessage struct {
-	time int64
-	size int64
+	time    int64
+	size    int64
+	updated bool
 }
 
 // PeerAction struct
@@ -40,9 +41,8 @@ type PeerAction struct {
 	updateReceiveTime  int64
 
 	// security state
-	invalidTxCount   int
-	invalidTxTime    int64
-	totalMessageSize int64
+	invalidTxCount int
+	invalidTxTime  int64
 
 	// histories
 	messageHistories []*PeerHistoryMessage
@@ -454,19 +454,26 @@ func (s *GossipStub) validatePeerMessage(peer *PeerAction, message *pb.Gossip) e
 		peer.messageHistories = peer.messageHistories[deleted+1:]
 	}
 
-	peer.totalMessageSize = 0
+	// check total size quota
+	totalSize := int64(0)
+	updateCount := 0
 	for _, item := range peer.messageHistories {
-		peer.totalMessageSize += item.size
+		totalSize += item.size
+		if item.updated {
+			updateCount++
+		}
 	}
-
-	if peer.totalMessageSize >= s.txQuota.maxMessageSize ||
-		len(peer.messageHistories) >= s.txQuota.maxUpdateCount {
+	if totalSize >= s.txQuota.maxMessageSize {
 		return fmt.Errorf("Peer blocked by total message size overflow quota")
+	} else if updateCount > s.txQuota.maxUpdateCount {
+		return fmt.Errorf("Peer blocked by update count overflow quota")
 	}
 
+	// add to history
 	peer.messageHistories = append(peer.messageHistories, &PeerHistoryMessage{
-		time: now,
-		size: size,
+		time:    now,
+		size:    size,
+		updated: message.GetUpdate() != nil,
 	})
 
 	return nil

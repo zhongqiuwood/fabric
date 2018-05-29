@@ -38,6 +38,8 @@ import (
 	"github.com/spf13/viper"
 
 	pb "github.com/abchain/fabric/protos"
+	"os"
+	"github.com/abchain/fabric/core/util"
 )
 
 // Is the configuration cached?
@@ -204,4 +206,26 @@ func SecurityEnabled() bool {
 		cacheConfiguration()
 	}
 	return securityEnabled
+}
+
+func GetPeerLogPath() string {
+
+	fpath := viper.GetString("peer.logPath")
+
+	if fpath != "" {
+		fpath = util.CanonicalizePath(fpath)
+
+		util.MkdirIfNotExist(fpath)
+		_, err := os.Stat(fpath)
+		if err != nil {
+			fpath = ""
+		}
+
+	}
+
+	if fpath == "" {
+		fpath = util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
+	}
+
+	return fpath
 }

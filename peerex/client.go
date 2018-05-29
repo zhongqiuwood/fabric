@@ -12,6 +12,7 @@ import (
 
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/flogging"
+	"github.com/abchain/fabric/core/peer"
 )
 
 var logger = logging.MustGetLogger("clientcore")
@@ -105,18 +106,7 @@ func (g GlobalConfig) InitGlobal(resetlog bool) error {
 		return err
 	}
 
-	fpath := util.CanonicalizePath(viper.GetString("peer.logPath"))
-	if fpath != "" {
-		util.MkdirIfNotExist(fpath)
-		_, err := os.Stat(fpath)
-		if err != nil {
-			fpath = ""
-		}
-	}
-
-	if fpath == "" {
-		fpath = util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
-	}
+	fpath := peer.GetPeerLogPath()
 
 	if fpath != "" {
 		util.MkdirIfNotExist(fpath)

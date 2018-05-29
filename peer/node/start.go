@@ -71,18 +71,7 @@ var nodeStartCmd = &cobra.Command{
 
 func StartNode(postrun func() error) error {
 
-	fpath := util.CanonicalizePath(viper.GetString("peer.logPath"))
-	if fpath != "" {
-		util.MkdirIfNotExist(fpath)
-		_, err := os.Stat(fpath)
-		if err != nil {
-			fpath = ""
-		}
-	}
-
-	if fpath == "" {
-		fpath = util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
-	}
+	fpath := peer.GetPeerLogPath()
 
 	if fpath != "" {
 		util.MkdirIfNotExist(fpath)

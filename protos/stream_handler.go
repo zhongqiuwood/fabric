@@ -58,6 +58,7 @@ type StreamHandler struct {
 	sync.RWMutex
 	StreamHandlerImpl
 	tag         string
+	name        string
 	enableLoss  bool
 	writeQueue  chan proto.Message
 	writeExited chan error
@@ -75,6 +76,10 @@ func newStreamHandler(impl StreamHandlerImpl) *StreamHandler {
 		writeQueue:        make(chan proto.Message, defaultWriteBuffer),
 		writeExited:       make(chan error),
 	}
+}
+
+func (h *StreamHandler) GetName() string {
+	return h.name
 }
 
 func (h *StreamHandler) SendMessage(m proto.Message) error {
@@ -188,6 +193,7 @@ func (s *StreamStub) registerHandler(h *StreamHandler, peerid *PeerID) error {
 		// Duplicate,
 		return fmt.Errorf("Duplicate handler for peer %s", peerid)
 	}
+	h.name = peerid.Name
 	s.handlerMap.m[*peerid] = h
 	return nil
 }

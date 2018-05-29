@@ -1,31 +1,42 @@
 package gossip_model
 
+import (
+	"fmt"
+)
+
 //VClock is a type of digest, indicate a partial order nature
 type VClock interface {
 	Less(VClock) bool
 	OutOfRange() bool
 }
 
-//Now we can define a digest on scuttlebutt scheme
-type ScuttlebuttDigest struct {
+type scuttlebuttStatus struct {
 	VClock
+	inner Status
 }
 
-func (d1 ScuttlebuttDigest) Merge(d Digest) Digest {
+type scuttlebuttUpdates struct {
+}
 
-	d2, ok := d.(ScuttlebuttDigest)
+func (s *scuttlebuttStatus) GenDigest() Digest { return s.VClock }
+
+func (s *scuttlebuttStatus) MakeUpdate(in Update, v Digest) Update { return in }
+
+func (s *scuttlebuttStatus) Merge(s_in Status) error {
+
+	in, ok := s_in.(*scuttlebuttStatus)
 	if !ok {
 		panic("Wrong type, not another ScuttlebuttDigest")
 	}
 
-	if d2.OutOfRange() {
-		return d1
+	if s.OutOfRange() {
+		return fmt.Errorf("Can not merge into wrong clock")
 	}
 
-	if d1.Less(d2.VClock) {
-		return d1
-	} else {
-		return d2
+	if in.Less(s.VClock) {
+		return fmt.Errorf("Try merge older status")
 	}
 
+	s.VClock = in.VClock
+	return s.inner.Merge(in.inner)
 }

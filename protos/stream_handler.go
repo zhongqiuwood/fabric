@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"sync"
+	"github.com/looplab/fsm"
 )
 
 /*
@@ -77,6 +78,49 @@ func newStreamHandler(impl StreamHandlerImpl) *StreamHandler {
 		writeExited:       make(chan error),
 	}
 }
+
+
+func (sts *StreamHandler) SendSyncMsg(e *fsm.Event, msgType SyncMsg_Type, payloadMsg proto.Message) error {
+
+	data, err := proto.Marshal(payloadMsg)
+	if err != nil {
+		lerr := fmt.Errorf("Error Marshalling payload message for <%s>: %s", msgType.String(), err)
+		logger.Info(lerr.Error())
+		if e != nil {
+			e.Cancel(&fsm.NoTransitionError{Err: lerr})
+		}
+		return lerr
+	}
+
+	err = sts.SendMessage(&SyncMsg{
+		Type: msgType,
+		Payload: data})
+
+	if err != nil {
+		logger.Errorf("Error sending %s : %s", msgType, err)
+	}
+	return err
+}
+
+func (server *StreamHandler) Load(e *fsm.Event, payloadMsg proto.Message) *SyncMsg {
+
+	if _, ok := e.Args[0].(*SyncMsg); !ok {
+		e.Cancel(fmt.Errorf("Received unexpected sync message type"))
+		return nil
+	}
+	msg := e.Args[0].(*SyncMsg)
+
+	if payloadMsg != nil {
+		err := proto.Unmarshal(msg.Payload, payloadMsg)
+		if err != nil {
+			e.Cancel(fmt.Errorf("Error unmarshalling %s: %s", msg.Type.String(), err))
+			return nil
+		}
+	}
+	return msg
+}
+
+
 
 func (h *StreamHandler) GetName() string {
 	return h.name

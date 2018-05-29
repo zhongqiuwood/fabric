@@ -6,6 +6,7 @@ import (
 	"github.com/abchain/fabric/protos"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"fmt"
 )
 
 type dbsnapshotMap struct {
@@ -59,8 +60,17 @@ func  (sm *dbsnapshotMap) GetStateDelta(id string, blockNumber uint64) (*statemg
 	stateDelta.Unmarshal(stateDeltaBytes)
 	return stateDelta, nil
 }
-//==================================================
 
+func  (sm *dbsnapshotMap) ReleaseSnapshot(id string) {
+	sm.RLock()
+	defer sm.RUnlock()
+	_, ok := sm.ssmap[id]
+	if ok {
+		delete(sm.ssmap, id)
+	}
+}
+
+//==================================================
 
 func (sm *dbsnapshotMap) getSnapshot(id string) (*db.DBSnapshot, error) {
 
@@ -69,7 +79,12 @@ func (sm *dbsnapshotMap) getSnapshot(id string) (*db.DBSnapshot, error) {
 	dbs, ok := sm.ssmap[id]
 
 	if !ok {
-		// todo: return error if hit amount limit
+		// todo: get snapshot amount limit from config file
+		if len(sm.ssmap) >= 60 {
+			err := fmt.Errorf("Failed to create snapshot for <%s> due to amount limitation.", id)
+			return nil, err
+		}
+
 		dbs = db.GetDBHandle().GetSnapshot()
 		sm.ssmap[id] = dbs
 	}

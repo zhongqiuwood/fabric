@@ -104,23 +104,36 @@ func (s *StateSync) IsBusy() uint64 {
 }
 
 type stateSyncHandler struct {
-	peerId  *pb.PeerID
-	handler *fsm.FSM
+	//localPeerId   *pb.PeerID
+	remotePeerId  *pb.PeerID
+	fsmHandler *fsm.FSM
 	server  *stateServer
 	client  *syncer
 	stream  *pb.StreamHandler
 	sync.Once
 }
 
-func newStateSyncHandler(id *pb.PeerID) pb.StreamHandlerImpl {
-	logger.Debug("create handler for peer", id)
+func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
+	logger.Debug("create handler for peer", remoterId)
 	h := &stateSyncHandler{
-		peerId: id,
+		//localPeerId: localId,
+		remotePeerId: remoterId,
 	}
 
-	h.handler = newHandler(h)
+	h.fsmHandler = newFsmHandler(h)
+	h.server = newStateServer(h)
+	h.client = newSyncer(nil, h)
+
 	return h
 }
+
+func (h *stateSyncHandler) remotePeerIdName() string {
+	return h.remotePeerId.Name
+}
+
+//func (h *stateSyncHandler) localPeerIdName() string {
+//	return h.localPeerId.Name
+//}
 
 //this should be call with a stateSyncHandler whose HandleMessage is called at least once
 func pickStreamHandler(h *stateSyncHandler) *pb.StreamHandler {
@@ -129,7 +142,7 @@ func pickStreamHandler(h *stateSyncHandler) *pb.StreamHandler {
 		return nil
 	}
 
-	streams := stateSyncCore.PickHandlers([]*pb.PeerID{h.peerId})
+	streams := stateSyncCore.PickHandlers([]*pb.PeerID{h.remotePeerId})
 	h.Do(func() {
 		if len(streams) > 0 {
 			h.stream = streams[0]
@@ -153,7 +166,7 @@ func (h *stateSyncHandler) HandleMessage(m proto.Message) error {
 
 	wrapmsg := m.(*pb.SyncMsg)
 
-	err := h.handler.Event(wrapmsg.Type.String(), wrapmsg)
+	err := h.fsmHandler.Event(wrapmsg.Type.String(), wrapmsg)
 
 	//CAUTION: DO NOT return error in non-fatal case or you will end the stream
 	if err != nil {

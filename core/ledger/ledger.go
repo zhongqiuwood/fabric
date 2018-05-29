@@ -616,9 +616,18 @@ func (ledger *Ledger) GetBlockchainSizeBySnapshot(syncid string) (uint64, error)
 	return ledger.snapshotMap.GetBlockchainSize(syncid)
 }
 
+func (ledger *Ledger) ReleaseSnapshot(syncid string) {
+	ledger.snapshotMap.ReleaseSnapshot(syncid)
+}
+
+
 func (ledger *Ledger) GetStateDeltaBySnapshot(syncid string, blockNumber uint64) (*statemgmt.StateDelta, error) {
 
-	size, _ := ledger.snapshotMap.GetBlockchainSize(syncid)
+	size, err := ledger.snapshotMap.GetBlockchainSize(syncid)
+
+	if err != nil {
+		return nil, err
+	}
 
 	if blockNumber >= size {
 		return nil, ErrOutOfBounds

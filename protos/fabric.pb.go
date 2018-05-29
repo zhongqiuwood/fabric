@@ -179,6 +179,7 @@ const (
 	SyncMsg_SYNC_SESSION_SNAPSHOT     SyncMsg_Type = 15
 	SyncMsg_SYNC_SESSION_GET_DELTAS   SyncMsg_Type = 16
 	SyncMsg_SYNC_SESSION_DELTAS       SyncMsg_Type = 17
+	SyncMsg_SYNC_SESSION_START_ACK    SyncMsg_Type = 18
 )
 
 var SyncMsg_Type_name = map[int32]string{
@@ -195,6 +196,7 @@ var SyncMsg_Type_name = map[int32]string{
 	15: "SYNC_SESSION_SNAPSHOT",
 	16: "SYNC_SESSION_GET_DELTAS",
 	17: "SYNC_SESSION_DELTAS",
+	18: "SYNC_SESSION_START_ACK",
 }
 var SyncMsg_Type_value = map[string]int32{
 	"UNDEFINED":                 0,
@@ -210,6 +212,7 @@ var SyncMsg_Type_value = map[string]int32{
 	"SYNC_SESSION_SNAPSHOT":     15,
 	"SYNC_SESSION_GET_DELTAS":   16,
 	"SYNC_SESSION_DELTAS":       17,
+	"SYNC_SESSION_START_ACK":    18,
 }
 
 func (x SyncMsg_Type) String() string {
@@ -1365,6 +1368,8 @@ func (m *SyncStateResp) GetBlockHeight() uint64 {
 	}
 	return 0
 }
+
+
 
 func init() {
 	proto.RegisterType((*Transaction)(nil), "protos.Transaction")

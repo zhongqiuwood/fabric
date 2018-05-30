@@ -38,6 +38,7 @@ import (
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/rest"
 	"github.com/abchain/fabric/core/service"
+	"github.com/abchain/fabric/core/statesync"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/events/producer"
 	"github.com/abchain/fabric/flogging"
@@ -168,6 +169,7 @@ func StartNode(postrun func() error) error {
 
 	// init services related to the peer, such as gossip
 	gossip.NewGossip(peerServer)
+	statesync.NewSync(peerServer)
 
 	// Register the Peer server
 	srv_peer := func(server *grpc.Server) {

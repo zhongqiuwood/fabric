@@ -625,6 +625,13 @@ func (ledger *Ledger) GetBlockByNumber(blockNumber uint64) (*protos.Block, error
 	return ledger.blockchain.getBlock(blockNumber)
 }
 
+// GetBlockNumberByState return given block nuber from a state, also used to check
+// states
+func (ledger *Ledger) GetBlockNumberByState(hash []byte) (uint64, error) {
+	//TODO: cache?
+	return ledger.blockchain.indexer.fetchBlockNumberByStateHash(hash)
+}
+
 // GetBlockchainSize returns number of blocks in blockchain
 func (ledger *Ledger) GetBlockchainSize() uint64 {
 	return ledger.blockchain.getSize()

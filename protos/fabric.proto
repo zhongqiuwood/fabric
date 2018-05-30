@@ -183,16 +183,12 @@ message Gossip {
         map<string, PeerState> data = 1;
     }
 
-    message Update{
-        bytes payload = 1; 
-    }
-
+    //all the gossip message (with different catalog) MUST share the
+    //same series of seq
     uint64 seq = 1;
     string catalog = 2;
-    oneof m{
-        Digest digest = 5;
-        Update update = 6;
-    }
+    bytes  payload = 3;
+    Digest dig = 5;
 }
 
 message Gossip_Tx{

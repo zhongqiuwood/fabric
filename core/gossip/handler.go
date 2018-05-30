@@ -2,35 +2,11 @@ package gossip
 
 import (
 	model "github.com/abchain/fabric/core/gossip/model"
-	"github.com/golang/protobuf/proto"
 
 	pb "github.com/abchain/fabric/protos"
 	"sync"
 	"time"
 )
-
-//a standard vclock use seq
-type standardVClock struct {
-	oor bool
-	n   uint64
-}
-
-func (a *standardVClock) Less(b_in model.VClock) bool {
-	b, ok := b_in.(*standardVClock)
-	if !ok {
-		panic("Wrong type, not standardVClock")
-	}
-
-	if b.OutOfRange() {
-		return false
-	}
-
-	return a.n < b.n
-}
-
-func (v *standardVClock) OutOfRange() bool {
-	return v.oor
-}
 
 type updateImpl struct {
 	model.Update //update provided from CatalogyHelper
@@ -39,31 +15,21 @@ type updateImpl struct {
 }
 
 type handlerImpl struct {
-	CatalogyHelper
-	GossipCrypto
-	inner *model.NeighbourPeer
-	//for "trustable" gossip, each update MUST accompany with a trustable digest
-	digestCache map[string]*pb.Gossip_Digest_PeerState
+	global *catalogHandler
+	inner  *model.NeighbourPeer
 }
 
-var globalSeq uint64
-var globalSeqLock sync.Mutex
-
-func getGlobalSeq() uint64 {
-
-	globalSeqLock.Lock()
-	defer globalSeqLock.Unlock()
-
-	ref := uint64(time.Now().Unix())
-	if ref > globalSeq {
-		globalSeq = ref
-
-	} else {
-		globalSeq++
+func newHandler(catalogH *catalogHandler) *handlerImpl {
+	h := &handlerImpl{
+		global:      catalogH,
+		digestCache: make(map[string]*pb.Gossip_Digest_PeerState),
 	}
 
-	return globalSeq
+	h.inner = model.NewNeighbourPeer(catalogH.model, h)
+
 }
+
+func (g *handlerImpl) Stop() {}
 
 func (g *handlerImpl) HandleMessage(msg *pb.Gossip) {
 
@@ -94,7 +60,7 @@ func (g *handlerImpl) HandleMessage(msg *pb.Gossip) {
 	return
 }
 
-func (g *handlerImpl) AllowPushUpdate(id string) (model.Update, error) {
+func (g *handlerImpl) AllowPushUpdate() (model.Update, error) {
 
 	err := g.CatelogyHelper.AllowSendUpdate(id)
 	if err != nil {
@@ -148,7 +114,7 @@ func (g *handlerImpl) EncodeUpdate(ud_in model.Update) proto.Message {
 		ret.Dig = g.digestCache
 	}
 
-	payloadByte, err := proto.Marshal(g.CatalogyHelper.EncodeUpdate(u))
+	payloadByte, err := g.global.EncodeUpdate(u)
 	if err == nil {
 		ret.Payload = payloadByte
 	} else {

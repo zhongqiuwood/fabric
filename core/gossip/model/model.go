@@ -13,13 +13,14 @@ type Digest interface{}
 type Status interface {
 	GenDigest() Digest
 	Merge(Status) error
-	MakeUpdate(Update, Digest) Update
+	MakeUpdate(Digest) Status
 }
 
 //Update is the content of a reconciliation, it can be apply to any local peer
 //state with PickUp method
 type Update interface {
-	PickUp(Digest) Status
+	PickUp(string) Status
+	Add(string, Status) Update
 }
 
 type Peer struct {
@@ -65,14 +66,14 @@ func (m *Model) RecvUpdate(r Update) {
 	m.RLock()
 	defer m.RUnlock()
 
-	for _, p := range m.Peers {
-		p.Merge(r.PickUp(p.GenDigest()))
+	for id, p := range m.Peers {
+		p.Merge(r.PickUp(id))
 
 	}
 }
 
 //recv the digest from a "pulling" far-end, gen corresponding update
-func (m *Model) RecvPullDigest(digests map[string]Digest) (ud Update) {
+func (m *Model) RecvPullDigest(digests map[string]Digest, ud Update) Update {
 
 	m.RLock()
 	defer m.RUnlock()
@@ -90,11 +91,11 @@ func (m *Model) RecvPullDigest(digests map[string]Digest) (ud Update) {
 			m.Unlock()
 			m.RLock()
 		} else {
-			ud = peer.MakeUpdate(ud, digest)
+			ud = ud.Add(id, peer.MakeUpdate(digest))
 		}
 	}
 
-	return
+	return ud
 }
 
 func NewGossipModel(h ModelHelper, self *Peer) *Model {

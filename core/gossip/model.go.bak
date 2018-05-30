@@ -27,7 +27,7 @@ type Model struct {
 	self   PeerState
 	store  map[string]*PeerState // key: peer id
 	merger VersionMergerInterface
-	crypto CryptoInterface
+	crypto GossipCrypto
 	nseq   uint64
 }
 

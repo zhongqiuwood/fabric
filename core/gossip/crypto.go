@@ -5,7 +5,7 @@ import (
 )
 
 // CryptoInterface interface
-type CryptoInterface interface {
+type GossipCrypto interface {
 	ValidateTx(tx *pb.Transaction) bool
 	Verify(refererID string, peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool
 	Sign(catelog string, message *pb.Gossip_Digest_PeerState) error
@@ -13,7 +13,7 @@ type CryptoInterface interface {
 
 // CryptoImpl struct
 type CryptoImpl struct {
-	CryptoInterface
+	GossipCrypto
 }
 
 // ValidateTx function

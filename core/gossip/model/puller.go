@@ -2,10 +2,14 @@ package gossip_model
 
 import (
 	"fmt"
+	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
 )
 
 type PullerHelper interface {
+	EncodeDigest(map[string]Digest) proto.Message
+
 	//Notify if we failed from a pulling
 	FailPulling(string)
 	//Notify we receive a update, if return NOT nil, not apply this
@@ -14,11 +18,11 @@ type PullerHelper interface {
 
 type puller struct {
 	PullerHelper
-	target *neighbourPeer
+	target *NeighbourPeer
 	update chan Update
 }
 
-func NewPullTask(helper PullerHelper, nP *neighbourPeer) (*puller, error) {
+func NewPullTask(helper PullerHelper, nP *NeighbourPeer) (*puller, error) {
 
 	if nP.workPuller != nil {
 		return nil, fmt.Errorf("Have working puller")
@@ -43,27 +47,27 @@ func (p *puller) NotifyUpdate(ud Update) {
 	p.update <- ud
 }
 
-func (p *puller) Process(ctx context.Context) error {
+func (p *puller) Process(ctx context.Context, stream *pb.StreamHandler) error {
 
-	nP := p.target
+	g := p.target.global
 
-	dg := nP.global.GenPullDigest()
+	dg := g.GenPullDigest()
 
-	err := nP.stream.SendMessage(nP.helper.EncodeDigest(dg))
+	err := stream.SendMessage(p.EncodeDigest(dg))
 	if err != nil {
 		return fmt.Errorf("Send digest message fail: %s", err)
 	}
 
 	select {
 	case <-ctx.Done():
-		p.FailPulling(nP.stream.GetName())
+		p.FailPulling(stream.GetName())
 		return fmt.Errorf("User cancel gossip-pull")
 	case ud := <-p.update:
 		err = p.OnRecvUpdate(ud)
 		if err != nil {
 			return fmt.Errorf("Update is rejected: %s", err)
 		}
-		nP.global.RecvUpdate(ud)
+		g.RecvUpdate(ud)
 	}
 
 	//everything done

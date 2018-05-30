@@ -80,3 +80,18 @@ func (h *catelogHandler) AcceptPeer(id string, Digest) (*model.Peer, error) {
 		Status: h.AssignStatus(),
 	}, nil
 }
+
+type neighbourHelper struct{
+	*catalogHandler
+	id string
+}
+
+func (h *neighbourHelper) AllowPushUpdate() (model.Update, error){
+	return h.AllowPushUpdate(h.id)
+}
+
+func (h *catelogHandler) newNeighbourPeer(id string) *model.NeighbourPeer {
+
+	return model.NewNeighbourPeer(h.model, 
+		&neighbourHelper{h, id})
+}

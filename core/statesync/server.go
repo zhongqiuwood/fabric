@@ -28,7 +28,7 @@ func newStateServer(h *stateSyncHandler) (s *stateServer) {
 func (server *stateServer) beforeSyncStart(e *fsm.Event) {
 
 	// todo ensure ReleaseSnapshot called finally
-	syncMsg := server.Load(e, nil)
+	syncMsg := server.LoadSyncMsg(e, nil)
 
 	if syncMsg== nil {
 		return
@@ -57,7 +57,7 @@ func (server *stateServer) beforeSyncStart(e *fsm.Event) {
 func (server *stateServer) beforeQuery(e *fsm.Event) {
 
 	payloadMsg := &pb.SyncStateQuery{}
-	syncMsg := server.Load(e, payloadMsg)
+	syncMsg := server.LoadSyncMsg(e, payloadMsg)
 	if syncMsg == nil || server.correlationId != syncMsg.CorrelationId {
 		return
 	}
@@ -85,7 +85,7 @@ func (server *stateServer) beforeQuery(e *fsm.Event) {
 //---------------------------------------------------------------------------
 func (server *stateServer) beforeGetBlocks(e *fsm.Event) {
 	payloadMsg := &pb.SyncBlockRange{}
-	syncMsg := server.Load(e, payloadMsg)
+	syncMsg := server.LoadSyncMsg(e, payloadMsg)
 	if syncMsg == nil || server.correlationId != syncMsg.CorrelationId {
 		return
 	}
@@ -98,7 +98,7 @@ func (server *stateServer) beforeGetBlocks(e *fsm.Event) {
 //---------------------------------------------------------------------------
 func (server *stateServer) beforeGetDeltas(e *fsm.Event) {
 	payloadMsg := &pb.SyncStateDeltasRequest{}
-	syncMsg := server.Load(e, payloadMsg)
+	syncMsg := server.LoadSyncMsg(e, payloadMsg)
 	if syncMsg == nil || server.correlationId != syncMsg.CorrelationId {
 		return
 	}
@@ -110,7 +110,7 @@ func (server *stateServer) beforeGetDeltas(e *fsm.Event) {
 // 5. acknowledge sync end
 //---------------------------------------------------------------------------
 func (server *stateServer) beforeSyncEnd(e *fsm.Event) {
-	syncMsg := server.Load(e, nil)
+	syncMsg := server.LoadSyncMsg(e, nil)
 	if syncMsg == nil || server.correlationId != syncMsg.CorrelationId {
 		return
 	}
@@ -138,7 +138,7 @@ func (d *stateServer) sendBlocks(e *fsm.Event, syncBlockRange *pb.SyncBlockRange
 
 	for _, currBlockNum := range blockNums {
 		// Get the Block from
-		block, err := d.ledger.GetBlockByNumberBySnapshot(d.parent.peerId.Name, currBlockNum)
+		block, err := d.ledger.GetBlockByNumberBySnapshot(d.parent.remotePeerIdName(), currBlockNum)
 		if err != nil {
 			logger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
 			break
@@ -156,8 +156,6 @@ func (d *stateServer) sendBlocks(e *fsm.Event, syncBlockRange *pb.SyncBlockRange
 	}
 }
 
-
-// sendBlocks sends the blocks based upon the supplied SyncBlockRange over the stream.
 func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.SyncStateDeltasRequest) {
 	logger.Debugf("Sending state deltas for block range %d-%d", syncStateDeltasRequest.Range.Start,
 		syncStateDeltasRequest.Range.End)
@@ -178,7 +176,7 @@ func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.S
 
 	for _, currBlockNum := range blockNums {
 		// Get the state deltas for Block from coordinator
-		stateDelta, err := d.ledger.GetStateDeltaBySnapshot(d.parent.peerId.Name, currBlockNum)
+		stateDelta, err := d.ledger.GetStateDeltaBySnapshot(d.parent.remotePeerIdName(), currBlockNum)
 		if err != nil {
 			logger.Errorf("Error sending stateDelta for blockNum %d: %s", currBlockNum, err)
 			break

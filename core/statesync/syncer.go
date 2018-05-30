@@ -39,6 +39,7 @@ type syncer struct {
 	StateSnapshotRequestTimeout time.Duration // How long to wait for a peer to respond to a state snapshot request
 }
 
+
 func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 
 	l, _ := ledger.GetLedger()
@@ -51,6 +52,9 @@ func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 	}
 
 	var err error
+	sts.blocksResp = make(chan *pb.SyncBlocks)
+	sts.deltaResp = make(chan *pb.SyncStateDeltas)
+
 	sts.RecoverDamage = viper.GetBool("statetransfer.recoverdamage")
 
 	sts.blockVerifyChunkSize = uint64(viper.GetInt("statetransfer.blocksperrequest"))
@@ -95,10 +99,12 @@ func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 
 func (sts *syncer) InitiateSync() error {
 
+	defer sts.fini()
+
 	//---------------------------------------------------------------------------
 	// 1. query
 	//---------------------------------------------------------------------------
-	targetBlockNumber, endBlockNumber, err := sts.getSyncTargetBlockNumber()
+	mostRecentIdenticalHistoryPosition, endBlockNumber, err := sts.getSyncTargetBlockNumber()
 
 	if err != nil {
 		return err
@@ -107,15 +113,18 @@ func (sts *syncer) InitiateSync() error {
 	//---------------------------------------------------------------------------
 	// 2. switch to the right checkpoint
 	//---------------------------------------------------------------------------
-	// todo: go to the closest checkpoint to the targetBlockNumber
-
+	checkpointPosition, err := sts.ledger.SwitchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
+	if err != nil {
+		return err
+	}
+	startBlockNumber := checkpointPosition + 1
 
 	//---------------------------------------------------------------------------
 	// 3. sync blocks
 	//---------------------------------------------------------------------------
 	// explicitly go to syncblocks state
 	sts.parent.fsmHandler.Event(enterGetBlock)
-	err = sts.syncBlocks(targetBlockNumber, endBlockNumber)
+	err = sts.syncBlocks(startBlockNumber, endBlockNumber)
 	if err != nil {
 		return err
 	}
@@ -125,7 +134,7 @@ func (sts *syncer) InitiateSync() error {
 	//---------------------------------------------------------------------------
 	// explicitly go to syncdelta state
 	sts.parent.fsmHandler.Event(enterGetDelta)
-	err = sts.syncDeltas(targetBlockNumber, endBlockNumber)
+	err = sts.syncDeltas(startBlockNumber, endBlockNumber)
 	if err != nil {
 		return err
 	}
@@ -142,11 +151,8 @@ func (sts *syncer) InitiateSync() error {
 	// explicitly go to syncfinish state
 	sts.parent.fsmHandler.Event(enterSyncFinish)
 	err = sts.SendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_END, nil)
-	if err != nil {
-		return err
-	}
 
-	return nil
+	return err
 }
 
 
@@ -156,7 +162,7 @@ func (sts *syncer) InitiateSync() error {
 func (sts *syncer) afterSyncStartResponse(e *fsm.Event) {
 	// implicitly go into synclocating state
 	payloadMsg := &pb.SyncStateResp{}
-	msg := sts.Load(e, payloadMsg)
+	msg := sts.LoadSyncMsg(e, payloadMsg)
 	if msg == nil {
 		return
 	}
@@ -168,7 +174,7 @@ func (sts *syncer) afterSyncStartResponse(e *fsm.Event) {
 //---------------------------------------------------------------------------
 func (sts *syncer) afterQueryResponse(e *fsm.Event) {
 	payloadMsg := &pb.SyncStateResp{}
-	msg := sts.Load(e, payloadMsg)
+	msg := sts.LoadSyncMsg(e, payloadMsg)
 	if msg == nil {
 		return
 	}
@@ -181,7 +187,7 @@ func (sts *syncer) afterQueryResponse(e *fsm.Event) {
 func (sts *syncer) afterSyncBlocks(e *fsm.Event) {
 
 	payloadMsg := &pb.SyncBlocks{}
-	msg := sts.Load(e, payloadMsg)
+	msg := sts.LoadSyncMsg(e, payloadMsg)
 	if msg == nil {
 		return
 	}
@@ -194,7 +200,7 @@ func (sts *syncer) afterSyncBlocks(e *fsm.Event) {
 func (sts *syncer) afterSyncStateDeltas(e *fsm.Event) {
 
 	payloadMsg := &pb.SyncStateDeltas{}
-	msg := sts.Load(e, payloadMsg)
+	msg := sts.LoadSyncMsg(e, payloadMsg)
 	if msg == nil {
 		return
 	}
@@ -504,3 +510,25 @@ func (sts *syncer) leaveSyncBlocks(e *fsm.Event) {}
 func (sts *syncer) leaveSyncStateSnapshot(e *fsm.Event) {}
 
 func (sts *syncer) leaveSyncStateDeltas(e *fsm.Event) {}
+
+
+func (sts *syncer) fini() {
+
+	select {
+	case <-sts.positionResp:
+	default:
+		close(sts.positionResp)
+	}
+
+	select {
+	case <-sts.blocksResp:
+	default:
+		close(sts.blocksResp)
+	}
+
+	select {
+	case <-sts.deltaResp:
+	default:
+		close(sts.deltaResp)
+	}
+}

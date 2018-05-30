@@ -7,7 +7,6 @@ import (
 
 var syncPhase = []string{"synclocating", "syncdelta", "syncblock", "syncsnapshot"}
 
-
 var enterGetBlock = "GetBlock"
 var enterGetSnapshot = "GetSnapshot"
 var enterGetDelta = "GetDelta"

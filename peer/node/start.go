@@ -47,6 +47,7 @@ import (
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"
+	"github.com/abchain/fabric/core/statesync"
 )
 
 var chaincodeDevMode bool
@@ -168,6 +169,7 @@ func StartNode(postrun func() error) error {
 
 	// init services related to the peer, such as gossip
 	gossip.NewGossip(peerServer)
+	statesync.NewStateSync(peerServer)
 
 	// Register the Peer server
 	srv_peer := func(server *grpc.Server) {

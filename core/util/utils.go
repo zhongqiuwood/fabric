@@ -244,3 +244,7 @@ func EncodeUint64(number uint64) []byte {
 func DecodeToUint64(bytes []byte) uint64 {
 	return binary.BigEndian.Uint64(bytes)
 }
+
+func EncodeStatehash(statehash []byte) string {
+	return fmt.Sprintf("%x", statehash)
+}

@@ -33,6 +33,7 @@ import (
 	"github.com/abchain/fabric/protos"
 	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
+	"github.com/abchain/fabric/core/util"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
@@ -87,6 +88,7 @@ type Ledger struct {
 	currentID        interface{}
 	currentStateHash []byte
 	snapshotMap      *dbsnapshotMap
+	branchNode2CheckpointMap map[string][][]byte
 }
 
 var ledger *Ledger
@@ -120,7 +122,6 @@ func GetNewLedger() (*Ledger, error) {
 
 	state := state.NewState()
 
-
 	snapshotMap := newSnapshotMap()
 
 	err = sanityCheck()
@@ -128,7 +129,7 @@ func GetNewLedger() (*Ledger, error) {
 		return nil, err
 	}
 	return &Ledger{blockchain, txpool, state,
-	nil, nil, snapshotMap}, nil
+	nil, nil, snapshotMap, nil}, nil
 }
 
 func sanityCheck() error {
@@ -230,31 +231,6 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 }
 
 func (ledger *Ledger) SwitchToCheckpointState(statehash []byte) error {
-
-	//startNumber := uint64(0)
-	//
-	//block, _:= ledger.GetBlockByNumber(fromBlockNumber)
-	//
-	//gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
-	//
-	//if gs.LastBranchNodeStateHash != nil {
-	//
-	//	db.GetDBHandle().StateSwitch(gs.LastBranchNodeStateHash)
-	//
-	//	startNumber = db.GetGlobalDBHandle().GetGlobalState(gs.LastBranchNodeStateHash).Count
-	//
-	//} else {
-	//	block, _= ledger.GetBlockByNumber(1)
-	//	db.GetDBHandle().StateSwitch(block.StateHash)
-	//}
-
-	//
-	//gs.Branched()
-	//
-	//stateHash := db.GetGlobalDBHandle().GetGlobalState()
-	//db.GetDBHandle().StateSwitch()
-
-	//return db.GetGlobalDBHandle().GetGlobalState(statehash)
 	return nil
 }
 
@@ -768,6 +744,202 @@ func (ledger *Ledger) resetForNextTxGroup(txCommited bool) {
 	ledgerLogger.Debug("resetting ledger state for next transaction batch")
 	ledger.currentID = nil
 	ledger.state.ClearInMemoryChanges(txCommited)
+}
+
+
+
+//------------------------------------------------------------------
+// How the method <SwitchToBestCheckpoint> finds and switches to the best checkpoint from [startBlockNumber]:
+// 1. Go to [B] from [startBlockNumber]
+// 2. Go and try to switch to [C3], then return if success
+// 3. Go and try to switch to [C2] if #2 fails, then return if success
+// 4. GO to [A] if #3 fails
+// 5. Go and try to switch to [C1], then return if success
+// 6. Go and try to switch to [G] if #5 fails
+
+// The Global State Graph
+// [G]: genesis
+// [A]: last branch node of [B]
+// [B]: last branch node of [startBlockNumber]
+// [C1], [C2], [C3]: checkpoints
+//
+// [G]->[]->[C1]->[A]->[]->[C2]->[]->[C3]-[][][][]->[B]->[]->[startBlockNumber]->[][][]
+//                |                                 |
+//                V                                 V
+//               [ ]                               [ ]
+//               [ ]                               [ ]
+//
+//------------------------------------------------------------------
+
+func (ledger *Ledger) SwitchToBestCheckpoint(startBlockNumber uint64) (uint64, error) {
+
+	// todo: traverse the GlobalState graph on peer start up and update ledger.branchNode2CheckpointMap on the fly
+	ledger.traverseGlobalStateGraph()
+
+	var checkpointPosition uint64
+
+	statehash, err := ledger.GetStateHash(startBlockNumber)
+	if err != nil {
+		return checkpointPosition, err
+	}
+
+	for {
+		gs := ledger.GetGlobalState(statehash)
+
+		if gs == nil {
+			err = fmt.Errorf("failed to fetch GlobalState <%x>", statehash)
+			break
+		}
+
+		lastBranchNodeStateHash := gs.LastBranchNodeStateHash
+
+		if lastBranchNodeStateHash == nil {
+			err = fmt.Errorf(
+				"the GlobalState <%x> does not have a previous branch node", statehash)
+			break
+		}
+
+		checkpointPosition, err = ledger.switchToCheckpointByBranchNode(lastBranchNodeStateHash)
+		if err != nil {
+			// visiting the previous lastBranchNodeStateHash
+			statehash = lastBranchNodeStateHash
+		} else {
+			break
+		}
+	}
+
+
+	if err != nil {
+		// try to switch to genesis
+		var genesisStateHash []byte
+		genesisStateHash, err = ledger.GetStateHash(0)
+
+		if err == nil {
+			checkpointPosition, err = ledger.stateSwitch(genesisStateHash)
+		}
+	}
+
+	return checkpointPosition, err
+}
+
+
+func (ledger *Ledger) switchToCheckpointByBranchNode(branchNodeStateHash []byte) (uint64, error) {
+
+	if branchNodeStateHash == nil {
+		panic(fmt.Errorf("the branchNodeStateHash is nil"))
+	}
+
+	checkpointList, ok := ledger.branchNode2CheckpointMap[util.EncodeStatehash(branchNodeStateHash)]
+
+	var err error
+	var checkpointPosition uint64
+	len := len(checkpointList)
+	if ok && len > 0 {
+		// start from the end of checkpointList
+		for i := int(len - 1); i >= 0; i-- {
+			checkpointPosition, err = ledger.stateSwitch(checkpointList[i])
+			if err == nil {
+				break
+			}
+		}
+	} else {
+		err = fmt.Errorf("failed to switch to any of checkpoints of the branch node: <%x>",
+			branchNodeStateHash)
+	}
+	return checkpointPosition, err
+}
+
+
+
+func (ledger *Ledger) traverseGlobalStateGraph() {
+
+	var stateHashList [][] byte
+	ledger.branchNode2CheckpointMap = make(map[string][][]byte)
+
+	genesis, _ := fetchRawBlockFromDB(0)
+	stateHashList = append(stateHashList, genesis.StateHash)
+
+	checkpointsMap := db.GetGlobalDBHandle().GetCheckpointsMap()
+
+
+	for i := 0; i < len(stateHashList) ; i++ {
+
+		stateHash := stateHashList[i]
+		nextBranchNodeStateHash, checkpointList := ledger.traverseTillBranch(stateHash, checkpointsMap)
+
+		if nextBranchNodeStateHash != nil {
+
+			stringStateHash := util.EncodeStatehash(nextBranchNodeStateHash)
+			_, ok := ledger.branchNode2CheckpointMap[stringStateHash]
+			if !ok {
+				ledger.branchNode2CheckpointMap[stringStateHash] = checkpointList
+			} else {
+				panic(fmt.Errorf("Duplicated state hash: %s", stringStateHash))
+			}
+
+			branchNodeGs := db.GetGlobalDBHandle().GetGlobalState(nextBranchNodeStateHash)
+			stateHashList = append(stateHashList, branchNodeGs.NextNodeStateHash...)
+		}
+	}
+}
+
+func (ledger *Ledger) traverseTillBranch(startStateHash []byte, checkpointMap map[string]bool) ([]byte, [][] byte) {
+	var checkpointList [][] byte
+	curcorStateHash := startStateHash
+
+	for {
+		_, ok := checkpointMap[util.EncodeStatehash(curcorStateHash)]
+		if ok {
+			checkpointList = append(checkpointList, curcorStateHash)
+		}
+
+		curcor := db.GetGlobalDBHandle().GetGlobalState(curcorStateHash)
+		childNodeNumber := len(curcor.NextNodeStateHash)
+
+		if childNodeNumber == 1 {
+			curcorStateHash = curcor.NextNodeStateHash[0]
+		} else if childNodeNumber == 0 {
+			// hit the end, return
+			curcorStateHash = nil
+			checkpointList = nil
+			break
+		} else if childNodeNumber > 1 {
+			// return on hitting a branch node
+			break
+		}
+	}
+
+	return curcorStateHash, checkpointList
+}
+
+
+func (ledger *Ledger) GetStateHash(targetBlockNumber uint64) ([]byte, error) {
+
+	block, err := ledger.GetBlockByNumber(targetBlockNumber)
+	if err != nil {
+		return nil, fmt.Errorf("Error fetching block %d.", targetBlockNumber)
+	}
+
+	return block.StateHash, nil
+}
+
+
+func (ledger *Ledger) stateSwitch(statehash []byte) (uint64, error) {
+
+	gs := db.GetGlobalDBHandle().GetGlobalState(statehash)
+
+	if gs == nil {
+		return 0, fmt.Errorf(
+			"StateSwitch: Failed to find the GlobalState by the state hash <%x>",
+			statehash)
+	}
+
+	err := db.GetDBHandle().StateSwitch(statehash)
+	if err != nil {
+		return 0, err
+	}
+
+	return gs.Count, nil
 }
 
 func sendProducerBlockEvent(block *protos.Block) {

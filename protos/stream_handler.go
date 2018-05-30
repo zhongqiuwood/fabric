@@ -79,8 +79,7 @@ func newStreamHandler(impl StreamHandlerImpl) *StreamHandler {
 	}
 }
 
-
-func (sts *StreamHandler) SendSyncMsg(e *fsm.Event, msgType SyncMsg_Type, payloadMsg proto.Message) error {
+func (streamHandler *StreamHandler) SendSyncMsg(e *fsm.Event, msgType SyncMsg_Type, payloadMsg proto.Message) error {
 
 	data, err := proto.Marshal(payloadMsg)
 	if err != nil {
@@ -92,7 +91,7 @@ func (sts *StreamHandler) SendSyncMsg(e *fsm.Event, msgType SyncMsg_Type, payloa
 		return lerr
 	}
 
-	err = sts.SendMessage(&SyncMsg{
+	err = streamHandler.SendMessage(&SyncMsg{
 		Type: msgType,
 		Payload: data})
 
@@ -102,7 +101,7 @@ func (sts *StreamHandler) SendSyncMsg(e *fsm.Event, msgType SyncMsg_Type, payloa
 	return err
 }
 
-func (server *StreamHandler) Load(e *fsm.Event, payloadMsg proto.Message) *SyncMsg {
+func (streamHandler *StreamHandler) LoadSyncMsg(e *fsm.Event, payloadMsg proto.Message) *SyncMsg {
 
 	if _, ok := e.Args[0].(*SyncMsg); !ok {
 		e.Cancel(fmt.Errorf("Received unexpected sync message type"))
@@ -119,7 +118,6 @@ func (server *StreamHandler) Load(e *fsm.Event, payloadMsg proto.Message) *SyncM
 	}
 	return msg
 }
-
 
 
 func (h *StreamHandler) GetName() string {

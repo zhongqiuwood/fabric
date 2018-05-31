@@ -1,125 +1,99 @@
 package gossip
 
 import (
+	"fmt"
 	model "github.com/abchain/fabric/core/gossip/model"
-
 	pb "github.com/abchain/fabric/protos"
-	"sync"
-	"time"
+	"golang.org/x/net/context"
 )
 
-type updateImpl struct {
-	model.Update //update provided from CatalogyHelper
-	withDigest   bool
-	needPulling  bool
-}
-
 type handlerImpl struct {
-	global *catalogHandler
-	inner  *model.NeighbourPeer
+	peer      *pb.PeerID
+	catalogHs map[string]*catalogHandler
+	inners    map[*catalogHandler]*model.NeighbourPeer
+	sstub     *pb.StreamStub
 }
 
-func newHandler(catalogH *catalogHandler) *handlerImpl {
-	h := &handlerImpl{
-		global:      catalogH,
-		digestCache: make(map[string]*pb.Gossip_Digest_PeerState),
+func newHandler(peer *pb.PeerID, stub *pb.StreamStub, handlers map[string]*catalogHandler) *handlerImpl {
+
+	inners := make(map[*catalogHandler]*model.NeighbourPeer)
+	for _, h := range handlers {
+		inners[h] = h.newNeighbourPeer(peer.Name)
 	}
 
-	h.inner = model.NewNeighbourPeer(catalogH.model, h)
-
+	return &handlerImpl{
+		peer:      peer,
+		catalogHs: handlers,
+		sstub:     stub,
+		inners:    inners,
+	}
 }
 
 func (g *handlerImpl) Stop() {}
 
-func (g *handlerImpl) HandleMessage(msg *pb.Gossip) {
+func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 
-	//the sequence is somewhat subtle: we expect different behavior
-	//on reply update (with or without an digest, and set IsPull flag)
-	//depending on if handler is under a "Pulling" process. The pulling
-	//status will be clear after AcceptUpdate is called so we must handle
-	//digest first
-	if msg.Dig != nil && len(msg.Dig.Data) > 0 {
+	global := g.catalogHs[msg.GetCatalog()]
+	if global == nil {
+		logger.Errorf("Recv gossip message with catelog not recognized: ", msg.GetCatalog())
+		return nil
+	}
+
+	inner := g.inners[global]
+	if inner == nil {
+		panic("corresponding inner object is not generated")
+	}
+
+	if msg.GetIsPull() {
+
+		strms := g.sstub.PickHandlers([]*pb.PeerID{g.peer})
+		if len(strms) != 1 {
+			//no stream, we just giveup
+			return fmt.Errorf("No stream found for peer %s", g.peer.Name)
+		}
+		strm := strms[0]
+
+		//handling pulling request
+		//also try to stimulate a pull process first
+		if !inner.IsPulling() {
+			puller, err := model.NewPullTask(global, strm, inner)
+			if err != nil {
+				logger.Error("Fail to create puller", err)
+			} else {
+				go puller.Process(context.TODO())
+			}
+		}
+
 		dgtmp := make(map[string]model.Digest)
 		for k, d := range msg.Dig.Data {
 			dgtmp[k] = d
 		}
-		g.inner.ReplyUpdate(dgtmp)
-	}
+		reply := inner.AcceptDigest(dgtmp)
 
-	if msg.Payload != nil {
-		ud, err := g.DecodeUpdate(msg.Payload)
+		//send reply update message
+		//NOTICE: if stream is NOT enable to drop message, send in HandMessage
+		//may cause a deadlock, but in gossip package this is OK
+		strm.SendMessage(global.buildUpdate(reply))
+
+	} else if msg.Payload != nil {
+		//handling pushing request, for the trustable process, merging
+		//digest first
+		for id, dig := range msg.Dig.Data {
+			//verify digest
+			//global.Verify()
+			oldDig := global.digestCache[id]
+			global.digestCache[id] = global.MergeProtoDigest(oldDig, dig)
+		}
+
+		ud, err := global.DecodeUpdate(msg.Payload)
 		if err != nil {
 			//It was not fatal. Log it but don't return
 			logger.Errorf("Decode update for catelog %s fail: %s", msg.Catalog, err)
-			return
+			return nil
 		}
 
-		g.inner.AcceptUpdate(ud)
+		inner.AcceptUpdate(ud)
 	}
 
-	return
-}
-
-func (g *handlerImpl) AllowPushUpdate() (model.Update, error) {
-
-	err := g.CatelogyHelper.AllowSendUpdate(id)
-	if err != nil {
-		return nil, err
-	}
-
-	ret := &updateImpl{
-		//digest can be omitted if we are under pulling (we have just sent one)
-		withDigest: !g.inner.IsPulling(),
-	}
-
-	//if we are not response for
-	if !g.inner.IsPulling() {
-		ret.withDigest = true
-	}
-
-	return ret, nil
-}
-
-//we have three different models for sync peer's current state, "hot" (un-commited)
-//transactions and commited transactions
-func (g *handlerImpl) EncodeDigest(m map[string]model.Digest) proto.Message {
-
-	ret := &pb.Gossip{
-		Seq:     getGlobalSeq(),
-		Catalog: g.Name(),
-		Dig:     &pb.Gossip_Digest{make(map[string]*pb.Gossip_Digest_PeerState)},
-	}
-
-	for k, d := range m {
-		pbd := g.ToProtoDigest(d)
-		ret.Dig.Data[k] = pbd
-	}
-
-	return ret
-}
-
-func (g *handlerImpl) EncodeUpdate(ud_in model.Update) proto.Message {
-
-	ud, ok := ud_in.(*updateImpl)
-	if !ok {
-		panic("wrong type, not updateImpl")
-	}
-
-	ret := &pb.Gossip{
-		Seq:     getGlobalSeq(),
-		Catalog: g.Name(),
-	}
-
-	if ud.withDigest {
-		ret.Dig = g.digestCache
-	}
-
-	payloadByte, err := g.global.EncodeUpdate(u)
-	if err == nil {
-		ret.Payload = payloadByte
-	} else {
-		logger.Error("Encode update failure:", err)
-	}
-
-	return ret
+	return nil
 }

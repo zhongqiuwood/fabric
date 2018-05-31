@@ -9,11 +9,6 @@ import (
 
 type PullerHelper interface {
 	EncodeDigest(map[string]Digest) proto.Message
-
-	//Notify if we failed from a pulling
-	FailPulling(string)
-	//Notify we receive a update, if return NOT nil, not apply this
-	OnRecvUpdate(Update) error
 }
 
 type puller struct {
@@ -22,16 +17,22 @@ type puller struct {
 	update chan Update
 }
 
-func NewPullTask(helper PullerHelper, nP *NeighbourPeer) (*puller, error) {
+func NewPullTask(helper PullerHelper, stream *pb.StreamHandler,
+	nP *NeighbourPeer) (*puller, error) {
 
 	if nP.workPuller != nil {
 		return nil, fmt.Errorf("Have working puller")
 	}
 
+	dg := nP.global.GenPullDigest()
+	err := stream.SendMessage(helper.EncodeDigest(dg))
+	if err != nil {
+		return nil, fmt.Errorf("Send digest message fail: %s", err)
+	}
+
 	puller := &puller{
-		PullerHelper: helper,
-		target:       nP,
-		update:       make(chan Update),
+		target: nP,
+		update: make(chan Update),
 	}
 
 	nP.workPuller = puller
@@ -47,29 +48,14 @@ func (p *puller) NotifyUpdate(ud Update) {
 	p.update <- ud
 }
 
-func (p *puller) Process(ctx context.Context, stream *pb.StreamHandler) error {
-
-	g := p.target.global
-
-	dg := g.GenPullDigest()
-
-	err := stream.SendMessage(p.EncodeDigest(dg))
-	if err != nil {
-		return fmt.Errorf("Send digest message fail: %s", err)
-	}
+func (p *puller) Process(ctx context.Context) {
 
 	select {
 	case <-ctx.Done():
-		p.FailPulling(stream.GetName())
-		return fmt.Errorf("User cancel gossip-pull")
 	case ud := <-p.update:
-		err = p.OnRecvUpdate(ud)
-		if err != nil {
-			return fmt.Errorf("Update is rejected: %s", err)
-		}
-		g.RecvUpdate(ud)
+		p.target.global.RecvUpdate(ud)
 	}
 
 	//everything done
-	return nil
+	return
 }

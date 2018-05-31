@@ -188,6 +188,7 @@ message Gossip {
     uint64 seq = 1;
     string catalog = 2;
     bytes  payload = 3;
+    bool   isPull = 4;
     Digest dig = 5;
 }
 

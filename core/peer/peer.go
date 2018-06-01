@@ -41,6 +41,7 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt/state"
+	"github.com/abchain/fabric/core/peer/acl"
 	syncstub "github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
@@ -67,6 +68,7 @@ type Neighbour interface {
 	GetPeers() (*pb.PeersMessage, error)
 	GetRemoteLedger(receiver *pb.PeerID) (RemoteLedger, error)
 	GetDiscoverer() (Discoverer, error)
+	GetACL() (acl.AccessControl, error)
 }
 
 // BlocksRetriever interface for retrieving blocks .
@@ -179,6 +181,7 @@ type Impl struct {
 	reconnectOnce sync.Once
 	discHelper    discovery.Discovery
 	discPersist   bool
+	aclHelper     acl.AccessControl
 }
 
 type LegacyMessageHandler interface {
@@ -433,6 +436,10 @@ func (p *Impl) GetStreamStub(name string) *pb.StreamStub {
 
 func (p *Impl) GetDiscoverer() (Discoverer, error) {
 	return p, nil
+}
+
+func (p *Impl) GetACL() (acl.AccessControl, error) {
+	return p.aclHelper, nil
 }
 
 func (p *Impl) GetNeighbour() (Neighbour, error) {

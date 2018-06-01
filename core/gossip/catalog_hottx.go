@@ -1,10 +1,16 @@
 package gossip
 
+import (
+	"github.com/abchain/fabric/core/ledger"
+)
+
 // TxQuota struct
-type TxQuota struct {
-	maxDigestRobust int
-	maxDigestPeers  int
-	maxMessageSize  int64 // bytes
-	historyExpired  int64 // seconds
-	updateExpired   int64 // seconds
+type HotTxCat struct {
+	ledger *ledger.Ledger
+	//	txMarkupStates map[string]*TxMarkupState
+
+	// security state
+	totalTxCount   int64
+	invalidTxCount int64
+	invalidTxTime  int64
 }

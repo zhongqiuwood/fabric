@@ -1,13 +1,9 @@
 package gossip
 
 import (
-	"fmt"
-	"math/rand"
-	"time"
-
 	"github.com/abchain/fabric/core/gossip/stub"
-	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
+	peerACL "github.com/abchain/fabric/core/peer/acl"
 	pb "github.com/abchain/fabric/protos"
 	logging "github.com/op/go-logging"
 )
@@ -40,24 +36,13 @@ var logger = logging.MustGetLogger("gossip")
 type GossipStub struct {
 	*pb.StreamStub
 	peer.Discoverer
-	ledger          *ledger.Ledger
+	peerACL.AccessControl
 	catalogHandlers map[string]*catalogHandler
-	peerActions     map[string]*PeerAction
-	blackPeerIDs    map[string]int64
-	txMarkupStates  map[string]*TxMarkupState
-	txQuota         TxQuota
 }
 
 func init() {
 	stub.DefaultFactory = func(id *pb.PeerID) stub.GossipHandler {
 		logger.Debug("create handler for peer", id)
-
-		// check black list
-		btime, ok := gossipStub.blackPeerIDs[id.String()]
-		if ok {
-			logger.Infof("Block peer(%s) connection by black list from time(%d)", id, btime)
-			return nil
-		}
 
 		action := &PeerAction{
 			id:               id,
@@ -129,78 +114,25 @@ var gossipStub *GossipStub
 // NewGossip : init the singleton of gossipstub
 func NewGossip(p peer.Peer) {
 
+	gossipStub = &GossipStub{
+		StreamStub: p.GetStreamStub("gossip"),
+	}
+
 	nb, err := p.GetNeighbour()
+
+	if err != nil {
+		logger.Errorf("No neighbour for this peer (%s), gossip run without access control", err)
+	} else {
+		gossipStub.Discoverer, _ = nb.GetDiscoverer()
+		gossipStub.AccessControl, _ = nb.GetACL()
+	}
+
 	logger.Debug("Gossip module inited")
 
-	if err != nil {
-
-		logger.Errorf("No neighbour for this peer (%s), gossip run without access control", err)
-		gossipStub = &GossipStub{
-			StreamStub: p.GetStreamStub("gossip"),
-			model:      model,
-		}
-
-	} else {
-
-		dis, err := nb.GetDiscoverer()
-		if err != nil {
-			logger.Errorf("No discovery for this peer (%s), gossip run without access control", err)
-		}
-
-		gossipStub = &GossipStub{
-			StreamStub: p.GetStreamStub("gossip"),
-			Discoverer: dis,
-			model:      model,
-		}
-	}
-
-	peerID := ""
-	mypeer, err := p.GetPeerEndpoint()
-	if err != nil {
-		peerID = mypeer.ID.String()
-	}
-
-	lg, err := ledger.GetLedger()
-	if err != nil {
-		logger.Errorf("Get ledger error: %s", err)
-		return
-	}
-	state, err := lg.GetCurrentStateHash()
-	if err != nil {
-		logger.Errorf("Get current state hash error: %s", err)
-		return
-	}
-	chain, err := lg.GetBlockchainInfo()
-	if err != nil {
-		logger.Errorf("Get block chain info error: %s", err)
-		return
-	}
-	block, err := lg.GetBlockByNumber(chain.Height - 1)
-	if err != nil {
-		logger.Errorf("Get block info info error: %s", err)
-		return
-	}
-
-	number := len(block.Txids)
-	logger.Infof("Peer(%s), current state hash(%x/%x), block height(%d), number(%d)",
-		peerID, state, chain.CurrentBlockHash, chain.Height, number)
-
-	gossipStub.ledger = lg
-	gossipStub.peerActions = map[string]*PeerAction{}
-	gossipStub.blackPeerIDs = map[string]int64{}
-	gossipStub.txMarkupStates = map[string]*TxMarkupState{}
-	gossipStub.model.init(peerID, state, uint64(number))
-
-	// default quota
-	gossipStub.txQuota.maxDigestRobust = 100
-	gossipStub.txQuota.maxDigestPeers = 100
-	gossipStub.txQuota.maxMessageSize = 100 * 1024 * 1024 // 100MB
-	gossipStub.txQuota.historyExpired = 600               // 10 minutes
-	gossipStub.txQuota.updateExpired = 30                 // 30 seconds
 }
 
 // GetGossip - gives a reference to a 'singleton' GossipStub
-func GetGossip() Gossip {
+func GetGossip() *GossipStub {
 
 	return gossipStub
 }

@@ -17,6 +17,16 @@ type peerPolicy struct {
 	invalidTxCount int64
 	invalidTxTime  int64
 
+	maxMessageSize int64 // bytes
+
 	// histories
 	messageHistories []*PeerHistoryMessage
+}
+
+func newPeerPolicy() (ret *peerPolicy) {
+
+	ret = &peerPolicy{}
+
+	ret.maxMessageSize = 100 * 1024 * 1024 // 100MB
+	return
 }

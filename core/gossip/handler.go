@@ -7,25 +7,28 @@ import (
 	"golang.org/x/net/context"
 )
 
+type catalogCore struct {
+	*catalogHandler
+	inner *model.NeighbourPeer
+}
+
 type handlerImpl struct {
-	peer      *pb.PeerID
-	catalogHs map[string]*catalogHandler
-	inners    map[*catalogHandler]*model.NeighbourPeer
-	sstub     *pb.StreamStub
+	peer  *pb.PeerID
+	cores map[string]catalogCore
+	sstub *pb.StreamStub
 }
 
 func newHandler(peer *pb.PeerID, stub *pb.StreamStub, handlers map[string]*catalogHandler) *handlerImpl {
 
-	inners := make(map[*catalogHandler]*model.NeighbourPeer)
-	for _, h := range handlers {
-		inners[h] = h.newNeighbourPeer(peer.Name)
+	cores := make(map[string]catalogCore)
+	for id, h := range handlers {
+		inners[id] = catalogCore{h, h.newNeighbourPeer(peer.Name)}
 	}
 
 	return &handlerImpl{
-		peer:      peer,
-		catalogHs: handlers,
-		sstub:     stub,
-		inners:    inners,
+		peer:  peer,
+		cores: cores,
+		sstub: stub,
 	}
 }
 
@@ -33,13 +36,13 @@ func (g *handlerImpl) Stop() {}
 
 func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 
-	global := g.catalogHs[msg.GetCatalog()]
-	if global == nil {
+	global, ok := g.cores[msg.GetCatalog()]
+	if !ok {
 		logger.Errorf("Recv gossip message with catelog not recognized: ", msg.GetCatalog())
 		return nil
 	}
 
-	inner := g.inners[global]
+	inner := global.inner
 	if inner == nil {
 		panic("corresponding inner object is not generated")
 	}

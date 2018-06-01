@@ -4,6 +4,7 @@ import (
 	model "github.com/abchain/fabric/core/gossip/model"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
+	"sync"
 )
 
 //act like model.NeighbourHelper but it was "catalogy-wide" (i.e. for all neighbours)

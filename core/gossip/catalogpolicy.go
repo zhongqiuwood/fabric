@@ -1,5 +1,9 @@
 package gossip
 
+type CatalogPolicies interface {
+	PullTimeout() int //in seconds
+}
+
 type catalogPolicy struct {
 	maxDigestRobust int
 	maxDigestPeers  int

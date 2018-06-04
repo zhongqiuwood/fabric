@@ -79,10 +79,17 @@ func newStreamHandler(impl StreamHandlerImpl) *StreamHandler {
 }
 
 func (h *StreamHandler) GetName() string {
+	if h == nil {
+		return ""
+	}
 	return h.name
 }
 
 func (h *StreamHandler) SendMessage(m proto.Message) error {
+
+	if h == nil {
+		return fmt.Errorf("Stream is not exist")
+	}
 
 	h.RLock()
 	defer h.RUnlock()
@@ -292,6 +299,16 @@ func (s *StreamStub) TryOverHandlers(peerids []*PeerID,
 			logger.Warningf("tryOverHandlers: loop error from %v : %s", p.Id, err)
 		}
 	}
+}
+
+func (s *StreamStub) PickHandler(peerid *PeerID) *StreamHandler {
+
+	strms := s.PickHandlers([]*PeerID{peerid})
+	if len(strms) < 1 {
+		return nil
+	}
+
+	return strms[0]
 }
 
 func (s *StreamStub) PickHandlers(peerids []*PeerID) []*StreamHandler {

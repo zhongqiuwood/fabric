@@ -11,36 +11,30 @@ type PullerHelper interface {
 	EncodeDigest(map[string]Digest) proto.Message
 }
 
-type puller struct {
+type Puller struct {
 	PullerHelper
-	target *NeighbourPeer
+	model  *Model
 	update chan Update
 }
 
 func NewPullTask(helper PullerHelper, stream *pb.StreamHandler,
-	nP *NeighbourPeer) (*puller, error) {
+	model *Model) (*Puller, error) {
 
-	if nP.workPuller != nil {
-		return nil, fmt.Errorf("Have working puller")
-	}
-
-	dg := nP.global.GenPullDigest()
+	dg := model.GenPullDigest()
 	err := stream.SendMessage(helper.EncodeDigest(dg))
 	if err != nil {
 		return nil, fmt.Errorf("Send digest message fail: %s", err)
 	}
 
-	puller := &puller{
-		target: nP,
+	puller := &Puller{
+		model:  model,
 		update: make(chan Update),
 	}
-
-	nP.workPuller = puller
 
 	return puller, nil
 }
 
-func (p *puller) NotifyUpdate(ud Update) {
+func (p *Puller) NotifyUpdate(ud Update) {
 	if p == nil {
 		return
 	}
@@ -48,12 +42,12 @@ func (p *puller) NotifyUpdate(ud Update) {
 	p.update <- ud
 }
 
-func (p *puller) Process(ctx context.Context) {
+func (p *Puller) Process(ctx context.Context) {
 
 	select {
 	case <-ctx.Done():
 	case ud := <-p.update:
-		p.target.global.RecvUpdate(ud)
+		p.model.RecvUpdate(ud)
 	}
 
 	//everything done

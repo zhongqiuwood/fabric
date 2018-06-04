@@ -12,11 +12,6 @@ type peerPolicy struct {
 	updateSendTime     int64
 	updateReceiveTime  int64
 
-	// security state
-	totalTxCount   int64
-	invalidTxCount int64
-	invalidTxTime  int64
-
 	maxMessageSize int64 // bytes
 
 	// histories

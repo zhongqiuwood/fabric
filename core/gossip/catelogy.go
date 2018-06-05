@@ -14,9 +14,9 @@ import (
 type CatalogHelper interface {
 	Name() string
 	GetPolicies() CatalogPolicies //caller do not need to check the interface
-	SelfStatus() model.Status
-	AssignStatus() model.Status
-	AssignNeighbourHelper(string) model.NeighbourHelper
+	SelfStatus() TrustableStatus
+	AssignStatus() TrustableStatus
+	AssignUpdate() model.Update
 
 	EncodeUpdate(model.Update) ([]byte, error)
 	DecodeUpdate([]byte) (model.Update, error)
@@ -35,9 +35,6 @@ type catalogPeerUpdate struct {
 	model.Update
 }
 
-type catalogVerifyDigest struct {
-}
-
 //overload Add
 func (u *catalogPeerUpdate) Add(id string, s_in model.Status) model.Update {
 
@@ -53,26 +50,35 @@ func (u *catalogPeerUpdate) Add(id string, s_in model.Status) model.Update {
 
 type pullWorks struct {
 	sync.Mutex
-	m map[*pb.StreamHandler]*model.Puller
+	m map[string]*model.Puller
+}
+
+type scheduleWorks struct {
+	lastSchedule context.CancelFunc
+	pushCnt      int
+	sync.Mutex
 }
 
 type catalogHandler struct {
 	CatalogHelper
 	GossipCrypto
-	model trustableModel
-	pulls pullWorks
+	model    trustableModel
+	pulls    pullWorks
+	schedule scheduleWorks
+	sstub    *pb.StreamStub
 }
 
-func newCatalogHandler(self string, crypto GossipCrypto, helper CatalogHelper) (ret *catalogHandler) {
+func newCatalogHandler(self string, stub *pb.StreamStub,
+	crypto GossipCrypto, helper CatalogHelper) (ret *catalogHandler) {
 
 	ret = &catalogHandler{
 		GossipCrypto:  crypto,
 		CatalogHelper: helper,
-		model:         trustableModel{VerifiedDigest: make(map[string]trustableDigest)},
-		pulls:         pullWorks{m: make(map[*pb.StreamHandler]*model.Puller)},
+		sstub:         stub,
+		pulls:         pullWorks{m: make(map[string]*model.Puller)},
 	}
 
-	ret.model.Model = model.NewGossipModel(ret,
+	ret.model = newTrustableModel(ret,
 		&model.Peer{
 			Id:     self,
 			Status: helper.SelfStatus(),
@@ -81,29 +87,25 @@ func newCatalogHandler(self string, crypto GossipCrypto, helper CatalogHelper) (
 	return
 }
 
-func (h *catalogHandler) checkPuller(strm *pb.StreamHandler) *model.Puller {
-	h.pulls.Lock()
-	defer h.pulls.Unlock()
-	return h.pulls.m[strm]
-}
+func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip) {
 
-func (h *catalogHandler) HandleDigest(strm *pb.StreamHandler, msg *pb.Gossip) {
+	strm := h.sstub.PickHandler(peer)
+	if strm != nil {
+		logger.Errorf("No stream found for %s", peer.Name)
+		return
+	}
 
 	//digest need to be transformed
 	dgtmp := make(map[string]model.Digest)
 	for k, d := range msg.Dig.Data {
 		dgtmp[k] = d
 	}
-	reply := h.model.RecvPullDigest(dgtmp)
-
 	//A trustable update must be enclosed with a signed digest
-	ud, ok := ud_in.(*catalogPeerUpdate)
+	ud, ok := h.model.RecvPullDigest(dgtmp,
+		&catalogPeerUpdate{Update: h.AssignUpdate()}).(*catalogPeerUpdate)
 	if !ok {
 		panic("wrong type, not catalogPeerUpdate")
 	}
-
-	//try to stimulate a pull process first
-	go global.runPullTask(context.Background(), strm)
 
 	ret := &pb.Gossip{
 		Seq:     getGlobalSeq(),
@@ -111,8 +113,11 @@ func (h *catalogHandler) HandleDigest(strm *pb.StreamHandler, msg *pb.Gossip) {
 		Dig:     &pb.Gossip_Digest{make(map[string]*pb.Gossip_Digest_PeerState)},
 	}
 
+	vDigests := h.model.GetVerifiedDigest()
+
+	//copy the verified digest into message
 	for _, id := range ud.invoked {
-		ret.Dig.Data[id] = h.digestCache[id]
+		ret.Dig.Data[id] = vDigests[id].(*pb.Gossip_Digest_PeerState)
 	}
 
 	payloadByte, err := h.EncodeUpdate(ud.Update)
@@ -122,20 +127,28 @@ func (h *catalogHandler) HandleDigest(strm *pb.StreamHandler, msg *pb.Gossip) {
 		logger.Error("Encode update failure:", err)
 	}
 
-	return ret
-
-	//send reply update message
+	//send reply update message, send it even on encode failure!
 	//NOTICE: if stream is NOT enable to drop message, send in HandMessage
 	//may cause a deadlock, but in gossip package this is OK
-	strm.SendMessage(h.buildUpdate(reply))
+	strm.SendMessage(ret)
+
+	h.schedule.Lock()
+	h.schedule.pushCnt++
+	if h.schedule.pushCnt >= h.GetPolicies().PushCount() {
+		//current push has reach expected count so we can end the schedule Task
+	}
+	h.schedule.Unlock()
+
+	//finally we try to stimulate a pull process first
+	go h.runPassivePullTask(peer, strm)
 }
 
-func (h *catalogHandler) HandleUpdate(strm *pb.StreamHandler, msg *pb.Gossip) {
+func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip) {
 
-	puller := checkPuller(strm)
+	puller := h.checkPuller(peer)
 	if puller == nil {
 		//something wrong! if no corresponding puller, we never handle this message
-		logger.Errorf("No puller in catalog %s avaiable for stream %s", msg.Catalog, strm.GetName())
+		logger.Errorf("No puller in catalog %s avaiable for peer %s", msg.Catalog, peer.Name)
 		return
 	}
 
@@ -145,16 +158,28 @@ func (h *catalogHandler) HandleUpdate(strm *pb.StreamHandler, msg *pb.Gossip) {
 		return
 	}
 
+	//test verified digest
+	newDigest := make(map[string]model.Digest)
+	curDigest := h.model.GetVerifiedDigest()
 	for id, dig := range msg.Dig.Data {
 		//verify digest
 		//global.Verify()
-		oldDig := global.digestCache[id]
-		global.digestCache[id] = global.MergeProtoDigest(oldDig, dig)
+		oldDig, ok := curDigest[id].(*pb.Gossip_Digest_PeerState)
+		if ok {
+			dig = h.MergeProtoDigest(oldDig, dig)
+		}
+
+		if oldDig != dig {
+			//TODO digest is new, check if it was verified!
+			newDigest[id] = dig
+		}
 	}
 
 	//handling pushing request, for the trustable process, update verified
 	//part first
-	h.model.UpdateVerifiedDigest()
+	h.model.UpdateProofDigest(newDigest)
+
+	//the final update is executed in another thread
 	puller.NotifyUpdate(ud)
 
 }
@@ -192,35 +217,60 @@ func (h *catalogHandler) EncodeDigest(m map[string]model.Digest) proto.Message {
 
 func (h *catalogHandler) schedulePush() {
 
+	h.schedule.Lock()
+	defer h.schedule.Unlock()
+
+	if h.schedule.lastSchedule != nil {
+		//cancel last schedule and use a new one
+		h.schedule.lastSchedule()
+	}
+
+	wctx, cancelF := context.WithCancel(context.Background())
+	h.schedule.lastSchedule = cancelF
+	h.schedule.Unlock()
+	requireCnt := h.GetPolicies().PushCount()
+
+	for strm := range h.sstub.OverAllHandlers(wctx) {
+		runPullTask(strm.Id, strm.StreamHandler)
+	}
+}
+
+func (h *catalogHandler) checkPuller(peer *pb.PeerID) *model.Puller {
+
+	h.pulls.Lock()
+	defer h.pulls.Unlock()
+	return h.pulls.m[peer.Name]
+}
+
+func (h *catalogHandler) runPassivePullTask(peer *pb.PeerID, stream *pb.StreamHandler) {
+	err := h.runPullTask(peer, stream)
+
+	if err != nil {
+		h.schedulePush()
+	}
 }
 
 //a blocking function
-func (h *catalogHandler) runPullTask(ctx context.Context, stream *pb.StreamHandler) error {
+func (h *catalogHandler) runPullTask(peer *pb.PeerID, stream *pb.StreamHandler) error {
 
 	h.pulls.Lock()
 	defer h.pulls.Unlock()
 
-	if _, ok := h.pulls.m[stream]; ok {
+	if _, ok := h.pulls.m[peer.Name]; ok {
 		return fmt.Errorf("Puller task exist")
 	}
 
-	puller, err := model.NewPullTask(h, stream, h.model)
-	if err != nil {
-		return fmt.Errorf("Create puller fail:", err)
-	}
-
-	h.pulls.m[stream] = puller
+	puller := model.NewPullTask(h, h.model.Model)
+	h.pulls.m[peer.Name] = puller
 	h.pulls.Unlock()
 
-	pctx, _ := context.WithTimeout(ctx, h.GetPolicies().PullTimeout()*time.Second)
-	puller.Process(pctx)
+	pctx, _ := context.WithTimeout(context.Background(),
+		time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+	puller.Process(pctx, stream)
 
 	//end
 	h.pulls.Lock()
-	delete(h.pulls.m, stream)
+	delete(h.pulls.m, peer.Name)
 
-}
-
-func (h *catalogHandler) buildUpdate(ud_in model.Update) proto.Message {
-
+	return nil
 }

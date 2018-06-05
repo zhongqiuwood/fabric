@@ -44,14 +44,14 @@ func init() {
 	stub.DefaultFactory = func(id *pb.PeerID) stub.GossipHandler {
 		logger.Debug("create handler for peer", id)
 
-		action := &PeerAction{
-			id:               id,
-			messageHistories: []*PeerHistoryMessage{},
-		}
-		gossipStub.peerActions[id.String()] = action
-		// send initial digests to target
-		gossipStub.sendTxDigests(action, 1)
-		return newHandler(id, gossipStub.StreamStub, gossipStub.catalogHandlers)
+		// action := &PeerAction{
+		// 	id:               id,
+		// 	messageHistories: []*PeerHistoryMessage{},
+		// }
+		// gossipStub.peerActions[id.String()] = action
+		// // send initial digests to target
+		// gossipStub.sendTxDigests(action, 1)
+		return newHandler(id, gossipStub.catalogHandlers)
 	}
 }
 

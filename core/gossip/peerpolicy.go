@@ -2,7 +2,7 @@ package gossip
 
 // A each-peer (all catalogy wide) policy
 type peerPolicy struct {
-	id *pb.PeerID
+	//id *pb.PeerID
 
 	// message state
 	activeTime         int64
@@ -15,7 +15,7 @@ type peerPolicy struct {
 	maxMessageSize int64 // bytes
 
 	// histories
-	messageHistories []*PeerHistoryMessage
+	//messageHistories []*PeerHistoryMessage
 }
 
 func newPeerPolicy() (ret *peerPolicy) {

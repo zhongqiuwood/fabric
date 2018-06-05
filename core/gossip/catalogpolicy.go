@@ -1,19 +1,25 @@
 package gossip
 
 type CatalogPolicies interface {
+	PushCount() int   //how many push expected to do in one schedule gossip work
 	PullTimeout() int //in seconds
 }
 
-type catalogPolicy struct {
+type catalogPolicyImpl struct {
 	maxDigestRobust int
 	maxDigestPeers  int
 	historyExpired  int64 // seconds
 	updateExpired   int64 // seconds
+	pullTimeout     int
+	pushCount       int
 }
 
-func newCatalogPolicy() (ret *catalogPolicy) {
+func NewCatalogPolicyDefault() (ret *catalogPolicyImpl) {
 
-	ret = &catalogPolicy{}
+	ret = &catalogPolicyImpl{
+		pullTimeout: def_PullTimeout,
+		pushCount:   def_PushCount,
+	}
 
 	ret.maxDigestRobust = 100
 	ret.maxDigestPeers = 100
@@ -22,4 +28,25 @@ func newCatalogPolicy() (ret *catalogPolicy) {
 	ret.updateExpired = 30   // 30 seconds
 
 	return
+}
+
+const (
+	def_PullTimeout = 30
+	def_PushCount   = 3
+)
+
+func (p *catalogPolicyImpl) PullTimeout() int {
+	if p == nil {
+		return def_PullTimeout
+	}
+
+	return p.pullTimeout
+}
+
+func (p *catalogPolicyImpl) PushCount() int {
+	if p == nil {
+		return def_PushCount
+	}
+
+	return p.pushCount
 }

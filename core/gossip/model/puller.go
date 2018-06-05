@@ -1,7 +1,6 @@
 package gossip_model
 
 import (
-	"fmt"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
@@ -17,21 +16,13 @@ type Puller struct {
 	update chan Update
 }
 
-func NewPullTask(helper PullerHelper, stream *pb.StreamHandler,
-	model *Model) (*Puller, error) {
+func NewPullTask(helper PullerHelper, model *Model) *Puller {
 
-	dg := model.GenPullDigest()
-	err := stream.SendMessage(helper.EncodeDigest(dg))
-	if err != nil {
-		return nil, fmt.Errorf("Send digest message fail: %s", err)
+	return &Puller{
+		PullerHelper: helper,
+		model:        model,
+		update:       make(chan Update),
 	}
-
-	puller := &Puller{
-		model:  model,
-		update: make(chan Update),
-	}
-
-	return puller, nil
 }
 
 func (p *Puller) NotifyUpdate(ud Update) {
@@ -42,7 +33,10 @@ func (p *Puller) NotifyUpdate(ud Update) {
 	p.update <- ud
 }
 
-func (p *Puller) Process(ctx context.Context) {
+func (p *Puller) Process(ctx context.Context, stream *pb.StreamHandler) {
+
+	dg := p.model.GenPullDigest()
+	stream.SendMessage(p.EncodeDigest(dg))
 
 	select {
 	case <-ctx.Done():

@@ -9,43 +9,52 @@ import (
 //a "trustable" model provide a verified digest for each status,
 //so each status can only be updated under the constraint of the
 //provide digest
-type trustableStatus interface {
+type TrustableStatus interface {
 	model.Status
 	UpdateProof(model.Digest) error
 }
 
-type trustableDigest interface {
-	model.Digest
-	Merge(trustableDigest) trustableDigest
-}
-
 type trustableModel struct {
 	*model.Model
-	VerifiedDigest map[string]trustableDigest
+	verifiedDigest map[string]model.Digest
 }
 
-func (m *trustableModel) UpdateVerifiedDigest(digests map[string]trustableDigest) {
+func newTrustableModel(h model.ModelHelper, self *model.Peer) (m trustableModel) {
 
-	model.Model.Lock()
-	defer model.Model.Unlock()
+	m.verifiedDigest = make(map[string]model.Digest)
+	m.Model = model.NewGossipModel(h, self)
+	return
+}
+
+func (m *trustableModel) GetVerifiedDigest() map[string]model.Digest {
+	if m == nil {
+		return nil
+	}
+	return m.verifiedDigest
+}
+
+//under normal handling sequence, UpdateProofDigest is called after any
+//RecvPullDigest (so a status will be inited here), and before RecvUpdate
+//(the inited status receive a proof)
+func (m *trustableModel) UpdateProofDigest(digests map[string]model.Digest) {
+
+	if m == nil {
+		return
+	}
+
+	m.Model.Lock()
+	defer m.Model.Unlock()
 
 	for id, d := range digests {
-		target, ok := m.VerifiedDigest[id]
-		if !ok {
-			target = d
-		} else {
-			target = target.Merge(d)
-		}
-
-		m.VerifiedDigest[id] = target
+		m.verifiedDigest[id] = d
 		s, ok := m.Peers[id]
 		if ok {
-			ts, ok := s.(trustableStatus)
+			ts, ok := s.Status.(TrustableStatus)
 			if !ok {
-				panice("Type error, can not convert to trustableStatus")
+				panic("Type error, can not convert to trustableStatus")
 			}
 
-			ts.UpdateProof(target)
+			ts.UpdateProof(d)
 		}
 	}
 }

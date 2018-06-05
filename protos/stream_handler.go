@@ -249,7 +249,7 @@ func (s *StreamStub) deliverHandlers(ctx context.Context, peerids []*PeerID, out
 			select {
 			case out <- &PickedStreamHandler{id, nil, h}:
 			case <-ctx.Done():
-				return
+				break
 			}
 		}
 

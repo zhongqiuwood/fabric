@@ -24,14 +24,6 @@ var logger = logging.MustGetLogger("gossip")
 // 	updated bool
 // }
 
-// // TxMarkupState struct
-// type TxMarkupState struct {
-// 	peerID  string
-// 	txid    string
-// 	catalog string
-// 	time    int64
-// }
-
 //GossipStub struct
 type GossipStub struct {
 	*pb.StreamStub

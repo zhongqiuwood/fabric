@@ -33,7 +33,10 @@ type Model struct {
 	sync.RWMutex
 	ModelHelper
 	Peers map[string]*Peer
+	self  string
 }
+
+func (m *Model) GetSelf() string { return m.self }
 
 //And we need some helper for model
 type ModelHelper interface {
@@ -102,5 +105,6 @@ func NewGossipModel(h ModelHelper, self *Peer) *Model {
 	return &Model{
 		ModelHelper: h,
 		Peers:       map[string]*Peer{self.Id: self},
+		self:        self.Id,
 	}
 }

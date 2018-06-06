@@ -11,17 +11,19 @@ type PullerHelper interface {
 }
 
 type Puller struct {
-	PullerHelper
 	model  *Model
 	update chan Update
 }
 
-func NewPullTask(helper PullerHelper, model *Model) *Puller {
+func NewPullTask(helper PullerHelper, model *Model,
+	stream *pb.StreamHandler) *Puller {
+
+	dg := model.GenPullDigest()
+	stream.SendMessage(helper.EncodeDigest(dg))
 
 	return &Puller{
-		PullerHelper: helper,
-		model:        model,
-		update:       make(chan Update),
+		model:  model,
+		update: make(chan Update),
 	}
 }
 
@@ -33,17 +35,15 @@ func (p *Puller) NotifyUpdate(ud Update) {
 	p.update <- ud
 }
 
-func (p *Puller) Process(ctx context.Context, stream *pb.StreamHandler) {
-
-	dg := p.model.GenPullDigest()
-	stream.SendMessage(p.EncodeDigest(dg))
+func (p *Puller) Process(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
+		return ctx.Err()
 	case ud := <-p.update:
 		p.model.RecvUpdate(ud)
 	}
 
 	//everything done
-	return
+	return nil
 }

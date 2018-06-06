@@ -7,27 +7,27 @@ import (
 // CryptoInterface interface
 type GossipCrypto interface {
 	ValidateTx(tx *pb.Transaction) bool
-	Verify(refererID string, peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool
-	Sign(catelog string, message *pb.Gossip_Digest_PeerState) error
+	Verify(peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool
+	Sign(catalog string, message *pb.Gossip_Digest_PeerState) (*pb.Gossip_Digest_PeerState, error)
 }
 
 // CryptoImpl struct
-type CryptoImpl struct {
+type cryptoImpl struct {
 	GossipCrypto
 }
 
 // ValidateTx function
-func (c *CryptoImpl) ValidateTx(tx *pb.Transaction) bool {
+func (c *cryptoImpl) ValidateTx(tx *pb.Transaction) bool {
 	return true
 }
 
 // Verify function
-func (c *CryptoImpl) Verify(refererID string, peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool {
+func (c *cryptoImpl) Verify(peerID string, catalog string, message *pb.Gossip_Digest_PeerState) bool {
 	return true
 }
 
 // Sign function
-func (c *CryptoImpl) Sign(catelog string, message *pb.Gossip_Digest_PeerState) error {
+func (c *cryptoImpl) Sign(catalog string, message *pb.Gossip_Digest_PeerState) (*pb.Gossip_Digest_PeerState, error) {
 	message.Signature = []byte("YES")
-	return nil
+	return message, nil
 }

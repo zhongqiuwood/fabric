@@ -10,26 +10,37 @@ type tokenBucket struct {
 	Interval int64 //in unix() time unit (second)
 }
 
-func (t *tokenBucket) update() {
+//when an effect is occur before this interval, we simply "forgot" it
+//this is useful for avoiding some integer overflowing case
+const forgotInterval = 3600
+
+func (t *tokenBucket) update(limit int) {
 
 	now := time.Now().Unix()
 	passed := now - t.lastT
-	if passed > t.Interval {
+	if passed > forgotInterval {
 		t.quota = 0
 	} else {
-		t.quota = int(int64(t.quota) * passed / t.Interval)
+		maxquota := int64(limit) * passed / t.Interval
+		if maxquota > int64(t.quota) {
+			t.quota = 0
+		} else {
+			t.quota = t.quota - int(maxquota)
+		}
 	}
+
 	t.lastT = now
 }
 
 //add some value and return if the incoming is exceed
 func (t *tokenBucket) testIn(in int, limit int) bool {
 
-	t.update()
+	t.update(limit)
 	t.quota = t.quota + in
 	return t.quota > limit
 }
 
+//can be minus
 func (t *tokenBucket) avaiable(limit int) int {
 
 	//skip update, save some expense
@@ -37,36 +48,70 @@ func (t *tokenBucket) avaiable(limit int) int {
 		return limit
 	}
 
-	t.update()
+	t.update(limit)
 	return limit - t.quota
 }
 
 type catalogPPOImpl struct {
+	errorLimit      int
 	messageLimit    int
 	recvQuota       tokenBucket
 	recvUpdateBytes int64
 	sentQuota       tokenBucket
 	sentUpdateBytes int64
+	errorControl    tokenBucket
+	sysError        bool
+	totalError      uint
 }
 
-func (p *catalogPPOImpl) AllowPushUpdate() bool {
+func (p *catalogPPOImpl) IsPolicyViolated() bool {
+	return p.sysError
+}
+
+func (p *catalogPPOImpl) RecordViolation() {
+	p.totalError = p.totalError + 1
+	p.sysError = p.errorControl.testIn(1, p.errorLimit)
+}
+
+func (p *catalogPPOImpl) AllowRecvUpdate() bool {
 	return p.recvQuota.avaiable(p.messageLimit) > 0
 }
 
 func (p *catalogPPOImpl) RecvUpdate(b int) {
 	p.recvUpdateBytes = int64(b) + p.recvUpdateBytes
+	if !p.recvQuota.testIn(b, p.messageLimit) {
+		p.RecordViolation()
+	}
+}
+
+func (p *catalogPPOImpl) PushUpdateQuota() int {
+	return p.sentQuota.avaiable(p.messageLimit)
 }
 
 func (p *catalogPPOImpl) PushUpdate(b int) {
-	//currently we infact not use pushUpdate (just obey the pull req and
-	//this should be safe)
 	p.sentUpdateBytes = int64(b) + p.sentUpdateBytes
+	p.sentQuota.testIn(b, p.messageLimit)
 }
 
 func (p *catalogPPOImpl) Stop() {}
 
-func NewCatalogPeerPolicyDefault() (ret *catalogPPOImpl) {
+var DefaultInterval = int64(60)
+var DefaultErrorLimit = 3                                    //peer is allowed to violate policy 3 times/min
+var DefaultMsgSize = 1024 * 1024 * 16 * int(DefaultInterval) //msg limit is 16kB/s
+
+func NewCatalogPeerPolicy() (ret *catalogPPOImpl) {
 	ret = &catalogPPOImpl{}
+	return
+}
+
+func NewCatalogPeerPolicyDefault() (ret *catalogPPOImpl) {
+	ret = NewCatalogPeerPolicy()
+
+	ret.errorLimit = DefaultErrorLimit
+	ret.messageLimit = DefaultMsgSize
+	ret.recvQuota.Interval = DefaultInterval
+	ret.sentQuota.Interval = DefaultInterval
+	ret.errorControl.Interval = DefaultInterval
 	return
 }
 

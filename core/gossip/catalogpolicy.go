@@ -1,31 +1,27 @@
 package gossip
 
 type CatalogPolicies interface {
-	PushCount() int   //how many push expected to do in one schedule gossip work
-	PullTimeout() int //in seconds
+	PushCount() int      //how many push expected to do in one schedule gossip work
+	MaxTrackPeers() int  //how many peers the catalog should track
+	MaxPackedPeers() int //how many digest can a gossip msg include
+	PullTimeout() int    //in seconds
 }
 
 type catalogPolicyImpl struct {
-	maxDigestRobust int
-	maxDigestPeers  int
-	historyExpired  int64 // seconds
-	updateExpired   int64 // seconds
-	pullTimeout     int
-	pushCount       int
+	maxPackedPeers int
+	maxTrackPeers  int
+	pullTimeout    int
+	pushCount      int
 }
 
 func NewCatalogPolicyDefault() (ret *catalogPolicyImpl) {
 
 	ret = &catalogPolicyImpl{
-		pullTimeout: def_PullTimeout,
-		pushCount:   def_PushCount,
+		pullTimeout:    def_PullTimeout,
+		pushCount:      def_PushCount,
+		maxPackedPeers: def_PackedPeers,
+		maxTrackPeers:  def_TrackPeers,
 	}
-
-	ret.maxDigestRobust = 100
-	ret.maxDigestPeers = 100
-
-	ret.historyExpired = 600 // 10 minutes
-	ret.updateExpired = 30   // 30 seconds
 
 	return
 }
@@ -33,6 +29,8 @@ func NewCatalogPolicyDefault() (ret *catalogPolicyImpl) {
 const (
 	def_PullTimeout = 30
 	def_PushCount   = 3
+	def_TrackPeers  = 128
+	def_PackedPeers = 64
 )
 
 func (p *catalogPolicyImpl) PullTimeout() int {
@@ -49,4 +47,21 @@ func (p *catalogPolicyImpl) PushCount() int {
 	}
 
 	return p.pushCount
+}
+
+func (p *catalogPolicyImpl) MaxTrackPeers() int {
+	if p == nil {
+		return def_TrackPeers
+	}
+
+	return p.maxTrackPeers
+
+}
+
+func (p *catalogPolicyImpl) MaxPackedPeers() int {
+	if p == nil {
+		return def_PackedPeers
+	}
+
+	return p.maxPackedPeers
 }

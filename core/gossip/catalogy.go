@@ -20,9 +20,12 @@ type CatalogHandler interface {
 }
 
 type CatalogPeerPolicies interface {
-	AllowPushUpdate() bool
+	IsPolicyViolated() bool
+	AllowRecvUpdate() bool
 	RecvUpdate(int)
+	PushUpdateQuota() int
 	PushUpdate(int)
+	RecordViolation()
 	Stop()
 }
 
@@ -32,8 +35,8 @@ type CatalogHelper interface {
 
 	SelfStatus() TrustableStatus
 	AssignStatus() TrustableStatus
-	AssignUpdate() model.Update
 	AssignPeerPolicy() CatalogPeerPolicies
+	AssignUpdate(CatalogPeerPolicies) model.Update
 
 	EncodeUpdate(model.Update) ([]byte, error)
 	DecodeUpdate([]byte) (model.Update, error)
@@ -107,7 +110,7 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip, cpo Catal
 	}
 
 	var isPassivePull bool
-	if cpo.AllowPushUpdate() {
+	if cpo.AllowRecvUpdate() {
 		//we try to stimulate a pull process first
 		puller, err := h.newPuller(peer, strm)
 		if err != nil {
@@ -123,7 +126,7 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip, cpo Catal
 	}
 	//A trustable update must be enclosed with a signed digest
 	ud, ok := h.model.RecvPullDigest(dgtmp,
-		&catalogPeerUpdate{Update: h.AssignUpdate()}).(*catalogPeerUpdate)
+		&catalogPeerUpdate{Update: h.AssignUpdate(cpo)}).(*catalogPeerUpdate)
 	if !ok {
 		panic("wrong type, not catalogPeerUpdate")
 	}

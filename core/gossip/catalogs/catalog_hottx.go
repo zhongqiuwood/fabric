@@ -13,6 +13,9 @@ type HotTxCat struct {
 	totalTxCount   int64
 	invalidTxCount int64
 	invalidTxTime  int64
+
+	historyExpired int64 // seconds
+	updateExpired  int64 // seconds
 }
 
 // // TxMarkupState struct

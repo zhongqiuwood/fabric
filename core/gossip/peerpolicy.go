@@ -63,6 +63,8 @@ func (p *catalogPPOImpl) PushUpdate(b int) {
 	p.sentUpdateBytes = int64(b) + p.sentUpdateBytes
 }
 
+func (p *catalogPPOImpl) Stop() {}
+
 func NewCatalogPeerPolicyDefault() (ret *catalogPPOImpl) {
 	ret = &catalogPPOImpl{}
 	return

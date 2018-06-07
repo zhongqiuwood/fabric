@@ -10,103 +10,67 @@ import (
 
 var logger = logging.MustGetLogger("gossip")
 
-// // Gossip interface
-// type Gossip interface {
-// 	BroadcastTx([]*pb.Transaction) error
-// 	SetTxQuota(quota TxQuota) TxQuota
-// 	NotifyTxError(txid string, err error)
-// }
-
-// // PeerHistoryMessage struct
-// type PeerHistoryMessage struct {
-// 	time    int64
-// 	size    int64
-// 	updated bool
-// }
-
 //GossipStub struct
 type GossipStub struct {
+	self            *pb.PeerID
+	defCrypto       GossipCrypto
+	disc            peer.Discoverer
+	catalogHandlers map[string]CatalogHandler
+
 	*pb.StreamStub
-	peer.Discoverer
 	peerACL.AccessControl
-	catalogHandlers map[string]*catalogHandler
 }
 
 func init() {
 	stub.DefaultFactory = func(id *pb.PeerID) stub.GossipHandler {
 		logger.Debug("create handler for peer", id)
 
-		// action := &PeerAction{
-		// 	id:               id,
-		// 	messageHistories: []*PeerHistoryMessage{},
-		// }
-		// gossipStub.peerActions[id.String()] = action
-		// // send initial digests to target
-		// gossipStub.sendTxDigests(action, 1)
 		return newHandler(id, gossipStub.catalogHandlers)
 	}
 }
 
-// // HandleMessage method
-// func (t *GossipHandler) HandleMessage(m *pb.Gossip) error {
-// 	now := time.Now().Unix()
-// 	p, ok := gossipStub.peerActions[t.peerID.String()]
-// 	if !ok {
-// 		return fmt.Errorf("Peer not found")
-// 	}
+func (g *GossipStub) GetSelf() *pb.PeerID {
+	return g.self
+}
 
-// 	err := gossipStub.validatePeerMessage(p, m)
-// 	if err != nil {
-// 		return err
-// 	}
+func (g *GossipStub) GetSStub() *pb.StreamStub {
+	return g.StreamStub
+}
 
-// 	p.activeTime = now
-// 	if m.GetDigest() != nil {
-// 		// process digest
-// 		err := gossipStub.model.applyDigest(t.peerID, m)
-// 		if err != nil {
-// 			p.invalidTxCount++
-// 			p.invalidTxTime = now
-// 		} else {
-// 			// send digest if last diest send time ok
-// 			gossipStub.sendTxDigests(p, 1)
+func (g *GossipStub) AddCatalogHandler(cat string, h CatalogHandler) {
+	_, ok := g.catalogHandlers[cat]
+	g.catalogHandlers[cat] = h
 
-// 			// mark and send update to peer
-// 			p.digestResponseTime = now
-// 			empty := []*pb.Transaction{}
-// 			gossipStub.sendTxUpdates(p, empty, 1)
-// 		}
-// 	} else if m.GetUpdate() != nil {
-// 		// process update
-// 		txs, err := gossipStub.model.applyUpdate(t.peerID, m)
-// 		if err != nil {
-// 			p.invalidTxCount++
-// 			p.invalidTxTime = now
-// 		} else {
-// 			p.digestResponseTime = now
-// 			p.totalTxCount += int64(len(txs))
-// 			gossipStub.ledger.PutTransactions(txs)
-// 			gossipStub.updatePeerQuota(p, m.Catalog, int64(len(m.GetUpdate().Payload)), txs)
-// 		}
-// 	}
-// 	return nil
-// }
+	if ok {
+		logger.Errorf("Duplicated add handler for catalog %s", cat)
+	} else {
+		logger.Infof("Add handler for catalog %s", cat)
+	}
+}
 
-// // Stop method
-// func (t *GossipHandler) Stop() {
-// 	// remove peer from actions
-// 	_, ok := gossipStub.peerActions[t.peerID.String()]
-// 	if ok {
-// 		delete(gossipStub.peerActions, t.peerID.String())
-// 	}
-// }
+func (g *GossipStub) AddDefaultCatalogHandler(helper CatalogHelper) {
+
+	h := NewCatalogHandlerImpl(g.self.GetName(), g.StreamStub, g.defCrypto, helper)
+
+	g.AddCatalogHandler(helper.Name(), h)
+
+}
 
 var gossipStub *GossipStub
+var RegisterCat []func(*GossipStub)
 
 // NewGossip : init the singleton of gossipstub
 func NewGossip(p peer.Peer) {
 
+	self, err := p.GetPeerEndpoint()
+	if err != nil {
+		panic("No self endpoint")
+	}
+
+	//TODO: init default crypto module
+
 	gossipStub = &GossipStub{
+		self:       self.ID,
 		StreamStub: p.GetStreamStub("gossip"),
 	}
 
@@ -115,8 +79,13 @@ func NewGossip(p peer.Peer) {
 	if err != nil {
 		logger.Errorf("No neighbour for this peer (%s), gossip run without access control", err)
 	} else {
-		gossipStub.Discoverer, _ = nb.GetDiscoverer()
+		gossipStub.disc, _ = nb.GetDiscoverer()
 		gossipStub.AccessControl, _ = nb.GetACL()
+	}
+
+	//reg all catalogs
+	for _, f := range RegisterCat {
+		f(gossipStub)
 	}
 
 	logger.Debug("Gossip module inited")
@@ -128,24 +97,6 @@ func GetGossip() *GossipStub {
 
 	return gossipStub
 }
-
-// // BroadcastTx method
-// func (s *GossipStub) BroadcastTx(txs []*pb.Transaction) error {
-// 	state, err := s.ledger.GetCurrentStateHash()
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	// update self state
-// 	s.model.updateSelfTxs(state, txs)
-
-// 	// update self state to 3 other peers
-// 	s.sendTxDigests(nil, 3)
-
-// 	// broadcast tx to other peers
-// 	s.sendTxUpdates(nil, txs, 3)
-// 	return nil
-// }
 
 // // NotifyTxError method
 // func (s *GossipStub) NotifyTxError(txid string, err error) {

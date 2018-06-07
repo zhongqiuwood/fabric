@@ -5,7 +5,7 @@ import (
 )
 
 type handlerCore struct {
-	*catalogHandler
+	CatalogHandler
 	policy CatalogPeerPolicies
 }
 
@@ -14,7 +14,7 @@ type handlerImpl struct {
 	cores map[string]*handlerCore
 }
 
-func newHandler(peer *pb.PeerID, handlers map[string]*catalogHandler) *handlerImpl {
+func newHandler(peer *pb.PeerID, handlers map[string]CatalogHandler) *handlerImpl {
 
 	cores := make(map[string]*handlerCore)
 	for id, h := range handlers {
@@ -27,7 +27,13 @@ func newHandler(peer *pb.PeerID, handlers map[string]*catalogHandler) *handlerIm
 	}
 }
 
-func (g *handlerImpl) Stop() {}
+func (g *handlerImpl) Stop() {
+
+	for _, c := range g.cores {
+		c.policy.Stop()
+	}
+
+}
 
 func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 
@@ -37,7 +43,7 @@ func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 		return nil
 	}
 
-	global := core.catalogHandler
+	global := core.CatalogHandler
 	cpo := core.policy
 
 	if msg.GetIsPull() { //handling pulling request

@@ -10,10 +10,20 @@ import (
 	"time"
 )
 
+type CatalogHandler interface {
+	Name() string
+	SelfUpdate(model.Digest)
+	HandleUpdate(*pb.PeerID, *pb.Gossip, CatalogPeerPolicies)
+	HandleDigest(*pb.PeerID, *pb.Gossip, CatalogPeerPolicies)
+	AssignPeerPolicy() CatalogPeerPolicies
+	GetPolicies() CatalogPolicies
+}
+
 type CatalogPeerPolicies interface {
 	AllowPushUpdate() bool
 	RecvUpdate(int)
 	PushUpdate(int)
+	Stop()
 }
 
 type CatalogHelper interface {
@@ -69,7 +79,7 @@ type catalogHandler struct {
 	sstub    *pb.StreamStub
 }
 
-func newCatalogHandler(self string, stub *pb.StreamStub,
+func NewCatalogHandlerImpl(self string, stub *pb.StreamStub,
 	crypto GossipCrypto, helper CatalogHelper) (ret *catalogHandler) {
 
 	ret = &catalogHandler{

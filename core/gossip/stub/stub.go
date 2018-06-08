@@ -20,6 +20,15 @@ type GossipHandlerImpl struct {
 	GossipHandler
 }
 
+func ObtainHandler(h *pb.StreamHandler) GossipHandler {
+	hh, ok := h.StreamHandlerImpl.(*GossipHandlerImpl)
+	if !ok {
+		panic("type error, not GossipHandlerImpl")
+	}
+
+	return hh.GossipHandler
+}
+
 func (h *GossipHandlerImpl) Tag() string { return "Gossip" }
 
 func (h *GossipHandlerImpl) EnableLoss() bool { return true }

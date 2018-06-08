@@ -63,16 +63,33 @@ func (m *Model) GenPullDigest() (ret map[string]Digest) {
 	return ret
 }
 
+func (m *Model) LocalUpdate(data Status) {
+
+	m.RLock()
+	defer m.RUnlock()
+
+	peer, ok := m.Peers[m.self]
+	if ok {
+		peer.Merge(data)
+	} else {
+		panic("Self peer is not set")
+	}
+
+}
+
 //recv the reconciliation message and update status
-func (m *Model) RecvUpdate(r Update) {
+func (m *Model) RecvUpdate(r Update) error {
 
 	m.RLock()
 	defer m.RUnlock()
 
 	for id, p := range m.Peers {
-		p.Merge(r.PickUp(id))
-
+		if err := p.Merge(r.PickUp(id)); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
 
 //recv the digest from a "pulling" far-end, gen corresponding update

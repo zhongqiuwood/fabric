@@ -1,6 +1,8 @@
 package gossip
 
 import (
+	"errors"
+	"sync"
 	"time"
 )
 
@@ -52,7 +54,9 @@ func (t *tokenBucket) avaiable(limit int) int {
 	return limit - t.quota
 }
 
-type catalogPPOImpl struct {
+type peerPolicies struct {
+	sync.RWMutex
+	id              string
 	errorLimit      int
 	messageLimit    int
 	recvQuota       tokenBucket
@@ -60,88 +64,67 @@ type catalogPPOImpl struct {
 	sentQuota       tokenBucket
 	sentUpdateBytes int64
 	errorControl    tokenBucket
-	sysError        bool
+	sysError        error
 	totalError      uint
 }
 
-func (p *catalogPPOImpl) IsPolicyViolated() bool {
+func (p *peerPolicies) isPolicyViolated() error {
+	p.RLock()
+	defer p.RUnlock()
 	return p.sysError
 }
 
-func (p *catalogPPOImpl) RecordViolation() {
-	p.totalError = p.totalError + 1
-	p.sysError = p.errorControl.testIn(1, p.errorLimit)
-}
-
-func (p *catalogPPOImpl) AllowRecvUpdate() bool {
-	return p.recvQuota.avaiable(p.messageLimit) > 0
-}
-
-func (p *catalogPPOImpl) RecvUpdate(b int) {
+func (p *peerPolicies) recvUpdate(b int) {
+	p.Lock()
+	defer p.Unlock()
 	p.recvUpdateBytes = int64(b) + p.recvUpdateBytes
 	if !p.recvQuota.testIn(b, p.messageLimit) {
-		p.RecordViolation()
+		p.Unlock()
+		p.RecordViolation(errors.New("recv bytes exceed quota"))
+		p.Lock()
 	}
 }
 
-func (p *catalogPPOImpl) PushUpdateQuota() int {
+func (p *peerPolicies) RecordViolation(e error) {
+	p.Lock()
+	defer p.Unlock()
+	logger.Errorf("Record a violation of policy on peer %s: %s", p.id, e)
+	p.totalError = p.totalError + 1
+	if p.errorControl.testIn(1, p.errorLimit) {
+		p.sysError = errors.New("Total error count exceed tolerance limit")
+	}
+}
+
+func (p *peerPolicies) AllowRecvUpdate() bool {
+	p.RLock()
+	defer p.RUnlock()
+	return p.recvQuota.avaiable(p.messageLimit) > 0
+}
+
+func (p *peerPolicies) PushUpdateQuota() int {
+	p.Lock()
+	defer p.Unlock()
 	return p.sentQuota.avaiable(p.messageLimit)
 }
 
-func (p *catalogPPOImpl) PushUpdate(b int) {
+func (p *peerPolicies) PushUpdate(b int) {
+	p.Lock()
+	defer p.Unlock()
 	p.sentUpdateBytes = int64(b) + p.sentUpdateBytes
 	p.sentQuota.testIn(b, p.messageLimit)
 }
-
-func (p *catalogPPOImpl) Stop() {}
 
 var DefaultInterval = int64(60)
 var DefaultErrorLimit = 3                                    //peer is allowed to violate policy 3 times/min
 var DefaultMsgSize = 1024 * 1024 * 16 * int(DefaultInterval) //msg limit is 16kB/s
 
-func NewCatalogPeerPolicy() (ret *catalogPPOImpl) {
-	ret = &catalogPPOImpl{}
-	return
-}
-
-func NewCatalogPeerPolicyDefault() (ret *catalogPPOImpl) {
-	ret = NewCatalogPeerPolicy()
+func newPeerPolicy(id string) (ret *peerPolicies) {
+	ret = &peerPolicies{id: id}
 
 	ret.errorLimit = DefaultErrorLimit
 	ret.messageLimit = DefaultMsgSize
 	ret.recvQuota.Interval = DefaultInterval
 	ret.sentQuota.Interval = DefaultInterval
 	ret.errorControl.Interval = DefaultInterval
-	return
-}
-
-type PeerPolicies interface {
-	UpdateBytes(int)
-	AllowPush() bool
-}
-
-// A each-peer (all catalogy wide) policy
-type peerPolicy struct {
-	//id *pb.PeerID
-
-	// message state
-	activeTime         int64
-	digestSeq          uint64
-	digestSendTime     int64
-	digestResponseTime int64
-	updateSendTime     int64
-	updateReceiveTime  int64
-
-	maxMessageSize int64 // bytes
-
-	// histories
-	//messageHistories []*PeerHistoryMessage
-}
-
-func newPeerPolicy() (ret *peerPolicy) {
-
-	ret = &peerPolicy{}
-
-	ret.maxMessageSize = 100 * 1024 * 1024 // 100MB
 	return
 }

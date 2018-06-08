@@ -4,54 +4,44 @@ import (
 	pb "github.com/abchain/fabric/protos"
 )
 
-type handlerCore struct {
-	CatalogHandler
-	policy CatalogPeerPolicies
-}
-
 type handlerImpl struct {
 	peer  *pb.PeerID
-	cores map[string]*handlerCore
+	ppo   *peerPolicies
+	cores map[string]CatalogHandler
 }
 
 func newHandler(peer *pb.PeerID, handlers map[string]CatalogHandler) *handlerImpl {
 
-	cores := make(map[string]*handlerCore)
-	for id, h := range handlers {
-		cores[id] = &handlerCore{h, h.AssignPeerPolicy()}
-	}
-
 	return &handlerImpl{
 		peer:  peer,
-		cores: cores,
+		ppo:   newPeerPolicy(peer.GetName()),
+		cores: handlers,
 	}
 }
 
 func (g *handlerImpl) Stop() {
 
-	for _, c := range g.cores {
-		c.policy.Stop()
-	}
+}
 
+func (g *handlerImpl) GetPeerPolicy() CatalogPeerPolicies {
+	return g.ppo
 }
 
 func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 
-	core, ok := g.cores[msg.GetCatalog()]
+	global, ok := g.cores[msg.GetCatalog()]
 	if !ok {
 		logger.Errorf("Recv gossip message with catelog not recognized: ", msg.GetCatalog())
 		return nil
 	}
 
-	global := core.CatalogHandler
-	cpo := core.policy
+	g.ppo.recvUpdate(msg.EstimateSize())
 
-	if msg.GetIsPull() { //handling pulling request
-		global.HandleDigest(g.peer, msg, cpo)
-
-	} else if msg.Payload != nil {
-		global.HandleUpdate(g.peer, msg, cpo)
+	if dig := msg.GetDig(); dig != nil {
+		global.HandleDigest(g.peer, dig, g.ppo)
+	} else {
+		global.HandleUpdate(g.peer, msg.GetUd(), g.ppo)
 	}
 
-	return nil
+	return g.ppo.isPolicyViolated()
 }

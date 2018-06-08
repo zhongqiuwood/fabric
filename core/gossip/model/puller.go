@@ -35,15 +35,14 @@ func (p *Puller) NotifyUpdate(ud Update) {
 	p.update <- ud
 }
 
-func (p *Puller) Process(ctx context.Context) error {
+func (p *Puller) Process(ctx context.Context) (e error) {
 
 	select {
 	case <-ctx.Done():
-		return ctx.Err()
+		e = ctx.Err()
 	case ud := <-p.update:
-		p.model.RecvUpdate(ud)
+		e = p.model.RecvUpdate(ud)
 	}
 
-	//everything done
-	return nil
+	return
 }

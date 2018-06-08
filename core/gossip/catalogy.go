@@ -3,6 +3,7 @@ package gossip
 import (
 	"fmt"
 	model "github.com/abchain/fabric/core/gossip/model"
+	"github.com/abchain/fabric/core/gossip/stub"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
@@ -12,36 +13,29 @@ import (
 
 type CatalogHandler interface {
 	Name() string
-	SelfUpdate(model.Digest)
-	HandleUpdate(*pb.PeerID, *pb.Gossip, CatalogPeerPolicies)
-	HandleDigest(*pb.PeerID, *pb.Gossip, CatalogPeerPolicies)
-	AssignPeerPolicy() CatalogPeerPolicies
-	GetPolicies() CatalogPolicies
+	SelfUpdate(model.Status)
+	HandleUpdate(*pb.PeerID, *pb.Gossip_Update, CatalogPeerPolicies)
+	HandleDigest(*pb.PeerID, *pb.Gossip_Digest, CatalogPeerPolicies)
 }
 
 type CatalogPeerPolicies interface {
-	IsPolicyViolated() bool
 	AllowRecvUpdate() bool
-	RecvUpdate(int)
 	PushUpdateQuota() int
 	PushUpdate(int)
-	RecordViolation()
-	Stop()
+	RecordViolation(error)
 }
 
 type CatalogHelper interface {
 	Name() string
 	GetPolicies() CatalogPolicies //caller do not need to check the interface
 
-	SelfStatus() TrustableStatus
-	AssignStatus() TrustableStatus
-	AssignPeerPolicy() CatalogPeerPolicies
+	SelfStatus() model.Status
+	AssignStatus() model.Status
 	AssignUpdate(CatalogPeerPolicies) model.Update
 
 	EncodeUpdate(model.Update) ([]byte, error)
 	DecodeUpdate([]byte) (model.Update, error)
 	ToProtoDigest(model.Digest) *pb.Gossip_Digest_PeerState
-	MergeProtoDigest(*pb.Gossip_Digest_PeerState, *pb.Gossip_Digest_PeerState) *pb.Gossip_Digest_PeerState
 }
 
 type catalogPeerUpdate struct {
@@ -64,7 +58,7 @@ func (u *catalogPeerUpdate) Add(id string, s_in model.Status) model.Update {
 
 type pullWorks struct {
 	sync.Mutex
-	m map[string]*model.Puller
+	m map[CatalogPeerPolicies]*model.Puller
 }
 
 type scheduleWorks struct {
@@ -75,24 +69,21 @@ type scheduleWorks struct {
 
 type catalogHandler struct {
 	CatalogHelper
-	GossipCrypto
-	model    trustableModel
+	model    *model.Model
 	pulls    pullWorks
 	schedule scheduleWorks
 	sstub    *pb.StreamStub
 }
 
-func NewCatalogHandlerImpl(self string, stub *pb.StreamStub,
-	crypto GossipCrypto, helper CatalogHelper) (ret *catalogHandler) {
+func NewCatalogHandlerImpl(self string, stub *pb.StreamStub, helper CatalogHelper) (ret *catalogHandler) {
 
 	ret = &catalogHandler{
-		GossipCrypto:  crypto,
 		CatalogHelper: helper,
 		sstub:         stub,
-		pulls:         pullWorks{m: make(map[string]*model.Puller)},
+		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*model.Puller)},
 	}
 
-	ret.model = newTrustableModel(ret,
+	ret.model = model.NewGossipModel(ret,
 		&model.Peer{
 			Id:     self,
 			Status: helper.SelfStatus(),
@@ -101,7 +92,7 @@ func NewCatalogHandlerImpl(self string, stub *pb.StreamStub,
 	return
 }
 
-func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip, cpo CatalogPeerPolicies) {
+func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cpo CatalogPeerPolicies) {
 
 	strm := h.sstub.PickHandler(peer)
 	if strm != nil {
@@ -112,41 +103,25 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip, cpo Catal
 	var isPassivePull bool
 	if cpo.AllowRecvUpdate() {
 		//we try to stimulate a pull process first
-		puller, err := h.newPuller(peer, strm)
+		puller, err := h.newPuller(cpo, strm)
 		if err != nil {
 			isPassivePull = true
-			go h.runPassiveTask(peer, puller)
+			go h.runPassiveTask(cpo, puller)
 		}
 	}
 
 	//digest need to be transformed
 	dgtmp := make(map[string]model.Digest)
-	for k, d := range msg.Dig.Data {
+	for k, d := range msg.Data {
 		dgtmp[k] = d
 	}
 	//A trustable update must be enclosed with a signed digest
-	ud, ok := h.model.RecvPullDigest(dgtmp,
-		&catalogPeerUpdate{Update: h.AssignUpdate(cpo)}).(*catalogPeerUpdate)
-	if !ok {
-		panic("wrong type, not catalogPeerUpdate")
-	}
+	ud := h.model.RecvPullDigest(dgtmp, h.AssignUpdate(cpo))
 
-	ret := &pb.Gossip{
-		Seq:     getGlobalSeq(),
-		Catalog: h.Name(),
-		Dig:     &pb.Gossip_Digest{make(map[string]*pb.Gossip_Digest_PeerState)},
-	}
-
-	vDigests := h.model.GetVerifiedDigest()
-
-	//copy the verified digest into message
-	for _, id := range ud.invoked {
-		ret.Dig.Data[id] = vDigests[id].(*pb.Gossip_Digest_PeerState)
-	}
-
-	payloadByte, err := h.EncodeUpdate(ud.Update)
+	udsent := &pb.Gossip_Update{}
+	payloadByte, err := h.EncodeUpdate(ud)
 	if err == nil {
-		ret.Payload = payloadByte
+		udsent.Payload = payloadByte
 		cpo.PushUpdate(len(payloadByte))
 	} else {
 		logger.Error("Encode update failure:", err)
@@ -155,7 +130,11 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip, cpo Catal
 	//send reply update message, send it even on encode failure!
 	//NOTICE: if stream is NOT enable to drop message, send in HandMessage
 	//may cause a deadlock, but in gossip package this is OK
-	strm.SendMessage(ret)
+	strm.SendMessage(&pb.Gossip{
+		Seq:     getGlobalSeq(),
+		Catalog: h.Name(),
+		M:       &pb.Gossip_Ud{udsent},
+	})
 
 	if isPassivePull {
 		h.addOneUpdate()
@@ -163,59 +142,27 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip, cpo Catal
 
 }
 
-func (h *catalogHandler) SelfUpdate(vdigest model.Digest) {
+func (h *catalogHandler) SelfUpdate(s model.Status) {
 
-	var err error
-	vd := h.ToProtoDigest(vdigest)
-	vd, err = h.Sign(h.Name(), vd)
-	if err != nil {
-		logger.Error("Sign digest fail:", err)
-		return
-	}
-
-	h.model.UpdateProofDigest(map[string]model.Digest{h.model.GetSelf(): vd})
+	h.model.LocalUpdate(s)
 
 	go h.schedulePush()
 }
 
-func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip, cpo CatalogPeerPolicies) {
+func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cpo CatalogPeerPolicies) {
 
-	cpo.RecvUpdate(len(msg.Payload))
-
-	puller := h.checkPuller(peer)
+	puller := h.checkPuller(cpo)
 	if puller == nil {
 		//something wrong! if no corresponding puller, we never handle this message
-		logger.Errorf("No puller in catalog %s avaiable for peer %s", msg.Catalog, peer.Name)
+		logger.Errorf("No puller in catalog %s avaiable for peer %s", h.Name(), peer.Name)
 		return
 	}
 
 	ud, err := h.DecodeUpdate(msg.Payload)
 	if err != nil {
-		logger.Errorf("Decode update for catalog %s fail: %s", msg.Catalog, err)
+		cpo.RecordViolation(fmt.Errorf("Decode update for catalog %s fail: %s", h.Name(), err))
 		return
 	}
-
-	//test verified digest
-	newDigest := make(map[string]model.Digest)
-	curDigest := h.model.GetVerifiedDigest()
-	for id, dig := range msg.Dig.Data {
-		oldDig, ok := curDigest[id].(*pb.Gossip_Digest_PeerState)
-		if ok {
-			dig = h.MergeProtoDigest(oldDig, dig)
-		}
-
-		if oldDig != dig {
-			//TODO digest is new, check if it was verified!
-			//verify digest
-			if h.Verify(id, h.Name(), dig) {
-				newDigest[id] = dig
-			}
-		}
-	}
-
-	//handling pushing request, for the trustable process, update verified
-	//part first
-	h.model.UpdateProofDigest(newDigest)
 
 	//the final update is executed in another thread
 	puller.NotifyUpdate(ud)
@@ -236,21 +183,20 @@ func (h *catalogHandler) AcceptPeer(id string, d model.Digest) (*model.Peer, err
 //implement for a PullerHelper
 func (h *catalogHandler) EncodeDigest(m map[string]model.Digest) proto.Message {
 
-	ret := &pb.Gossip{
-		Seq:     getGlobalSeq(),
-		Catalog: h.Name(),
-		Dig:     &pb.Gossip_Digest{make(map[string]*pb.Gossip_Digest_PeerState)},
-		IsPull:  true,
-	}
+	ret := &pb.Gossip_Digest{}
 
 	//digest sent in pulling request do NOT need to be trustable
 	//(wrong digest only harm peer itself)
 	for k, d := range m {
 		pbd := h.ToProtoDigest(d)
-		ret.Dig.Data[k] = pbd
+		ret.Data[k] = pbd
 	}
 
-	return ret
+	return &pb.Gossip{
+		Seq:     getGlobalSeq(),
+		Catalog: h.Name(),
+		M:       &pb.Gossip_Dig{ret},
+	}
 }
 
 func (h *catalogHandler) addOneUpdate() {
@@ -285,9 +231,16 @@ func (h *catalogHandler) schedulePush() {
 	h.schedule.Unlock()
 
 	for strm := range h.sstub.OverAllHandlers(wctx) {
-		err := h.runAggresivePullTask(strm.Id, strm.StreamHandler)
+
+		ph, ok := stub.ObtainHandler(strm.StreamHandler).(*handlerImpl)
+		if !ok {
+			panic("type error, not handlerImpl")
+		}
+		cpo := ph.GetPeerPolicy()
+
+		err := h.runAggresivePullTask(cpo, strm.StreamHandler)
 		if err != nil {
-			logger.Infof("Aggressive pulling to peer %s fail: %s", strm.Id.Name, err)
+			cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
 		}
 	}
 
@@ -295,28 +248,30 @@ func (h *catalogHandler) schedulePush() {
 	h.schedule.endSchedule = nil
 }
 
-func (h *catalogHandler) checkPuller(peer *pb.PeerID) *model.Puller {
+func (h *catalogHandler) checkPuller(cpo CatalogPeerPolicies) *model.Puller {
 
 	h.pulls.Lock()
 	defer h.pulls.Unlock()
-	return h.pulls.m[peer.Name]
+	return h.pulls.m[cpo]
 }
 
-func (h *catalogHandler) newPuller(peer *pb.PeerID, stream *pb.StreamHandler) (*model.Puller, error) {
+func (h *catalogHandler) newPuller(cpo CatalogPeerPolicies, stream *pb.StreamHandler) (*model.Puller, error) {
 	h.pulls.Lock()
 	defer h.pulls.Unlock()
 
-	if _, ok := h.pulls.m[peer.Name]; ok {
+	if _, ok := h.pulls.m[cpo]; ok {
 		return nil, fmt.Errorf("Puller task exist")
 	}
 
-	puller := model.NewPullTask(h, h.model.Model, stream)
-	h.pulls.m[peer.Name] = puller
+	//TODO: we may hook EncodeDigest by provided a custom pullhelper which known cpo
+	//so we can call pushdata method within it
+	puller := model.NewPullTask(h, h.model, stream)
+	h.pulls.m[cpo] = puller
 
 	return puller, nil
 }
 
-func (h *catalogHandler) runPullTask(peer *pb.PeerID, puller *model.Puller) (ret error) {
+func (h *catalogHandler) runPullTask(cpo CatalogPeerPolicies, puller *model.Puller) (ret error) {
 
 	pctx, _ := context.WithTimeout(context.Background(),
 		time.Duration(h.GetPolicies().PullTimeout())*time.Second)
@@ -324,30 +279,30 @@ func (h *catalogHandler) runPullTask(peer *pb.PeerID, puller *model.Puller) (ret
 
 	//end, clear puller task
 	h.pulls.Lock()
-	delete(h.pulls.m, peer.Name)
+	delete(h.pulls.m, cpo)
 	h.pulls.Unlock()
 
 	return
 }
 
-func (h *catalogHandler) runPassiveTask(peer *pb.PeerID, puller *model.Puller) {
-	err := h.runPullTask(peer, puller)
+func (h *catalogHandler) runPassiveTask(cpo CatalogPeerPolicies, puller *model.Puller) {
+	err := h.runPullTask(cpo, puller)
 
 	//when we succefully accept an update, we also schedule a new push process
 	if err == nil {
 		h.schedulePush()
 	} else {
-		logger.Infof("Passive pulling to peer %s fail: %s", peer.Name, err)
+		cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
 	}
 }
 
 //a blocking function
-func (h *catalogHandler) runAggresivePullTask(peer *pb.PeerID, stream *pb.StreamHandler) error {
+func (h *catalogHandler) runAggresivePullTask(cpo CatalogPeerPolicies, stream *pb.StreamHandler) error {
 
-	puller, err := h.newPuller(peer, stream)
+	puller, err := h.newPuller(cpo, stream)
 	if err != nil {
 		return err
 	}
 
-	return h.runPullTask(peer, puller)
+	return h.runPullTask(cpo, puller)
 }

@@ -6,14 +6,34 @@ import (
 	peerACL "github.com/abchain/fabric/core/peer/acl"
 	pb "github.com/abchain/fabric/protos"
 	logging "github.com/op/go-logging"
+	"sync"
+	"time"
 )
 
 var logger = logging.MustGetLogger("gossip")
 
+var globalSeq uint64
+var globalSeqLock sync.Mutex
+
+func getGlobalSeq() uint64 {
+
+	globalSeqLock.Lock()
+	defer globalSeqLock.Unlock()
+
+	ref := uint64(time.Now().Unix())
+	if ref > globalSeq {
+		globalSeq = ref
+
+	} else {
+		globalSeq++
+	}
+
+	return globalSeq
+}
+
 //GossipStub struct
 type GossipStub struct {
 	self            *pb.PeerID
-	defCrypto       GossipCrypto
 	disc            peer.Discoverer
 	catalogHandlers map[string]CatalogHandler
 
@@ -50,7 +70,7 @@ func (g *GossipStub) AddCatalogHandler(cat string, h CatalogHandler) {
 
 func (g *GossipStub) AddDefaultCatalogHandler(helper CatalogHelper) {
 
-	h := NewCatalogHandlerImpl(g.self.GetName(), g.StreamStub, g.defCrypto, helper)
+	h := NewCatalogHandlerImpl(g.self.GetName(), g.StreamStub, helper)
 
 	g.AddCatalogHandler(helper.Name(), h)
 
@@ -66,8 +86,6 @@ func NewGossip(p peer.Peer) {
 	if err != nil {
 		panic("No self endpoint")
 	}
-
-	//TODO: init default crypto module
 
 	gossipStub = &GossipStub{
 		self:       self.ID,

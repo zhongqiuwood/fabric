@@ -8,12 +8,16 @@ func (m *Gossip) EstimateSize() (total int) {
 		return
 	}
 
-	if m.Dig != nil {
-		for _, i := range m.Dig.Data {
-			total = total + len(i.Signature) + len(i.State) + 8 //the bytes of a num
+	switch v := m.GetM().(type) {
+	case (*Gossip_Dig):
+		for _, i := range v.Dig.Data {
+			total = total + len(i.State) + len(i.Signature) + 8 //the bytes of a num
 		}
+	case (*Gossip_Ud):
+		total = len(v.Ud.Payload)
+	default:
+		return
 	}
 
-	total = total + len(m.Payload)
 	return
 }

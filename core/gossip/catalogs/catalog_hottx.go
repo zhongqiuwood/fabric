@@ -4,6 +4,15 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 )
 
+type txDummyStatus struct {
+	state []byte
+}
+
+type txHotStatus struct {
+	*txDummyStatus
+	txids []string
+}
+
 // TxQuota struct
 type HotTxCat struct {
 	ledger *ledger.Ledger

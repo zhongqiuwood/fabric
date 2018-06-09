@@ -63,20 +63,22 @@ func (tp *transactionPool) getConfirmedTransaction(txID string) (*pb.Transaction
 }
 
 func (tp *transactionPool) getTransaction(txID string) (*pb.Transaction, error) {
-	tx, err := fetchTxFromDB(txID)
-	if err != nil {
-		return nil, err
-	}
-
-	if tx != nil {
-		return tx, nil
-	}
 
 	tp.RLock()
-	defer tp.RUnlock()
 	tx, ok := tp.txPool[txID]
+	tp.RUnlock()
 
 	if !ok {
+
+		tx, err := fetchTxFromDB(txID)
+		if err != nil {
+			return nil, err
+		}
+
+		if tx != nil {
+			return tx, nil
+		}
+
 		return nil, ErrResourceNotFound
 	}
 

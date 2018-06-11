@@ -28,14 +28,15 @@ type CatalogPeerPolicies interface {
 type CatalogHelper interface {
 	Name() string
 	GetPolicies() CatalogPolicies //caller do not need to check the interface
+	//for any new incoming peer,
+	UpdateNewPeer(string, model.Digest) (model.Status, []string)
 
 	SelfStatus() model.Status
-	AssignStatus() model.Status
-	AssignUpdate(CatalogPeerPolicies) model.Update
+	AssignUpdate(CatalogPeerPolicies, *pb.Gossip_Digest) model.Update
 
 	EncodeUpdate(model.Update) ([]byte, error)
 	DecodeUpdate([]byte) (model.Update, error)
-	ToProtoDigest(model.Digest) *pb.Gossip_Digest_PeerState
+	ToProtoDigest(map[string]model.Digest) *pb.Gossip_Digest
 }
 
 type catalogPeerUpdate struct {
@@ -83,7 +84,7 @@ func NewCatalogHandlerImpl(self string, stub *pb.StreamStub, helper CatalogHelpe
 		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*model.Puller)},
 	}
 
-	ret.model = model.NewGossipModel(ret,
+	ret.model = model.NewGossipModel(
 		&model.Peer{
 			Id:     self,
 			Status: helper.SelfStatus(),
@@ -116,7 +117,21 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cp
 		dgtmp[k] = d
 	}
 	//A trustable update must be enclosed with a signed digest
-	ud := h.model.RecvPullDigest(dgtmp, h.AssignUpdate(cpo))
+	ud, unknownPeer := h.model.RecvPullDigest(dgtmp, h.AssignUpdate(cpo, msg))
+
+	//Handle unknown Peer
+	for id, d := range unknownPeer {
+		accept, rm := h.UpdateNewPeer(id, d)
+		if accept != nil {
+			logger.Infof("Catalog %s now know peer %s", h.Name(), id)
+			//accept one
+			h.model.NewPeer(&model.Peer{id, accept})
+		}
+
+		for _, rid := range rm {
+			h.model.ClearPeer(rid)
+		}
+	}
 
 	udsent := &pb.Gossip_Update{}
 	payloadByte, err := h.EncodeUpdate(ud)
@@ -169,33 +184,13 @@ func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cp
 
 }
 
-//implement for modelHelper
-func (h *catalogHandler) AcceptPeer(id string, d model.Digest) (*model.Peer, error) {
-
-	//TODO: now we always accept
-	logger.Infof("Catalog %s now know peer %s", h.Name(), id)
-
-	return &model.Peer{Id: id,
-		Status: h.AssignStatus(),
-	}, nil
-}
-
 //implement for a PullerHelper
 func (h *catalogHandler) EncodeDigest(m map[string]model.Digest) proto.Message {
-
-	ret := &pb.Gossip_Digest{}
-
-	//digest sent in pulling request do NOT need to be trustable
-	//(wrong digest only harm peer itself)
-	for k, d := range m {
-		pbd := h.ToProtoDigest(d)
-		ret.Data[k] = pbd
-	}
 
 	return &pb.Gossip{
 		Seq:     getGlobalSeq(),
 		Catalog: h.Name(),
-		M:       &pb.Gossip_Dig{ret},
+		M:       &pb.Gossip_Dig{h.ToProtoDigest(m)},
 	}
 }
 

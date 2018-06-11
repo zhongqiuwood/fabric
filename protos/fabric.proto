@@ -181,6 +181,7 @@ message Gossip {
         }
 /*string is used to represent peerID*/        
         map<string, PeerState> data = 1;
+        bytes epoch = 2;
     }
 
     message Update{

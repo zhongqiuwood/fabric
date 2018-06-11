@@ -13,6 +13,7 @@ func (m *Gossip) EstimateSize() (total int) {
 		for _, i := range v.Dig.Data {
 			total = total + len(i.State) + len(i.Signature) + 8 //the bytes of a num
 		}
+		total = total + len(v.Dig.Epoch)
 	case (*Gossip_Ud):
 		total = len(v.Ud.Payload)
 	default:

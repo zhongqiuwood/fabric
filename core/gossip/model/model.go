@@ -31,20 +31,32 @@ type Peer struct {
 //Now we have the model
 type Model struct {
 	sync.RWMutex
-	ModelHelper
 	Peers map[string]*Peer
 	self  string
 }
 
 func (m *Model) GetSelf() string { return m.self }
 
-//And we need some helper for model
-type ModelHelper interface {
-	AcceptPeer(string, Digest) (*Peer, error)
+//It was up to the user to clear peers
+func (m *Model) NewPeer(peer *Peer) bool {
+	m.Lock()
+	defer m.Unlock()
+
+	_, ok := m.Peers[peer.Id]
+
+	if ok {
+		return false
+	} else {
+		m.Peers[peer.Id] = peer
+		return true
+	}
+
 }
 
 //It was up to the user to clear peers
 func (m *Model) ClearPeer(id string) {
+	m.Lock()
+	defer m.Unlock()
 	delete(m.Peers, id)
 }
 
@@ -93,35 +105,31 @@ func (m *Model) RecvUpdate(r Update) error {
 }
 
 //recv the digest from a "pulling" far-end, gen corresponding update
-func (m *Model) RecvPullDigest(digests map[string]Digest, ud Update) Update {
+//any digest model can't recognize (not a peer it have known)
+//is also returned in the map
+func (m *Model) RecvPullDigest(digests map[string]Digest,
+	ud Update) (Update, map[string]Digest) {
 
 	m.RLock()
 	defer m.RUnlock()
 
+	resident := make(map[string]Digest)
+
 	for id, digest := range digests {
 		peer, ok := m.Peers[id]
-		if !ok {
-			//check if we can add new one
-			m.RUnlock()
-			m.Lock()
-			s, err := m.AcceptPeer(id, digest)
-			if err == nil {
-				m.Peers[id] = s
-			}
-			m.Unlock()
-			m.RLock()
-		} else {
+		if ok {
 			ud = ud.Add(id, peer.MakeUpdate(digest))
+		} else {
+			resident[id] = digest
 		}
 	}
 
-	return ud
+	return ud, resident
 }
 
-func NewGossipModel(h ModelHelper, self *Peer) *Model {
+func NewGossipModel(self *Peer) *Model {
 	return &Model{
-		ModelHelper: h,
-		Peers:       map[string]*Peer{self.Id: self},
-		self:        self.Id,
+		Peers: map[string]*Peer{self.Id: self},
+		self:  self.Id,
 	}
 }

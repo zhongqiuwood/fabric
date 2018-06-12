@@ -23,6 +23,7 @@ type CatalogPeerPolicies interface {
 	PushUpdateQuota() int
 	PushUpdate(int)
 	RecordViolation(error)
+	ScoringPeer(s int, weight uint)
 }
 
 type CatalogHelper interface {

@@ -7,6 +7,12 @@ import (
 
 var logger = logging.MustGetLogger("gossip_cat")
 
+const (
+
+	//set some weighting on scoring the peer ...
+	cat_hottx_one_merge_weight = uint(10)
+)
+
 func InitGossipCatalogs() {
 
 }

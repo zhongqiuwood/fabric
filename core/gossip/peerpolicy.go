@@ -56,16 +56,18 @@ func (t *tokenBucket) avaiable(limit int) int {
 
 type peerPolicies struct {
 	sync.RWMutex
-	id              string
-	errorLimit      int
-	messageLimit    int
-	recvQuota       tokenBucket
-	recvUpdateBytes int64
-	sentQuota       tokenBucket
-	sentUpdateBytes int64
-	errorControl    tokenBucket
-	sysError        error
-	totalError      uint
+	id               string
+	score            int64
+	scoreWeightTotal uint64
+	errorLimit       int
+	messageLimit     int
+	recvQuota        tokenBucket
+	recvUpdateBytes  int64
+	sentQuota        tokenBucket
+	sentUpdateBytes  int64
+	errorControl     tokenBucket
+	sysError         error
+	totalError       uint
 }
 
 func (p *peerPolicies) isPolicyViolated() error {
@@ -112,6 +114,14 @@ func (p *peerPolicies) PushUpdate(b int) {
 	defer p.Unlock()
 	p.sentUpdateBytes = int64(b) + p.sentUpdateBytes
 	p.sentQuota.testIn(b, p.messageLimit)
+}
+
+func (p *peerPolicies) ScoringPeer(score int, weight uint) {
+	p.Lock()
+	defer p.Unlock()
+
+	p.score = p.score + int64(score)
+	p.scoreWeightTotal = p.scoreWeightTotal + uint64(weight)
 }
 
 var DefaultInterval = int64(60)

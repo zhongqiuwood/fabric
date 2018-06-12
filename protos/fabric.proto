@@ -199,9 +199,7 @@ message Gossip {
 }
 
 message Gossip_Tx{
-    bytes state = 1;
-    uint32 num  = 2; //when version number is used for gossiping txs, 32bit is enough
-    TransactionBlock txs = 4;
+    map<string, TransactionBlock> txs = 1;
 }
 
 message Message {

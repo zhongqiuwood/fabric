@@ -36,7 +36,7 @@ type CatalogHelper interface {
 	AssignUpdate(CatalogPeerPolicies, *pb.Gossip_Digest) model.Update
 
 	EncodeUpdate(model.Update) ([]byte, error)
-	DecodeUpdate([]byte) (model.Update, error)
+	DecodeUpdate(CatalogPeerPolicies, []byte) (model.Update, error)
 	ToProtoDigest(map[string]model.Digest) *pb.Gossip_Digest
 }
 
@@ -174,7 +174,7 @@ func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cp
 		return
 	}
 
-	ud, err := h.DecodeUpdate(msg.Payload)
+	ud, err := h.DecodeUpdate(cpo, msg.Payload)
 	if err != nil {
 		cpo.RecordViolation(fmt.Errorf("Decode update for catalog %s fail: %s", h.Name(), err))
 		return

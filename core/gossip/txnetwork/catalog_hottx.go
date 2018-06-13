@@ -1,15 +1,17 @@
-package gossip_cat
+package txnetwork
 
 import (
-	_ "bytes"
+	"bytes"
 	"fmt"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
+	proto "github.com/golang/protobuf/proto"
 )
 
 type txMemPoolItem struct {
+	digest     []byte
 	tx         *pb.Transaction //cache of the tx (may just the txid)
 	committedH uint64          //0 means not commited
 
@@ -26,18 +28,18 @@ func txToDigestState(tx *pb.Transaction) []byte {
 	return []byte(tx.GetTxid())
 }
 
-func digestToTxid(d *pb.Gossip_Digest_PeerState) string {
-	return string(d.GetState())
+func digestToIndex(dig []byte) string {
+	return string(dig)
 }
 
-//return whether tx2 is precede of tx1
-func txIsPrecede(tx1 *pb.Transaction, tx2 *pb.Transaction) bool {
+//return whether tx2 is precede of the digest of tx1
+func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	//TODO: check tx2's nonce and tx1's txid
 	return false
 }
 
 func (p *peerTxs) GenDigest() model.Digest {
-	return &pb.Gossip_Digest_PeerState{State: txToDigestState(p.last.tx)}
+	return &pb.Gossip_Digest_PeerState{State: p.last.digest}
 }
 
 func (p *peerTxs) Merge(s_in model.Status) error {
@@ -53,7 +55,7 @@ func (p *peerTxs) Merge(s_in model.Status) error {
 
 	//scan txs ...
 	for beg := s.head; beg != nil; beg = beg.next {
-		if txIsPrecede(p.last.tx, beg.tx) {
+		if txIsPrecede(p.last.digest, beg.tx) {
 			p.last.next = beg
 			p.last = s.last
 			break
@@ -76,7 +78,7 @@ func (p *peerTxs) MakeUpdate(d_in model.Digest) model.Status {
 
 	beg := p.head
 	for ; beg != nil; beg = beg.next {
-		if digestToTxid(d) == beg.tx.GetTxid() {
+		if bytes.Compare(beg.digest, d.GetState()) == 0 {
 			beg = beg.next
 			break
 		}
@@ -105,7 +107,7 @@ func (p *peerTxMemPool) MakeUpdate(d_in model.Digest) model.Status {
 		panic("Type error, not Gossip_Digest_PeerState")
 	}
 
-	pos, ok := p.index[digestToTxid(d)]
+	pos, ok := p.index[digestToIndex(d.GetState())]
 
 	if !ok || pos == p.last {
 		//we have a up-to-date or out-of-range state so no update can provided
@@ -143,7 +145,7 @@ func (p *peerTxMemPool) Merge(s_in model.Status) error {
 	var mergeCnt int
 	//we need to construct the index ...
 	for beg := oldlast; beg != nil; beg = beg.next {
-		p.index[beg.tx.GetTxid()] = beg
+		p.index[digestToIndex(beg.digest)] = beg
 		mergeCnt++
 	}
 
@@ -177,7 +179,10 @@ func (u *txPoolUpdate) PickUp(id string) model.Status {
 		return nil
 	}
 
-	head := &txMemPoolItem{tx: txs.Transactions[0]}
+	head := &txMemPoolItem{
+		tx:     txs.Transactions[0],
+		digest: txToDigestState(txs.Transactions[0]),
+	}
 
 	ret := &peerTxs{
 		head: head,
@@ -190,7 +195,9 @@ func (u *txPoolUpdate) PickUp(id string) model.Status {
 		//(if tx is commited, we should pick it from ledger and do verify)
 		//
 
-		ret.last.next = &txMemPoolItem{tx: tx}
+		ret.last.next = &txMemPoolItem{
+			tx:     tx,
+			digest: txToDigestState(tx)}
 		ret.last = ret.last.next
 	}
 
@@ -229,7 +236,9 @@ func (u *txPoolUpdate) Add(id string, s_in model.Status) model.Update {
 }
 
 type hotTxCat struct {
-	ledger *ledger.Ledger
+	ledger      *ledger.Ledger
+	evictNotify asyncEvictPeerNotifier
+	self        gossip.CatalogHandler
 	//	txMarkupStates map[string]*TxMarkupState
 
 	// security state
@@ -239,6 +248,86 @@ type hotTxCat struct {
 
 	historyExpired int64 // seconds
 	updateExpired  int64 // seconds
+}
+
+func (c *hotTxCat) AddTransaction(tx *pb.Transaction) error {
+	//TODO: verify the tx first
+
+}
+
+//Implement for CatalogHelper
+func (c *hotTxCat) Name() string { return "openedTx" }
+
+func (c *hotTxCat) UpdateNewPeer(id string, d model.Digest) (add model.Status, rm []string) {
+
+	rm = c.evictNotify.Pop()
+
+	peer := GetNetworkStatus().queryPeer(id)
+	if peer == nil {
+		//peer id is unknown for global, so reject it
+		return
+	}
+
+	hitem := &txMemPoolItem{digest: peer.status}
+
+	add = &peerTxMemPool{peerTxs{head: hitem, last: hitem},
+		make(map[string]*txMemPoolItem)}
+	return
+}
+
+func (c *hotTxCat) SelfStatus() model.Status {
+	//TODO: we must load the latest tx
+	return nil
+}
+
+func (c *hotTxCat) AssignUpdate(cpo gossip.CatalogPeerPolicies, d *pb.Gossip_Digest) model.Update {
+
+	//TODO: check epoch from d
+
+	return &txPoolUpdate{
+		Gossip_Tx: &pb.Gossip_Tx{},
+		cpo:       cpo,
+	}
+}
+
+func (c *hotTxCat) EncodeUpdate(u_in model.Update) ([]byte, error) {
+
+	u, ok := u_in.(*txPoolUpdate)
+	if !ok {
+		panic("type error, not txPoolUpdate")
+	}
+
+	return proto.Marshal(u.Gossip_Tx)
+}
+
+func (c *hotTxCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, b []byte) (model.Update, error) {
+
+	gossipTx := &pb.Gossip_Tx{}
+	if err := proto.Unmarshal(b, gossipTx); err != nil {
+		return nil, err
+	}
+
+	return &txPoolUpdate{
+		Gossip_Tx: gossipTx,
+		cpo:       cpo,
+	}, nil
+}
+
+func (c *hotTxCat) ToProtoDigest(dm map[string]model.Digest) *pb.Gossip_Digest {
+
+	d_out := &pb.Gossip_Digest{Data: make(map[string]*pb.Gossip_Digest_PeerState)}
+
+	var ok bool
+	for id, d := range dm {
+		d_out.Data[id], ok = d.(*pb.Gossip_Digest_PeerState)
+		if !ok {
+			panic("type error, not Gossip_Digest_PeerState")
+		}
+	}
+
+	//TODO: check current epoch
+
+	return d_out
 }
 
 // // TxMarkupState struct

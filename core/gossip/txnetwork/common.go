@@ -1,7 +1,8 @@
-package gossip_cat
+package txnetwork
 
 import (
 	model "github.com/abchain/fabric/core/gossip/model"
+	"sync"
 )
 
 //a standard vclock use seq
@@ -25,4 +26,29 @@ func (a *standardVClock) Less(b_in model.VClock) bool {
 
 func (v *standardVClock) OutOfRange() bool {
 	return v.oor
+}
+
+type asyncEvictPeerNotifier struct {
+	sync.Mutex
+	evicted []string
+}
+
+func (n *asyncEvictPeerNotifier) Register(t *txNetworkGlobal) {
+	t.regNotify(func(ids []string) {
+		n.Lock()
+		defer n.Unlock()
+		n.evicted = append(n.evicted, ids...)
+	})
+
+}
+
+func (n *asyncEvictPeerNotifier) Pop() []string {
+
+	n.Lock()
+	defer n.Unlock()
+
+	ret := n.evicted
+	n.evicted = nil
+
+	return ret
 }

@@ -1,4 +1,4 @@
-package gossip_cat
+package txnetwork
 
 import (
 	_ "github.com/abchain/fabric/core/gossip"

@@ -35,6 +35,14 @@ func (r *readerPos) batch() *batch {
 	return b
 }
 
+func (r *readerPos) next() *readerPos {
+	return &readerPos{Element: r.Next()}
+}
+
+func (r *readerPos) toCache() *readerPosCache {
+	return &readerPosCache{r.batch(), r.logpos}
+}
+
 type clientReg struct {
 	sync.Mutex
 	cliCounter   int

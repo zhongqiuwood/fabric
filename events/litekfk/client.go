@@ -6,11 +6,16 @@ import (
 
 type client int
 
+type readerPosCache struct {
+	*batch
+	logpos int
+}
+
 type reader struct {
 	cli       client
 	target    *topicUint
-	current   *readerPos
-	end       *readerPos
+	current   *readerPosCache
+	end       *readerPosCache
 	autoReset bool
 }
 
@@ -87,8 +92,8 @@ func (c client) Read(t *topicUint, beginPos int) (*reader, error) {
 	}
 
 	return &reader{
-		current:   pos,
-		end:       t.getStart(),
+		current:   pos.toCache(),
+		end:       t.getTail().toCache(),
 		cli:       c,
 		target:    t,
 		autoReset: true,
@@ -96,11 +101,11 @@ func (c client) Read(t *topicUint, beginPos int) (*reader, error) {
 }
 
 func (r *reader) endBatch() bool {
-	return r.current.batch().series == r.end.batch().series
+	return r.current.series == r.end.series
 }
 
 func (r *reader) _eof() bool {
-	return r.current.batch().series == r.end.batch().series &&
+	return r.current.series == r.end.series &&
 		r.current.logpos == r.end.logpos
 }
 
@@ -111,7 +116,7 @@ func (r *reader) eof() bool {
 	}
 
 	if r.autoReset {
-		r.end = r.target.getTail()
+		r.end = r.target.getTail().toCache()
 		if !r._eof() {
 			return false
 		}
@@ -120,28 +125,39 @@ func (r *reader) eof() bool {
 	return true
 }
 
-func (r *reader) commit() {
+func (r *reader) commit() error {
 	r.target.clients.Lock()
 	defer r.target.clients.Unlock()
 
 	if r.current.logpos == r.target.conf.batchsize {
+
+		pos, ok := r.target.clients.readers[r.cli]
+		if !ok {
+			return ErrDropOut
+		}
+
 		//commit to next batch
-		curBatch := r.current.Value.(*batch)
+		curBatch := pos.batch()
 		delete(curBatch.readers, r.cli)
 
-		r.current = &readerPos{Element: r.current.Next()}
-		r.current.batch().readers[r.cli] = true
+		pos = pos.next()
+		pos.batch().readers[r.cli] = true
+		r.current = pos.toCache()
 
 		//update passed status
 		if len(curBatch.readers) == 0 &&
 			curBatch.series == r.target.clients.passedSeries {
-			r.target.clients.passedSeries = r.current.batch().series
-			r.target.setPassed(r.current)
+			r.target.clients.passedSeries = pos.batch().series
+			r.target.setPassed(pos)
 		}
+
+		r.target.clients.readers[r.cli] = pos
+
+	} else {
+		r.target.clients.readers[r.cli].logpos = r.current.logpos
 	}
 
-	r.target.clients.readers[r.cli] = r.current
-
+	return nil
 }
 
 func (r *reader) AutoReset(br bool) {
@@ -154,11 +170,10 @@ func (r *reader) ReadOne() (interface{}, error) {
 		return nil, ErrEOF
 	}
 
-	v := r.current.batch().logs[r.current.logpos]
+	v := r.current.logs[r.current.logpos]
 	r.current.logpos++
-	r.commit()
 
-	return v, nil
+	return v, r.commit()
 }
 
 func (r *reader) ReadBatch() (ret []interface{}, e error) {
@@ -168,13 +183,13 @@ func (r *reader) ReadBatch() (ret []interface{}, e error) {
 	}
 
 	if r.endBatch() {
-		ret = r.current.batch().logs[r.current.logpos:r.end.logpos]
+		ret = r.current.logs[r.current.logpos:r.end.logpos]
 		r.current.logpos = r.end.logpos
 	} else {
-		ret = r.current.batch().logs[r.current.logpos:]
+		ret = r.current.logs[r.current.logpos:]
 		r.current.logpos = r.target.conf.batchsize
 	}
 
-	r.commit()
+	e = r.commit()
 	return
 }

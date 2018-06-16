@@ -50,6 +50,16 @@ type clientReg struct {
 	readers      map[client]*readerPos
 }
 
+func (cr *clientReg) AssignClient() client {
+	cr.Lock()
+	defer cr.Unlock()
+
+	c := client(cr.cliCounter)
+	cr.cliCounter++
+
+	return c
+}
+
 type topicUint struct {
 	sync.RWMutex
 	conf    *topicConfiguration
@@ -100,6 +110,10 @@ func (t *topicUint) getTail() *readerPos {
 func (t *topicUint) _head() *readerPos {
 
 	return &readerPos{Element: t.data.Front()}
+}
+
+func (t *topicUint) _position(b *batch, offset int) uint64 {
+	return b.series*uint64(t.conf.maxbatch) + uint64(offset)
 }
 
 func (t *topicUint) setDryrun(d bool) {
@@ -170,4 +184,33 @@ func (t *topicUint) addBatch() (ret *batch) {
 	}
 
 	return
+}
+
+func (t *topicUint) Clients() *clientReg {
+	return &t.clients
+}
+
+func (t *topicUint) CurrentPos() uint64 {
+
+	tail := t.getTail()
+
+	return t._position(tail.batch(), tail.logpos)
+}
+
+func (t *topicUint) Write(i interface{}) error {
+
+	t.Lock()
+	defer t.Unlock()
+
+	blk := t.data.Back().Value.(*batch)
+	if blk.wriPos == t.conf.batchsize {
+		t.Unlock()
+		blk = t.addBatch()
+		t.Lock()
+	}
+
+	blk.logs[blk.wriPos] = i
+	blk.wriPos++
+
+	return nil
 }

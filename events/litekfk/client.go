@@ -129,12 +129,12 @@ func (r *reader) commit() error {
 	r.target.clients.Lock()
 	defer r.target.clients.Unlock()
 
-	if r.current.logpos == r.target.conf.batchsize {
+	pos, ok := r.target.clients.readers[r.cli]
+	if !ok {
+		return ErrDropOut
+	}
 
-		pos, ok := r.target.clients.readers[r.cli]
-		if !ok {
-			return ErrDropOut
-		}
+	if r.current.logpos == r.target.conf.batchsize {
 
 		//commit to next batch
 		curBatch := pos.batch()
@@ -154,7 +154,8 @@ func (r *reader) commit() error {
 		r.target.clients.readers[r.cli] = pos
 
 	} else {
-		r.target.clients.readers[r.cli].logpos = r.current.logpos
+		//simple update logpos
+		pos.logpos = r.current.logpos
 	}
 
 	return nil
@@ -162,6 +163,10 @@ func (r *reader) commit() error {
 
 func (r *reader) AutoReset(br bool) {
 	r.autoReset = br
+}
+
+func (r *reader) Position() uint64 {
+	return r.target._position(r.current.batch, r.current.logpos)
 }
 
 func (r *reader) ReadOne() (interface{}, error) {

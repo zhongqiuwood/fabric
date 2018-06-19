@@ -35,7 +35,7 @@ func digestToIndex(dig []byte) string {
 //return whether tx2 is precede of the digest of tx1
 func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	//TODO: check tx2's nonce and tx1's txid
-	return false
+	return true
 }
 
 func (p *peerTxs) GenDigest() model.Digest {
@@ -283,10 +283,15 @@ func (c *hotTxCat) SelfStatus() model.Status {
 func (c *hotTxCat) AssignUpdate(cpo gossip.CatalogPeerPolicies, d *pb.Gossip_Digest) model.Update {
 
 	//TODO: check epoch from d
+	height, err := c.ledger.GetBlockNumberByState(d.GetEpoch())
+	if err != nil {
+		height = uint64(0)
+	}
 
 	return &txPoolUpdate{
 		Gossip_Tx: &pb.Gossip_Tx{},
 		cpo:       cpo,
+		epochH:    height,
 	}
 }
 
@@ -325,7 +330,12 @@ func (c *hotTxCat) ToProtoDigest(dm map[string]model.Digest) *pb.Gossip_Digest {
 		}
 	}
 
-	//TODO: check current epoch
+	var err error
+	d_out.Epoch, err = c.ledger.GetCurrentStateHash()
+	if err != nil {
+		//we can still emit the digest, but should log the problem
+		logger.Error("Ledger get current statehash fail:", err)
+	}
 
 	return d_out
 }

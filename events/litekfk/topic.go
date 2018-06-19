@@ -164,8 +164,9 @@ func (t *topicUint) addBatch() (ret *batch) {
 
 	//4. force clean
 	if t.conf.maxbatch != 0 {
-		for pos := t._head(); t.conf.maxbatch < t.data.Len(); t.data.Remove(t.data.Front()) {
+		for ; t.conf.maxbatch < t.data.Len(); t.data.Remove(t.data.Front()) {
 
+			pos := t._head()
 			//purge or force unreg
 			if pos.batch().series >= t.passed.batch().series {
 				t.Unlock()

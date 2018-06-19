@@ -10,8 +10,7 @@ type topicConfiguration struct {
 	maxbatch  int //if 0, not limit the max batch
 	maxkeep   int //when batch is passed out, how long it can keep before purge
 	//must less than maxbatch (if not 0)
-	maxDelay      int //client can start, must not larger than 1/2 maxkeep
-	notAutoResume bool
+	maxDelay int //client can start, must not larger than 1/2 maxkeep
 }
 
 type batch struct {
@@ -127,10 +126,6 @@ func (t *topicUint) setPassed(n *readerPos) {
 	t.Lock()
 	defer t.Unlock()
 
-	if n.batch().series < t.passed.batch().series {
-		panic("Wrong set passed behavior")
-	}
-
 	t.passed = n
 }
 
@@ -203,14 +198,14 @@ func (t *topicUint) Write(i interface{}) error {
 	defer t.Unlock()
 
 	blk := t.data.Back().Value.(*batch)
+	blk.logs[blk.wriPos] = i
+	blk.wriPos++
+
 	if blk.wriPos == t.conf.batchsize {
 		t.Unlock()
 		blk = t.addBatch()
 		t.Lock()
 	}
-
-	blk.logs[blk.wriPos] = i
-	blk.wriPos++
 
 	return nil
 }

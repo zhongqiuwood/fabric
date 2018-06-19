@@ -56,9 +56,9 @@ func (cf *topicConfiguration) MaxDelay(d int) error {
 func (cf *topicConfiguration) MaxBatch(b int) error {
 
 	if b != 0 && cf.maxkeep > b {
-		return fmt.Errorf("Too small maxbatch %d, should less than 1/2 of maxkeep %d", b, cf.maxkeep)
+		return fmt.Errorf("Too small maxbatch %d, should larger than maxkeep %d", b, cf.maxkeep)
 	}
 
-	cf.maxDelay = b
+	cf.maxbatch = b
 	return nil
 }

@@ -23,8 +23,15 @@ var ErrDropOut = fmt.Errorf("Client have been dropped out")
 var ErrEOF = fmt.Errorf("EOF")
 
 const (
-	ReadPos_Default = iota
+	ReadPos_Empty = iota
+	ReadPos_Default
 	ReadPos_Latest
+)
+
+const (
+	ReadPos_Resume = 256 + iota
+	ReadPos_ResumeOrDefault
+	ReadPos_ResumeOrLatest
 )
 
 func (c client) UnReg(t *topicUint) {
@@ -40,22 +47,22 @@ func (c client) UnReg(t *topicUint) {
 	delete(pos.batch().readers, c)
 	delete(t.clients.readers, c)
 
-	var oldest *readerPos
-
-	//fix passed position
-	for _, p := range t.clients.readers {
-		if oldest == nil || oldest.batch().series > p.batch().series {
-			oldest = p
-		}
-	}
-
-	if oldest.batch().series > t.clients.passedSeries {
-		t.clients.passedSeries = oldest.batch().series
-		t.setPassed(oldest)
-	}
-
 	if len(t.clients.readers) == 0 {
 		t.setDryrun(true)
+	} else {
+		var oldest *readerPos
+
+		//fix passed position
+		for _, p := range t.clients.readers {
+			if oldest == nil || oldest.batch().series > p.batch().series {
+				oldest = p
+			}
+		}
+
+		if oldest.batch().series > t.clients.passedSeries {
+			t.clients.passedSeries = oldest.batch().series
+			t.setPassed(oldest)
+		}
 	}
 }
 
@@ -65,15 +72,14 @@ func (c client) Read(t *topicUint, beginPos int) (*reader, error) {
 
 	pos, ok := t.clients.readers[c]
 	if !ok {
-		if t.conf.notAutoResume {
-			return nil, ErrDropOut
-		}
 
-		switch beginPos {
+		switch beginPos & (ReadPos_Resume - 1) {
 		case ReadPos_Latest:
 			pos = t.getTail()
-		default:
+		case ReadPos_Default:
 			pos = t.getStart()
+		default:
+			return nil, ErrDropOut
 		}
 
 		if len(t.clients.readers) == 0 {
@@ -89,6 +95,10 @@ func (c client) Read(t *topicUint, beginPos int) (*reader, error) {
 		t.clients.readers[c] = pos
 
 		pos.Value.(*batch).readers[c] = true
+	} else {
+		if (beginPos & ReadPos_Resume) == 0 {
+			return nil, fmt.Errorf("Read options not allow resume")
+		}
 	}
 
 	return &reader{

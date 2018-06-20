@@ -2,6 +2,8 @@ package txnetwork
 
 import (
 	"container/list"
+	"github.com/abchain/fabric/core/gossip"
+	"github.com/abchain/fabric/core/util"
 	"sync"
 )
 
@@ -13,14 +15,46 @@ type peerStatus struct {
 	status        []byte
 }
 
+type selfPeerStatus struct {
+	peerStatus
+	sync.Once
+}
+
 type txNetworkGlobal struct {
 	sync.RWMutex
 	lruQueue  *list.List
 	lruIndex  map[string]*list.Element
+	selfPeer  *selfPeerStatus
 	onevicted []func([]string)
 }
 
 func GetNetworkStatus() *txNetworkGlobal { return global }
+
+func init() {
+
+	global = &txNetworkGlobal{
+		lruQueue: list.New(),
+		lruIndex: make(map[string]*list.Element),
+		selfPeer: new(selfPeerStatus),
+	}
+
+	gossip.RegisterCat = append(gossip.RegisterCat, initNetworkStatus)
+}
+
+func initNetworkStatus(stub *gossip.GossipStub) {
+}
+
+func (g *txNetworkGlobal) getSelfStatus() *selfPeerStatus {
+
+	g.selfPeer.Do(
+		func() {
+			//TODO: we generate id and endorse it
+			g.selfPeer.peerId = util.GenerateUUID()
+			g.selfPeer.beginTxDigest = util.GenerateBytesUUID()
+		})
+
+	return g.selfPeer
+}
 
 func (g *txNetworkGlobal) regNotify(f func([]string)) {
 	g.Lock()

@@ -236,9 +236,9 @@ func (u *txPoolUpdate) Add(id string, s_in model.Status) model.Update {
 }
 
 type hotTxCat struct {
-	ledger      *ledger.Ledger
-	evictNotify asyncEvictPeerNotifier
-	self        gossip.CatalogHandler
+	ledger *ledger.Ledger
+	policy gossip.CatalogPolicies
+	self   gossip.CatalogHandler
 	//	txMarkupStates map[string]*TxMarkupState
 
 	// security state
@@ -250,34 +250,49 @@ type hotTxCat struct {
 	updateExpired  int64 // seconds
 }
 
+func init() {
+	gossip.RegisterCat = append(gossip.RegisterCat, initHotTx)
+}
+
+func initHotTx(stub *gossip.GossipStub) {
+
+	hotTx := new(hotTxCat)
+	hotTx.policy = gossip.NewCatalogPolicyDefault()
+
+	hotTx.self = stub.AddDefaultCatalogHandler(hotTx)
+	registerEvictFunc(hotTx.self)
+}
+
 func (c *hotTxCat) AddTransaction(tx *pb.Transaction) error {
 	//TODO: verify the tx first
-
+	return nil
 }
 
 //Implement for CatalogHelper
-func (c *hotTxCat) Name() string { return "openedTx" }
+func (c *hotTxCat) Name() string                        { return "openedTx" }
+func (c *hotTxCat) GetPolicies() gossip.CatalogPolicies { return c.policy }
 
-func (c *hotTxCat) UpdateNewPeer(id string, d model.Digest) (add model.Status, rm []string) {
-
-	rm = c.evictNotify.Pop()
+func (c *hotTxCat) UpdateNewPeer(id string, d model.Digest) model.Status {
 
 	peer := GetNetworkStatus().queryPeer(id)
 	if peer == nil {
 		//peer id is unknown for global, so reject it
-		return
+		return nil
 	}
 
 	hitem := &txMemPoolItem{digest: peer.status}
 
-	add = &peerTxMemPool{peerTxs{head: hitem, last: hitem},
+	return &peerTxMemPool{peerTxs{head: hitem, last: hitem},
 		make(map[string]*txMemPoolItem)}
-	return
 }
 
-func (c *hotTxCat) SelfStatus() model.Status {
-	//TODO: we must load the latest tx
-	return nil
+func (c *hotTxCat) SelfStatus() (string, model.Status) {
+
+	self := GetNetworkStatus().getSelfStatus()
+	hitem := &txMemPoolItem{digest: self.beginTxDigest}
+
+	return self.peerId, &peerTxMemPool{peerTxs{head: hitem, last: hitem},
+		make(map[string]*txMemPoolItem)}
 }
 
 func (c *hotTxCat) AssignUpdate(cpo gossip.CatalogPeerPolicies, d *pb.Gossip_Digest) model.Update {

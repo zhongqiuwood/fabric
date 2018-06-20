@@ -1,9 +1,24 @@
 package txnetwork
 
 import (
+	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	"sync"
 )
+
+type txcommonImpl struct {
+	secHelper crypto.Peer
+	sync.Once
+}
+
+var txcommon txcommonImpl
+
+func InitTxNetwork(secHelperFunc func() crypto.Peer) {
+	txcommon.Do(func() {
+		txcommon.secHelper = secHelperFunc()
+	})
+}
 
 //a standard vclock use seq
 type standardVClock struct {
@@ -28,27 +43,10 @@ func (v *standardVClock) OutOfRange() bool {
 	return v.oor
 }
 
-type asyncEvictPeerNotifier struct {
-	sync.Mutex
-	evicted []string
-}
-
-func (n *asyncEvictPeerNotifier) Register(t *txNetworkGlobal) {
-	t.regNotify(func(ids []string) {
-		n.Lock()
-		defer n.Unlock()
-		n.evicted = append(n.evicted, ids...)
+func registerEvictFunc(h gossip.CatalogHandler) {
+	GetNetworkStatus().regNotify(func(ids []string) {
+		for _, id := range ids {
+			h.RemovePeer(id)
+		}
 	})
-
-}
-
-func (n *asyncEvictPeerNotifier) Pop() []string {
-
-	n.Lock()
-	defer n.Unlock()
-
-	ret := n.evicted
-	n.evicted = nil
-
-	return ret
 }

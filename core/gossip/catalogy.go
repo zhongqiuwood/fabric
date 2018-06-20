@@ -14,6 +14,7 @@ import (
 type CatalogHandler interface {
 	Name() string
 	SelfUpdate(model.Status)
+	RemovePeer(string)
 	HandleUpdate(*pb.PeerID, *pb.Gossip_Update, CatalogPeerPolicies)
 	HandleDigest(*pb.PeerID, *pb.Gossip_Digest, CatalogPeerPolicies)
 }
@@ -30,9 +31,9 @@ type CatalogHelper interface {
 	Name() string
 	GetPolicies() CatalogPolicies //caller do not need to check the interface
 	//for any new incoming peer,
-	UpdateNewPeer(string, model.Digest) (model.Status, []string)
+	UpdateNewPeer(string, model.Digest) model.Status
 
-	SelfStatus() model.Status
+	SelfStatus() (string, model.Status)
 	AssignUpdate(CatalogPeerPolicies, *pb.Gossip_Digest) model.Update
 
 	EncodeUpdate(model.Update) ([]byte, error)
@@ -77,7 +78,7 @@ type catalogHandler struct {
 	sstub    *pb.StreamStub
 }
 
-func NewCatalogHandlerImpl(self string, stub *pb.StreamStub, helper CatalogHelper) (ret *catalogHandler) {
+func NewCatalogHandlerImpl(stub *pb.StreamStub, helper CatalogHelper) (ret *catalogHandler) {
 
 	ret = &catalogHandler{
 		CatalogHelper: helper,
@@ -85,13 +86,26 @@ func NewCatalogHandlerImpl(self string, stub *pb.StreamStub, helper CatalogHelpe
 		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*model.Puller)},
 	}
 
+	id, status := helper.SelfStatus()
+
 	ret.model = model.NewGossipModel(
 		&model.Peer{
-			Id:     self,
-			Status: helper.SelfStatus(),
+			Id:     id,
+			Status: status,
 		})
 
 	return
+}
+
+func (h *catalogHandler) SelfUpdate(s model.Status) {
+
+	h.model.LocalUpdate(s)
+
+	go h.schedulePush()
+}
+
+func (h *catalogHandler) RemovePeer(id string) {
+	h.model.ClearPeer(id)
 }
 
 func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cpo CatalogPeerPolicies) {
@@ -122,15 +136,10 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cp
 
 	//Handle unknown Peer
 	for id, d := range unknownPeer {
-		accept, rm := h.UpdateNewPeer(id, d)
-		if accept != nil {
+		if accept := h.UpdateNewPeer(id, d); accept != nil {
 			logger.Infof("Catalog %s now know peer %s", h.Name(), id)
 			//accept one
 			h.model.NewPeer(&model.Peer{id, accept})
-		}
-
-		for _, rid := range rm {
-			h.model.ClearPeer(rid)
 		}
 	}
 
@@ -156,13 +165,6 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cp
 		h.addOneUpdate()
 	}
 
-}
-
-func (h *catalogHandler) SelfUpdate(s model.Status) {
-
-	h.model.LocalUpdate(s)
-
-	go h.schedulePush()
 }
 
 func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cpo CatalogPeerPolicies) {

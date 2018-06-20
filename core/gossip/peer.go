@@ -68,12 +68,13 @@ func (g *GossipStub) AddCatalogHandler(cat string, h CatalogHandler) {
 	}
 }
 
-func (g *GossipStub) AddDefaultCatalogHandler(helper CatalogHelper) {
+func (g *GossipStub) AddDefaultCatalogHandler(helper CatalogHelper) CatalogHandler {
 
-	h := NewCatalogHandlerImpl(g.self.GetName(), g.StreamStub, helper)
+	h := NewCatalogHandlerImpl(g.StreamStub, helper)
 
 	g.AddCatalogHandler(helper.Name(), h)
 
+	return h
 }
 
 var gossipStub *GossipStub

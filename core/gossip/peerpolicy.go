@@ -120,7 +120,7 @@ func (p *peerPolicies) ScoringPeer(score int, weight uint) {
 	p.Lock()
 	defer p.Unlock()
 
-	p.score = p.score + int64(score)
+	p.score = p.score + int64(score*weight)
 	p.scoreWeightTotal = p.scoreWeightTotal + uint64(weight)
 }
 

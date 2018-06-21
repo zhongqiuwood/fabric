@@ -12,7 +12,16 @@ var global *txNetworkGlobal
 type peerStatus struct {
 	peerId        string
 	beginTxDigest []byte
+	beginTxSeries uint64
 	status        []byte
+}
+
+func (s *peerStatus) createPeerTxs() *peerTxs {
+	hitem := &txMemPoolItem{
+		digest: s.beginTxDigest,
+		digestSeries: s.beginTxSeries
+	}
+	return &peerTxs{head: hitem, las: hitem}
 }
 
 type selfPeerStatus struct {

@@ -11,9 +11,10 @@ import (
 )
 
 type txMemPoolItem struct {
-	digest     []byte
-	tx         *pb.Transaction //cache of the tx (may just the txid)
-	committedH uint64          //0 means not commited
+	digest       []byte
+	digestSeries uint64
+	tx           *pb.Transaction //cache of the tx (may just the txid)
+	committedH   uint64          //0 means not commited
 
 	//so we have a simple list structure
 	next *txMemPoolItem
@@ -39,7 +40,11 @@ func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 }
 
 func (p *peerTxs) GenDigest() model.Digest {
-	return &pb.Gossip_Digest_PeerState{State: p.last.digest}
+
+	return &pb.Gossip_Digest_PeerState{
+		State: p.last.digest,
+		Num:   p.last.digestSeries,
+	}
 }
 
 func (p *peerTxs) Merge(s_in model.Status) error {
@@ -61,10 +66,6 @@ func (p *peerTxs) Merge(s_in model.Status) error {
 			break
 		}
 	}
-
-	// //scoring the peer (how many new txs have the update provided )
-	// s.cpo.ScoringPeer((s.size-duplicatedCnt)*100/s.size,
-	// 	cat_hottx_one_merge_weight)
 
 	return nil
 }
@@ -93,7 +94,8 @@ func (p *peerTxs) MakeUpdate(d_in model.Digest) model.Status {
 }
 
 type peerTxMemPool struct {
-	peerTxs
+	*peerTxs
+	peerId string
 	//index help us to seek by a txid, it do not need to consensus with the size
 	//field in peerTxs
 	index map[string]*txMemPoolItem
@@ -135,6 +137,25 @@ func (p *peerTxMemPool) Merge(s_in model.Status) error {
 		panic("Type error, not peerTxPoolUpdate")
 	}
 
+	//response said our data is outdate
+	if s.head.digestSeries > p.last.digestSeries {
+		//check if we need to update
+		peerStatus := GetNetworkStatus().queryPeer(p.peerId)
+		if peerStatus == nil {
+			//boom ...
+			return fmt.Errorf("Unknown status in global for peer %s", p.peerId)
+		}
+
+		//the incoming MAYBE an valid, known digest, we just update our status
+		if peerStatus.beginTxSeries >= s.head.digestSeries {
+			logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
+				p.peerId, p.last.digest, p.last.digestSeries)
+			//all data we cache is clear ....
+			p.peerTxs = peerStatus.createPeerTxs()
+			p.index = map[string]*txMemPoolItem{digestToIndex(p.head.digest): p.head}
+		}
+	}
+
 	oldlast := p.last
 
 	err := p.peerTxs.Merge(s.peerTxs)
@@ -144,7 +165,7 @@ func (p *peerTxMemPool) Merge(s_in model.Status) error {
 
 	var mergeCnt int
 	//we need to construct the index ...
-	for beg := oldlast; beg != nil; beg = beg.next {
+	for beg := oldlast.next; beg != nil; beg = beg.next {
 		p.index[digestToIndex(beg.digest)] = beg
 		mergeCnt++
 	}
@@ -153,8 +174,14 @@ func (p *peerTxMemPool) Merge(s_in model.Status) error {
 		return fmt.Errorf("Wrong update size, have %d but merge %d", s.size, mergeCnt)
 	}
 
+	var mergeW uint
+	if s.size < int(cat_hottx_one_merge_weight) {
+		mergeW = uint(s.size)
+	} else {
+		mergeW = cat_hottx_one_merge_weight
+	}
 	//scoring the peer (how many new txs have the update provided )
-	s.cpo.ScoringPeer(mergeCnt*100/s.size, cat_hottx_one_merge_weight)
+	s.cpo.ScoringPeer(mergeCnt*100/s.size, mergeW)
 
 	return nil
 }

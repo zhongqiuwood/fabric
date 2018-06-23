@@ -18,10 +18,10 @@ type peerStatus struct {
 
 func (s *peerStatus) createPeerTxs() *peerTxs {
 	hitem := &txMemPoolItem{
-		digest: s.beginTxDigest,
-		digestSeries: s.beginTxSeries
+		digest:       s.beginTxDigest,
+		digestSeries: s.beginTxSeries,
 	}
-	return &peerTxs{head: hitem, las: hitem}
+	return &peerTxs{head: hitem, last: hitem}
 }
 
 type selfPeerStatus struct {

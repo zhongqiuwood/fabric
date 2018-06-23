@@ -198,8 +198,15 @@ message Gossip {
     }
 }
 
+// TransactionBlock carries a batch of transactions.
+message HotTransactionBlock {
+    repeated Transaction transactions = 1;
+    uint64 beginSeries = 2;
+}
+
+
 message Gossip_Tx{
-    map<string, TransactionBlock> txs = 1;
+    map<string, HotTransactionBlock> txs = 1;
 }
 
 message Message {

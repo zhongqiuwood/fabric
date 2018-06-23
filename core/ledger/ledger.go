@@ -578,6 +578,10 @@ func (ledger *Ledger) DeleteALLStateKeysAndValues() error {
 
 /////////////////// transaction related methods /////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
+func (ledger *Ledger) PoolTransaction(tx *protos.Transaction) {
+	ledger.txpool.txPool[tx.GetTxid()] = tx
+}
+
 func (ledger *Ledger) PutTransactions(txs []*protos.Transaction) error {
 	return ledger.txpool.putTransaction(txs)
 }
@@ -585,6 +589,10 @@ func (ledger *Ledger) PutTransactions(txs []*protos.Transaction) error {
 // GetTransactionByID return transaction by it's txId
 func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
 	return ledger.txpool.getTransaction(txID)
+}
+
+func (ledger *Ledger) GetCommitedTransaction(txID string) (*protos.Transaction, error) {
+	return fetchTxFromDB(txID)
 }
 
 // GetTransactionByID return transaction by it's txId

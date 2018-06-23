@@ -55,6 +55,7 @@ It has these top-level messages:
 	PeersAddresses
 	HelloMessage
 	Gossip
+	HotTransactionBlock
 	Gossip_Tx
 	Message
 	Response

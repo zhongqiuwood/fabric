@@ -57,6 +57,10 @@ func (g *GossipStub) GetSStub() *pb.StreamStub {
 	return g.StreamStub
 }
 
+func (g *GossipStub) GetCatalogHandler(cat string) CatalogHandler {
+	return g.catalogHandlers[cat]
+}
+
 func (g *GossipStub) AddCatalogHandler(cat string, h CatalogHandler) {
 	_, ok := g.catalogHandlers[cat]
 	g.catalogHandlers[cat] = h

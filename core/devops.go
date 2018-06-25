@@ -219,6 +219,9 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 	return chaincodeDeploymentSpec, err
 }
 
+// func (d *Devops) toTxNetwork(ctx context.Context, chaincodeInvocationSpec *pb.ChaincodeInvocationSpec, attributes []string) (*pb.Response, error) {
+// }
+
 func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.ChaincodeInvocationSpec, attributes []string, invoke bool) (*pb.Response, error) {
 
 	if chaincodeInvocationSpec.ChaincodeSpec.ChaincodeID.Name == "" {

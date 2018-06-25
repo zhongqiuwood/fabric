@@ -345,13 +345,22 @@ func initHotTx(stub *gossip.GossipStub) {
 	registerEvictFunc(hotTx.self)
 }
 
-func (c *hotTxCat) AddTransaction(tx *pb.Transaction) error {
-	//TODO: verify the tx first
+const (
+	hotTxCatName = "openedTx"
+)
+
+func AddTransaction(tx *pb.Transaction) error {
+
+	h := gossip.GetGossip().GetCatalogHandler(hotTxCatName)
+	if h == nil {
+		return fmt.Error("Gossip handler for hot (open) tx is not availiable")
+	}
+
 	return nil
 }
 
 //Implement for CatalogHelper
-func (c *hotTxCat) Name() string                        { return "openedTx" }
+func (c *hotTxCat) Name() string                        { return hotTxCatName }
 func (c *hotTxCat) GetPolicies() gossip.CatalogPolicies { return c.policy }
 
 func (c *hotTxCat) UpdateNewPeer(id string, d model.Digest) model.Status {

@@ -13,7 +13,7 @@ import (
 
 type CatalogHandler interface {
 	Name() string
-	SelfUpdate(model.Status)
+	SelfUpdate(model.UpdateIn)
 	HandleUpdate(*pb.PeerID, *pb.Gossip_Update, CatalogPeerPolicies)
 	HandleDigest(*pb.PeerID, *pb.Gossip_Digest, CatalogPeerPolicies)
 }
@@ -29,6 +29,7 @@ type CatalogPeerPolicies interface {
 type CatalogHelper interface {
 	Name() string
 	GetPolicies() CatalogPolicies //caller do not need to check the interface
+	GetStatus() model.Status
 
 	EncodeDigest(model.Digest) *pb.Gossip_Digest
 	EncodeUpdate(model.UpdateOut) proto.Message
@@ -37,12 +38,12 @@ type CatalogHelper interface {
 }
 
 type puller struct {
-	PullerHelper
+	model.PullerHelper
 	*model.Puller
 	hf func(*model.Puller)
 }
 
-func (p *puller) init(ph PullerHelper, hf func(*model.Puller)) {
+func (p *puller) init(ph model.PullerHelper, hf func(*model.Puller)) {
 	p.PullerHelper = ph
 	p.hf = hf
 }
@@ -62,17 +63,13 @@ type pullWorks struct {
 	m map[CatalogPeerPolicies]*puller
 }
 
-func (h *pullWorks) endPuller(cpo CatalogPeerPolicies) {
+func (h *pullWorks) popPuller(cpo CatalogPeerPolicies) *puller {
+
 	h.Lock()
 	defer h.Unlock()
+	p := h.m[cpo]
 	delete(h.m, cpo)
-}
-
-func (h *pullWorks) checkPuller(cpo CatalogPeerPolicies) *model.Puller {
-
-	h.Lock()
-	defer h.Unlock()
-	return h.m[cpo]
+	return p
 }
 
 func (h *pullWorks) newPuller(cpo CatalogPeerPolicies) *puller {
@@ -90,63 +87,65 @@ func (h *pullWorks) newPuller(cpo CatalogPeerPolicies) *puller {
 }
 
 type scheduleWorks struct {
-	endSchedule context.CancelFunc
-	expectCnt   int
+	cancelSchedule context.CancelFunc
+	pushingCnt     int
+	plannedCnt     int
 	sync.Mutex
 }
 
-func (s *scheduleWorks) endSchedule() {
+func (s *scheduleWorks) pushedCnt() int {
 	s.Lock()
 	defer s.Unlock()
-
-	if s.endSchedule != nil {
-		//cancel last schedule and use a new one
-		s.endSchedule()
-		s.endSchedule = nil
-	}
-}
-
-func (s *scheduleWorks) pendingPush() int {
-	s.Lock()
-	defer s.Unlock()
-	return s.expectCnt
+	return s.pushingCnt
 }
 
 func (s *scheduleWorks) pushDone() {
 
 	s.Lock()
 	defer s.Unlock()
-	if s.expectCnt > 0 {
-		s.expectCnt--
+	s.pushingCnt++
+}
+
+func (s *scheduleWorks) endSchedule() {
+	s.Lock()
+	defer s.Unlock()
+
+	if s.cancelSchedule != nil {
+		//cancel last schedule and use a new one
+		s.cancelSchedule()
+		s.cancelSchedule = nil
 	}
-
 }
 
-func (s *scheduleWorks) resetSchedule(newScheduleCnt int) {
+func (s *scheduleWorks) planPushingCount(newCnt int) {
 	s.Lock()
 	defer s.Unlock()
 
+	if s.plannedCnt < newCnt {
+		s.plannedCnt = newCnt
+	}
 }
 
-func (s *scheduleWorks) newSchedule(ctx context.Context, newScheduleCnt int) context.Context {
+//prepare a context and pop the planned pushing count
+func (s *scheduleWorks) newSchedule(ctx context.Context) (context.Context, int) {
 
 	s.Lock()
 	defer s.Unlock()
 
-	if h.schedule.endSchedule != nil {
-		//we have a running schedule now
-		if s.expectCnt < newScheduleCnt {
-			s.expectCnt = newScheduleCnt
-		}
-
-		return nil
+	//check plannedCnt is important: that is, NEVER start a schedule
+	//with 0 planned count
+	if s.cancelSchedule != nil || s.plannedCnt == 0 {
+		return nil, 0
 	}
 
 	wctx, cancelF := context.WithCancel(ctx)
-	s.endSchedule = cancelF
-	s.expectCnt = newScheduleCnt
+	s.cancelSchedule = cancelF
+	s.pushingCnt = 0
 
-	return wctx
+	plannedCnt := s.plannedCnt
+	s.plannedCnt = 0
+
+	return wctx, plannedCnt
 }
 
 type catalogHandler struct {
@@ -159,21 +158,12 @@ type catalogHandler struct {
 
 func NewCatalogHandlerImpl(stub *pb.StreamStub, helper CatalogHelper) (ret *catalogHandler) {
 
-	ret = &catalogHandler{
+	return &catalogHandler{
 		CatalogHelper: helper,
 		sstub:         stub,
-		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*model.Puller)},
+		model:         model.NewGossipModel(helper.GetStatus()),
+		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*puller)},
 	}
-
-	id, status := helper.SelfStatus()
-
-	ret.model = model.NewGossipModel(
-		&model.Peer{
-			Id:     id,
-			Status: status,
-		})
-
-	return
 }
 
 type sessionHandler struct {
@@ -182,12 +172,12 @@ type sessionHandler struct {
 }
 
 //implement of pushhelper and pullerhelper
-func (h *sessionHandler) EncodeDigest(model.Digest) proto.Message {
+func (h *sessionHandler) EncodeDigest(d model.Digest) proto.Message {
 
 	msg := &pb.Gossip{
 		Seq:     getGlobalSeq(),
 		Catalog: h.Name(),
-		M:       &pb.Gossip_Dig{h.CatalogHelper.EncodeDigest(m)},
+		M:       &pb.Gossip_Dig{h.CatalogHelper.EncodeDigest(d)},
 	}
 
 	h.cpo.PushUpdate(msg.EstimateSize())
@@ -221,8 +211,6 @@ func (h *sessionHandler) runPullTask(cpo CatalogPeerPolicies, puller *model.Pull
 	pctx, _ := context.WithTimeout(context.Background(),
 		time.Duration(h.GetPolicies().PullTimeout())*time.Second)
 	ret = puller.Process(pctx)
-
-	h.pulls.endPuller(h.cpo)
 	return
 }
 
@@ -241,6 +229,7 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 
 			//when we succefully accept an update, we also schedule a new push process
 			if err == nil {
+				h.schedule.planPushingCount(h.GetPolicies().PushCount())
 				h.schedulePush()
 			} else {
 				h.cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
@@ -250,10 +239,9 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 	}
 }
 
-func (h *catalogHandler) SelfUpdate(s model.Status) {
+func (h *catalogHandler) SelfUpdate(u model.UpdateIn) {
 
-	//	h.model.LocalUpdate(s)
-
+	h.model.RecvUpdate(u)
 	go h.schedulePush()
 }
 
@@ -276,7 +264,7 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cp
 
 func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cpo CatalogPeerPolicies) {
 
-	puller := h.checkPuller(cpo)
+	puller := h.pulls.popPuller(cpo)
 	if puller == nil {
 		//something wrong! if no corresponding puller, we never handle this message
 		logger.Errorf("No puller in catalog %s avaiable for peer %s", h.Name(), peer.Name)
@@ -294,20 +282,19 @@ func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cp
 
 }
 
-func (h *catalogHandler) schedulePush() {
+func (h *catalogHandler) executePush() error {
 
-	logger.Debug("Schedule a push process")
-
-	wctx := h.schedule.newSchedule(context.Background(), h.GetPolicies().PushCount())
+	logger.Debug("try execute a pushing process")
+	wctx, pushCnt := h.schedule.newSchedule(context.Background())
 	if wctx == nil {
-		logger.Debug("Reseting a running schedule and left")
-		return
+		logger.Debug("Another pushing process is running or no plan any more")
+		return fmt.Errorf("Resource is occupied")
 	}
 	defer h.schedule.endSchedule()
 
 	for strm := range h.sstub.OverAllHandlers(wctx) {
 
-		if h.schedule.pendingPush() <= 0 {
+		if h.schedule.pushedCnt() >= pushCnt {
 			break
 		}
 
@@ -318,53 +305,27 @@ func (h *catalogHandler) schedulePush() {
 		cpo := ph.GetPeerPolicy()
 
 		if pos := h.pulls.newPuller(cpo); pos != nil {
-			pos.Puller = model.NewPuller(h, strm, h.model)
+			pos.Puller = model.NewPuller(&sessionHandler{h, cpo}, strm.StreamHandler, h.model)
 			pctx, _ := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
 			err := pos.Puller.Process(pctx)
 
-			if err != nil {
+			if err == context.DeadlineExceeded {
 				cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
-			} else {
+			} else if err == nil {
 				logger.Debug("Scheduled pulling from peer [%s]", strm.GetName())
 			}
 		}
 	}
 
-	if h.schedule.pendingPush() > 0 {
-		break
-	}
+	logger.Infof("Finished a push process, plan %d and %d finished", pushCnt, h.schedule.pushedCnt())
+
+	return nil
 }
 
-// func (h *catalogHandler) checkPuller(cpo CatalogPeerPolicies) *model.Puller {
+func (h *catalogHandler) schedulePush() {
 
-// 	h.pulls.Lock()
-// 	defer h.pulls.Unlock()
-// 	return h.pulls.m[cpo]
-// }
+	//complete for the schedule resource until it failed
+	for h.executePush() == nil {
+	}
 
-// func (h *catalogHandler) newPuller(cpo CatalogPeerPolicies, stream *pb.StreamHandler) (*model.Puller, error) {
-// 	h.pulls.Lock()
-// 	defer h.pulls.Unlock()
-
-// 	if _, ok := h.pulls.m[cpo]; ok {
-// 		return nil, fmt.Errorf("Puller task exist")
-// 	}
-
-// 	//TODO: we may hook EncodeDigest by provided a custom pullhelper which known cpo
-// 	//so we can call pushdata method within it
-// 	puller := model.NewPullTask(h, h.model, stream)
-// 	h.pulls.m[cpo] = puller
-
-// 	return puller, nil
-// }
-
-// //a blocking function
-// func (h *catalogHandler) runAggresivePullTask(cpo CatalogPeerPolicies, stream *pb.StreamHandler) error {
-
-// 	puller, err := h.newPuller(cpo, stream)
-// 	if err != nil {
-// 		return err
-// 	}
-
-// 	return h.runPullTask(cpo, puller)
-// }
+}

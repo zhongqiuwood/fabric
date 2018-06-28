@@ -8,12 +8,11 @@ type VClock interface {
 //scuttlebutt scheme maintain per-peer status work with vclock digest
 type ScuttlebuttPeerUpdate interface {
 	From() VClock
-	To() VClock
 }
 
 type ScuttlebuttPeerStatus interface {
 	To() VClock
-	PickFrom(VClock) ScuttlebuttPeerUpdate
+	PickFrom(VClock, UpdateOut) (ScuttlebuttPeerUpdate, UpdateOut)
 	Update(ScuttlebuttPeerUpdate, UpdateIn) error
 }
 
@@ -62,7 +61,7 @@ type scuttlebuttStatus struct {
 	Peers map[string]ScuttlebuttPeerStatus
 }
 
-func (s *scuttlebuttStatus) Merge(u_in UpdateIn) error {
+func (s *scuttlebuttStatus) Update(u_in UpdateIn) error {
 
 	u, ok := u_in.(*scuttlebuttUpdateIn)
 
@@ -130,8 +129,9 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) UpdateOut {
 				s.Peers[id] = ss
 			}
 		} else if dd.Less(ss.To()) {
-			if ssu := ss.PickFrom(dd); ssu != nil {
+			if ssu, ssgu := ss.PickFrom(dd, r.UpdateOut); ssu != nil {
 				r.u[id] = ssu
+				r.UpdateOut = ssgu
 			}
 		}
 	}

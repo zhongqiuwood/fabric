@@ -1,107 +1,158 @@
 package gossip_model
 
-import (
-	"fmt"
-)
-
 //VClock is a type of digest, indicate a partial order nature
 type VClock interface {
-	Less(VClock) bool
-	OutOfRange() bool
+	Less(VClock) bool //VClock can be NEVER less than nil (indicate to "oldest" time)
 }
 
-//scuttlebutt status work with vclock digest, it was in essential an interval,
-//and a partial stack of Status (with only Merge method)
+//scuttlebutt scheme maintain per-peer status work with vclock digest
+type ScuttlebuttPeerUpdate interface {
+	From() VClock
+	To() VClock
+}
+
+type ScuttlebuttPeerStatus interface {
+	To() VClock
+	PickFrom(VClock) ScuttlebuttPeerUpdate
+	Update(ScuttlebuttPeerUpdate, UpdateIn) error
+}
+
+//elements in scuttlebutt scheme include a per-peer data and global data
+type scuttlebuttDigest struct {
+	Digest
+	d map[string]VClock
+}
+
+type scuttlebuttUpdateOut struct {
+	UpdateOut
+	u map[string]ScuttlebuttPeerUpdate
+}
+
+type scuttlebuttUpdateIn struct {
+	UpdateIn
+	u map[string]ScuttlebuttPeerUpdate
+}
+
+func MakeScuttlebuttLocalUpdate(gu UpdateIn) *scuttlebuttUpdateIn {
+	return &scuttlebuttUpdateIn{
+		u:        make(map[string]ScuttlebuttPeerUpdate),
+		UpdateIn: gu,
+	}
+}
+
+func (u *scuttlebuttUpdateIn) UpdateLocal(pu ScuttlebuttPeerUpdate) {
+	u.u[""] = pu
+}
+
+func (u *scuttlebuttUpdateIn) RemovePeers(ids []string) {
+	for _, id := range ids {
+		u.u[id] = nil
+	}
+}
+
+//scuttlebuttStatusHelper provide a per-peer status managing
 type ScuttlebuttStatus interface {
-	PickFrom(VClock) ScuttlebuttStatus
-	Merge(ScuttlebuttStatus) error
+	Status
+	NewPeer(string) ScuttlebuttPeerStatus
+	MissedUpdate(string, ScuttlebuttPeerUpdate, UpdateIn) error
 }
 
 type scuttlebuttStatus struct {
-	to VClock
 	ScuttlebuttStatus
+	Peers map[string]ScuttlebuttPeerStatus
 }
 
-func (s *scuttlebuttStatus) GenDigest() Digest { return s.to }
+func (s *scuttlebuttStatus) Merge(u_in UpdateIn) error {
 
-func (s *scuttlebuttStatus) MakeUpdate(d_in Digest) Status {
+	u, ok := u_in.(*scuttlebuttUpdateIn)
 
-	v, ok := d_in.(VClock)
 	if !ok {
-		panic("Wrong type, not vclock")
+		panic("type error, not scuttlebuttUpdateIn")
 	}
 
-	//could not return out-of-range status
-	if v.OutOfRange() || s.to.Less(v) {
-		return nil
+	err := s.Update(u.UpdateIn)
+	if err != nil {
+		return err
 	}
 
-	return &scuttlebuttStatus{v, s.PickFrom(v)}
+	for id, ss := range u.u {
+		//remove request
+		if ss == nil {
+			delete(s.Peers, id)
+		} else {
 
-}
+			pss, ok := s.Peers[id]
+			if ok {
+				err = pss.Update(ss, u.UpdateIn)
+			} else {
+				err = s.MissedUpdate(id, ss, u.UpdateIn)
+			}
 
-func (s *scuttlebuttStatus) Merge(s_in Status) error {
-
-	//NIL not consider as error, we can always merge a nil status
-	if s_in == nil {
-		return nil
+			if err != nil {
+				return err
+			}
+		}
 	}
 
-	in, ok := s_in.(*scuttlebuttStatus)
-	if !ok {
-		panic("Wrong type, not scuttlebuttStatus")
-	}
-
-	if in.to.OutOfRange() {
-		return fmt.Errorf("Can not merge into wrong clock")
-	}
-
-	if in.to.Less(s.to) {
-		return fmt.Errorf("Try merge older status")
-	}
-
-	ret := s.ScuttlebuttStatus.Merge(in.ScuttlebuttStatus)
-	if ret != nil {
-		return ret
-	}
-
-	//progress our clock
-	s.to = in.to
 	return nil
 }
 
-type ScuttlebuttUpdate interface {
-	Merge(*scuttlebuttStatus) *scuttlebuttStatus
-}
-
-type scuttlebuttUpdates struct {
-	//TODO: an associative data structure for searching is need
-	s map[string]*scuttlebuttStatus
-	ScuttlebuttUpdate
-}
-
-func (u *scuttlebuttUpdates) PickUp(id string) Status {
-
-	if u == nil {
-		return nil
+func (s *scuttlebuttStatus) GenDigest() Digest {
+	r := &scuttlebuttDigest{
+		d:      make(map[string]VClock),
+		Digest: s.GenDigest(),
 	}
 
-	return u.s[id]
-}
-
-func (u *scuttlebuttUpdates) Add(id string, s_in Status) Update {
-
-	if s_in == nil {
-		return u
+	for id, ss := range s.Peers {
+		r.d[id] = ss.To()
 	}
 
-	ud_s, ok := s_in.(*scuttlebuttStatus)
+	return r
+}
+
+func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) UpdateOut {
+
+	dig, ok := dig_in.(*scuttlebuttDigest)
 	if !ok {
-		panic("Wrong type, not scuttlebuttStatus")
+		panic("type error, not scuttlebuttDigest")
 	}
 
-	//the update must first be handle by ScuttlebuttUpdate interface
-	//(e.g: restrict its size) and then being merged
-	u.s[id] = u.Merge(ud_s)
-	return u
+	r := &scuttlebuttUpdateOut{
+		u:         make(map[string]ScuttlebuttPeerUpdate),
+		UpdateOut: s.MakeUpdate(dig.Digest),
+	}
+
+	for id, dd := range dig.d {
+		ss, ok := s.Peers[id]
+		if !ok {
+			ss = s.NewPeer(id)
+			if ss != nil {
+				s.Peers[id] = ss
+			}
+		} else if dd.Less(ss.To()) {
+			if ssu := ss.PickFrom(dd); ssu != nil {
+				r.u[id] = ssu
+			}
+		}
+	}
+
+	return r
+
+}
+
+func (s *scuttlebuttStatus) SetSelfPeer(selfid string,
+	self ScuttlebuttPeerStatus) {
+
+	//we add "self peer" on both selfid and default value(""),
+	//so an localupdate need not to know the self peer id
+	s.Peers[""] = self
+	s.Peers[selfid] = self
+}
+
+func NewScuttlebuttStatus(gs ScuttlebuttStatus) *scuttlebuttStatus {
+
+	return &scuttlebuttStatus{
+		ScuttlebuttStatus: gs,
+		Peers:             make(map[string]ScuttlebuttPeerStatus),
+	}
 }

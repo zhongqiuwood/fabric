@@ -7,31 +7,62 @@ import (
 )
 
 type PullerHelper interface {
-	EncodeDigest(map[string]Digest) proto.Message
+	EncodeDigest(Digest) proto.Message
 }
 
 type Puller struct {
 	model  *Model
-	update chan Update
+	update chan UpdateIn
 }
 
-func NewPullTask(helper PullerHelper, model *Model,
-	stream *pb.StreamHandler) *Puller {
+type PullerHandler interface {
+	PullerHelper
+	Handle(*Puller)
+}
+
+//The push-pull model
+type PushHelper interface {
+	//Handle method in PullerHandler is ensured to be called
+	CanPull() PullerHandler
+	//must allow nil input and encode an message include "empty" update
+	EncodeUpdate(UpdateOut) proto.Message
+}
+
+//d can be set to nil and indicate a "rejection" of pulling
+func AcceptPush(p PushHelper, stream *pb.StreamHandler, model *Model, d Digest) error {
+
+	if ph := p.CanPull(); ph != nil {
+		ph.Handle(NewPuller(ph, stream, model))
+	}
+
+	if d == nil {
+		return stream.SendMessage(p.EncodeUpdate(nil))
+	}
+
+	ud := model.RecvPullDigest(d)
+
+	//NOTICE: if stream is NOT enable to drop message, send in HandMessage
+	//may cause a deadlock, but in gossip package this is OK
+	return stream.SendMessage(p.EncodeUpdate(ud))
+}
+
+func NewPuller(ph PullerHelper, stream *pb.StreamHandler, model *Model) *Puller {
+
+	puller := &Puller{
+		model:  model,
+		update: make(chan UpdateIn),
+	}
 
 	dg := model.GenPullDigest()
-	stream.SendMessage(helper.EncodeDigest(dg))
+	stream.SendMessage(ph.EncodeDigest(dg))
 
-	return &Puller{
-		model:  model,
-		update: make(chan Update),
-	}
+	return puller
 }
 
-func (p *Puller) NotifyUpdate(ud Update) {
+func (p *Puller) NotifyUpdate(ud UpdateIn) {
 	if p == nil {
 		return
 	}
-
 	p.update <- ud
 }
 

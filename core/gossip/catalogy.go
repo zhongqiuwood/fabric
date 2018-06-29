@@ -13,7 +13,7 @@ import (
 
 type CatalogHandler interface {
 	Name() string
-	SelfUpdate(model.UpdateIn)
+	SelfUpdate(model.Update)
 	HandleUpdate(*pb.PeerID, *pb.Gossip_Update, CatalogPeerPolicies)
 	HandleDigest(*pb.PeerID, *pb.Gossip_Digest, CatalogPeerPolicies)
 }
@@ -32,8 +32,8 @@ type CatalogHelper interface {
 	GetStatus() model.Status
 
 	EncodeDigest(model.Digest) *pb.Gossip_Digest
-	EncodeUpdate(model.UpdateOut) proto.Message
-	DecodeUpdate(CatalogPeerPolicies, []byte) (model.UpdateIn, error)
+	EncodeUpdate(model.Update) proto.Message
+	DecodeUpdate(CatalogPeerPolicies, []byte) (model.Update, error)
 	DecodeProtoDigest(CatalogPeerPolicies, *pb.Gossip_Digest) model.Digest
 }
 
@@ -185,7 +185,7 @@ func (h *sessionHandler) EncodeDigest(d model.Digest) proto.Message {
 	return msg
 }
 
-func (h *sessionHandler) EncodeUpdate(u model.UpdateOut) proto.Message {
+func (h *sessionHandler) EncodeUpdate(u model.Update) proto.Message {
 
 	udsent := &pb.Gossip_Update{}
 
@@ -239,7 +239,7 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 	}
 }
 
-func (h *catalogHandler) SelfUpdate(u model.UpdateIn) {
+func (h *catalogHandler) SelfUpdate(u model.Update) {
 
 	h.model.RecvUpdate(u)
 	go h.schedulePush()

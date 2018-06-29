@@ -12,8 +12,13 @@ type ScuttlebuttPeerUpdate interface {
 
 type ScuttlebuttPeerStatus interface {
 	To() VClock
-	PickFrom(VClock, UpdateOut) (ScuttlebuttPeerUpdate, UpdateOut)
-	Update(ScuttlebuttPeerUpdate, UpdateIn) error
+	PickFrom(VClock) ScuttlebuttPeerUpdate
+	Update(ScuttlebuttPeerUpdate, Update) error
+}
+
+type ScuttlebuttDigest interface {
+	GlobalDigest() Digest
+	PeerDigest() map[string]VClock
 }
 
 //elements in scuttlebutt scheme include a per-peer data and global data
@@ -22,23 +27,56 @@ type scuttlebuttDigest struct {
 	d map[string]VClock
 }
 
-type scuttlebuttUpdateOut struct {
-	UpdateOut
+func NewscuttlebuttDigest(gd Digest) *scuttlebuttDigest {
+	return &scuttlebuttDigest{Digest: gd, d: make(map[string]VClock)}
+}
+
+func (*scuttlebuttDigest) Gossip_Digest() {}
+
+func (d *scuttlebuttDigest) GlobalDigest() Digest { return d.Digest }
+
+func (d *scuttlebuttDigest) PeerDigest() map[string]VClock { return d.d }
+
+func (d *scuttlebuttDigest) SetPeerDigest(id string, dig VClock) {
+	d.d[id] = dig
+}
+
+type ScuttlebuttUpdate interface {
+	GlobalUpdate() Update
+	PeerUpdate() map[string]ScuttlebuttPeerUpdate
+}
+
+type scuttlebuttUpdate struct {
+	Update
 	u map[string]ScuttlebuttPeerUpdate
 }
+
+func (*scuttlebuttUpdate) Gossip_IsUpdateIn() bool { return false }
+
+func (u *scuttlebuttUpdate) GlobalUpdate() Update { return u.Update }
+
+func (u *scuttlebuttUpdate) PeerUpdate() map[string]ScuttlebuttPeerUpdate { return u.u }
 
 type scuttlebuttUpdateIn struct {
-	UpdateIn
-	u map[string]ScuttlebuttPeerUpdate
+	*scuttlebuttUpdate
 }
 
-func MakeScuttlebuttLocalUpdate(gu UpdateIn) *scuttlebuttUpdateIn {
+func NewscuttlebuttUpdate(gu Update) *scuttlebuttUpdateIn {
 	return &scuttlebuttUpdateIn{
-		u:        make(map[string]ScuttlebuttPeerUpdate),
-		UpdateIn: gu,
+		&scuttlebuttUpdate{
+			u:      make(map[string]ScuttlebuttPeerUpdate),
+			Update: gu,
+		},
 	}
 }
 
+func (*scuttlebuttUpdateIn) Gossip_IsUpdateIn() bool { return true }
+
+func (u *scuttlebuttUpdateIn) UpdatePeer(id string, pu ScuttlebuttPeerUpdate) {
+	u.u[id] = pu
+}
+
+//used for local update
 func (u *scuttlebuttUpdateIn) UpdateLocal(pu ScuttlebuttPeerUpdate) {
 	u.u[""] = pu
 }
@@ -53,7 +91,7 @@ func (u *scuttlebuttUpdateIn) RemovePeers(ids []string) {
 type ScuttlebuttStatus interface {
 	Status
 	NewPeer(string) ScuttlebuttPeerStatus
-	MissedUpdate(string, ScuttlebuttPeerUpdate, UpdateIn) error
+	MissedUpdate(string, ScuttlebuttPeerUpdate, Update) error
 }
 
 type scuttlebuttStatus struct {
@@ -61,20 +99,20 @@ type scuttlebuttStatus struct {
 	Peers map[string]ScuttlebuttPeerStatus
 }
 
-func (s *scuttlebuttStatus) Update(u_in UpdateIn) error {
+func (s *scuttlebuttStatus) Update(u_in Update) error {
 
-	u, ok := u_in.(*scuttlebuttUpdateIn)
+	u, ok := u_in.(ScuttlebuttUpdate)
 
 	if !ok {
 		panic("type error, not scuttlebuttUpdateIn")
 	}
 
-	err := s.Update(u.UpdateIn)
+	err := s.Update(u.GlobalUpdate())
 	if err != nil {
 		return err
 	}
 
-	for id, ss := range u.u {
+	for id, ss := range u.PeerUpdate() {
 		//remove request
 		if ss == nil {
 			delete(s.Peers, id)
@@ -82,9 +120,9 @@ func (s *scuttlebuttStatus) Update(u_in UpdateIn) error {
 
 			pss, ok := s.Peers[id]
 			if ok {
-				err = pss.Update(ss, u.UpdateIn)
+				err = pss.Update(ss, u.GlobalUpdate())
 			} else {
-				err = s.MissedUpdate(id, ss, u.UpdateIn)
+				err = s.MissedUpdate(id, ss, u.GlobalUpdate())
 			}
 
 			if err != nil {
@@ -97,31 +135,27 @@ func (s *scuttlebuttStatus) Update(u_in UpdateIn) error {
 }
 
 func (s *scuttlebuttStatus) GenDigest() Digest {
-	r := &scuttlebuttDigest{
-		d:      make(map[string]VClock),
-		Digest: s.GenDigest(),
-	}
-
+	r := NewscuttlebuttDigest(s.GenDigest())
 	for id, ss := range s.Peers {
-		r.d[id] = ss.To()
+		r.SetPeerDigest(id, ss.To())
 	}
 
 	return r
 }
 
-func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) UpdateOut {
+func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 
-	dig, ok := dig_in.(*scuttlebuttDigest)
+	dig, ok := dig_in.(ScuttlebuttDigest)
 	if !ok {
 		panic("type error, not scuttlebuttDigest")
 	}
 
-	r := &scuttlebuttUpdateOut{
-		u:         make(map[string]ScuttlebuttPeerUpdate),
-		UpdateOut: s.MakeUpdate(dig.Digest),
+	r := &scuttlebuttUpdate{
+		Update: s.MakeUpdate(dig.GlobalDigest()),
+		u:      make(map[string]ScuttlebuttPeerUpdate),
 	}
 
-	for id, dd := range dig.d {
+	for id, dd := range dig.PeerDigest() {
 		ss, ok := s.Peers[id]
 		if !ok {
 			ss = s.NewPeer(id)
@@ -129,9 +163,8 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) UpdateOut {
 				s.Peers[id] = ss
 			}
 		} else if dd.Less(ss.To()) {
-			if ssu, ssgu := ss.PickFrom(dd, r.UpdateOut); ssu != nil {
+			if ssu := ss.PickFrom(dd); ssu != nil {
 				r.u[id] = ssu
-				r.UpdateOut = ssgu
 			}
 		}
 	}

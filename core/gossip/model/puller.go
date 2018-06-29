@@ -12,7 +12,7 @@ type PullerHelper interface {
 
 type Puller struct {
 	model  *Model
-	update chan UpdateIn
+	update chan Update
 }
 
 type PullerHandler interface {
@@ -25,7 +25,7 @@ type PushHelper interface {
 	//Handle method in PullerHandler is ensured to be called
 	CanPull() PullerHandler
 	//must allow nil input and encode an message include "empty" update
-	EncodeUpdate(UpdateOut) proto.Message
+	EncodeUpdate(Update) proto.Message
 }
 
 //d can be set to nil and indicate a "rejection" of pulling
@@ -50,7 +50,7 @@ func NewPuller(ph PullerHelper, stream *pb.StreamHandler, model *Model) *Puller 
 
 	puller := &Puller{
 		model:  model,
-		update: make(chan UpdateIn),
+		update: make(chan Update),
 	}
 
 	dg := model.GenPullDigest()
@@ -59,7 +59,7 @@ func NewPuller(ph PullerHelper, stream *pb.StreamHandler, model *Model) *Puller 
 	return puller
 }
 
-func (p *Puller) NotifyUpdate(ud UpdateIn) {
+func (p *Puller) NotifyUpdate(ud Update) {
 	if p == nil {
 		return
 	}

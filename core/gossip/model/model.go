@@ -10,18 +10,14 @@ type Digest interface {
 }
 
 //Update is the content of a reconciliation
-type UpdateIn interface {
-	Gossip_UpdateIn()
-}
-
-type UpdateOut interface {
-	Gossip_UpdateOut()
+type Update interface {
+	Gossip_IsUpdateIn() bool
 }
 
 type Status interface {
 	GenDigest() Digest
-	Update(UpdateIn) error
-	MakeUpdate(Digest) UpdateOut
+	Update(Update) error
+	MakeUpdate(Digest) Update
 }
 
 //Now we have the model
@@ -40,7 +36,7 @@ func (m *Model) GenPullDigest() Digest {
 }
 
 //recv the reconciliation message and update status
-func (m *Model) RecvUpdate(r UpdateIn) error {
+func (m *Model) RecvUpdate(r Update) error {
 
 	m.RLock()
 	defer m.RUnlock()
@@ -49,7 +45,7 @@ func (m *Model) RecvUpdate(r UpdateIn) error {
 }
 
 //recv the digest from a "pulling" far-end
-func (m *Model) RecvPullDigest(digests Digest) UpdateOut {
+func (m *Model) RecvPullDigest(digests Digest) Update {
 
 	m.RLock()
 	defer m.RUnlock()

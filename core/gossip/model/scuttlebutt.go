@@ -7,13 +7,13 @@ type VClock interface {
 
 //scuttlebutt scheme maintain per-peer status work with vclock digest
 type ScuttlebuttPeerUpdate interface {
-	From() VClock
+	To() VClock
 }
 
 type ScuttlebuttPeerStatus interface {
 	To() VClock
-	PickFrom(VClock) ScuttlebuttPeerUpdate
-	Update(ScuttlebuttPeerUpdate, Update) error
+	PickFrom(VClock, Update) (ScuttlebuttPeerUpdate, Update)
+	Update(ScuttlebuttPeerUpdate, ScuttlebuttStatus) error
 }
 
 type ScuttlebuttDigest interface {
@@ -30,8 +30,6 @@ type scuttlebuttDigest struct {
 func NewscuttlebuttDigest(gd Digest) *scuttlebuttDigest {
 	return &scuttlebuttDigest{Digest: gd, d: make(map[string]VClock)}
 }
-
-func (*scuttlebuttDigest) Gossip_Digest() {}
 
 func (d *scuttlebuttDigest) GlobalDigest() Digest { return d.Digest }
 
@@ -91,7 +89,7 @@ func (u *scuttlebuttUpdateIn) RemovePeers(ids []string) {
 type ScuttlebuttStatus interface {
 	Status
 	NewPeer(string) ScuttlebuttPeerStatus
-	MissedUpdate(string, ScuttlebuttPeerUpdate, Update) error
+	MissedUpdate(string, ScuttlebuttPeerUpdate) error
 }
 
 type scuttlebuttStatus struct {
@@ -104,10 +102,10 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 	u, ok := u_in.(ScuttlebuttUpdate)
 
 	if !ok {
-		panic("type error, not scuttlebuttUpdateIn")
+		panic("type error, not scuttlebuttUpdate")
 	}
 
-	err := s.Update(u.GlobalUpdate())
+	err := s.ScuttlebuttStatus.Update(u.GlobalUpdate())
 	if err != nil {
 		return err
 	}
@@ -119,10 +117,11 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 		} else {
 
 			pss, ok := s.Peers[id]
-			if ok {
-				err = pss.Update(ss, u.GlobalUpdate())
+			if ok && pss.To().Less(ss.To()) {
+				err = pss.Update(ss, s.ScuttlebuttStatus)
+
 			} else {
-				err = s.MissedUpdate(id, ss, u.GlobalUpdate())
+				err = s.MissedUpdate(id, ss)
 			}
 
 			if err != nil {
@@ -135,11 +134,13 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 }
 
 func (s *scuttlebuttStatus) GenDigest() Digest {
-	r := NewscuttlebuttDigest(s.GenDigest())
+	r := NewscuttlebuttDigest(s.ScuttlebuttStatus.GenDigest())
 	for id, ss := range s.Peers {
 		r.SetPeerDigest(id, ss.To())
 	}
 
+	//We NEVER allow the default self peer name ("") is visible to outer
+	delete(r.d, "")
 	return r
 }
 
@@ -151,7 +152,7 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 	}
 
 	r := &scuttlebuttUpdate{
-		Update: s.MakeUpdate(dig.GlobalDigest()),
+		Update: s.ScuttlebuttStatus.MakeUpdate(dig.GlobalDigest()),
 		u:      make(map[string]ScuttlebuttPeerUpdate),
 	}
 
@@ -163,8 +164,11 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 				s.Peers[id] = ss
 			}
 		} else if dd.Less(ss.To()) {
-			if ssu := ss.PickFrom(dd); ssu != nil {
+			if ssu, ssgu := ss.PickFrom(dd, r.Update); ssu != nil {
 				r.u[id] = ssu
+				if ssgu != nil {
+					r.Update = ssgu
+				}
 			}
 		}
 	}

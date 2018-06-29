@@ -5,9 +5,7 @@ import (
 )
 
 //Base concept in gossip protocol
-type Digest interface {
-	Gossip_Digest()
-}
+type Digest interface{}
 
 //Update is the content of a reconciliation
 type Update interface {
@@ -26,7 +24,7 @@ type Model struct {
 	Status
 }
 
-//gen the "push" digest to far-end
+//gen the "pull" digest to far-end
 func (m *Model) GenPullDigest() Digest {
 
 	m.RLock()

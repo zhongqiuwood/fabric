@@ -1,0 +1,10 @@
+syntax = "proto3";
+package gossip_model;
+
+message Test_Scuttlebutt_Peer{
+    map<string, int32> datas = 1;
+}
+
+message Test_Scuttlebutt{
+    map<string, Test_Scuttlebutt_Peer> peers = 1;
+}

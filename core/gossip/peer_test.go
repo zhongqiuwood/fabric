@@ -18,5 +18,5 @@ func TestPeer(t *testing.T) {
 
 	txs := []*pb.Transaction{}
 	txs = append(txs, &pb.Transaction{})
-	gs.BroadcastTx(txs)
+	gs.GetSStub()
 }

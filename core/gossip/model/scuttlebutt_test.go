@@ -1,125 +1,108 @@
-package gossip_model
+package gossip_model_test
 
 import (
-	"fmt"
-	"strings"
+	_ "fmt"
+	model "github.com/abchain/fabric/core/gossip/model"
 	"testing"
 )
 
-type testVClock int
+//m1 pull from m2
+func pull(m1 *model.Model, m2 *model.Model) (error, model.Update) {
 
-func (va testVClock) Less(v_in VClock) bool {
-	if v_in == nil {
-		return false
-	}
-
-	return va < transVClock(v_in)
+	u := m2.RecvPullDigest(m1.GenDigest())
+	return m1.RecvUpdate(u), u
 }
 
-func transVClock(i VClock) testVClock {
-	v, ok := i.(testVClock)
+func comparePeer(d1 map[string]int, d2 map[string]int, t *testing.T) {
 
+	for k, v := range d1 {
+		vv, ok := d2[k]
+		if !ok || vv != v {
+			t.Fatalf("data compare fail at key %s [%v : %v]", k, d1, d2)
+		}
+	}
+
+	for k, v := range d2 {
+		vv, ok := d1[k]
+		if !ok || vv != v {
+			t.Fatalf("data compare fail at key %s [%v : %v]", k, d1, d2)
+		}
+	}
+}
+
+func TestScuttlebuttModelBase(t *testing.T) {
+
+	p1 := model.NewTestPeer(t, "alice")
+	p2 := model.NewTestPeer(t, "bob")
+
+	m1 := p1.CreateModel()
+	m2 := p2.CreateModel()
+
+	//known each other
+	if err, _ := pull(m2, m1); err != nil {
+		t.Fatal("m2 known m1 fail", err)
+	}
+
+	if err, _ := pull(m1, m2); err != nil {
+		t.Fatal("m1 known m2 fail", err)
+	}
+
+	p1.LocalUpdate([]string{"a1", "a2", "a3"})
+
+	err, ud := pull(m2, m1)
+	t.Log("dump update 1", model.DumpUpdate(ud))
+	if err != nil {
+		t.Fatal("pull 1 fail", err)
+	}
+
+	p2.LocalUpdate([]string{"b1", "b2"})
+
+	err, ud = pull(m1, m2)
+	t.Log("dump update 2", model.DumpUpdate(ud))
+	if err != nil {
+		t.Fatal("pull 2 fail", err)
+	}
+
+	p1.LocalUpdate([]string{"a2", "a3"})
+
+	err, ud = pull(m2, m1)
+	t.Log("dump update 3", model.DumpUpdate(ud))
+	if err != nil {
+		t.Fatal("pull 3 fail", err)
+	}
+
+	p2.LocalUpdate([]string{"b2"})
+
+	err, ud = pull(m1, m2)
+	t.Log("dump update 4", model.DumpUpdate(ud))
+	if err != nil {
+		t.Fatal("pull 4 fail", err)
+	}
+
+	comparePeer(p1.DumpData(), p2.DumpData(), t)
+
+	_, ok := p1.DumpData()["b1"]
 	if !ok {
-		panic("wrong vclock type")
+		t.Fatal("p1 not know key b1:", p1.DumpData())
 	}
 
-	return v
-}
-
-//act as both update and status
-type testPeerStatus struct {
-	data map[string]int
-}
-
-func transUpdate(i ScuttlebuttPeerUpdate) *testPeerStatus {
-	v, ok := i.(*testPeerStatus)
-
+	_, ok = p2.DumpData()["a1"]
 	if !ok {
-		panic("wrong update type")
+		t.Fatal("p2 not know key a1:", p2.DumpData())
 	}
 
-	return v
-}
+	va3 := p2.DumpData()["a3"]
 
-func (s *testPeerStatus) From() VClock {
-
-	if len(s.data) == 0 {
-		return nil
+	p2.LocalUpdate([]string{"a3", "b3"})
+	err, ud = pull(m1, m2)
+	t.Log("dump update 5", model.DumpUpdate(ud))
+	if err != nil {
+		t.Fatal("pull 5 fail", err)
 	}
 
-	var min int
-	for _, v := range s.data {
-		if min == 0 || v < min {
-			min = v
-		}
+	comparePeer(p1.DumpData(), p2.DumpData(), t)
+
+	if p1.DumpData()["a3"] <= va3 {
+		t.Fatal("p1 still know old a3:", p1.DumpData())
 	}
-
-	return testVClock(min)
-}
-
-func (s *testPeerStatus) To() VClock {
-
-	if len(s.data) == 0 {
-		return nil
-	}
-
-	var max int
-	for _, v := range s.data {
-		if v > max {
-			max = v
-		}
-	}
-
-	return testVClock(max)
-}
-
-func (s *testPeerStatus) PickFrom(v_in VClock) ScuttlebuttPeerUpdate {
-	ret := &testPeerStatus{make(map[string]int)}
-	vclk := transVClock(v_in)
-
-	for k, v := range s.data {
-
-		if v > int(vclk) {
-			ret.data[k] = v
-		}
-	}
-
-	return s
-}
-
-func (s *testPeerStatus) Update(u_in ScuttlebuttPeerUpdate, g UpdateIn) error {
-
-	u := transUpdate(u_in)
-
-	for k, v := range u.data {
-		vold, ok := s.data[k]
-		if ok && v < vold {
-			return fmt.Errorf("update give old version for key %s: [local %d vs %d]", k, vold, v)
-		}
-
-		s.data[k] = v
-	}
-
-	return nil
-}
-
-type testStatus struct {
-}
-
-func (*testStatus) GenPullDigest() Digest { return nil }
-
-func (*testStatus) RecvUpdate(UpdateIn) error { return nil }
-
-func (*testStatus) RecvPullDigest(Digest) UpdateOut { return nil }
-
-func (*testStatus) NewPeer(string) ScuttlebuttPeerStatus { return &testPeerStatus{make(map[string]int)} }
-
-func (*testStatus) MissedUpdate(string, ScuttlebuttPeerUpdate, UpdateIn) error { return nil }
-
-type testPeer struct {
-	id string
-}
-
-func TestScuttlebuttModel(t *testing.T) {
-
 }

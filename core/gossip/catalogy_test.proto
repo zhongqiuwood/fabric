@@ -1,5 +1,5 @@
 syntax = "proto3";
-package gossip_model;
+package gossip;
 
 message Test_Scuttlebutt_Peer{
     map<string, int32> datas = 1;

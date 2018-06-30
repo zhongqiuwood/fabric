@@ -241,6 +241,29 @@ type Engine interface {
 // 	return peer, nil
 // }
 
+func NewPeer(self *pb.PeerEndpoint) *Impl {
+
+	peer := new(Impl)
+
+	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
+	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
+
+	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory())
+	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory())
+
+	//mapping of all streamstubs above:
+	peer.streamStubs = map[string]*pb.StreamStub{
+		"gossip": peer.gossipStub,
+		"sync":   peer.syncStub,
+	}
+
+	peer.streamFilters = map[string]StreamFilter{
+		"sync": syncstub.StreamFilter{self},
+	}
+
+	return peer
+}
+
 // NewPeerWithEngine returns a Peer which uses the supplied handler factory function for creating new handlers on new Chat service invocations.
 func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactory) (peer *Impl, err error) {
 
@@ -249,11 +272,8 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 		return nil, fmt.Errorf("Could not load info of self peer")
 	}
 
-	peer = new(Impl)
+	peer = NewPeer(self)
 	peerNodes := peer.initDiscovery()
-
-	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
-	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
 
 	peer.isValidator = ValidatorEnabled()
 	peer.secHelper = secHelperFunc()
@@ -279,18 +299,6 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 		}
 	}
 
-	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory())
-	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory())
-
-	//mapping of all streamstubs above:
-	peer.streamStubs = map[string]*pb.StreamStub{
-		"gossip": peer.gossipStub,
-		"sync":   peer.syncStub,
-	}
-
-	peer.streamFilters = map[string]StreamFilter{
-		"sync": syncstub.StreamFilter{self},
-	}
 	// peer.handlerFactory = peer.engine.GetHandlerFactory()
 	// if peer.handlerFactory == nil {
 	// 	return nil, errors.New("Cannot supply nil handler factory")

@@ -83,9 +83,14 @@ func Test_StreamHub_OverHandler(t *testing.T) {
 
 	peerNames := []string{"peer1", "peer2", "peer3", "peer4", "peer5", "peer6", "peer7", "peer8"}
 
+	wctx, endworks := context.WithCancel(context.Background())
+	defer endworks()
+
 	//populate streamhub with dummy handler
 	for _, n := range peerNames {
-		tstub.registerHandler(newStreamHandler(&dummyHandler{}), &PeerID{n})
+		h := newStreamHandler(&dummyHandler{})
+		tstub.registerHandler(h, &PeerID{n})
+		go HandleDummyWrite(wctx, h)
 	}
 
 	testName1 := []string{"peer3", "peer4", "peer6", "peer8"}
@@ -93,7 +98,7 @@ func Test_StreamHub_OverHandler(t *testing.T) {
 	vset1 := newVSet(testName1)
 
 	//work on all
-	for p := range tstub.OverHandlers(context.Background(), toPeerId(testName1)) {
+	for p := range tstub.OverHandlers(wctx, toPeerId(testName1)) {
 
 		vset1[p.Id.GetName()] = true
 	}
@@ -103,7 +108,7 @@ func Test_StreamHub_OverHandler(t *testing.T) {
 	//cancel part
 	counter := len(testName1) - 1
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(wctx)
 	vset2 := newVSet(testName1)
 
 	for p := range tstub.OverHandlers(ctx, toPeerId(testName1)) {
@@ -130,7 +135,7 @@ func Test_StreamHub_OverHandler(t *testing.T) {
 
 	vset3 := newVSet(testName3)
 
-	for p := range tstub.OverHandlers(context.Background(), toPeerId(testName3)) {
+	for p := range tstub.OverHandlers(wctx, toPeerId(testName3)) {
 
 		vset3[p.Id.GetName()] = true
 	}
@@ -144,7 +149,7 @@ func Test_StreamHub_OverHandler(t *testing.T) {
 
 	//on all
 	vset4 := newVSet(peerNames)
-	for p := range tstub.OverAllHandlers(context.Background()) {
+	for p := range tstub.OverAllHandlers(wctx) {
 
 		vset4[p.Id.GetName()] = true
 	}
@@ -154,7 +159,7 @@ func Test_StreamHub_OverHandler(t *testing.T) {
 	//unregister one on "for on all"
 	vset5 := newVSet(peerNames)
 	counter = len(peerNames) / 2
-	for p := range tstub.OverAllHandlers(context.Background()) {
+	for p := range tstub.OverAllHandlers(wctx) {
 
 		vset5[p.Id.GetName()] = true
 		counter--
@@ -177,12 +182,17 @@ func Test_StreamHub_Broadcast(t *testing.T) {
 
 	peerNames := []string{"peer1", "peer2", "peer3", "peer4", "peer5", "peer6", "peer7", "peer8"}
 
+	wctx, endworks := context.WithCancel(context.Background())
+	defer endworks()
+
 	//populate streamhub with dummy handler
 	for _, n := range peerNames {
-		tstub.registerHandler(newStreamHandler(&dummyHandler{}), &PeerID{n})
+		h := newStreamHandler(&dummyHandler{})
+		tstub.registerHandler(h, &PeerID{n})
+		go HandleDummyWrite(wctx, h)
 	}
 
-	err, ret := tstub.Broadcast(context.Background(), &PeerID{})
+	err, ret := tstub.Broadcast(wctx, &PeerID{})
 
 	if err != nil {
 		t.Fatal("Broadcast fail", err)

@@ -29,8 +29,10 @@ type CatalogPeerPolicies interface {
 type CatalogHelper interface {
 	Name() string
 	GetPolicies() CatalogPolicies //caller do not need to check the interface
-	//cataloghelper MUST provide a status which generate/accept *pb.Gossip_Digest as digest
 	GetStatus() model.Status
+
+	TransDigestToPb(model.Digest) *pb.Gossip_Digest
+	TransPbToDigest(*pb.Gossip_Digest) model.Digest
 
 	EncodeUpdate(CatalogPeerPolicies, model.Update) proto.Message
 	DecodeUpdate(CatalogPeerPolicies, []byte) (model.Update, error)
@@ -171,17 +173,12 @@ type sessionHandler struct {
 }
 
 //implement of pushhelper and pullerhelper
-func (h *sessionHandler) EncodeDigest(d_in model.Digest) proto.Message {
-
-	d, ok := d_in.(*pb.Gossip_Digest)
-	if !ok {
-		logger.Fatal("Status do not provide digest with correct type [*pb.Gossip_Digest]")
-	}
+func (h *sessionHandler) EncodeDigest(d model.Digest) proto.Message {
 
 	msg := &pb.Gossip{
 		Seq:     getGlobalSeq(),
 		Catalog: h.Name(),
-		M:       &pb.Gossip_Dig{d},
+		M:       &pb.Gossip_Dig{h.TransDigestToPb(d)},
 	}
 
 	h.cpo.PushUpdate(msg.EstimateSize())
@@ -257,7 +254,7 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cp
 		return
 	}
 
-	err := model.AcceptPush(&sessionHandler{h, cpo}, strm, h.model, msg)
+	err := model.AcceptPush(&sessionHandler{h, cpo}, strm, h.model, h.TransPbToDigest(msg))
 	if err != nil {
 		logger.Error("Sending push message fail", err)
 	} else {

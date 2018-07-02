@@ -7,6 +7,7 @@ import (
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"testing"
+	"time"
 )
 
 func TestPeer(t *testing.T) {
@@ -20,7 +21,26 @@ func TestPeer(t *testing.T) {
 	pAlice := pb.NewSimuPeerStub("alice", stub.GetDefaultFactory())
 	pBob := pb.NewSimuPeerStub("bob", stub.GetDefaultFactory())
 
-	if err := pAlice.ConnectTo(wctx, pBob); err != nil {
+	if err, trafficf := pAlice.ConnectTo(wctx, pBob); err != nil {
 		t.Fatal(err)
+	} else {
+		go func() {
+			if err := trafficf(); err != nil {
+				t.Fatal("traffic fail", err)
+			}
+		}()
 	}
+
+	hBob := pAlice.PickHandler(&pb.PeerID{Name: "bob"})
+
+	if hBob == nil {
+		t.Fatal("no handler for Bob in Alice")
+	}
+
+	msg := &pb.Gossip{Catalog: "Notexist"}
+	if err := hBob.SendMessage(msg); err != nil {
+		t.Fatal("Send msg fail", err)
+	}
+
+	time.Sleep(time.Second)
 }

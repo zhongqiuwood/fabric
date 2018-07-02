@@ -5,6 +5,7 @@ import (
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
 	"testing"
+	"time"
 )
 
 type dummyError struct {
@@ -26,9 +27,8 @@ func (h *dummyHandler) HandleMessage(m proto.Message) error {
 	return &dummyError{fmt.Errorf("No implement")}
 }
 
-//fail so we won't send message actually
 func (h *dummyHandler) BeforeSendMessage(proto.Message) error {
-	return &dummyError{fmt.Errorf("Must fail")}
+	return nil
 }
 func (h *dummyHandler) OnWriteError(e error) {}
 
@@ -176,6 +176,16 @@ func Test_StreamHub_OverHandler(t *testing.T) {
 
 }
 
+func ensureOneDummyWrite(ctx context.Context, h *StreamHandler) error {
+
+	if err := HandleDummyWrite(ctx, h); err != nil {
+		return err
+	}
+
+	HandleDummyWrite(ctx, h)
+	return nil
+}
+
 func Test_StreamHub_Broadcast(t *testing.T) {
 
 	tstub := NewStreamStub(nil)
@@ -189,8 +199,20 @@ func Test_StreamHub_Broadcast(t *testing.T) {
 	for _, n := range peerNames {
 		h := newStreamHandler(&dummyHandler{})
 		tstub.registerHandler(h, &PeerID{n})
-		go HandleDummyWrite(wctx, h)
+		go func() {
+			if err := ensureOneDummyWrite(wctx, h); err != nil {
+				t.Fatal("Dummy write fail", err)
+			}
+		}()
 	}
+
+	//test one handler for negative sampe
+	go func() {
+		h := newStreamHandler(&dummyHandler{})
+		if err := ensureOneDummyWrite(wctx, h); err == nil {
+			t.Fatal("ensure dummy write func is error")
+		}
+	}()
 
 	err, ret := tstub.Broadcast(wctx, &PeerID{})
 
@@ -207,4 +229,6 @@ func Test_StreamHub_Broadcast(t *testing.T) {
 			t.Fatal("Unexpected result set in working error", r.WorkError, ret)
 		}
 	}
+
+	time.Sleep(time.Second * 2)
 }

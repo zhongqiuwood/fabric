@@ -13,6 +13,7 @@ import (
 
 type CatalogHandler interface {
 	Name() string
+	//nil can be passed to just notify handler the status it manager is updated
 	SelfUpdate(model.Update)
 	HandleUpdate(*pb.PeerID, *pb.Gossip_Update, CatalogPeerPolicies)
 	HandleDigest(*pb.PeerID, *pb.Gossip_Digest, CatalogPeerPolicies)
@@ -34,8 +35,9 @@ type CatalogHelper interface {
 	TransDigestToPb(model.Digest) *pb.Gossip_Digest
 	TransPbToDigest(*pb.Gossip_Digest) model.Digest
 
-	EncodeUpdate(CatalogPeerPolicies, model.Update) proto.Message
-	DecodeUpdate(CatalogPeerPolicies, []byte) (model.Update, error)
+	UpdateMessage() proto.Message
+	EncodeUpdate(CatalogPeerPolicies, model.Update, proto.Message) proto.Message
+	DecodeUpdate(CatalogPeerPolicies, proto.Message) (model.Update, error)
 }
 
 type puller struct {
@@ -191,7 +193,9 @@ func (h *sessionHandler) EncodeUpdate(u model.Update) proto.Message {
 	udsent := &pb.Gossip_Update{}
 
 	if u != nil {
-		payloadByte, err := proto.Marshal(h.CatalogHelper.EncodeUpdate(h.cpo, u))
+		payloadByte, err := proto.Marshal(
+			h.CatalogHelper.EncodeUpdate(h.cpo, u,
+				h.CatalogHelper.UpdateMessage()))
 		if err == nil {
 			udsent.Payload = payloadByte
 			h.cpo.PushUpdate(len(payloadByte))
@@ -242,7 +246,10 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 
 func (h *catalogHandler) SelfUpdate(u model.Update) {
 
-	h.model.RecvUpdate(u)
+	if u != nil {
+		h.model.RecvUpdate(u)
+	}
+
 	go h.schedulePush()
 }
 
@@ -271,7 +278,14 @@ func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cp
 		return
 	}
 
-	ud, err := h.DecodeUpdate(cpo, msg.Payload)
+	umsg := h.CatalogHelper.UpdateMessage()
+	err := proto.Unmarshal(msg.Payload, umsg)
+	if err != nil {
+		cpo.RecordViolation(fmt.Errorf("Unmarshal message for update in catalog %s fail: %s", h.Name(), err))
+		return
+	}
+
+	ud, err := h.DecodeUpdate(cpo, umsg)
 	if err != nil {
 		cpo.RecordViolation(fmt.Errorf("Decode update for catalog %s fail: %s", h.Name(), err))
 		return

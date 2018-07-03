@@ -2,7 +2,7 @@ package gossip_model
 
 import (
 	pb "github.com/abchain/fabric/protos"
-	_ "github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto"
 )
 
 func TestPbToDigest(dig *pb.Gossip_Digest) Digest {
@@ -31,5 +31,55 @@ func TestDigestToPb(d_in Digest) *pb.Gossip_Digest {
 	}
 
 	return ret
+
+}
+
+func TestUpdateEncode(u_in Update, msg *Test_Scuttlebutt) proto.Message {
+
+	u, ok := u_in.(ScuttlebuttUpdate)
+
+	if !ok {
+		panic("type error, not ScuttlebuttUpdate")
+	}
+
+	msg.Peers = make(map[string]*Test_Scuttlebutt_Peer)
+
+	for id, udata := range u.PeerUpdate() {
+
+		us := transUpdate(udata)
+		out := &Test_Scuttlebutt_Peer{make(map[string]int32)}
+		for k, v := range us.data {
+			out.Datas[k] = int32(v)
+		}
+
+		msg.Peers[id] = out
+
+	}
+
+	return msg
+}
+
+func TestUpdateDecode(msg_in proto.Message) Update {
+
+	msg, ok := msg_in.(*Test_Scuttlebutt)
+
+	if !ok {
+		panic("type error, not Test_Scuttlebutt")
+	}
+
+	out := NewscuttlebuttUpdate(nil)
+
+	for id, data := range msg.Peers {
+
+		pu := &testPeerStatus{make(map[string]int)}
+
+		for k, v := range data.Datas {
+			pu.data[k] = int(v)
+		}
+
+		out.UpdatePeer(id, pu)
+	}
+
+	return out
 
 }

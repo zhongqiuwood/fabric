@@ -12,52 +12,32 @@ import (
 )
 
 type testCatalogy struct {
+	model.Status
 	gossip.CatalogPolicies
 }
 
-func (tc *testCatalogy) Name() string { return "TestCat" }
-
+func (tc *testCatalogy) Name() string                        { return "TestCat" }
 func (tc *testCatalogy) GetPolicies() gossip.CatalogPolicies { return tc.CatalogPolicies }
-func (tc *testCatalogy) GetStatus() model.Status {
-
-}
+func (tc *testCatalogy) GetStatus() model.Status             { return tc.Status }
 
 func (tc *testCatalogy) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
-	d, ok := d_in.(model.ScuttlebuttDigest)
-
-	ret := &pb.Gossip_Digest{Data: make(map[string]*pb.Gossip_Digest_PeerState)}
-
-	for id, v := range d.PeerDigest() {
-		ret.Data[id] = uint64(model.TransScuttlebuttTestVClock(v))
-	}
-
-	return ret
+	return model.TestDigestToPb(d_in)
 }
 
 func (tc *testCatalogy) TransPbToDigest(dig *pb.Gossip_Digest) model.Digest {
-
-	ret := model.NewscuttlebuttDigest(nil)
-
-	for id, v := range dig.Data {
-		ret.SetPeerDigest(id, TransIntToScuttlebuttTestVClock(int(v.Num)))
-	}
-
-	return ret
+	return model.TestPbToDigest(dig)
 }
 
-func (tc *testCatalogy) EncodeUpdate(cpo CatalogPeerPolicies, u_in model.Update) proto.Message {
-
+func (tc *testCatalogy) UpdateMessage() proto.Message {
+	return make(model.Test_Scuttlebutt)
 }
 
-func (tc *testCatalogy) DecodeUpdate(cpo CatalogPeerPolicies, bytes []byte) (model.Update, error) {
+func (tc *testCatalogy) EncodeUpdate(cpo CatalogPeerPolicies, u model.Update, msg_in proto.Message) proto.Message {
+	return model.TestUpdateEncode(u, msg_in.(*model.Test_Scuttlebutt))
+}
 
-	msg := &gossip.Test_Scuttlebutt{}
-
-	err := proto.Unmarshal(bytes, msg)
-
-	if err != nil {
-		return nil, err
-	}
+func (tc *testCatalogy) DecodeUpdate(cpo CatalogPeerPolicies, msg proto.Message) (model.Update, error) {
+	return model.TestUpdateDecode(msg)
 }
 
 type testFactory struct {

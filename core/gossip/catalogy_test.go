@@ -16,6 +16,10 @@ type testCatalogy struct {
 	gossip.CatalogPolicies
 }
 
+const (
+	testCat 
+)
+
 func (tc *testCatalogy) Name() string                        { return "TestCat" }
 func (tc *testCatalogy) GetPolicies() gossip.CatalogPolicies { return tc.CatalogPolicies }
 func (tc *testCatalogy) GetStatus() model.Status             { return tc.Status }
@@ -40,31 +44,19 @@ func (tc *testCatalogy) DecodeUpdate(cpo CatalogPeerPolicies, msg proto.Message)
 	return model.TestUpdateDecode(msg)
 }
 
-type testFactory struct {
+func restoreGossipModule(old []func(*gossip.GossipStub)) {
+	gossip.RegisterCat = old
 }
 
-func (t GossipFactory) NewStreamHandlerImpl(id *pb.PeerID, initiated bool) (pb.StreamHandlerImpl, error) {
-	if t == nil {
-		return nil, fmt.Errorf("No default factory")
-	}
+func initGossipModule(t *testing.T) []func(*gossip.GossipStub) {
 
-	return &GossipHandlerImpl{t(id)}, nil
-}
+	oldv := gossip.RegisterCat
 
-func (t GossipFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, error) {
-	if t == nil {
-		return nil, fmt.Errorf("No default factory")
-	}
+	gossip.RegisterCat = append(gossip.RegisterCat, func(stub *gossip.GossipStub) {
+		
+	})
 
-	serverClient := pb.NewPeerClient(conn)
-	ctx := context.Background()
-	stream, err := serverClient.GossipIn(ctx)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return stream, nil
+	return oldv
 }
 
 func TestCatalogyIn2Peer(t *testing.T) {

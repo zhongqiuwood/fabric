@@ -165,6 +165,7 @@ type EngineFactory func(Peer) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
+	self *pb.PeerEndpoint
 	//	handlerFactory HandlerFactory
 	handlerMap *handlerMap
 	//	ledgerWrapper *ledgerWrapper
@@ -245,6 +246,7 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 
 	peer := new(Impl)
 
+	peer.self = self
 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
 	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
 
@@ -407,15 +409,12 @@ func (p *Impl) GetRemoteLedger(receiverHandle *pb.PeerID) (RemoteLedger, error) 
 
 // PeersDiscovered used by MessageHandlers for notifying this coordinator of discovered PeerEndoints. May include this Peer's PeerEndpoint.
 func (p *Impl) PeersDiscovered(peersMessage *pb.PeersMessage) error {
-	thisPeersEndpoint, err := GetPeerEndpoint()
-	if err != nil {
-		return fmt.Errorf("Error in processing PeersDiscovered: %s", err)
-	}
+
 	p.handlerMap.RLock()
 	defer p.handlerMap.RUnlock()
 	for _, peerEndpoint := range peersMessage.Peers {
 		// Filter out THIS Peer's endpoint
-		if *getHandlerKeyFromPeerEndpoint(thisPeersEndpoint) == *getHandlerKeyFromPeerEndpoint(peerEndpoint) {
+		if *getHandlerKeyFromPeerEndpoint(p.self) == *getHandlerKeyFromPeerEndpoint(peerEndpoint) {
 			// NOOP
 		} else if _, ok := p.handlerMap.m[*getHandlerKeyFromPeerEndpoint(peerEndpoint)]; ok == false {
 			// Start chat with Peer
@@ -809,19 +808,18 @@ func (p *Impl) ExecuteTransaction(transaction *pb.Transaction) (response *pb.Res
 
 // GetPeerEndpoint returns the endpoint for this peer
 func (p *Impl) GetPeerEndpoint() (*pb.PeerEndpoint, error) {
-	ep, err := GetPeerEndpoint()
-	if err == nil && SecurityEnabled() {
+	var ep pb.PeerEndpoint
+	//we use an partial copy of the cached endpoint
+	ep = *p.self
+	if SecurityEnabled() {
 		// Set the PkiID on the PeerEndpoint if security is enabled
 		ep.PkiID = p.GetSecHelper().GetID()
 	}
-	return ep, err
+	return &ep, nil
 }
 
 func (p *Impl) newHelloMessage() (*pb.HelloMessage, error) {
-	endpoint, err := p.GetPeerEndpoint()
-	if err != nil {
-		return nil, fmt.Errorf("Error creating hello message: %s", err)
-	}
+
 	l, err := ledger.GetLedger()
 	if err != nil {
 		return nil, fmt.Errorf("Error on get ledger: %s", err)
@@ -831,7 +829,7 @@ func (p *Impl) newHelloMessage() (*pb.HelloMessage, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Error creating hello message, error getting block chain info: %s", err)
 	}
-	return &pb.HelloMessage{PeerEndpoint: endpoint, BlockchainInfo: blockChainInfo}, nil
+	return &pb.HelloMessage{PeerEndpoint: p.self, BlockchainInfo: blockChainInfo}, nil
 }
 
 // // GetBlockByNumber return a block by block number

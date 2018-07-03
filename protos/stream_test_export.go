@@ -70,7 +70,7 @@ type simuPeerStub struct {
 func (s1 *simuPeerStub) ConnectTo(ctx context.Context, s2 *simuPeerStub) (err error, traffic func() error) {
 
 	var hi StreamHandlerImpl
-	hi, _ = s1.NewStreamHandlerImpl(s2.id, true)
+	hi, _ = s1.NewStreamHandlerImpl(s2.id, s1.StreamStub, true)
 	s1h := newStreamHandler(hi)
 	err = s1.registerHandler(s1h, s2.id)
 	if err != nil {
@@ -78,9 +78,9 @@ func (s1 *simuPeerStub) ConnectTo(ctx context.Context, s2 *simuPeerStub) (err er
 		return
 	}
 
-	hi, _ = s2.NewStreamHandlerImpl(s2.id, true)
+	hi, _ = s2.NewStreamHandlerImpl(s1.id, s2.StreamStub, false)
 	s2h := newStreamHandler(hi)
-	err = s1.registerHandler(s2h, s1.id)
+	err = s2.registerHandler(s2h, s1.id)
 	if err != nil {
 		err = fmt.Errorf("reg s2 fail: %s", err)
 		return
@@ -91,11 +91,11 @@ func (s1 *simuPeerStub) ConnectTo(ctx context.Context, s2 *simuPeerStub) (err er
 	return
 }
 
-func NewSimuPeerStub(id string, fac StreamHandlerFactory) *simuPeerStub {
+func NewSimuPeerStub(id string, ss *StreamStub) *simuPeerStub {
 
 	return &simuPeerStub{
 		id:         &PeerID{id},
-		StreamStub: NewStreamStub(fac),
+		StreamStub: ss,
 	}
 
 }

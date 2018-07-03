@@ -172,7 +172,7 @@ func StartNode(postrun func() error) error {
 	txnetwork.InitTxNetwork(secHelperFunc)
 
 	// init services related to the peer, such as gossip
-	gossip.NewGossip(peerServer)
+	gossip.GetGossip(peerServer)
 	statesync.NewStateSync(peerServer)
 
 	// Register the Peer server

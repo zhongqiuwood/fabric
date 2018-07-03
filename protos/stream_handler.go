@@ -21,7 +21,7 @@ import (
 */
 type StreamHandlerFactory interface {
 	NewClientStream(*grpc.ClientConn) (grpc.ClientStream, error)
-	NewStreamHandlerImpl(*PeerID, bool) (StreamHandlerImpl, error)
+	NewStreamHandlerImpl(*PeerID, *StreamStub, bool) (StreamHandlerImpl, error)
 }
 
 /*
@@ -377,7 +377,7 @@ func (s *StreamStub) HandleClient(conn *grpc.ClientConn, peerid *PeerID) error {
 		return err
 	}
 
-	himpl, err := s.NewStreamHandlerImpl(peerid, true)
+	himpl, err := s.NewStreamHandlerImpl(peerid, s, true)
 
 	if err != nil {
 		return err
@@ -402,7 +402,7 @@ func (s *StreamStub) HandleServer(stream grpc.ServerStream) error {
 		return err
 	}
 
-	himpl, err := s.NewStreamHandlerImpl(id, false)
+	himpl, err := s.NewStreamHandlerImpl(id, s, false)
 
 	if err != nil {
 		return err

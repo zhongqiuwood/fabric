@@ -13,7 +13,7 @@ var DefaultFactory SyncFactory
 
 func GetDefaultFactory() pb.StreamHandlerFactory { return DefaultFactory }
 
-func (t SyncFactory) NewStreamHandlerImpl(id *pb.PeerID, initiated bool) (pb.StreamHandlerImpl, error) {
+func (t SyncFactory) NewStreamHandlerImpl(id *pb.PeerID, sstub *pb.StreamStub, initiated bool) (pb.StreamHandlerImpl, error) {
 	if t == nil {
 		return nil, fmt.Errorf("No default factory")
 	}

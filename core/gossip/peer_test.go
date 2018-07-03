@@ -2,7 +2,6 @@ package gossip_test
 
 import (
 	"github.com/abchain/fabric/core/gossip"
-	"github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
@@ -11,15 +10,15 @@ import (
 )
 
 func TestPeer(t *testing.T) {
-	p := peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "test"}})
 
-	gossip.NewGossip(p)
+	sAlice := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "alice"}}))
+	sBob := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "bob"}}))
 
 	wctx, endworks := context.WithCancel(context.Background())
 	defer endworks()
 
-	pAlice := pb.NewSimuPeerStub("alice", stub.GetDefaultFactory())
-	pBob := pb.NewSimuPeerStub("bob", stub.GetDefaultFactory())
+	pAlice := pb.NewSimuPeerStub(sAlice.GetSelf().GetName(), sAlice.GetSStub())
+	pBob := pb.NewSimuPeerStub(sBob.GetSelf().GetName(), sBob.GetSStub())
 
 	if err, trafficf := pAlice.ConnectTo(wctx, pBob); err != nil {
 		t.Fatal(err)

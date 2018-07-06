@@ -20,6 +20,7 @@ type CatalogHandler interface {
 }
 
 type CatalogPeerPolicies interface {
+	GetId() string
 	AllowRecvUpdate() bool
 	PushUpdateQuota() int
 	PushUpdate(int)
@@ -30,7 +31,6 @@ type CatalogPeerPolicies interface {
 type CatalogHelper interface {
 	Name() string
 	GetPolicies() CatalogPolicies //caller do not need to check the interface
-	GetStatus() model.Status
 
 	TransDigestToPb(model.Digest) *pb.Gossip_Digest
 	TransPbToDigest(*pb.Gossip_Digest) model.Digest
@@ -159,12 +159,12 @@ type catalogHandler struct {
 	sstub    *pb.StreamStub
 }
 
-func NewCatalogHandlerImpl(stub *pb.StreamStub, helper CatalogHelper) (ret *catalogHandler) {
+func NewCatalogHandlerImpl(stub *pb.StreamStub, helper CatalogHelper, model *model.Model) (ret *catalogHandler) {
 
 	return &catalogHandler{
 		CatalogHelper: helper,
 		sstub:         stub,
-		model:         model.NewGossipModel(helper.GetStatus()),
+		model:         model,
 		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*puller)},
 	}
 }
@@ -235,7 +235,7 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 			//when we succefully accept an update, we also schedule a new push process
 			if err == nil {
 				h.schedule.planPushingCount(h.GetPolicies().PushCount())
-				h.schedulePush()
+				h.executePush(map[string]bool{h.cpo.GetId(): true})
 			} else {
 				h.cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
 			}
@@ -250,13 +250,18 @@ func (h *catalogHandler) SelfUpdate(u model.Update) {
 		h.model.RecvUpdate(u)
 	}
 
-	go h.schedulePush()
+	h.schedule.planPushingCount(h.GetPolicies().PushCount())
+	go func() {
+		//complete for the schedule resource until it failed
+		for h.executePush(map[string]bool{}) == nil {
+		}
+	}()
 }
 
 func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cpo CatalogPeerPolicies) {
 
 	strm := h.sstub.PickHandler(peer)
-	if strm != nil {
+	if strm == nil {
 		logger.Errorf("No stream found for %s", peer.Name)
 		return
 	}
@@ -296,7 +301,7 @@ func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cp
 
 }
 
-func (h *catalogHandler) executePush() error {
+func (h *catalogHandler) executePush(excluded map[string]bool) error {
 
 	logger.Debug("try execute a pushing process")
 	wctx, pushCnt := h.schedule.newSchedule(context.Background())
@@ -308,6 +313,9 @@ func (h *catalogHandler) executePush() error {
 
 	for strm := range h.sstub.OverAllHandlers(wctx) {
 
+		logger.Debugf("finish (%d/%d) pulls, try execute a pushing on stream to %s",
+			h.schedule.pushedCnt(), pushCnt, strm.GetName())
+
 		if h.schedule.pushedCnt() >= pushCnt {
 			break
 		}
@@ -318,28 +326,30 @@ func (h *catalogHandler) executePush() error {
 		}
 		cpo := ph.GetPeerPolicy()
 
+		//check excluded first
+		_, ok = excluded[cpo.GetId()]
+		if ok {
+			logger.Debugf("Skip exclueded peer [%s]", cpo.GetId())
+			continue
+		}
+
 		if pos := h.pulls.newPuller(cpo); pos != nil {
+			logger.Debugf("start pulling on stream to %s", cpo.GetId())
 			pos.Puller = model.NewPuller(&sessionHandler{h, cpo}, strm.StreamHandler, h.model)
 			pctx, _ := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
 			err := pos.Puller.Process(pctx)
 
+			logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
 			if err == context.DeadlineExceeded {
 				cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
-			} else if err == nil {
-				logger.Debug("Scheduled pulling from peer [%s]", strm.GetName())
 			}
+
+		} else {
+			logger.Debugf("stream %s has a working puller, try next one", cpo.GetId())
 		}
 	}
 
 	logger.Infof("Finished a push process, plan %d and %d finished", pushCnt, h.schedule.pushedCnt())
 
 	return nil
-}
-
-func (h *catalogHandler) schedulePush() {
-
-	//complete for the schedule resource until it failed
-	for h.executePush() == nil {
-	}
-
 }

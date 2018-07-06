@@ -14,7 +14,7 @@ func newHandler(peer *pb.PeerID, handlers map[string]CatalogHandler) *handlerImp
 
 	return &handlerImpl{
 		peer:  peer,
-		ppo:   newPeerPolicy(peer.GetName()),
+		ppo:   NewPeerPolicy(peer.GetName()),
 		cores: handlers,
 	}
 }
@@ -35,7 +35,7 @@ func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 		return nil
 	}
 
-	g.ppo.recvUpdate(msg.EstimateSize())
+	g.ppo.RecvUpdate(msg.EstimateSize())
 
 	if dig := msg.GetDig(); dig != nil {
 		global.HandleDigest(g.peer, dig, g.ppo)
@@ -43,5 +43,5 @@ func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 		global.HandleUpdate(g.peer, msg.GetUd(), g.ppo)
 	}
 
-	return g.ppo.isPolicyViolated()
+	return g.ppo.IsPolicyViolated()
 }

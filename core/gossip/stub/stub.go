@@ -36,7 +36,7 @@ func (h *GossipHandlerImpl) EnableLoss() bool { return true }
 func (h *GossipHandlerImpl) NewMessage() proto.Message { return new(pb.Gossip) }
 
 func (h *GossipHandlerImpl) HandleMessage(m proto.Message) error {
-	return h.HandleMessage(m.(*pb.Gossip))
+	return h.GossipHandler.HandleMessage(m.(*pb.Gossip))
 }
 
 func (h *GossipHandlerImpl) BeforeSendMessage(proto.Message) error {

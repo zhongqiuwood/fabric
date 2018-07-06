@@ -61,13 +61,13 @@ func HandleDummyBiComm(ctx context.Context, h1 *StreamHandler, h2 *StreamHandler
 	return err
 }
 
-type simuPeerStub struct {
+type SimuPeerStub struct {
 	id *PeerID
 	*StreamStub
 }
 
 //s1 is act as client and s2 as service, create bi-direction comm between two handlers
-func (s1 *simuPeerStub) ConnectTo(ctx context.Context, s2 *simuPeerStub) (err error, traffic func() error) {
+func (s1 *SimuPeerStub) ConnectTo(ctx context.Context, s2 *SimuPeerStub) (err error, traffic func() error) {
 
 	var hi StreamHandlerImpl
 	hi, _ = s1.NewStreamHandlerImpl(s2.id, s1.StreamStub, true)
@@ -91,9 +91,9 @@ func (s1 *simuPeerStub) ConnectTo(ctx context.Context, s2 *simuPeerStub) (err er
 	return
 }
 
-func NewSimuPeerStub(id string, ss *StreamStub) *simuPeerStub {
+func NewSimuPeerStub(id string, ss *StreamStub) *SimuPeerStub {
 
-	return &simuPeerStub{
+	return &SimuPeerStub{
 		id:         &PeerID{id},
 		StreamStub: ss,
 	}

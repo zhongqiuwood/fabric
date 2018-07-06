@@ -77,6 +77,52 @@ func toPeerId(name []string) (ret []*PeerID) {
 	return
 }
 
+func Test_StreamHub_Base(t *testing.T) {
+
+	tstub := NewStreamStub(nil)
+
+	h1 := newStreamHandler(&dummyHandler{})
+
+	tstub.registerHandler(h1, &PeerID{"peer1"})
+
+	if strm := tstub.PickHandler(&PeerID{"peer1"}); strm == nil {
+		t.Fatal("1. Can not pick registered handler")
+	}
+
+	if strm := tstub.PickHandler(&PeerID{"peer2"}); strm != nil {
+		t.Fatal("1. pick unregistered handler")
+	}
+
+	h2 := newStreamHandler(&dummyHandler{})
+	tstub.registerHandler(h2, &PeerID{"peer2"})
+
+	if strm := tstub.PickHandler(&PeerID{"peer1"}); strm == nil {
+		t.Fatal("2. Can not pick registered handler peer1")
+	}
+
+	if strm := tstub.PickHandler(&PeerID{"peer2"}); strm == nil {
+		t.Fatal("2. Can not pick registered handler peer2")
+	}
+
+	if strms := tstub.PickHandlers([]*PeerID{&PeerID{"peer1"}, &PeerID{"peer3"}, &PeerID{"peer4"}}); len(strms) != 1 {
+		t.Fatal("2. Can not pick expected registered handlers", strms)
+	} else {
+		if strms[0] != h1 {
+			t.Fatal("2. picked unexpected handler")
+		}
+	}
+
+	tstub.unRegisterHandler(&PeerID{"peer2"})
+
+	if strm := tstub.PickHandler(&PeerID{"peer1"}); strm == nil {
+		t.Fatal("3. Can not pick registered handler")
+	}
+
+	if strm := tstub.PickHandler(&PeerID{"peer2"}); strm != nil {
+		t.Fatal("3. pick unregistered handler")
+	}
+}
+
 func Test_StreamHub_OverHandler(t *testing.T) {
 
 	tstub := NewStreamStub(nil)
@@ -182,7 +228,7 @@ func ensureOneDummyWrite(ctx context.Context, h *StreamHandler) error {
 		return err
 	}
 
-	HandleDummyWrite(ctx, h)
+	ensureOneDummyWrite(ctx, h)
 	return nil
 }
 

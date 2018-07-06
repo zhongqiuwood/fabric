@@ -83,15 +83,6 @@ func (g *GossipStub) AddCatalogHandler(cat string, h CatalogHandler) {
 	}
 }
 
-func (g *GossipStub) AddDefaultCatalogHandler(helper CatalogHelper) CatalogHandler {
-
-	h := NewCatalogHandlerImpl(g.StreamStub, helper)
-
-	g.AddCatalogHandler(helper.Name(), h)
-
-	return h
-}
-
 //each call of NewGossipWithPeer will travel register collections to create the corresponding catalogy handlers
 var RegisterCat []func(*GossipStub)
 
@@ -103,8 +94,9 @@ func NewGossipWithPeer(p peer.Peer) *GossipStub {
 	}
 
 	gossipStub := &GossipStub{
-		self:       self.ID,
-		StreamStub: p.GetStreamStub("gossip"),
+		self:            self.ID,
+		catalogHandlers: make(map[string]CatalogHandler),
+		StreamStub:      p.GetStreamStub("gossip"),
 	}
 
 	gossipMapper[gossipStub.StreamStub] = gossipStub

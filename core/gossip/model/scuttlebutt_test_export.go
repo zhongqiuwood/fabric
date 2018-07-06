@@ -116,6 +116,14 @@ func (*testStatus) NewPeer(string) ScuttlebuttPeerStatus { return &testPeerStatu
 
 func (*testStatus) MissedUpdate(string, ScuttlebuttPeerUpdate) error { return nil }
 
+type TestPeer interface {
+	CreateModel() *Model
+	LocalUpdate(ks []string)
+	DumpPeers() []string
+	DumpSelfData() map[string]int
+	DumpData() map[string]int
+}
+
 type testPeer struct {
 	*testStatus
 	self *testPeerStatus
@@ -126,7 +134,9 @@ func (p *testPeer) CreateModel() *Model { return NewGossipModel(p.ss) }
 func (p *testPeer) DumpPeers() (ret []string) {
 
 	for id, _ := range p.ss.Peers {
-		ret = append(ret, id)
+		if id != "" {
+			ret = append(ret, id)
+		}
 	}
 
 	return ret

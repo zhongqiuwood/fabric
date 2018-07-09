@@ -65,7 +65,7 @@ func initGossipModule(t *testing.T, pendingCat *testCatalogy, m *model.Model) {
 					t.Fatalf("pending catalogy %s is inited by another stub", pendingCat.id)
 				}
 
-				pendingCat.handler = gossip.NewCatalogHandlerImpl(stub.GetSStub(), pendingCat, m)
+				pendingCat.handler = gossip.NewCatalogHandlerImpl(stub.GetSStub(), stub.GetStubContext(), pendingCat, m)
 
 				stub.AddCatalogHandler(pendingCat.Name(), pendingCat.handler)
 			}
@@ -165,6 +165,7 @@ func TestCatalogyIn2Peer(t *testing.T) {
 
 	wctx, endworks := context.WithCancel(context.Background())
 	defer endworks()
+	peer.PeerGlobalParentCtx = wctx
 
 	cats, peers := groupPeerNetwork(t, wctx, []string{"alice", "bob"})
 
@@ -174,6 +175,7 @@ func TestCatalogyIn2Peer(t *testing.T) {
 
 	cAlice := cats[0]
 	pAlice := peers[0]
+	cBob := cats[1]
 	pBob := peers[1]
 
 	//known each other
@@ -187,5 +189,35 @@ func TestCatalogyIn2Peer(t *testing.T) {
 
 	if len(pBob.DumpPeers()) < 2 {
 		t.Fatal("bob is not known alice?", pBob.DumpPeers())
+	}
+
+	//one update
+	pAlice.LocalUpdate([]string{"a1", "a2", "a3"})
+	cAlice.handler.SelfUpdate(nil)
+
+	time.Sleep(time.Second * 1)
+
+	if len(pBob.DumpData()) < 3 {
+		t.Fatal("bob do not receive enough update from alice", pBob.DumpData())
+	}
+
+	//both update
+	pBob.LocalUpdate([]string{"b1", "b2"})
+	pAlice.LocalUpdate([]string{"a1", "a4"})
+	cAlice.handler.SelfUpdate(nil)
+	cBob.handler.SelfUpdate(nil)
+
+	time.Sleep(time.Second * 1)
+
+	if len(pAlice.DumpData()) < 6 {
+		t.Fatal("alice do not receive enough update from alice", pAlice.DumpData())
+	}
+
+	if len(pBob.DumpData()) < 6 {
+		t.Fatal("bob do not receive enough update from alice", pBob.DumpData())
+	}
+
+	if pBob.DumpData()["a1"] < 3 {
+		t.Fatal("bob do not receive updated value from alice", pBob.DumpData())
 	}
 }

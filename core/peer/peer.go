@@ -56,6 +56,7 @@ type Peer interface {
 	GetNeighbour() (Neighbour, error)
 	//  currently the availiable streamstub is "gossip"
 	GetStreamStub(string) *pb.StreamStub
+	GetPeerCtx() context.Context
 }
 
 type StreamFilter interface {
@@ -165,7 +166,9 @@ type EngineFactory func(Peer) (Engine, error)
 
 // Impl implementation of the Peer service
 type Impl struct {
-	self *pb.PeerEndpoint
+	self  *pb.PeerEndpoint
+	pctx  context.Context
+	onEnd context.CancelFunc
 	//	handlerFactory HandlerFactory
 	handlerMap *handlerMap
 	//	ledgerWrapper *ledgerWrapper
@@ -242,6 +245,8 @@ type Engine interface {
 // 	return peer, nil
 // }
 
+var PeerGlobalParentCtx = context.Background()
+
 func NewPeer(self *pb.PeerEndpoint) *Impl {
 
 	peer := new(Impl)
@@ -249,6 +254,10 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 	peer.self = self
 	peer.handlerMap = &handlerMap{m: make(map[pb.PeerID]MessageHandler)}
 	peer.random = rand.New(rand.NewSource(time.Now().Unix()))
+
+	pctx, endf := context.WithCancel(PeerGlobalParentCtx)
+	peer.pctx = pctx
+	peer.onEnd = endf
 
 	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory())
 	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory())
@@ -311,6 +320,10 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 
 }
 
+func (p *Impl) EndPeer() {
+	p.onEnd()
+}
+
 // Chat implementation of the the Chat bidi streaming RPC function
 func (p *Impl) Chat(stream pb.Peer_ChatServer) error {
 	return p.handleChat(stream.Context(), stream, false)
@@ -342,6 +355,8 @@ func (p *Impl) ProcessTransaction(ctx context.Context, tx *pb.Transaction) (resp
 	}
 	return p.ExecuteTransaction(tx), err
 }
+
+func (p *Impl) GetPeerCtx() context.Context { return p.pctx }
 
 // GetPeers returns the currently registered PeerEndpoints which are also in peer discovery list
 func (p *Impl) GetPeers() (*pb.PeersMessage, error) {

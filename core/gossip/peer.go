@@ -6,6 +6,7 @@ import (
 	peerACL "github.com/abchain/fabric/core/peer/acl"
 	pb "github.com/abchain/fabric/protos"
 	logging "github.com/op/go-logging"
+	"golang.org/x/net/context"
 	"sync"
 	"time"
 )
@@ -39,6 +40,7 @@ type GossipStub struct {
 
 	*pb.StreamStub
 	peerACL.AccessControl
+	globalCtx context.Context
 }
 
 var gossipMapper = map[*pb.StreamStub]*GossipStub{}
@@ -68,6 +70,10 @@ func (g *GossipStub) GetSStub() *pb.StreamStub {
 	return g.StreamStub
 }
 
+func (g *GossipStub) GetStubContext() context.Context {
+	return g.globalCtx
+}
+
 func (g *GossipStub) GetCatalogHandler(cat string) CatalogHandler {
 	return g.catalogHandlers[cat]
 }
@@ -93,10 +99,13 @@ func NewGossipWithPeer(p peer.Peer) *GossipStub {
 		panic("No self endpoint")
 	}
 
+	gctx, _ := context.WithCancel(p.GetPeerCtx())
+
 	gossipStub := &GossipStub{
 		self:            self.ID,
 		catalogHandlers: make(map[string]CatalogHandler),
 		StreamStub:      p.GetStreamStub("gossip"),
+		globalCtx:       gctx,
 	}
 
 	gossipMapper[gossipStub.StreamStub] = gossipStub

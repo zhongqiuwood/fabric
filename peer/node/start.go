@@ -168,6 +168,8 @@ func StartNode(postrun func() error) error {
 		return err
 	}
 
+	defer peerServer.EndPeer()
+
 	// init txnetwork and consensus framework
 	txnetwork.InitTxNetwork(secHelperFunc)
 

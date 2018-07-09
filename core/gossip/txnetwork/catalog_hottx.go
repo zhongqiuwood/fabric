@@ -39,6 +39,15 @@ func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	return true
 }
 
+func (p *peerTxs) To() VClock {
+	return standardVClock{
+		&pb.Gossip_Digest_PeerState{
+			State: p.last.digest,
+			Num:   p.last.digestSeries,
+		}
+	}
+}
+
 func (p *peerTxs) GenDigest() model.Digest {
 
 	return &pb.Gossip_Digest_PeerState{
@@ -90,6 +99,20 @@ func (p *peerTxs) MakeUpdate(d_in model.Digest) model.Status {
 	} else {
 		return &peerTxs{head: beg, last: p.last}
 	}
+
+}
+
+//update structure for each known peer used in recving
+type peerTxPoolUpdate struct {
+	size int
+	*peerTxs
+}
+
+func (u *peerTxPoolUpdate) PickFrom(VClock, Update) (ScuttlebuttPeerUpdate, Update) {
+
+}
+
+func (u *peerTxPoolUpdate) Update(ScuttlebuttPeerUpdate, ScuttlebuttStatus) error {
 
 }
 

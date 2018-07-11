@@ -25,12 +25,17 @@ type peerTxs struct {
 	last *txMemPoolItem
 }
 
-func txToDigestState(tx *pb.Transaction) []byte {
-	return []byte(tx.GetTxid())
+type txPoolGlobal struct {
+	ind map[string]*txMemPoolItem
+	currentCpo  gossip.CatalogPeerPolicies
 }
 
-func digestToIndex(dig []byte) string {
-	return string(dig)
+func (g *txPoolGlobal) index(i *txMemPoolItem){
+	g.ind[i.tx.GetTxid()] = i
+}
+
+func (g *txPoolGlobal) query(txid string )*txMemPoolItem{
+	return g.ind[txid]
 }
 
 //return whether tx2 is precede of the digest of tx1
@@ -48,23 +53,22 @@ func (p *peerTxs) To() VClock {
 	}
 }
 
-func (p *peerTxs) GenDigest() model.Digest {
+func (p *peerTxs) inRange(n uint64) bool{
 
-	return &pb.Gossip_Digest_PeerState{
-		State: p.last.digest,
-		Num:   p.last.digestSeries,
+	if p.head == nil{
+		return false
 	}
+
+	return p.head.digestSeries <= n && p.last.digestSeries >= n
+
 }
 
-func (p *peerTxs) Merge(s_in model.Status) error {
+func (p *peerTxs) merge(s *peerTxs) {
 
-	if s_in == nil {
-		return nil
-	}
-
-	s, ok := s_in.(*peerTxs)
-	if !ok {
-		panic("Type error, not peerTxs")
+	if p.last == nil{
+		p.head = s.head
+		p.last = s.last
+		return
 	}
 
 	//scan txs ...
@@ -75,18 +79,14 @@ func (p *peerTxs) Merge(s_in model.Status) error {
 			break
 		}
 	}
-
-	return nil
 }
 
-func (p *peerTxs) MakeUpdate(d_in model.Digest) model.Status {
+func (p *peerTxs) fetch(d *pb.Gossip_Digest_PeerState, beg *txMemPoolItem) *peerTxs {
 
-	d, ok := d_in.(*pb.Gossip_Digest_PeerState)
-	if !ok {
-		panic("Type error, not Gossip_Digest_PeerState")
+	if beg == nil{
+		beg = p.head
 	}
 
-	beg := p.head
 	for ; beg != nil; beg = beg.next {
 		if bytes.Compare(beg.digest, d.GetState()) == 0 {
 			beg = beg.next
@@ -100,6 +100,112 @@ func (p *peerTxs) MakeUpdate(d_in model.Digest) model.Status {
 		return &peerTxs{head: beg, last: p.last}
 	}
 
+}
+
+//so we make two indexes for pooling txs: the global one (by txid) and a per-peer
+//jumping list (by seqnum) with [1/jumplistInterval] size of the global indexs,
+//and finally we have a 100/jumplistInterval % overhead
+const (
+	jumplistInterval = uint64(8)
+)
+
+type peerTxMemPool struct {
+	*peerTxs
+	peerId string
+	//index help us to seek by a txid, it do not need to consensus with the size
+	//field in peerTxs
+	jlindex map[uint64]*txMemPoolItem
+}
+
+func (p *peerTxMemPool) init(txs *peerTxs) {
+	p.peerTxs = txs
+	p.index = make(map[string]*txMemPoolItem)
+	for beg := txs.head; beg != nil; beg = beg.next {
+		p.index[digestToIndex(beg.digest)] = beg
+	}
+}
+
+func (p *peerTxMemPool) PickFrom(d_in model.VClock, _notused model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
+
+	d, ok := d_in.(*pb.Gossip_Digest_PeerState)
+	if !ok {
+		panic("Type error, not Gossip_Digest_PeerState")
+	}
+
+	if !p.inRange(d.GetNum()){
+		//we have a up-to-date or out-of-range state so no update can provided
+		return nil, _notused		
+	}
+
+	return p.fetch(d, p.jlindex[d.GetNum() / jumplistInterval]), _notused
+}
+
+func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
+
+	if s_in == nil {
+		return nil
+	}
+
+	s, ok := s_in.(*peerTxs)
+	if !ok {
+		panic("Type error, not peerTxs")
+	}
+
+	oldlast := p.last
+
+	if err := p.merge(s);err != nil {
+		return err
+	}
+
+	//response said our data is outdate
+	if s.head.digestSeries > p.last.digestSeries {
+		//check if we need to update
+		peerStatus := GetNetworkStatus().queryPeer(p.peerId)
+		if peerStatus == nil {
+			//boom ...
+			return fmt.Errorf("Unknown status in global for peer %s", p.peerId)
+		}
+
+		//the incoming MAYBE an valid, known digest, we just update our status
+		if peerStatus.beginTxSeries >= s.head.digestSeries {
+			logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
+				p.peerId, p.last.digest, p.last.digestSeries)
+			//all data we cache is clear ....
+			p.init(peerStatus.createPeerTxs())
+		}
+	}
+
+	oldlast := p.last
+
+	err = p.peerTxs.Merge(s.peerTxs)
+	if err != nil {
+		return err
+	}
+
+	var mergeCnt int
+	//we need to construct the index ...
+	for beg := oldlast.next; beg != nil; beg = beg.next {
+		p.index[digestToIndex(beg.digest)] = beg
+		mergeCnt++
+
+		//add transaction into ledger
+		ledger.PoolTransaction(beg.tx)
+	}
+
+	if mergeCnt > s.size {
+		return fmt.Errorf("Wrong update size, have %d but merge %d", s.size, mergeCnt)
+	}
+
+	var mergeW uint
+	if s.size < int(cat_hottx_one_merge_weight) {
+		mergeW = uint(s.size)
+	} else {
+		mergeW = cat_hottx_one_merge_weight
+	}
+	//scoring the peer (how many new txs have the update provided )
+	s.cpo.ScoringPeer(mergeCnt*100/s.size, mergeW)
+
+	return nil
 }
 
 //update structure for each known peer used in recving
@@ -116,39 +222,6 @@ func (u *peerTxPoolUpdate) Update(ScuttlebuttPeerUpdate, ScuttlebuttStatus) erro
 
 }
 
-type peerTxMemPool struct {
-	*peerTxs
-	peerId string
-	//index help us to seek by a txid, it do not need to consensus with the size
-	//field in peerTxs
-	index map[string]*txMemPoolItem
-}
-
-func (p *peerTxMemPool) init(txs *peerTxs) {
-	p.peerTxs = txs
-	p.index = make(map[string]*txMemPoolItem)
-	for beg := txs.head; beg != nil; beg = beg.next {
-		p.index[digestToIndex(beg.digest)] = beg
-	}
-}
-
-//overload MakeUpdate@peerTxs to achieve an O(1) process
-func (p *peerTxMemPool) MakeUpdate(d_in model.Digest) model.Status {
-
-	d, ok := d_in.(*pb.Gossip_Digest_PeerState)
-	if !ok {
-		panic("Type error, not Gossip_Digest_PeerState")
-	}
-
-	pos, ok := p.index[digestToIndex(d.GetState())]
-
-	if !ok || pos == p.last {
-		//we have a up-to-date or out-of-range state so no update can provided
-		return nil
-	} else {
-		return &peerTxs{head: pos.next, last: p.last}
-	}
-}
 
 //update structure for each known peer used in recving
 type peerTxPoolUpdate struct {

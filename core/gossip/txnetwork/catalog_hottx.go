@@ -102,6 +102,81 @@ func (p *peerTxs) fetch(d *pb.Gossip_Digest_PeerState, beg *txMemPoolItem) *peer
 
 }
 
+//update structure used for recving
+type txPeerUpdateIn struct {
+	*pb.HotTransactionBlock
+}
+
+func (u *txPoolUpdate) PickUp(id string) model.Status {
+	txs, ok := u.Txs[id]
+
+	if !ok {
+		return nil
+	}
+
+	ledger, err := ledger.GetLedger()
+	if err != nil {
+		logger.Errorf("Get ledger fail when picking up")
+		return nil
+	}
+
+	if len(txs.Transactions) == 0 {
+		//providing empty update is somewhat evil so it take a low score
+		logger.Warningf("Peer update have empty transactions for %s", id)
+		u.cpo.ScoringPeer(50, cat_hottx_one_merge_weight)
+		return nil
+	}
+
+	head := &txMemPoolItem{
+		//		tx:           txs.Transactions[0],
+		//		digest:       txToDigestState(txs.Transactions[0]),
+		digestSeries: txs.BeginSeries,
+	}
+
+	current := head
+	var last *txMemPoolItem
+
+	//construct a peerTxMemPool from txs, and do verification
+	for _, tx := range txs.Transactions {
+
+		if isLiteTx(tx) {
+			tx, err = ledger.GetCommitedTransaction(tx.GetTxid())
+			if err != nil {
+				logger.Error("Checking tx from db fail", err)
+				return nil
+			} else if tx == nil {
+				logger.Errorf("Peer %s update give uncommited transactions", id)
+				u.cpo.ScoringPeer(0, cat_hottx_one_merge_weight)
+				return nil
+			}
+		}
+
+		if txcommon.secHelper != nil {
+			tx, err = txcommon.secHelper.TransactionPreValidation(tx)
+			if err != nil {
+				logger.Errorf("Peer %s update have invalid transactions: %s", id, err)
+				u.cpo.ScoringPeer(0, cat_hottx_one_merge_weight)
+				return nil
+			}
+		}
+
+		last = current
+		current.tx = tx
+		current.digest = txToDigestState(tx)
+		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
+		last.next = current
+	}
+	last.next = nil //seal the tail
+
+	return &peerTxPoolUpdate{
+		u.cpo,
+		len(txs.Transactions),
+		&peerTxs{
+			head: head,
+			last: last,
+		}}
+}
+
 //so we make two indexes for pooling txs: the global one (by txid) and a per-peer
 //jumping list (by seqnum) with [1/jumplistInterval] size of the global indexs,
 //and finally we have a 100/jumplistInterval % overhead
@@ -117,11 +192,18 @@ type peerTxMemPool struct {
 	jlindex map[uint64]*txMemPoolItem
 }
 
-func (p *peerTxMemPool) init(txs *peerTxs) {
-	p.peerTxs = txs
-	p.index = make(map[string]*txMemPoolItem)
-	for beg := txs.head; beg != nil; beg = beg.next {
-		p.index[digestToIndex(beg.digest)] = beg
+func (p *peerTxMemPool) reset(txbeg *txMemPoolItem) {
+	p.peerTxs = &peerTxs{txbeg, nil}
+	p.jlindex = make(map[string]*txMemPoolItem)
+
+	if txbeg != nil{
+		for ; txbeg != nil; txbeg = txbeg.next {
+			if txbeg.digestSeries == (txbeg.digestSeries / jumplistInterval) * jumplistInterval{
+				p.jlindex[beg.digestSeries / jumplistInterval] = txbeg
+			}
+		}
+
+		p.peerTxs.last = txbeg
 	}
 }
 
@@ -151,9 +233,13 @@ func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		panic("Type error, not peerTxs")
 	}
 
-	oldlast := p.last
+	g, ok := g_in.(*txPoolGlobal)
+	if !ok {
+		panic("Type error, not txPoolGlobal")
+	}
 
-	if err := p.merge(s);err != nil {
+	ledger, err := ledger.GetLedger()
+	if err != nil {
 		return err
 	}
 
@@ -171,29 +257,27 @@ func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 			logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
 				p.peerId, p.last.digest, p.last.digestSeries)
 			//all data we cache is clear ....
-			p.init(peerStatus.createPeerTxs())
+			p.reset(peerStatus.createPeerTxItem())
 		}
 	}
 
 	oldlast := p.last
-
-	err = p.peerTxs.Merge(s.peerTxs)
-	if err != nil {
+	
+	if err := p.merge(s);err != nil {
 		return err
 	}
 
 	var mergeCnt int
 	//we need to construct the index ...
 	for beg := oldlast.next; beg != nil; beg = beg.next {
-		p.index[digestToIndex(beg.digest)] = beg
+		g.index(beg)
+		if beg.digestSeries == (beg.digestSeries / jumplistInterval) * jumplistInterval{
+			p.jlindex[beg.digestSeries / jumplistInterval] = beg
+		}
 		mergeCnt++
 
-		//add transaction into ledger
+		//also add transaction into ledger
 		ledger.PoolTransaction(beg.tx)
-	}
-
-	if mergeCnt > s.size {
-		return fmt.Errorf("Wrong update size, have %d but merge %d", s.size, mergeCnt)
 	}
 
 	var mergeW uint
@@ -203,23 +287,9 @@ func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		mergeW = cat_hottx_one_merge_weight
 	}
 	//scoring the peer (how many new txs have the update provided )
-	s.cpo.ScoringPeer(mergeCnt*100/s.size, mergeW)
+	g.currentCpo.ScoringPeer(mergeCnt*100/s.size, mergeW)
 
 	return nil
-}
-
-//update structure for each known peer used in recving
-type peerTxPoolUpdate struct {
-	size int
-	*peerTxs
-}
-
-func (u *peerTxPoolUpdate) PickFrom(VClock, Update) (ScuttlebuttPeerUpdate, Update) {
-
-}
-
-func (u *peerTxPoolUpdate) Update(ScuttlebuttPeerUpdate, ScuttlebuttStatus) error {
-
 }
 
 

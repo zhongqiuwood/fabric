@@ -97,6 +97,12 @@ type scuttlebuttStatus struct {
 	Peers map[string]ScuttlebuttPeerStatus
 }
 
+type noPeerStatusError string
+
+func (s noPeerStatusError) Error() string {
+	return string(s) + " is not a known peer"
+}
+
 func (s *scuttlebuttStatus) Update(u_in Update) error {
 
 	u, ok := u_in.(ScuttlebuttUpdate)
@@ -117,11 +123,14 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 		} else {
 
 			pss, ok := s.Peers[id]
-			if ok && pss.To().Less(ss.To()) {
-				err = pss.Update(ss, s.ScuttlebuttStatus)
-
+			if ok {
+				if pss.To().Less(ss.To()) {
+					err = pss.Update(ss, s.ScuttlebuttStatus)
+				} else {
+					err = s.MissedUpdate(id, ss)
+				}
 			} else {
-				err = s.MissedUpdate(id, ss)
+				err = noPeerStatusError(id)
 			}
 
 			if err != nil {

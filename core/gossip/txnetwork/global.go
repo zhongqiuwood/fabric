@@ -16,12 +16,11 @@ type peerStatus struct {
 	status        []byte
 }
 
-func (s *peerStatus) createPeerTxs() *peerTxs {
-	hitem := &txMemPoolItem{
+func (s *peerStatus) createPeerTxItem() *txMemPoolItem {
+	return &txMemPoolItem{
 		digest:       s.beginTxDigest,
 		digestSeries: s.beginTxSeries,
 	}
-	return &peerTxs{head: hitem, last: hitem}
 }
 
 type selfPeerStatus struct {

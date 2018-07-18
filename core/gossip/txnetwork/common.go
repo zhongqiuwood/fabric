@@ -4,7 +4,7 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
-	pb "github.com/abchain/fabric/protos"
+	_ "github.com/abchain/fabric/protos"
 	"sync"
 )
 
@@ -22,9 +22,7 @@ func InitTxNetwork(secHelperFunc func() crypto.Peer) {
 }
 
 //a standard vclock use the num field in protos
-type standardVClock struct {
-	*pb.Gossip_Digest_PeerState
-}
+type standardVClock uint64
 
 func (a standardVClock) Less(b_in model.VClock) bool {
 	if b_in == nil {
@@ -36,13 +34,13 @@ func (a standardVClock) Less(b_in model.VClock) bool {
 		panic("Wrong type, not standardVClock")
 	}
 
-	return a.GetNum() < b.GetNum()
+	return a < b
 }
 
 func registerEvictFunc(h gossip.CatalogHandler) {
-	GetNetworkStatus().regNotify(func(ids []string) {
-		for _, id := range ids {
-			h.RemovePeer(id)
-		}
-	})
+	// GetNetworkStatus().regNotify(func(ids []string) {
+	// 	for _, id := range ids {
+	// 		//			h.RemovePeer(id)
+	// 	}
+	// })
 }

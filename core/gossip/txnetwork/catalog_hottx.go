@@ -1,13 +1,12 @@
 package txnetwork
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
-	proto "github.com/golang/protobuf/proto"
+	_ "github.com/golang/protobuf/proto"
 )
 
 type txMemPoolItem struct {
@@ -25,16 +24,69 @@ type peerTxs struct {
 	last *txMemPoolItem
 }
 
-type txPoolGlobal struct {
-	ind map[string]*txMemPoolItem
-	currentCpo  gossip.CatalogPeerPolicies
+type txPoolGlobalUpdateOut struct {
+	*pb.Gossip_Digest
 }
 
-func (g *txPoolGlobal) index(i *txMemPoolItem){
+func (txPoolGlobalUpdateOut) Gossip_IsUpdateIn() bool { return false }
+
+type txPoolGlobalUpdate struct {
+	gossip.CatalogPeerPolicies
+}
+
+func (*txPoolGlobalUpdate) Gossip_IsUpdateIn() bool {
+	return true
+}
+
+type txPoolGlobal struct {
+	ind        map[string]*txMemPoolItem
+	currentCpo gossip.CatalogPeerPolicies
+}
+
+func (g *txPoolGlobal) GenDigest() model.Digest { return nil }
+func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
+
+	d, ok := d.(*pb.Gossip_Digest)
+
+	if !ok {
+		panic("Type error, not Gossip_Digest")
+	}
+
+	return txPoolGlobalUpdateOut{d}
+}
+
+func (g *txPoolGlobal) Update(u_in model.Update) error {
+	u, ok := u_in.(*txPoolGlobalUpdate)
+	if !ok {
+		panic("Type error, not txPoolGlobalUpdate")
+	}
+
+	g.currentCpo = u.CatalogPeerPolicies
+	return nil
+}
+
+func (g *txPoolGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
+
+	//check if we have known this peer
+	peerStatus := GetNetworkStatus().queryPeer(id)
+	if peerStatus == nil {
+		return nil
+	}
+
+	ret := new(peerTxMemPool)
+	ret.reset(peerStatus.createPeerTxItem())
+	return ret
+}
+
+func (g *txPoolGlobal) MissedUpdate(string, model.ScuttlebuttPeerUpdate) error {
+	return nil
+}
+
+func (g *txPoolGlobal) index(i *txMemPoolItem) {
 	g.ind[i.tx.GetTxid()] = i
 }
 
-func (g *txPoolGlobal) query(txid string )*txMemPoolItem{
+func (g *txPoolGlobal) query(txid string) *txMemPoolItem {
 	return g.ind[txid]
 }
 
@@ -44,18 +96,13 @@ func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	return true
 }
 
-func (p *peerTxs) To() VClock {
-	return standardVClock{
-		&pb.Gossip_Digest_PeerState{
-			State: p.last.digest,
-			Num:   p.last.digestSeries,
-		}
-	}
+func (p *peerTxs) To() model.VClock {
+	return standardVClock(p.last.digestSeries)
 }
 
-func (p *peerTxs) inRange(n uint64) bool{
+func (p *peerTxs) inRange(n uint64) bool {
 
-	if p.head == nil{
+	if p.head == nil {
 		return false
 	}
 
@@ -65,7 +112,7 @@ func (p *peerTxs) inRange(n uint64) bool{
 
 func (p *peerTxs) merge(s *peerTxs) {
 
-	if p.last == nil{
+	if p.last == nil {
 		p.head = s.head
 		p.last = s.last
 		return
@@ -81,14 +128,14 @@ func (p *peerTxs) merge(s *peerTxs) {
 	}
 }
 
-func (p *peerTxs) fetch(d *pb.Gossip_Digest_PeerState, beg *txMemPoolItem) *peerTxs {
+func (p *peerTxs) fetch(d uint64, beg *txMemPoolItem) *peerTxs {
 
-	if beg == nil{
+	if beg == nil {
 		beg = p.head
 	}
 
 	for ; beg != nil; beg = beg.next {
-		if bytes.Compare(beg.digest, d.GetState()) == 0 {
+		if beg.digestSeries != d {
 			beg = beg.next
 			break
 		}
@@ -102,61 +149,65 @@ func (p *peerTxs) fetch(d *pb.Gossip_Digest_PeerState, beg *txMemPoolItem) *peer
 
 }
 
+func getLiteTx(tx *pb.Transaction) *pb.Transaction {
+	return &pb.Transaction{Txid: tx.GetTxid()}
+}
+
+func isLiteTx(tx *pb.Transaction) bool {
+	return tx.GetNonce() == nil
+}
+
+func txToDigestState(tx *pb.Transaction) []byte {
+	return tx.GetNonce()
+}
+
 //update structure used for recving
 type txPeerUpdateIn struct {
 	*pb.HotTransactionBlock
 }
 
-func (u *txPoolUpdate) PickUp(id string) model.Status {
-	txs, ok := u.Txs[id]
-
-	if !ok {
+func (u *txPeerUpdateIn) To() model.VClock {
+	if u.HotTransactionBlock == nil {
 		return nil
 	}
 
-	ledger, err := ledger.GetLedger()
-	if err != nil {
-		logger.Errorf("Get ledger fail when picking up")
-		return nil
-	}
+	return standardVClock(u.BeginSeries + uint64(len(u.Transactions)))
+}
 
-	if len(txs.Transactions) == 0 {
-		//providing empty update is somewhat evil so it take a low score
-		logger.Warningf("Peer update have empty transactions for %s", id)
-		u.cpo.ScoringPeer(50, cat_hottx_one_merge_weight)
-		return nil
+func (u *txPeerUpdateIn) toTxs(ledger *ledger.Ledger) (*peerTxs, error) {
+
+	if len(u.Transactions) == 0 {
+		return nil, nil
 	}
 
 	head := &txMemPoolItem{
 		//		tx:           txs.Transactions[0],
 		//		digest:       txToDigestState(txs.Transactions[0]),
-		digestSeries: txs.BeginSeries,
+		digestSeries: u.BeginSeries,
 	}
 
 	current := head
 	var last *txMemPoolItem
+	var err error
 
 	//construct a peerTxMemPool from txs, and do verification
-	for _, tx := range txs.Transactions {
+	for _, tx := range u.Transactions {
 
 		if isLiteTx(tx) {
 			tx, err = ledger.GetCommitedTransaction(tx.GetTxid())
 			if err != nil {
+				// this is not consider as error of update
 				logger.Error("Checking tx from db fail", err)
-				return nil
+				return nil, nil
 			} else if tx == nil {
-				logger.Errorf("Peer %s update give uncommited transactions", id)
-				u.cpo.ScoringPeer(0, cat_hottx_one_merge_weight)
-				return nil
+				return nil, fmt.Errorf("update give uncommited transactions")
 			}
 		}
 
 		if txcommon.secHelper != nil {
 			tx, err = txcommon.secHelper.TransactionPreValidation(tx)
 			if err != nil {
-				logger.Errorf("Peer %s update have invalid transactions: %s", id, err)
-				u.cpo.ScoringPeer(0, cat_hottx_one_merge_weight)
-				return nil
+				return nil, fmt.Errorf("update have invalid transactions: %s", err)
 			}
 		}
 
@@ -168,13 +219,7 @@ func (u *txPoolUpdate) PickUp(id string) model.Status {
 	}
 	last.next = nil //seal the tail
 
-	return &peerTxPoolUpdate{
-		u.cpo,
-		len(txs.Transactions),
-		&peerTxs{
-			head: head,
-			last: last,
-		}}
+	return &peerTxs{head, last}, nil
 }
 
 //so we make two indexes for pooling txs: the global one (by txid) and a per-peer
@@ -194,12 +239,12 @@ type peerTxMemPool struct {
 
 func (p *peerTxMemPool) reset(txbeg *txMemPoolItem) {
 	p.peerTxs = &peerTxs{txbeg, nil}
-	p.jlindex = make(map[string]*txMemPoolItem)
+	p.jlindex = make(map[uint64]*txMemPoolItem)
 
-	if txbeg != nil{
+	if txbeg != nil {
 		for ; txbeg != nil; txbeg = txbeg.next {
-			if txbeg.digestSeries == (txbeg.digestSeries / jumplistInterval) * jumplistInterval{
-				p.jlindex[beg.digestSeries / jumplistInterval] = txbeg
+			if txbeg.digestSeries == (txbeg.digestSeries/jumplistInterval)*jumplistInterval {
+				p.jlindex[txbeg.digestSeries/jumplistInterval] = txbeg
 			}
 		}
 
@@ -209,28 +254,28 @@ func (p *peerTxMemPool) reset(txbeg *txMemPoolItem) {
 
 func (p *peerTxMemPool) PickFrom(d_in model.VClock, _notused model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 
-	d, ok := d_in.(*pb.Gossip_Digest_PeerState)
+	d, ok := d_in.(standardVClock)
 	if !ok {
 		panic("Type error, not Gossip_Digest_PeerState")
 	}
 
-	if !p.inRange(d.GetNum()){
+	if !p.inRange(uint64(d)) {
 		//we have a up-to-date or out-of-range state so no update can provided
-		return nil, _notused		
+		return nil, _notused
 	}
 
-	return p.fetch(d, p.jlindex[d.GetNum() / jumplistInterval]), _notused
+	return p.fetch(uint64(d), p.jlindex[uint64(d)/jumplistInterval]), _notused
 }
 
-func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
+func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
 
-	if s_in == nil {
+	if u_in == nil {
 		return nil
 	}
 
-	s, ok := s_in.(*peerTxs)
+	u, ok := u_in.(*txPeerUpdateIn)
 	if !ok {
-		panic("Type error, not peerTxs")
+		panic("Type error, not txPeerUpdateIn")
 	}
 
 	g, ok := g_in.(*txPoolGlobal)
@@ -243,8 +288,18 @@ func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		return err
 	}
 
+	inTxs, err := u.toTxs(ledger)
+
+	if err != nil {
+		return err
+	} else if inTxs != nil {
+		//there is many possible for a far-end provided nonsense update for you
+		//(caused by itself or the original peer) so we just simply omit it
+		return nil
+	}
+
 	//response said our data is outdate
-	if s.head.digestSeries > p.last.digestSeries {
+	if inTxs.head.digestSeries > p.last.digestSeries {
 		//check if we need to update
 		peerStatus := GetNetworkStatus().queryPeer(p.peerId)
 		if peerStatus == nil {
@@ -253,7 +308,7 @@ func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		}
 
 		//the incoming MAYBE an valid, known digest, we just update our status
-		if peerStatus.beginTxSeries >= s.head.digestSeries {
+		if peerStatus.beginTxSeries >= inTxs.head.digestSeries {
 			logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
 				p.peerId, p.last.digest, p.last.digestSeries)
 			//all data we cache is clear ....
@@ -262,17 +317,14 @@ func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	}
 
 	oldlast := p.last
-	
-	if err := p.merge(s);err != nil {
-		return err
-	}
+	p.merge(inTxs)
 
 	var mergeCnt int
 	//we need to construct the index ...
 	for beg := oldlast.next; beg != nil; beg = beg.next {
 		g.index(beg)
-		if beg.digestSeries == (beg.digestSeries / jumplistInterval) * jumplistInterval{
-			p.jlindex[beg.digestSeries / jumplistInterval] = beg
+		if beg.digestSeries == (beg.digestSeries/jumplistInterval)*jumplistInterval {
+			p.jlindex[beg.digestSeries/jumplistInterval] = beg
 		}
 		mergeCnt++
 
@@ -281,213 +333,54 @@ func (p *peerTxMemPool) Update(s_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	}
 
 	var mergeW uint
-	if s.size < int(cat_hottx_one_merge_weight) {
-		mergeW = uint(s.size)
+	if len(u.Transactions) < int(cat_hottx_one_merge_weight) {
+		mergeW = uint(len(u.Transactions))
 	} else {
 		mergeW = cat_hottx_one_merge_weight
 	}
 	//scoring the peer (how many new txs have the update provided )
-	g.currentCpo.ScoringPeer(mergeCnt*100/s.size, mergeW)
+	g.currentCpo.ScoringPeer(mergeCnt*100/len(u.Transactions), mergeW)
 
 	return nil
 }
 
+// func (u *txPoolUpdate) Add(id string, s_in model.Status) model.Update {
 
-//update structure for each known peer used in recving
-type peerTxPoolUpdate struct {
-	cpo  gossip.CatalogPeerPolicies
-	size int
-	*peerTxs
-}
+// 	s, ok := s_in.(*peerTxs)
 
-func (p *peerTxMemPool) Merge(s_in model.Status) error {
+// 	if !ok {
+// 		panic("Type error, not peerTxs")
+// 	}
 
-	if s_in == nil {
-		return nil
-	}
+// 	if s.head == nil {
+// 		panic("Code give us empty status")
+// 	}
 
-	s, ok := s_in.(*peerTxPoolUpdate)
-	if !ok {
-		panic("Type error, not peerTxPoolUpdate")
-	}
+// 	//we need to tailer the incoming peerTxs: clear the tx content for
+// 	//tx which have commited before epoch, and restrict the size of
+// 	//total update
+// 	rec := &pb.HotTransactionBlock{BeginSeries: s.head.digestSeries}
+// 	for beg := s.head; beg != nil; beg = beg.next {
 
-	ledger, err := ledger.GetLedger()
-	if err != nil {
-		return err
-	}
+// 		//TODO: estimate the size of update and interrupt it if size
+// 		//is exceeded
 
-	//response said our data is outdate
-	if s.head.digestSeries > p.last.digestSeries {
-		//check if we need to update
-		peerStatus := GetNetworkStatus().queryPeer(p.peerId)
-		if peerStatus == nil {
-			//boom ...
-			return fmt.Errorf("Unknown status in global for peer %s", p.peerId)
-		}
+// 		if beg.committedH <= u.epochH {
+// 			rec.Transactions = append(rec.Transactions, getLiteTx(beg.tx))
+// 		} else {
+// 			rec.Transactions = append(rec.Transactions, beg.tx)
+// 		}
+// 	}
 
-		//the incoming MAYBE an valid, known digest, we just update our status
-		if peerStatus.beginTxSeries >= s.head.digestSeries {
-			logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
-				p.peerId, p.last.digest, p.last.digestSeries)
-			//all data we cache is clear ....
-			p.init(peerStatus.createPeerTxs())
-		}
-	}
-
-	oldlast := p.last
-
-	err = p.peerTxs.Merge(s.peerTxs)
-	if err != nil {
-		return err
-	}
-
-	var mergeCnt int
-	//we need to construct the index ...
-	for beg := oldlast.next; beg != nil; beg = beg.next {
-		p.index[digestToIndex(beg.digest)] = beg
-		mergeCnt++
-
-		//add transaction into ledger
-		ledger.PoolTransaction(beg.tx)
-	}
-
-	if mergeCnt > s.size {
-		return fmt.Errorf("Wrong update size, have %d but merge %d", s.size, mergeCnt)
-	}
-
-	var mergeW uint
-	if s.size < int(cat_hottx_one_merge_weight) {
-		mergeW = uint(s.size)
-	} else {
-		mergeW = cat_hottx_one_merge_weight
-	}
-	//scoring the peer (how many new txs have the update provided )
-	s.cpo.ScoringPeer(mergeCnt*100/s.size, mergeW)
-
-	return nil
-}
-
-//update structure used for recving
-type txPoolUpdate struct {
-	*pb.Gossip_Tx
-	cpo    gossip.CatalogPeerPolicies
-	epochH uint64
-}
-
-func (u *txPoolUpdate) PickUp(id string) model.Status {
-	txs, ok := u.Txs[id]
-
-	if !ok {
-		return nil
-	}
-
-	ledger, err := ledger.GetLedger()
-	if err != nil {
-		logger.Errorf("Get ledger fail when picking up")
-		return nil
-	}
-
-	if len(txs.Transactions) == 0 {
-		//providing empty update is somewhat evil so it take a low score
-		logger.Warningf("Peer update have empty transactions for %s", id)
-		u.cpo.ScoringPeer(50, cat_hottx_one_merge_weight)
-		return nil
-	}
-
-	head := &txMemPoolItem{
-		//		tx:           txs.Transactions[0],
-		//		digest:       txToDigestState(txs.Transactions[0]),
-		digestSeries: txs.BeginSeries,
-	}
-
-	current := head
-	var last *txMemPoolItem
-
-	//construct a peerTxMemPool from txs, and do verification
-	for _, tx := range txs.Transactions {
-
-		if isLiteTx(tx) {
-			tx, err = ledger.GetCommitedTransaction(tx.GetTxid())
-			if err != nil {
-				logger.Error("Checking tx from db fail", err)
-				return nil
-			} else if tx == nil {
-				logger.Errorf("Peer %s update give uncommited transactions", id)
-				u.cpo.ScoringPeer(0, cat_hottx_one_merge_weight)
-				return nil
-			}
-		}
-
-		if txcommon.secHelper != nil {
-			tx, err = txcommon.secHelper.TransactionPreValidation(tx)
-			if err != nil {
-				logger.Errorf("Peer %s update have invalid transactions: %s", id, err)
-				u.cpo.ScoringPeer(0, cat_hottx_one_merge_weight)
-				return nil
-			}
-		}
-
-		last = current
-		current.tx = tx
-		current.digest = txToDigestState(tx)
-		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
-		last.next = current
-	}
-	last.next = nil //seal the tail
-
-	return &peerTxPoolUpdate{
-		u.cpo,
-		len(txs.Transactions),
-		&peerTxs{
-			head: head,
-			last: last,
-		}}
-}
-
-func getLiteTx(tx *pb.Transaction) *pb.Transaction {
-	return &pb.Transaction{Txid: tx.GetTxid()}
-}
-
-func isLiteTx(tx *pb.Transaction) bool {
-	return tx.GetNonce() == nil
-}
-
-func (u *txPoolUpdate) Add(id string, s_in model.Status) model.Update {
-
-	s, ok := s_in.(*peerTxs)
-
-	if !ok {
-		panic("Type error, not peerTxs")
-	}
-
-	if s.head == nil {
-		panic("Code give us empty status")
-	}
-
-	//we need to tailer the incoming peerTxs: clear the tx content for
-	//tx which have commited before epoch, and restrict the size of
-	//total update
-	rec := &pb.HotTransactionBlock{BeginSeries: s.head.digestSeries}
-	for beg := s.head; beg != nil; beg = beg.next {
-
-		//TODO: estimate the size of update and interrupt it if size
-		//is exceeded
-
-		if beg.committedH <= u.epochH {
-			rec.Transactions = append(rec.Transactions, getLiteTx(beg.tx))
-		} else {
-			rec.Transactions = append(rec.Transactions, beg.tx)
-		}
-	}
-
-	u.Txs[id] = rec
-	return u
-}
+// 	u.Txs[id] = rec
+// 	return u
+// }
 
 type hotTxCat struct {
 	policy gossip.CatalogPolicies
 	self   gossip.CatalogHandler
 	//	txMarkupStates map[string]*TxMarkupState
+	*txPoolGlobal
 
 	// security state
 	totalTxCount   int64
@@ -507,8 +400,13 @@ func initHotTx(stub *gossip.GossipStub) {
 	hotTx := new(hotTxCat)
 	hotTx.policy = gossip.NewCatalogPolicyDefault()
 
-	hotTx.self = stub.AddDefaultCatalogHandler(hotTx)
-	registerEvictFunc(hotTx.self)
+	m := model.NewGossipModel(model.NewScuttlebuttStatus(hotTx))
+
+	gossip.NewCatalogHandlerImpl(stub.GetSStub(),
+		stub.GetStubContext(), nil, m)
+
+	// hotTx.self = stub.AddDefaultCatalogHandler(hotTx)
+	// registerEvictFunc(hotTx.self)
 }
 
 const (
@@ -517,10 +415,10 @@ const (
 
 func AddTransaction(tx *pb.Transaction) error {
 
-	h := gossip.GetGossip().GetCatalogHandler(hotTxCatName)
-	if h == nil {
-		return fmt.Error("Gossip handler for hot (open) tx is not availiable")
-	}
+	// h := gossip.GetGossip().GetCatalogHandler(hotTxCatName)
+	// if h == nil {
+	// 	return fmt.Error("Gossip handler for hot (open) tx is not availiable")
+	// }
 
 	return nil
 }
@@ -529,89 +427,18 @@ func AddTransaction(tx *pb.Transaction) error {
 func (c *hotTxCat) Name() string                        { return hotTxCatName }
 func (c *hotTxCat) GetPolicies() gossip.CatalogPolicies { return c.policy }
 
-func (c *hotTxCat) UpdateNewPeer(id string, d model.Digest) model.Status {
+func (c *hotTxCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
 
-	peer := GetNetworkStatus().queryPeer(id)
-	if peer == nil {
-		//peer id is unknown for global, so reject it
-		return nil
-	}
-
-	ret := &peerTxMemPool{peerId: id}
-	ret.init(peer.createPeerTxs())
-
-	return ret
-}
-
-func (c *hotTxCat) SelfStatus() (string, model.Status) {
-
-	self := GetNetworkStatus().getSelfStatus()
-	ret := &peerTxMemPool{peerId: self.peerId}
-	ret.init(self.createPeerTxs())
-
-	return self.peerId, ret
-}
-
-func (c *hotTxCat) AssignUpdate(cpo gossip.CatalogPeerPolicies, d *pb.Gossip_Digest) model.Update {
-
-	var height uint64
-	ledger, err := ledger.GetLedger()
-	if err == nil {
-		height, err = ledger.GetBlockNumberByState(d.GetEpoch())
-		if err != nil {
-			height = uint64(0)
-		}
-	}
-
-	if err != nil {
-		logger.Error("Obtain blocknumber fail:", err)
-	}
-
-	return &txPoolUpdate{
-		Gossip_Tx: &pb.Gossip_Tx{},
-		cpo:       cpo,
-		epochH:    height,
-	}
-}
-
-func (c *hotTxCat) EncodeUpdate(u_in model.Update) ([]byte, error) {
-
-	u, ok := u_in.(*txPoolUpdate)
+	d, ok := d_in.(model.ScuttlebuttDigest)
 	if !ok {
-		panic("type error, not txPoolUpdate")
+		panic("Type error, not ScuttlebuttDigest")
 	}
 
-	return proto.Marshal(u.Gossip_Tx)
-}
-
-func (c *hotTxCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, b []byte) (model.Update, error) {
-
-	gossipTx := &pb.Gossip_Tx{}
-	if err := proto.Unmarshal(b, gossipTx); err != nil {
-		return nil, err
-	}
-
-	return &txPoolUpdate{
-		Gossip_Tx: gossipTx,
-		cpo:       cpo,
-	}, nil
-}
-
-func (c *hotTxCat) ToProtoDigest(dm map[string]model.Digest) *pb.Gossip_Digest {
-
-	d_out := &pb.Gossip_Digest{Data: make(map[string]*pb.Gossip_Digest_PeerState)}
-
-	var ok bool
-	for id, d := range dm {
-		d_out.Data[id], ok = d.(*pb.Gossip_Digest_PeerState)
-		if !ok {
-			panic("type error, not Gossip_Digest_PeerState")
-		}
-	}
+	msg := new(pb.Gossip_Digest)
 
 	ledger, err := ledger.GetLedger()
 	if err == nil {
-		d_out.Epoch, err = ledger.GetCurrentStateHash()
+		msg.Epoch, err = ledger.GetCurrentStateHash()
 	}
 
 	if err != nil {
@@ -619,8 +446,132 @@ func (c *hotTxCat) ToProtoDigest(dm map[string]model.Digest) *pb.Gossip_Digest {
 		logger.Error("Ledger get current statehash fail:", err)
 	}
 
-	return d_out
+	msg.Data = make(map[string]*pb.Gossip_Digest_PeerState)
+
+	for id, pd := range d.PeerDigest() {
+
+		msg.Data[id] = &pb.Gossip_Digest_PeerState{
+			Num: uint64(pd.(standardVClock)),
+		}
+	}
+
+	return msg
+
 }
+
+func (c *hotTxCat) TransPbToDigest(msg *pb.Gossip_Digest) model.Digest {
+
+	dout := model.NewscuttlebuttDigest(msg)
+
+	for id, ps := range msg.Data {
+		dout.SetPeerDigest(id, standardVClock(ps.GetNum()))
+	}
+
+	return dout
+}
+
+func (c *hotTxCat) UpdateMessage() proto.Message { return new(pb.Gossip_Tx) }
+
+func (c *hotTxCat) EncodeUpdate(CatalogPeerPolicies, model.Update, proto.Message) proto.Message {
+
+}
+
+func (c *hotTxCat) DecodeUpdate(CatalogPeerPolicies, proto.Message) (model.Update, error) {
+
+}
+
+// func (c *hotTxCat) UpdateNewPeer(id string, d model.Digest) model.Status {
+
+// 	peer := GetNetworkStatus().queryPeer(id)
+// 	if peer == nil {
+// 		//peer id is unknown for global, so reject it
+// 		return nil
+// 	}
+
+// 	ret := &peerTxMemPool{peerId: id}
+// 	ret.init(peer.createPeerTxs())
+
+// 	return ret
+// }
+
+// func (c *hotTxCat) SelfStatus() (string, model.Status) {
+
+// 	self := GetNetworkStatus().getSelfStatus()
+// 	ret := &peerTxMemPool{peerId: self.peerId}
+// 	ret.init(self.createPeerTxs())
+
+// 	return self.peerId, ret
+// }
+
+// func (c *hotTxCat) AssignUpdate(cpo gossip.CatalogPeerPolicies, d *pb.Gossip_Digest) model.Update {
+
+// 	var height uint64
+// 	ledger, err := ledger.GetLedger()
+// 	if err == nil {
+// 		height, err = ledger.GetBlockNumberByState(d.GetEpoch())
+// 		if err != nil {
+// 			height = uint64(0)
+// 		}
+// 	}
+
+// 	if err != nil {
+// 		logger.Error("Obtain blocknumber fail:", err)
+// 	}
+
+// 	return &txPoolUpdate{
+// 		Gossip_Tx: &pb.Gossip_Tx{},
+// 		cpo:       cpo,
+// 		epochH:    height,
+// 	}
+// }
+
+// func (c *hotTxCat) EncodeUpdate(u_in model.Update) ([]byte, error) {
+
+// 	u, ok := u_in.(*txPoolUpdate)
+// 	if !ok {
+// 		panic("type error, not txPoolUpdate")
+// 	}
+
+// 	return proto.Marshal(u.Gossip_Tx)
+// }
+
+// func (c *hotTxCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, b []byte) (model.Update, error) {
+
+// 	gossipTx := &pb.Gossip_Tx{}
+// 	if err := proto.Unmarshal(b, gossipTx); err != nil {
+// 		return nil, err
+// 	}
+
+// 	return &txPoolUpdate{
+// 		Gossip_Tx: gossipTx,
+// 		cpo:       cpo,
+// 	}, nil
+// }
+
+// func (c *hotTxCat) ToProtoDigest(dm map[string]model.Digest) *pb.Gossip_Digest {
+
+// 	d_out := &pb.Gossip_Digest{Data: make(map[string]*pb.Gossip_Digest_PeerState)}
+
+// 	var ok bool
+// 	for id, d := range dm {
+// 		d_out.Data[id], ok = d.(*pb.Gossip_Digest_PeerState)
+// 		if !ok {
+// 			panic("type error, not Gossip_Digest_PeerState")
+// 		}
+// 	}
+
+// 	ledger, err := ledger.GetLedger()
+// 	if err == nil {
+// 		d_out.Epoch, err = ledger.GetCurrentStateHash()
+// 	}
+
+// 	if err != nil {
+// 		//we can still emit the digest, but should log the problem
+// 		logger.Error("Ledger get current statehash fail:", err)
+// 	}
+
+// 	return d_out
+// }
 
 // // TxMarkupState struct
 // type TxMarkupState struct {

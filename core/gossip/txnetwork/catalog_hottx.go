@@ -6,7 +6,7 @@ import (
 	model "github.com/abchain/fabric/core/gossip/model"
 	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
-	_ "github.com/golang/protobuf/proto"
+	proto "github.com/golang/protobuf/proto"
 )
 
 type txMemPoolItem struct {
@@ -34,7 +34,7 @@ type txPoolGlobalUpdate struct {
 	gossip.CatalogPeerPolicies
 }
 
-func (*txPoolGlobalUpdate) Gossip_IsUpdateIn() bool {
+func (txPoolGlobalUpdate) Gossip_IsUpdateIn() bool {
 	return true
 }
 
@@ -46,7 +46,7 @@ type txPoolGlobal struct {
 func (g *txPoolGlobal) GenDigest() model.Digest { return nil }
 func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
 
-	d, ok := d.(*pb.Gossip_Digest)
+	d, ok := d_in.(*pb.Gossip_Digest)
 
 	if !ok {
 		panic("Type error, not Gossip_Digest")
@@ -147,14 +147,6 @@ func (p *peerTxs) fetch(d uint64, beg *txMemPoolItem) *peerTxs {
 		return &peerTxs{head: beg, last: p.last}
 	}
 
-}
-
-func getLiteTx(tx *pb.Transaction) *pb.Transaction {
-	return &pb.Transaction{Txid: tx.GetTxid()}
-}
-
-func isLiteTx(tx *pb.Transaction) bool {
-	return tx.GetNonce() == nil
 }
 
 func txToDigestState(tx *pb.Transaction) []byte {
@@ -472,12 +464,107 @@ func (c *hotTxCat) TransPbToDigest(msg *pb.Gossip_Digest) model.Digest {
 
 func (c *hotTxCat) UpdateMessage() proto.Message { return new(pb.Gossip_Tx) }
 
-func (c *hotTxCat) EncodeUpdate(CatalogPeerPolicies, model.Update, proto.Message) proto.Message {
-
+func getLiteTx(tx *pb.Transaction) *pb.Transaction {
+	return &pb.Transaction{Txid: tx.GetTxid()}
 }
 
-func (c *hotTxCat) DecodeUpdate(CatalogPeerPolicies, proto.Message) (model.Update, error) {
+func isLiteTx(tx *pb.Transaction) bool {
+	return tx.GetNonce() == nil
+}
 
+func (c *hotTxCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Update, msg_in proto.Message) proto.Message {
+
+	u, ok := u_in.(model.ScuttlebuttUpdate)
+
+	if !ok {
+		panic("Type error, not ScuttlebuttUpdate")
+	}
+
+	gu, ok := u.GlobalUpdate().(txPoolGlobalUpdateOut)
+
+	if !ok {
+		panic("Type error, not txPoolGlobalUpdateOut")
+	}
+
+	msg, ok := msg_in.(*pb.Gossip_Tx)
+	if !ok {
+		panic("Type error, not Gossip_Tx")
+	}
+
+	msg.Txs = make(map[string]*pb.HotTransactionBlock)
+
+	var epochH uint64
+
+	ledger, err := ledger.GetLedger()
+	if err == nil {
+		epochH, err = ledger.GetBlockNumberByState(gu.GetEpoch())
+	}
+
+	if err != nil {
+		logger.Warning("Get epoch height fail, encode all transactions")
+	}
+
+	//encode txs
+	for id, pu_in := range u.PeerUpdate() {
+		pu, ok := pu_in.(*peerTxs)
+		if !ok {
+			panic("Type error, not peerTxs")
+		}
+
+		if pu.head == nil {
+			continue
+		}
+
+		ptxs := new(pb.HotTransactionBlock)
+		ptxs.BeginSeries = pu.head.digestSeries
+
+		//TODO: we still need to tailer the incoming peerTxs: restrict the size of
+		//total update by cpo
+
+		for beg := pu.head; beg != nil; beg = beg.next {
+
+			if beg.committedH <= epochH {
+				ptxs.Transactions = append(ptxs.Transactions, getLiteTx(beg.tx))
+			} else {
+				ptxs.Transactions = append(ptxs.Transactions, beg.tx)
+			}
+
+		}
+
+		msg.Txs[id] = ptxs
+	}
+
+	return msg
+}
+
+func (c *hotTxCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Message) (model.Update, error) {
+
+	msg, ok := msg_in.(*pb.Gossip_Tx)
+	if !ok {
+		panic("Type error, not Gossip_Tx")
+	}
+
+	var err error
+	ledger, err := ledger.GetLedger()
+	if err != nil {
+		logger.Error("Get ledger fail!", err)
+		//not the fault of message
+		return nil, nil
+	}
+
+	u := model.NewscuttlebuttUpdate(txPoolGlobalUpdate{cpo})
+
+	for id, txs := range msg.Txs {
+		for _, tx := range txs.Transactions {
+			if isLiteTx(tx) {
+				tx, err = ledger.GetCommitedTransaction(tx.GetTxid())
+			}
+		}
+
+		u.UpdatePeer(id, nil)
+	}
+
+	return u, nil
 }
 
 // func (c *hotTxCat) UpdateNewPeer(id string, d model.Digest) model.Status {

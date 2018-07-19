@@ -179,7 +179,7 @@ func TestCatalogyIn2Peer(t *testing.T) {
 	pBob := peers[1]
 
 	//known each other
-	cAlice.handler.SelfUpdate(nil)
+	cAlice.handler.SelfUpdate()
 
 	time.Sleep(time.Second * 1)
 
@@ -193,7 +193,7 @@ func TestCatalogyIn2Peer(t *testing.T) {
 
 	//one update
 	pAlice.LocalUpdate([]string{"a1", "a2", "a3"})
-	cAlice.handler.SelfUpdate(nil)
+	cAlice.handler.SelfUpdate()
 
 	time.Sleep(time.Second * 1)
 
@@ -204,8 +204,8 @@ func TestCatalogyIn2Peer(t *testing.T) {
 	//both update
 	pBob.LocalUpdate([]string{"b1", "b2"})
 	pAlice.LocalUpdate([]string{"a1", "a4"})
-	cAlice.handler.SelfUpdate(nil)
-	cBob.handler.SelfUpdate(nil)
+	cAlice.handler.SelfUpdate()
+	cBob.handler.SelfUpdate()
 
 	time.Sleep(time.Second * 1)
 

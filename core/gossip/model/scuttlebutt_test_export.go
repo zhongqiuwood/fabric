@@ -116,6 +116,8 @@ func (*testStatus) NewPeer(string) ScuttlebuttPeerStatus { return &testPeerStatu
 
 func (*testStatus) MissedUpdate(string, ScuttlebuttPeerUpdate) error { return nil }
 
+func (*testStatus) RemovePeer(ScuttlebuttPeerStatus) {}
+
 type TestPeer interface {
 	CreateModel() *Model
 	LocalUpdate(ks []string)

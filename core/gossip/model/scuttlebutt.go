@@ -89,6 +89,7 @@ func (u *scuttlebuttUpdateIn) RemovePeers(ids []string) {
 type ScuttlebuttStatus interface {
 	Status
 	NewPeer(string) ScuttlebuttPeerStatus
+	RemovePeer(ScuttlebuttPeerStatus)
 	MissedUpdate(string, ScuttlebuttPeerUpdate) error
 }
 
@@ -97,11 +98,11 @@ type scuttlebuttStatus struct {
 	Peers map[string]ScuttlebuttPeerStatus
 }
 
-type noPeerStatusError string
+// type noPeerStatusError string
 
-func (s noPeerStatusError) Error() string {
-	return string(s) + " is not a known peer"
-}
+// func (s noPeerStatusError) Error() string {
+// 	return string(s) + " is not a known peer"
+// }
 
 func (s *scuttlebuttStatus) Update(u_in Update) error {
 
@@ -119,6 +120,7 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 	for id, ss := range u.PeerUpdate() {
 		//remove request
 		if ss == nil {
+			s.RemovePeer(s.Peers[id])
 			delete(s.Peers, id)
 		} else {
 
@@ -129,9 +131,13 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 				} else {
 					err = s.MissedUpdate(id, ss)
 				}
-			} else {
-				err = noPeerStatusError(id)
 			}
+			// no peer status CAN NOT be consider as an error
+			// because far-end may return a update including removed peer
+			// just after the digest which far-end received is sent
+			// else {
+			// 	err = noPeerStatusError(id)
+			// }
 
 			if err != nil {
 				return err

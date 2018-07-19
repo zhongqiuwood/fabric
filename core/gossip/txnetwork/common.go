@@ -2,7 +2,6 @@ package txnetwork
 
 import (
 	"github.com/abchain/fabric/core/crypto"
-	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	_ "github.com/abchain/fabric/protos"
 	"sync"
@@ -37,10 +36,19 @@ func (a standardVClock) Less(b_in model.VClock) bool {
 	return a < b
 }
 
-func registerEvictFunc(h gossip.CatalogHandler) {
-	// GetNetworkStatus().regNotify(func(ids []string) {
-	// 	for _, id := range ids {
-	// 		//			h.RemovePeer(id)
-	// 	}
-	// })
+//notify remove any peer in a scuttlebutt model
+func registerEvictFunc(catname string, m *model.Model) {
+	GetNetworkStatus().regNotify(func(ids []string) {
+
+		ru := model.NewscuttlebuttUpdate(nil)
+		ru.RemovePeers(ids)
+
+		go func(ru model.Update) {
+			err := m.RecvUpdate(ru)
+			if err != nil {
+				logger.Errorf("Cat %s remove peer fail: %s", catname, err)
+			}
+		}(ru)
+
+	})
 }

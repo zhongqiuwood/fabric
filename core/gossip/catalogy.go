@@ -13,8 +13,9 @@ import (
 
 type CatalogHandler interface {
 	Name() string
-	//nil can be passed to just notify handler the status it manager is updated
-	SelfUpdate(model.Update)
+	Model() *model.Model
+	//just notify the model is updated
+	SelfUpdate()
 	HandleUpdate(*pb.PeerID, *pb.Gossip_Update, CatalogPeerPolicies)
 	HandleDigest(*pb.PeerID, *pb.Gossip_Digest, CatalogPeerPolicies)
 }
@@ -255,11 +256,12 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 	}
 }
 
-func (h *catalogHandler) SelfUpdate(u model.Update) {
+func (h *catalogHandler) Model() *model.Model {
 
-	if u != nil {
-		h.model.RecvUpdate(u)
-	}
+	return h.model
+}
+
+func (h *catalogHandler) SelfUpdate() {
 
 	go h.executePush(map[string]bool{})
 }

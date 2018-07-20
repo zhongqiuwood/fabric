@@ -38,6 +38,12 @@ func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	return true
 }
 
+func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
+	//TODO: now we just put something in the nonce ...
+	tx.Nonce = []byte{2, 3, 3}
+	return tx
+}
+
 func (p *peerTxs) lastSeries() uint64 {
 	if p == nil || p.last == nil {
 		return 0
@@ -69,6 +75,7 @@ func (p *peerTxs) concat(s *peerTxs) error {
 	}
 
 	p.last.next = s.head
+	p.last = s.last
 	return nil
 }
 
@@ -101,8 +108,7 @@ func (p *peerTxs) fetch(d uint64, beg *txMemPoolItem) *peerTxs {
 	}
 
 	for ; beg != nil; beg = beg.next {
-		if beg.digestSeries != d {
-			beg = beg.next
+		if beg.digestSeries == d {
 			break
 		}
 	}
@@ -261,7 +267,7 @@ func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64) {
 	u.BeginSeries = s.head.digestSeries
 
 	for beg := s.head; beg != nil; beg = beg.next {
-		if beg.committedH <= epochH {
+		if beg.committedH != 0 && beg.committedH <= epochH {
 			u.Transactions = append(u.Transactions, getLiteTx(beg.tx))
 		} else {
 			u.Transactions = append(u.Transactions, beg.tx)
@@ -370,15 +376,16 @@ func (p *peerTxMemPool) PickFrom(d_in model.VClock, gu_in model.Update) (model.S
 		panic("Type error, not txPoolGlobalUpdateOut")
 	}
 
+	expectedH := uint64(d) + 1
 	ret := new(txPeerUpdate)
 
-	if !p.inRange(uint64(d)) {
+	if !p.inRange(expectedH) {
 		//we have a too up-to-date range, so we return a single record to
 		//remind far-end they are late
 		nh := p.head.clone()
 		ret.fromTxs(&peerTxs{nh, nh}, uint64(gu))
 	} else {
-		ret.fromTxs(p.fetch(uint64(d), p.jlindex[uint64(d)/jumplistInterval]), uint64(gu))
+		ret.fromTxs(p.fetch(expectedH, p.jlindex[uint64(d)/jumplistInterval]), uint64(gu))
 	}
 
 	return ret, gu_in

@@ -99,6 +99,15 @@ func UnmarshallTransaction(transaction []byte) (*Transaction, error) {
 	return tx, nil
 }
 
+func toArgs(arguments []string) (ret [][]byte) {
+
+	for _, arg := range arguments {
+		ret = append(ret, []byte(arg))
+	}
+
+	return
+}
+
 // NewTransaction creates a new transaction. It defines the function to call,
 // the chaincodeID on which the function should be called, and the arguments
 // string. The arguments could be a string of JSON, but there is no strict
@@ -112,20 +121,21 @@ func NewTransaction(chaincodeID ChaincodeID, uuid string, function string, argum
 	transaction.ChaincodeID = data
 	transaction.Txid = uuid
 	transaction.Timestamp = util.CreateUtcTimestamp()
-	/*
-		// Build the spec
-		spec := &pb.ChaincodeSpec{Type: pb.ChaincodeSpec_GOLANG,
-			ChaincodeID: chaincodeID, ChaincodeInput: &pb.ChaincodeInput{Function: function, Args: arguments}}
 
-		// Build the ChaincodeInvocationSpec message
-		invocation := &pb.ChaincodeInvocationSpec{ChaincodeSpec: spec}
+	// Build the spec
+	spec := &ChaincodeSpec{Type: ChaincodeSpec_GOLANG,
+		ChaincodeID: &chaincodeID, CtorMsg: &ChaincodeInput{Args: toArgs(arguments)}}
 
-		data, err := proto.Marshal(invocation)
-		if err != nil {
-			return nil, fmt.Errorf("Could not marshal payload for chaincode invocation: %s", err)
-		}
-		transaction.Payload = data
-	*/
+	// Build the ChaincodeInvocationSpec message
+	invocation := &ChaincodeInvocationSpec{ChaincodeSpec: spec}
+
+	payloaddata, err := proto.Marshal(invocation)
+	if err != nil {
+		return nil, fmt.Errorf("Could not marshal payload for chaincode invocation: %s", err)
+	}
+
+	transaction.Payload = payloaddata
+
 	return transaction, nil
 }
 

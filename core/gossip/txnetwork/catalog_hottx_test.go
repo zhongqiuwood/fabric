@@ -141,13 +141,16 @@ func TestPeerTxs(t *testing.T) {
 	}
 }
 
-func TestPeerUpdate(t *testing.T) {
+func assertTxIsIdentify(tb testing.TB, tx1 *pb.Transaction, tx2 *pb.Transaction) {
+	dg1, _ := tx1.Digest()
+	dg2, _ := tx2.Digest()
 
-	ledger := initTestLedgerWrapper(t)
+	if bytes.Compare(dg1, dg2) != 0 {
+		tb.Fatalf("tx is not same: %v vs %v", tx1, tx2)
+	}
+}
 
-	txchain := populatePoolItems(t, 10)
-
-	var indexs []*txMemPoolItem
+func formTestData(ledger *ledger.Ledger, txchain *peerTxs, commitsetting [][]int) (indexs []*txMemPoolItem) {
 
 	//collect all items into array
 	for i := txchain.head; i != nil; i = i.next {
@@ -167,30 +170,133 @@ func TestPeerUpdate(t *testing.T) {
 		}
 	}
 
-	commitsetting := [][]int{nil, []int{2, 4, 7}, []int{3, 5}}
-
 	//add gensis block
 	ledger.BeginTxBatch(0)
 	ledger.CommitTxBatch(0, nil, nil, nil)
 
-	ledger.BeginTxBatch(1)
-	ledger.TxBegin("txUuid")
-	ledger.SetState("chaincode1", "key1", []byte("value1"))
-	ledger.TxFinished("txUuid", true)
-	ledger.CommitTxBatch(1, genTxs(commitsetting[1]), nil, []byte("proof1"))
-	commitTxs(commitsetting[1], 1)
+	for ib := 0; ib < len(commitsetting); ib++ {
+		ledger.BeginTxBatch(1)
+		ledger.TxBegin("txUuid")
+		ledger.SetState("chaincode1", "keybase", []byte{byte(ib)})
+		ledger.TxFinished("txUuid", true)
+		ledger.CommitTxBatch(1, genTxs(commitsetting[ib]), nil, []byte("proof1"))
+		commitTxs(commitsetting[ib], uint64(ib))
+	}
 
-	ledger.BeginTxBatch(1)
-	ledger.TxBegin("txUuid")
-	ledger.SetState("chaincode1", "key2", []byte("value2"))
-	ledger.TxFinished("txUuid", true)
-	ledger.CommitTxBatch(1, genTxs(commitsetting[2]), nil, []byte("proof2"))
-	commitTxs(commitsetting[2], 2)
+	return
+}
 
-	var udt1 txPeerUpdate
-	udt1.fromTxs(txchain.fetch(1, nil), 0)
+func TestPeerUpdate(t *testing.T) {
 
-	if udt1.BeginSeries != 1 {
-		t.Fatalf("wrong begin series in udt1", udt1.BeginSeries)
+	ledger := initTestLedgerWrapper(t)
+
+	txchain := populatePoolItems(t, 10)
+
+	indexs := formTestData(ledger, txchain, [][]int{nil, []int{2, 4, 7}, []int{3, 5}})
+
+	var udt = txPeerUpdate{new(pb.HotTransactionBlock)}
+	udt.fromTxs(txchain.fetch(1, nil), 0)
+
+	if udt.BeginSeries != 1 {
+		t.Fatalf("wrong begin series in udt1", udt.BeginSeries)
+	}
+
+	if len(udt.GetTransactions()) != 10 {
+		t.Fatalf("wrong tx length in udt1: %d", len(udt.GetTransactions()))
+	}
+
+	assertTxIsIdentify(t, indexs[3].tx, udt.GetTransactions()[2])
+	assertTxIsIdentify(t, indexs[6].tx, udt.GetTransactions()[5])
+	assertTxIsIdentify(t, indexs[8].tx, udt.GetTransactions()[7])
+	assertTxIsIdentify(t, indexs[9].tx, udt.GetTransactions()[8])
+
+	udt.HotTransactionBlock = new(pb.HotTransactionBlock)
+	udt.fromTxs(txchain.fetch(1, nil), 2)
+
+	if udt.BeginSeries != 1 {
+		t.Fatalf("wrong begin series in udt2", udt.BeginSeries)
+	}
+
+	if len(udt.GetTransactions()) != 10 {
+		t.Fatalf("wrong tx length in udt2: %d", len(udt.GetTransactions()))
+	}
+
+	assertTxIsIdentify(t, indexs[1].tx, udt.GetTransactions()[0])
+	assertTxIsIdentify(t, indexs[6].tx, udt.GetTransactions()[5])
+	assertTxIsIdentify(t, indexs[8].tx, udt.GetTransactions()[7])
+	assertTxIsIdentify(t, indexs[9].tx, udt.GetTransactions()[8])
+
+	if !isLiteTx(udt.GetTransactions()[1]) {
+		t.Fatalf("unexpected full-tx <2>")
+	}
+
+	if !isLiteTx(udt.GetTransactions()[4]) {
+		t.Fatalf("unexpected full-tx <5>")
+	}
+
+	if !isLiteTx(udt.GetTransactions()[6]) {
+		t.Fatalf("unexpected full-tx <7>")
+	}
+
+	retTxs, err := udt.toTxs(ledger, 5)
+	if err != nil {
+		t.Fatal("to txs fail:", err)
+	}
+
+	if retTxs.lastSeries() != 10 || retTxs.head.digestSeries != 5 {
+		t.Fatalf("fail last or head: %d/%d", retTxs.lastSeries(), retTxs.head.digestSeries)
+	}
+
+	udt.HotTransactionBlock = new(pb.HotTransactionBlock)
+
+	udt.fromTxs(retTxs.fetch(5, nil), 0)
+
+	assertTxIsIdentify(t, indexs[5].tx, udt.GetTransactions()[0])
+	assertTxIsIdentify(t, indexs[6].tx, udt.GetTransactions()[1])
+	assertTxIsIdentify(t, indexs[7].tx, udt.GetTransactions()[2])
+}
+
+func TestPeerTxPool(t *testing.T) {
+
+	ledger := initTestLedgerWrapper(t)
+
+	txchainBase := populatePoolItems(t, 39)
+
+	indexs := formTestData(ledger, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
+
+	//we fill txpool from series 5, fill pool with a jumping index of 4 entries
+	pool := new(peerTxMemPool)
+	pool.reset(indexs[5])
+
+	if len(pool.jlindex) != 4 {
+		t.Fatal("unexpected jlindex:", pool.jlindex)
+	}
+
+	if pool.jlindex[3].digestSeries != 24 {
+		t.Fatal("wrong entry in jlindex:", pool.jlindex[3])
+	}
+
+	if pool.lastSeries() != 39 || pool.head.digestSeries != 5 {
+		t.Fatalf("fail last or head: %d/%d", pool.lastSeries(), pool.head.digestSeries)
+	}
+
+	//test To method
+	if vi, ok := pool.To().(standardVClock); !ok {
+		t.Fatalf("To vclock wrong: %v", pool.To())
+	} else if uint64(vi) != 39 {
+		t.Fatalf("To vclock wrong value: %v", vi)
+	}
+
+	//test pickFrom method
+	ud_out, _ := pool.PickFrom(standardVClock(14), txPoolGlobalUpdateOut(2))
+
+	ud, ok := ud_out.(txPeerUpdate)
+
+	if !ok {
+		t.Fatalf("type fail: %v", ud_out)
+	}
+
+	if ud.BeginSeries != 15 {
+		t.Fatalf("unexpected begin: %d", ud.BeginSeries)
 	}
 }

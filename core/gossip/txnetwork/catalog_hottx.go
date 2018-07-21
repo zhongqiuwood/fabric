@@ -109,15 +109,11 @@ func (p *peerTxs) fetch(d uint64, beg *txMemPoolItem) *peerTxs {
 
 	for ; beg != nil; beg = beg.next {
 		if beg.digestSeries == d {
-			break
+			return &peerTxs{head: beg, last: p.last}
 		}
 	}
 
-	if beg == nil {
-		return nil
-	} else {
-		return &peerTxs{head: beg, last: p.last}
-	}
+	return nil
 
 }
 
@@ -354,9 +350,9 @@ func (p *peerTxMemPool) reset(txbeg *txMemPoolItem) {
 			if txbeg.digestSeries == (txbeg.digestSeries/jumplistInterval)*jumplistInterval {
 				p.jlindex[txbeg.digestSeries/jumplistInterval] = txbeg
 			}
+			p.last = txbeg
 		}
 
-		p.peerTxs.last = txbeg
 	}
 }
 
@@ -377,7 +373,7 @@ func (p *peerTxMemPool) PickFrom(d_in model.VClock, gu_in model.Update) (model.S
 	}
 
 	expectedH := uint64(d) + 1
-	ret := new(txPeerUpdate)
+	ret := txPeerUpdate{new(pb.HotTransactionBlock)}
 
 	if !p.inRange(expectedH) {
 		//we have a too up-to-date range, so we return a single record to
@@ -391,34 +387,27 @@ func (p *peerTxMemPool) PickFrom(d_in model.VClock, gu_in model.Update) (model.S
 	return ret, gu_in
 }
 
-func (p *peerTxMemPool) purge(refs *peerStatus, g *txPoolGlobal) {
+func (p *peerTxMemPool) purge(purgeto uint64, g *txPoolGlobal) {
 
-	//our data is outdate, all cache is clear .... ...
-	if refs.beginTxSeries > p.lastSeries() {
-		logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
-			p.peerId, p.last.digest, p.last.digestSeries)
-		p.reset(refs.createPeerTxItem())
-	} else if refs.beginTxSeries > 0 {
-		//purge the outdate part
-		//for zero, we just get UINT64_MAX and no index
-		if ind, ok := p.jlindex[refs.beginTxSeries/jumplistInterval-1]; ok {
-			preserved := p.fetch(refs.beginTxSeries, ind)
-			if preserved == nil {
-				panic("got empty preserved")
-			}
-
-			//purge global index first
-			for beg := p.head; beg != preserved.head; beg = beg.next {
-				delete(g.ind, beg.tx.GetTxid())
-			}
-
-			//also the jumping index must be purged
-			for i := p.head.digestSeries / jumplistInterval; i < refs.beginTxSeries/jumplistInterval; i++ {
-				delete(p.jlindex, i)
-			}
-
-			p.peerTxs = preserved
+	//purge the outdate part
+	//for zero, we just get UINT64_MAX and no index
+	if ind, ok := p.jlindex[purgeto/jumplistInterval-1]; ok {
+		preserved := p.fetch(purgeto, ind)
+		if preserved == nil {
+			panic("got empty preserved")
 		}
+
+		//purge global index first
+		for beg := p.head; beg != preserved.head; beg = beg.next {
+			delete(g.ind, beg.tx.GetTxid())
+		}
+
+		//also the jumping index must be purged
+		for i := p.head.digestSeries / jumplistInterval; i < purgeto/jumplistInterval; i++ {
+			delete(p.jlindex, i)
+		}
+
+		p.peerTxs = preserved
 	}
 }
 
@@ -443,7 +432,7 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		panic("Type error, not txPoolGlobal")
 	}
 
-	//check if we need to update
+	//checkout global status
 	peerStatus := GetNetworkStatus().queryPeer(p.peerId)
 	if peerStatus == nil {
 		//boom ..., but it may be caused by an stale peer-removing so not
@@ -453,7 +442,14 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	}
 
 	//purge on each update first
-	p.purge(peerStatus, g)
+	//our data is outdate, all cache is clear .... ...
+	if peerStatus.beginTxSeries > p.lastSeries() {
+		logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
+			p.peerId, p.last.digest, p.last.digestSeries)
+		p.reset(peerStatus.createPeerTxItem())
+	} else if peerStatus.beginTxSeries > 0 {
+		p.purge(peerStatus.beginTxSeries, g)
+	}
 
 	inTxs, err := u.toTxs(g.ledger, p.lastSeries())
 

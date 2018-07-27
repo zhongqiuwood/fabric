@@ -299,4 +299,108 @@ func TestPeerTxPool(t *testing.T) {
 	if ud.BeginSeries != 15 {
 		t.Fatalf("unexpected begin: %d", ud.BeginSeries)
 	}
+
+	if !isLiteTx(ud.GetTransactions()[0]) {
+		t.Fatalf("unexpected full-tx <15>")
+	}
+
+	if !isLiteTx(ud.GetTransactions()[8]) {
+		t.Fatalf("unexpected full-tx <23>")
+	}
+
+	assertTxIsIdentify(t, indexs[16].tx, ud.GetTransactions()[1])
+	assertTxIsIdentify(t, indexs[20].tx, ud.GetTransactions()[5])
+	assertTxIsIdentify(t, indexs[38].tx, ud.GetTransactions()[23])
+
+	//test out-date pick
+	ud_out, _ = pool.PickFrom(standardVClock(3), txPoolGlobalUpdateOut(2))
+	ud, ok = ud_out.(txPeerUpdate)
+
+	if !ok {
+		t.Fatalf("type fail: %v", ud_out)
+	}
+
+	if ud.BeginSeries != 5 || len(ud.Transactions) != 1 {
+		t.Fatalf("unexpected begin: %v", ud.Transactions)
+	}
+
+	//test update
+	txChainAdd := prolongItemChain(t, txchainBase.last, 20)
+
+	//collect more items ...
+	for i := txChainAdd.head; i != nil; i = i.next {
+		indexs = append(indexs, i)
+	}
+
+	txGlobal := &txPoolGlobal{
+		ind:    make(map[string]*txMemPoolItem),
+		ledger: ledger,
+	}
+
+	udt := txPeerUpdate{new(pb.HotTransactionBlock)}
+
+	//all item in txChainAdd is not commited so epoch is of no use
+	udt.fromTxs(txChainAdd, 0)
+
+	//must also add global state ...
+	pstatus := GetNetworkStatus().addNewPeer("test")
+	pstatus.beginTxDigest = txchainBase.head.digest
+
+	pool.peerId = "anotherTest"
+
+	//you update an unknown peer, no effect in fact
+	err := pool.Update(udt, txGlobal)
+	if err != nil {
+		t.Fatal("update fail", err)
+	}
+
+	if len(txGlobal.ind) != 0 {
+		t.Fatal("update unknown peer")
+	}
+
+	//now peerid is right
+	pool.peerId = "test"
+	err = pool.Update(udt, txGlobal)
+	if err != nil {
+		t.Fatal("update actual fail", err)
+	}
+
+	if len(txGlobal.ind) == 0 {
+		t.Fatal("unexpected no update")
+	}
+
+	if pool.lastSeries() != 59 {
+		t.Fatal("unexpected last", pool.lastSeries())
+	}
+
+	//now you can get tx from ledger or ind of txGlobal
+	checkTx := func(pos int) {
+		txid := indexs[pos].tx.GetTxid()
+
+		if txid == "" {
+			t.Fatal("unexpected empty txid")
+		}
+
+		tx, err := ledger.GetTransactionByID(txid)
+		if err != nil || tx == nil {
+			t.Fatalf("get tx %d in ledger fail: %s", pos, err)
+		}
+
+		assertTxIsIdentify(t, indexs[pos].tx, tx)
+
+		txItem, ok := txGlobal.ind[txid]
+		if !ok {
+			t.Fatalf("get tx %d in index fail")
+		}
+
+		assertTxIsIdentify(t, indexs[pos].tx, txItem.tx)
+	}
+
+	checkTx(40)
+	checkTx(42)
+	checkTx(45)
+	checkTx(55)
+}
+
+func TestTxGlobal(t *testing.T) {
 }

@@ -422,7 +422,7 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		return nil
 	}
 
-	u, ok := u_in.(*txPeerUpdate)
+	u, ok := u_in.(txPeerUpdate)
 	if !ok {
 		panic("Type error, not txPeerUpdate")
 	}

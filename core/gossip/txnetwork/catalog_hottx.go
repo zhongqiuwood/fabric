@@ -70,6 +70,10 @@ func (p *peerTxs) concat(s *peerTxs) error {
 		return nil
 	}
 
+	if s.head.digestSeries != p.lastSeries()+1 {
+		return fmt.Errorf("Wrong next series: %d", s.head.digestSeries)
+	}
+
 	if !txIsPrecede(p.last.digest, s.head.tx) {
 		return fmt.Errorf("Wrong next section for digest %x", p.last.digest)
 	}
@@ -282,6 +286,9 @@ func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, 
 		//possible panic if headpos exceed len of u.Transactions ?
 		//scuttlebutt scheme will check To() first and avoid this case
 		headpos = int(refSeries - u.BeginSeries)
+	} else {
+		//start from head, headpos is 0
+		refSeries = u.BeginSeries
 	}
 
 	head := &txMemPoolItem{
@@ -389,26 +396,36 @@ func (p *peerTxMemPool) PickFrom(d_in model.VClock, gu_in model.Update) (model.S
 
 func (p *peerTxMemPool) purge(purgeto uint64, g *txPoolGlobal) {
 
+	//never purge at begin
+	if p.head == nil || purgeto <= p.head.digestSeries {
+		return
+	}
+
 	//purge the outdate part
 	//for zero, we just get UINT64_MAX and no index
-	if ind, ok := p.jlindex[purgeto/jumplistInterval-1]; ok {
-		preserved := p.fetch(purgeto, ind)
-		if preserved == nil {
-			panic("got empty preserved")
-		}
-
-		//purge global index first
-		for beg := p.head; beg != preserved.head; beg = beg.next {
-			delete(g.ind, beg.tx.GetTxid())
-		}
-
-		//also the jumping index must be purged
-		for i := p.head.digestSeries / jumplistInterval; i < purgeto/jumplistInterval; i++ {
-			delete(p.jlindex, i)
-		}
-
-		p.peerTxs = preserved
+	preserved := p.fetch(purgeto, p.jlindex[purgeto/jumplistInterval-1])
+	if preserved == nil {
+		logger.Warningf("got empty preserved, wrong purge request:", purgeto)
+		return
 	}
+
+	//purge global index first
+	for beg := p.head; beg != preserved.head; beg = beg.next {
+		delete(g.ind, beg.tx.GetTxid())
+	}
+
+	//also the jumping index must be purged
+	for i := p.head.digestSeries / jumplistInterval; i < purgeto/jumplistInterval; i++ {
+		delete(p.jlindex, i)
+	}
+
+	//handling the "edge jumpling index"
+	if purgeto/jumplistInterval*jumplistInterval < purgeto {
+		delete(p.jlindex, purgeto/jumplistInterval)
+	}
+
+	p.peerTxs = preserved
+
 }
 
 // there are too many ways that a far-end can waste our bandwidth (and
@@ -447,7 +464,7 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
 			p.peerId, p.last.digest, p.last.digestSeries)
 		p.reset(peerStatus.createPeerTxItem())
-	} else if peerStatus.beginTxSeries > 0 {
+	} else {
 		p.purge(peerStatus.beginTxSeries, g)
 	}
 

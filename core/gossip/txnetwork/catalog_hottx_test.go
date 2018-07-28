@@ -254,6 +254,17 @@ func TestPeerUpdate(t *testing.T) {
 	assertTxIsIdentify(t, indexs[5].tx, udt.GetTransactions()[0])
 	assertTxIsIdentify(t, indexs[6].tx, udt.GetTransactions()[1])
 	assertTxIsIdentify(t, indexs[7].tx, udt.GetTransactions()[2])
+
+	//check less index
+	retTxs, err = udt.toTxs(ledger, 3)
+	if err != nil {
+		t.Fatal("to txs fail:", err)
+	}
+
+	if retTxs.lastSeries() != 10 || retTxs.head.digestSeries != 5 {
+		t.Fatalf("fail last or head: %d/%d", retTxs.lastSeries(), retTxs.head.digestSeries)
+	}
+
 }
 
 func TestPeerTxPool(t *testing.T) {
@@ -327,6 +338,8 @@ func TestPeerTxPool(t *testing.T) {
 	//test update
 	txChainAdd := prolongItemChain(t, txchainBase.last, 20)
 
+	txChainAdd.head = txChainAdd.head.next
+
 	//collect more items ...
 	for i := txChainAdd.head; i != nil; i = i.next {
 		indexs = append(indexs, i)
@@ -341,6 +354,9 @@ func TestPeerTxPool(t *testing.T) {
 
 	//all item in txChainAdd is not commited so epoch is of no use
 	udt.fromTxs(txChainAdd, 0)
+	if udt.BeginSeries != 40 {
+		t.Fatal("unexpected begin series", udt.BeginSeries)
+	}
 
 	//must also add global state ...
 	pstatus := GetNetworkStatus().addNewPeer("test")
@@ -393,6 +409,10 @@ func TestPeerTxPool(t *testing.T) {
 			t.Fatalf("get tx %d in index fail")
 		}
 
+		if txItem.digestSeries != uint64(pos) {
+			t.Fatalf("tx series %d is unmatched with index [%d]", txItem.digestSeries, pos)
+		}
+
 		assertTxIsIdentify(t, indexs[pos].tx, txItem.tx)
 	}
 
@@ -400,7 +420,54 @@ func TestPeerTxPool(t *testing.T) {
 	checkTx(42)
 	checkTx(45)
 	checkTx(55)
+
+	//test purge
+	pool.purge(50, txGlobal)
+
+	if pool.head.digestSeries != 50 {
+		t.Fatalf("wrong head series after purge", pool.head.digestSeries)
+	}
+
+	if len(txGlobal.ind) != 10 {
+		t.Fatalf("wrong index after purge", len(txGlobal.ind))
+	}
+
+	if _, ok := txGlobal.ind[indexs[45].tx.GetTxid()]; ok {
+		t.Fatalf("global still indexed tx which should be purged")
+	}
+
+	if len(pool.jlindex) != 1 {
+		t.Fatalf("wrong index after purge", len(txGlobal.ind))
+	}
+
+	if _, ok := pool.jlindex[6]; ok {
+		t.Fatalf("still have index in jumping list after purge")
+	}
+
+	//test pickfrom after purge
+	ud_out, _ = pool.PickFrom(standardVClock(53), txPoolGlobalUpdateOut(0))
+
+	ud, ok = ud_out.(txPeerUpdate)
+
+	if !ok {
+		t.Fatalf("type fail: %v", ud_out)
+	}
+
+	if ud.BeginSeries != 54 {
+		t.Fatalf("unexpected begin: %d", ud.BeginSeries)
+	}
+
+	assertTxIsIdentify(t, indexs[55].tx, ud.GetTransactions()[1])
+	assertTxIsIdentify(t, indexs[59].tx, ud.GetTransactions()[5])
+
 }
 
 func TestTxGlobal(t *testing.T) {
+
+	// ledger := initTestLedgerWrapper(t)
+
+	// txchainBase := populatePoolItems(t, 39)
+
+	// indexs := formTestData(ledger, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
+
 }

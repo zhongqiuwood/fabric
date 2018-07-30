@@ -6,6 +6,7 @@ import (
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
+	"github.com/op/go-logging"
 	"os"
 	"testing"
 )
@@ -16,6 +17,7 @@ var testDBWrapper = db.NewTestDBWrapper()
 func TestMain(m *testing.M) {
 	testParams = testutil.ParseTestParams()
 	testutil.SetupTestConfig()
+	testutil.SetLogLevel(logging.DEBUG, "")
 	os.Exit(m.Run())
 }
 

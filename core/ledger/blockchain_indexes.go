@@ -148,8 +148,8 @@ func fetchTransactionIndexByIDFromDB(txID string) (uint64, uint64, error) {
 	if err != nil {
 		return 0, 0, err
 	}
-	if blockNumTxIndexBytes == nil {
-		return 0, 0, ErrResourceNotFound
+	if len(blockNumTxIndexBytes) == 0 {
+		return 0, 0, newLedgerError(ErrorTypeBlockNotFound, fmt.Sprintf("No block indexed with transaction id [%s]", txID))
 	}
 	return decodeBlockNumTxIndex(blockNumTxIndexBytes)
 }

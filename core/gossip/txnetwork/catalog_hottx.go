@@ -168,7 +168,7 @@ func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
 
 	epochH, err := g.ledger.GetBlockNumberByState(d.GetEpoch())
 	if err != nil {
-		logger.Warning("Get epoch height fail, encode all transactions")
+		logger.Warning("Get epoch height fail, encode all transactions:", err)
 		epochH = 0
 	}
 
@@ -202,6 +202,7 @@ func (g *txPoolGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 	}
 
 	ret := new(peerTxMemPool)
+	ret.peerId = id
 	ret.reset(peerStatus.createPeerTxItem())
 	return ret
 }
@@ -326,6 +327,15 @@ func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, 
 		current.tx = tx
 		current.digest = txToDigestState(tx)
 		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
+
+		//** we always check the commiting status
+		//first we must check the commited status
+		if h, _, err := ledger.GetBlockNumberByTxid(tx.GetTxid()); err == nil && h > 0 {
+			current.committedH = h
+			logger.Debugf("Tx %s in [%d] has been commited into block %d",
+				tx.GetTxid(), current.digestSeries, h)
+		}
+
 		last.next = current
 	}
 	last.next = nil //seal the tail
@@ -381,6 +391,7 @@ func (p *peerTxMemPool) PickFrom(d_in model.VClock, gu_in model.Update) (model.S
 
 	expectedH := uint64(d) + 1
 	ret := txPeerUpdate{new(pb.HotTransactionBlock)}
+	//logger.Debugf("pick peer %s at height %d with global height %d", p.peerId, expectedH, uint64(gu))
 
 	if !p.inRange(expectedH) {
 		//we have a too up-to-date range, so we return a single record to
@@ -488,14 +499,17 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	var mergeCnt int
 	//we need to construct the index ...
 	for beg := oldlast.next; beg != nil; beg = beg.next {
+
 		g.index(beg)
 		if beg.digestSeries == (beg.digestSeries/jumplistInterval)*jumplistInterval {
 			p.jlindex[beg.digestSeries/jumplistInterval] = beg
 		}
 		mergeCnt++
 
-		//also add transaction into ledger
-		g.ledger.PoolTransaction(beg.tx)
+		//we also pool the transaction (if it was checked not commited yet)
+		if beg.committedH == 0 {
+			g.ledger.PoolTransaction(beg.tx)
+		}
 	}
 
 	// var mergeW uint
@@ -612,6 +626,7 @@ func (c *hotTxCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Updat
 	msg.Txs = make(map[string]*pb.HotTransactionBlock)
 
 	//encode txs
+	//TODO: if cpo is availiable and quota is limited, cut some data
 	for id, pu_in := range u.PeerUpdate() {
 		pu, ok := pu_in.(txPeerUpdate)
 		if !ok {

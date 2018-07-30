@@ -164,12 +164,6 @@ func formTestData(ledger *ledger.Ledger, txchain *peerTxs, commitsetting [][]int
 		return
 	}
 
-	commitTxs := func(ii []int, h uint64) {
-		for _, i := range ii {
-			indexs[i].committedH = h
-		}
-	}
-
 	//add gensis block
 	ledger.BeginTxBatch(0)
 	ledger.CommitTxBatch(0, nil, nil, nil)
@@ -180,7 +174,6 @@ func formTestData(ledger *ledger.Ledger, txchain *peerTxs, commitsetting [][]int
 		ledger.SetState("chaincode1", "keybase", []byte{byte(ib)})
 		ledger.TxFinished("txUuid", true)
 		ledger.CommitTxBatch(1, genTxs(commitsetting[ib]), nil, []byte("proof1"))
-		commitTxs(commitsetting[ib], uint64(ib))
 	}
 
 	return
@@ -486,7 +479,7 @@ func TestCatalogyHandler(t *testing.T) {
 	//try to build a proto directly
 	dig_in := &pb.Gossip_Digest{Data: make(map[string]*pb.Gossip_Digest_PeerState)} //any epoch is ok
 
-	dig_in.Data[testname] = &pb.Gossip_Digest_PeerState{State: txchainBase.head.digest}
+	dig_in.Data[testname] = &pb.Gossip_Digest_PeerState{}
 
 	dig := hotTx.TransPbToDigest(dig_in)
 
@@ -500,5 +493,86 @@ func TestCatalogyHandler(t *testing.T) {
 		t.Fatal("model not known expected peer", dig_out)
 	}
 
-	t.Log(indexs)
+	var udt = txPeerUpdate{new(pb.HotTransactionBlock)}
+	udt.fromTxs(txchainBase.fetch(1, nil), 3)
+
+	u_in := &pb.Gossip_Tx{map[string]*pb.HotTransactionBlock{testname: udt.HotTransactionBlock}}
+
+	u, err := hotTx.DecodeUpdate(nil, u_in)
+	if err != nil {
+		t.Fatal("decode update fail", err)
+	}
+
+	err = m.RecvUpdate(u)
+	if err != nil {
+		t.Fatal("do update fail", err)
+	}
+
+	//now you can get tx from ledger or ind of txGlobal
+	checkTx := func(pos int) {
+		txid := indexs[pos].tx.GetTxid()
+
+		if txid == "" {
+			t.Fatal("unexpected empty txid")
+		}
+
+		txItem, ok := txglobal.ind[txid]
+		if !ok {
+			t.Fatalf("get tx %d in index fail")
+		}
+
+		if txItem.digestSeries != uint64(pos) {
+			t.Fatalf("tx series %d is unmatched with index [%d]", txItem.digestSeries, pos)
+		}
+
+		assertTxIsIdentify(t, indexs[pos].tx, txItem.tx)
+	}
+
+	if len(txglobal.ind) == 0 {
+		t.Fatal("No update is make on status")
+	}
+
+	checkTx(10)
+	checkTx(12)
+	checkTx(20)
+	checkTx(23)
+	checkTx(35)
+
+	dig_in.Data[testname].Num = 20
+
+	blk, _ := l.GetBlockByNumber(2)
+	dig_in.Epoch = blk.GetStateHash()
+	if len(dig_in.Epoch) == 0 {
+		panic("no state hash")
+	}
+
+	dig = hotTx.TransPbToDigest(dig_in)
+
+	u_out, ok := hotTx.EncodeUpdate(nil, m.MakeUpdate(dig), new(pb.Gossip_Tx)).(*pb.Gossip_Tx)
+	if !ok {
+		panic("type error, not gossip_tx")
+	}
+
+	if txs, ok := u_out.Txs[testname]; !ok {
+		t.Fatal("update not include expected peer")
+	} else {
+
+		t.Log(txs.Transactions)
+
+		if len(txs.Transactions) != 19 {
+			t.Fatal("unexpected size of update:", len(txs.Transactions))
+		} else if txs.BeginSeries != 21 {
+			t.Fatal("unexpected begin of begin series:", txs.BeginSeries)
+		}
+
+		if !isLiteTx(txs.GetTransactions()[2]) {
+			t.Fatalf("unexpected full-tx <23> (at 2)")
+		}
+
+		assertTxIsIdentify(t, indexs[21].tx, txs.GetTransactions()[0])
+		assertTxIsIdentify(t, indexs[38].tx, txs.GetTransactions()[19])
+		assertTxIsIdentify(t, indexs[27].tx, txs.GetTransactions()[6])
+		assertTxIsIdentify(t, indexs[39].tx, txs.GetTransactions()[20])
+
+	}
 }

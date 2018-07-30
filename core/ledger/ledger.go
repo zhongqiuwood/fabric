@@ -640,6 +640,15 @@ func (ledger *Ledger) GetBlockNumberByState(hash []byte) (uint64, error) {
 	return ledger.blockchain.indexer.fetchBlockNumberByStateHash(hash)
 }
 
+func (ledger *Ledger) GetBlockNumberByTxid(txID string) (uint64, uint64, error) {
+	//TODO: cache?
+	if _, ok := ledger.txpool.txPool[txID]; ok {
+		return 0, 0, newLedgerError(ErrorTypeResourceNotFound, "ledger: tx is pending")
+	}
+
+	return ledger.blockchain.indexer.fetchTransactionIndexByID(txID)
+}
+
 // GetBlockchainSize returns number of blocks in blockchain
 func (ledger *Ledger) GetBlockchainSize() uint64 {
 	return ledger.blockchain.getSize()

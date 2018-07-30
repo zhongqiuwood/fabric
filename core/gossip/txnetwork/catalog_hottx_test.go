@@ -462,12 +462,43 @@ func TestPeerTxPool(t *testing.T) {
 
 }
 
-func TestTxGlobal(t *testing.T) {
+func TestCatalogyHandler(t *testing.T) {
 
-	// ledger := initTestLedgerWrapper(t)
+	l := initTestLedgerWrapper(t)
 
-	// txchainBase := populatePoolItems(t, 39)
+	txchainBase := populatePoolItems(t, 39)
 
-	// indexs := formTestData(ledger, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
+	indexs := formTestData(l, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
 
+	const testname = "test"
+
+	pstatus := GetNetworkStatus().addNewPeer(testname)
+	pstatus.beginTxDigest = txchainBase.head.digest
+
+	txglobal := new(txPoolGlobal)
+	txglobal.ind = make(map[string]*txMemPoolItem)
+	txglobal.ledger = l
+
+	hotTx := new(hotTxCat)
+
+	m := model.NewGossipModel(model.NewScuttlebuttStatus(txglobal))
+
+	//try to build a proto directly
+	dig_in := &pb.Gossip_Digest{Data: make(map[string]*pb.Gossip_Digest_PeerState)} //any epoch is ok
+
+	dig_in.Data[testname] = &pb.Gossip_Digest_PeerState{State: txchainBase.head.digest}
+
+	dig := hotTx.TransPbToDigest(dig_in)
+
+	//now model should know peer test
+	m.MakeUpdate(dig)
+
+	dig = m.GenPullDigest()
+	dig_out := hotTx.TransDigestToPb(dig)
+
+	if _, ok := dig_out.Data[testname]; !ok {
+		t.Fatal("model not known expected peer", dig_out)
+	}
+
+	t.Log(indexs)
 }

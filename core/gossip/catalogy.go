@@ -16,12 +16,13 @@ type CatalogHandler interface {
 	Model() *model.Model
 	//just notify the model is updated
 	SelfUpdate()
-	HandleUpdate(*pb.PeerID, *pb.Gossip_Update, CatalogPeerPolicies)
-	HandleDigest(*pb.PeerID, *pb.Gossip_Digest, CatalogPeerPolicies)
+	HandleUpdate(*pb.Gossip_Update, CatalogPeerPolicies)
+	HandleDigest(*pb.Gossip_Digest, CatalogPeerPolicies)
 }
 
 type CatalogPeerPolicies interface {
-	GetId() string
+	GetPeer() *pb.PeerID
+	GetId() string //equal to GetPeer().GetName()
 	AllowRecvUpdate() bool
 	PushUpdateQuota() int
 	PushUpdate(int)
@@ -241,16 +242,21 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 
 		pos.init(h, func(p *model.Puller) {
 
-			pctx, _ := context.WithTimeout(h.hctx,
-				time.Duration(h.GetPolicies().PullTimeout())*time.Second)
-			err := p.Process(pctx)
+			if p != nil {
+				pctx, _ := context.WithTimeout(h.hctx,
+					time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+				err := p.Process(pctx)
 
-			//when we succefully accept an update, we also schedule a new push process
-			if err == nil {
-				h.executePush(map[string]bool{h.cpo.GetId(): true})
-			} else {
-				h.cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
+				//when we succefully accept an update, we also schedule a new push process
+				if err == nil {
+					h.executePush(map[string]bool{h.cpo.GetId(): true})
+					return
+				} else {
+					h.cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
+				}
 			}
+
+			h.pulls.popPuller(h.cpo)
 		})
 		return pos
 	}
@@ -266,15 +272,15 @@ func (h *catalogHandler) SelfUpdate() {
 	go h.executePush(map[string]bool{})
 }
 
-func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cpo CatalogPeerPolicies) {
+func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPolicies) {
 
-	strm := h.sstub.PickHandler(peer)
+	strm := h.sstub.PickHandler(cpo.GetPeer())
 	if strm == nil {
-		logger.Errorf("No stream found for %s", peer.Name)
+		logger.Errorf("No stream found for %s", cpo.GetId())
 		return
 	}
 
-	err := model.AcceptPush(&sessionHandler{h, cpo}, strm, h.model, h.TransPbToDigest(msg))
+	err := model.AcceptPulling(&sessionHandler{h, cpo}, strm, h.model, h.TransPbToDigest(msg))
 	if err != nil {
 		logger.Error("Sending push message fail", err)
 	} else {
@@ -282,20 +288,24 @@ func (h *catalogHandler) HandleDigest(peer *pb.PeerID, msg *pb.Gossip_Digest, cp
 	}
 }
 
-func (h *catalogHandler) HandleUpdate(peer *pb.PeerID, msg *pb.Gossip_Update, cpo CatalogPeerPolicies) {
+func (h *catalogHandler) HandleUpdate(msg *pb.Gossip_Update, cpo CatalogPeerPolicies) {
 
 	puller := h.pulls.popPuller(cpo)
 	if puller == nil {
 		//something wrong! if no corresponding puller, we never handle this message
-		logger.Errorf("No puller in catalog %s avaiable for peer %s", h.Name(), peer.Name)
+		logger.Errorf("No puller in catalog %s avaiable for peer %s", h.Name(), cpo.GetId())
 		return
 	}
 
-	umsg := h.CatalogHelper.UpdateMessage()
-	err := proto.Unmarshal(msg.Payload, umsg)
-	if err != nil {
-		cpo.RecordViolation(fmt.Errorf("Unmarshal message for update in catalog %s fail: %s", h.Name(), err))
-		return
+	var umsg proto.Message
+
+	if len(msg.Payload) > 0 {
+		umsg = h.CatalogHelper.UpdateMessage()
+		err := proto.Unmarshal(msg.Payload, umsg)
+		if err != nil {
+			cpo.RecordViolation(fmt.Errorf("Unmarshal message for update in catalog %s fail: %s", h.Name(), err))
+			return
+		}
 	}
 
 	ud, err := h.DecodeUpdate(cpo, umsg)
@@ -344,13 +354,25 @@ func (h *catalogHandler) executePush(excluded map[string]bool) error {
 
 		if pos := h.pulls.newPuller(cpo, false); pos != nil {
 			logger.Debugf("start pulling on stream to %s", cpo.GetId())
-			pos.Puller = model.NewPuller(&sessionHandler{h, cpo}, strm.StreamHandler, h.model)
-			pctx, _ := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
-			err := pos.Puller.Process(pctx)
 
-			logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
-			if err == context.DeadlineExceeded {
-				cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
+			var err error
+			pos.Puller = model.NewPuller(&sessionHandler{h, cpo}, strm.StreamHandler, h.model)
+
+			if pos.Puller != nil {
+				pctx, _ := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+				err = pos.Puller.Process(pctx)
+
+				logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
+				if err == context.DeadlineExceeded {
+					cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
+				}
+			} else {
+				logger.Info("we just gave up the pulling to %s", cpo.GetId())
+				err = fmt.Errorf("Give up pulling")
+			}
+
+			if err != nil {
+				pos = h.pulls.popPuller(cpo)
 			}
 
 			if pos.gotPush {

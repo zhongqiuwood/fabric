@@ -4,23 +4,65 @@ import (
 	"container/list"
 	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/util"
+	pb "github.com/abchain/fabric/protos"
 	"sync"
 )
 
 var global *txNetworkGlobal
 
+type peerTxStatusUpdate struct {
+	*pb.Gossip_Digest_PeerState
+}
+
+func (u peerTxStatusUpdate) To() model.VClock {
+	return standardVClock(u.GetNum())
+}
+
 type peerStatus struct {
-	peerId        string
-	beginTxDigest []byte
-	beginTxSeries uint64
-	status        []byte
+	peerId string
+	peerTxStatusUpdate
+	chainState []byte
 }
 
 func (s *peerStatus) createPeerTxItem() *txMemPoolItem {
 	return &txMemPoolItem{
-		digest:       s.beginTxDigest,
-		digestSeries: s.beginTxSeries,
+		digest:       s.GetState(),
+		digestSeries: s.GetNum(),
 	}
+}
+
+func (s *peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
+	d, ok := d_in.(standardVClock)
+	if !ok {
+		panic("Type error, not standardVClock")
+	}
+
+	return peerTxStatusUpdate, u_in
+}
+
+func (s *peerStatus) Update(u_in model.ScuttlebuttPeerUpdate, _ model.ScuttlebuttStatus) error {
+
+	u, ok := u_in.(peerTxStatusUpdate)
+	if !ok {
+		panic("Type error, not peerTxStatusUpdate")
+	}
+
+	//scuttlebutt mode should avoiding this
+	if u.GetNum() < s.GetNum() {
+		panic("Wrong series, model error")
+	}
+
+	//TODO: verify the signature of incoming data
+
+	//lite-copy data (not just obtain the pointer)
+	//we must lock global part
+	global.Lock()
+	defer global.Unlock()
+	//DO WE NEED COPY?
+	cpy := *u.Gossip_Digest_PeerState
+	s.Gossip_Digest_PeerState = &cpy
+
+	return nil
 }
 
 type selfPeerStatus struct {
@@ -35,6 +77,20 @@ type txNetworkGlobal struct {
 	selfPeer  *selfPeerStatus
 	onevicted []func([]string)
 }
+
+func (*txNetworkGlobal) GenDigest() model.Digest                { return nil }
+func (*txNetworkGlobal) MakeUpdate(_ model.Digest) model.Update { return nil }
+func (*txNetworkGlobal) Update(_ model.Update) error            { return nil }
+
+func (*txNetworkGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
+
+}
+
+func (*txNetworkGlobal) RemovePeer(model.ScuttlebuttPeerStatus) {
+
+}
+
+func (*txNetworkGlobal) MissedUpdate(string, model.ScuttlebuttPeerUpdate) error { return nil }
 
 func GetNetworkStatus() *txNetworkGlobal { return global }
 

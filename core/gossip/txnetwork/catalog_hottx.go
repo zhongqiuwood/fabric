@@ -333,7 +333,6 @@ func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, 
 
 		last = current
 		current.tx = tx
-		current.digest = txToDigestState(tx)
 
 		//** we always check the commiting status
 		//first we must check the commited status
@@ -479,12 +478,12 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 
 	//purge on each update first
 	//our data is outdate, all cache is clear .... ...
-	if peerStatus.beginTxSeries > p.lastSeries() {
+	if peerStatus.GetNum() > p.lastSeries() {
 		logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
 			p.peerId, p.last.digest, p.last.digestSeries)
 		p.reset(peerStatus.createPeerTxItem())
 	} else {
-		p.purge(peerStatus.beginTxSeries, g)
+		p.purge(peerStatus.GetNum(), g)
 	}
 
 	inTxs, err := u.toTxs(g.ledger, p.lastSeries())

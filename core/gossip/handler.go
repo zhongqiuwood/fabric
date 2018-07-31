@@ -4,17 +4,24 @@ import (
 	pb "github.com/abchain/fabric/protos"
 )
 
+type peerPoliciesWrapper struct {
+	*pb.PeerID
+	*peerPolicies
+}
+
+func (w peerPoliciesWrapper) GetPeer() *pb.PeerID {
+	return w.PeerID
+}
+
 type handlerImpl struct {
-	peer  *pb.PeerID
-	ppo   *peerPolicies
+	ppo   peerPoliciesWrapper
 	cores map[string]CatalogHandler
 }
 
 func newHandler(peer *pb.PeerID, handlers map[string]CatalogHandler) *handlerImpl {
 
 	return &handlerImpl{
-		peer:  peer,
-		ppo:   NewPeerPolicy(peer.GetName()),
+		ppo:   peerPoliciesWrapper{peer, NewPeerPolicy(peer.GetName())},
 		cores: handlers,
 	}
 }
@@ -38,9 +45,9 @@ func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 	g.ppo.RecvUpdate(msg.EstimateSize())
 
 	if dig := msg.GetDig(); dig != nil {
-		global.HandleDigest(g.peer, dig, g.ppo)
+		global.HandleDigest(dig, g.ppo)
 	} else {
-		global.HandleUpdate(g.peer, msg.GetUd(), g.ppo)
+		global.HandleUpdate(msg.GetUd(), g.ppo)
 	}
 
 	return g.ppo.IsPolicyViolated()

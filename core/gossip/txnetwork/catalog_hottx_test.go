@@ -363,7 +363,7 @@ func TestPeerTxPool(t *testing.T) {
 
 	//must also add global state ...
 	pstatus := GetNetworkStatus().addNewPeer("test")
-	pstatus.beginTxDigest = txchainBase.head.digest
+	pstatus.State = txchainBase.head.digest
 
 	pool.peerId = "anotherTest"
 
@@ -476,7 +476,7 @@ func TestCatalogyHandler(t *testing.T) {
 	const testname = "test"
 
 	pstatus := GetNetworkStatus().addNewPeer(testname)
-	pstatus.beginTxDigest = txchainBase.head.digest
+	pstatus.State = txchainBase.head.digest
 
 	txglobal := new(txPoolGlobal)
 	txglobal.ind = make(map[string]*txMemPoolItem)

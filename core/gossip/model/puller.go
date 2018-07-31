@@ -28,8 +28,9 @@ type PushHelper interface {
 	EncodeUpdate(Update) proto.Message
 }
 
-//d can be set to nil and indicate a "rejection" of pulling
-func AcceptPush(p PushHelper, stream *pb.StreamHandler, model *Model, d Digest) error {
+//d can be set to nil and just return empty update (sometimes this indicate an
+//invitation of pulling)
+func AcceptPulling(p PushHelper, stream *pb.StreamHandler, model *Model, d Digest) error {
 
 	if ph := p.CanPull(); ph != nil {
 		ph.Handle(NewPuller(ph, stream, model))
@@ -48,15 +49,18 @@ func AcceptPush(p PushHelper, stream *pb.StreamHandler, model *Model, d Digest) 
 
 func NewPuller(ph PullerHelper, stream *pb.StreamHandler, model *Model) *Puller {
 
-	puller := &Puller{
+	dg := model.GenPullDigest()
+	if dg == nil {
+		return nil
+	}
+
+	stream.SendMessage(ph.EncodeDigest(dg))
+
+	return &Puller{
 		model:  model,
 		update: make(chan Update),
 	}
 
-	dg := model.GenPullDigest()
-	stream.SendMessage(ph.EncodeDigest(dg))
-
-	return puller
 }
 
 func (p *Puller) NotifyUpdate(ud Update) {

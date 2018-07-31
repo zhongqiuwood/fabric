@@ -177,6 +177,10 @@ func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
 
 func (g *txPoolGlobal) Update(u_in model.Update) error {
 
+	if u_in == nil {
+		return nil
+	}
+
 	switch u := u_in.(type) {
 	case txPoolGlobalUpdate:
 		g.currentCpo = u.CatalogPeerPolicies
@@ -220,10 +224,14 @@ func (g *txPoolGlobal) RemovePeer(s_in model.ScuttlebuttPeerStatus) {
 		panic("Type error, not peerTxMemPool")
 	}
 
+	delCount := 0
 	//purge index ...
 	for beg := s.head; beg != nil; beg = beg.next {
 		delete(g.ind, beg.tx.GetTxid())
+		delCount++
 	}
+
+	logger.Infof("Peer %s is removed, clean %d indexs", s.peerId, delCount)
 }
 
 func (g *txPoolGlobal) index(i *txMemPoolItem) {
@@ -326,7 +334,6 @@ func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, 
 		last = current
 		current.tx = tx
 		current.digest = txToDigestState(tx)
-		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
 
 		//** we always check the commiting status
 		//first we must check the commited status
@@ -336,6 +343,7 @@ func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, 
 				tx.GetTxid(), current.digestSeries, h)
 		}
 
+		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
 		last.next = current
 	}
 	last.next = nil //seal the tail

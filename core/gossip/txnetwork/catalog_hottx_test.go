@@ -191,7 +191,7 @@ func TestPeerUpdate(t *testing.T) {
 	udt.fromTxs(txchain.fetch(1, nil), 0)
 
 	if udt.BeginSeries != 1 {
-		t.Fatalf("wrong begin series in udt1", udt.BeginSeries)
+		t.Fatalf("wrong begin series in udt1: %d", udt.BeginSeries)
 	}
 
 	if len(udt.GetTransactions()) != 10 {
@@ -203,8 +203,17 @@ func TestPeerUpdate(t *testing.T) {
 	assertTxIsIdentify(t, indexs[8].tx, udt.GetTransactions()[7])
 	assertTxIsIdentify(t, indexs[9].tx, udt.GetTransactions()[8])
 
+	retTxs, err := udt.toTxs(ledger, 0)
+	if err != nil {
+		t.Fatal("to txs fail:", err)
+	}
+
+	if retTxs.lastSeries() != 10 || retTxs.head.digestSeries != 1 {
+		t.Fatalf("fail last or head: %d/%d", retTxs.lastSeries(), retTxs.head.digestSeries)
+	}
+
 	udt.HotTransactionBlock = new(pb.HotTransactionBlock)
-	udt.fromTxs(txchain.fetch(1, nil), 2)
+	udt.fromTxs(retTxs.fetch(1, nil), 2)
 
 	if udt.BeginSeries != 1 {
 		t.Fatalf("wrong begin series in udt2", udt.BeginSeries)
@@ -223,15 +232,11 @@ func TestPeerUpdate(t *testing.T) {
 		t.Fatalf("unexpected full-tx <2>")
 	}
 
-	if !isLiteTx(udt.GetTransactions()[4]) {
-		t.Fatalf("unexpected full-tx <5>")
-	}
-
 	if !isLiteTx(udt.GetTransactions()[6]) {
 		t.Fatalf("unexpected full-tx <7>")
 	}
 
-	retTxs, err := udt.toTxs(ledger, 5)
+	retTxs, err = udt.toTxs(ledger, 5)
 	if err != nil {
 		t.Fatal("to txs fail:", err)
 	}
@@ -267,6 +272,15 @@ func TestPeerTxPool(t *testing.T) {
 	txchainBase := populatePoolItems(t, 39)
 
 	indexs := formTestData(ledger, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
+
+	//manual add commit information ...
+	indexs[8].committedH = 2
+	indexs[12].committedH = 2
+	indexs[15].committedH = 2
+	indexs[13].committedH = 3
+	indexs[23].committedH = 3
+	indexs[7].committedH = 4
+	indexs[38].committedH = 4
 
 	//we fill txpool from series 5, fill pool with a jumping index of 4 entries
 	pool := new(peerTxMemPool)
@@ -308,12 +322,8 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("unexpected full-tx <15>")
 	}
 
-	if !isLiteTx(ud.GetTransactions()[8]) {
-		t.Fatalf("unexpected full-tx <23>")
-	}
-
 	assertTxIsIdentify(t, indexs[16].tx, ud.GetTransactions()[1])
-	assertTxIsIdentify(t, indexs[20].tx, ud.GetTransactions()[5])
+	assertTxIsIdentify(t, indexs[23].tx, ud.GetTransactions()[8])
 	assertTxIsIdentify(t, indexs[38].tx, ud.GetTransactions()[23])
 
 	//test out-date pick
@@ -540,7 +550,7 @@ func TestCatalogyHandler(t *testing.T) {
 
 	dig_in.Data[testname].Num = 20
 
-	blk, _ := l.GetBlockByNumber(2)
+	blk, _ := l.GetBlockByNumber(3)
 	dig_in.Epoch = blk.GetStateHash()
 	if len(dig_in.Epoch) == 0 {
 		panic("no state hash")
@@ -570,9 +580,36 @@ func TestCatalogyHandler(t *testing.T) {
 		}
 
 		assertTxIsIdentify(t, indexs[21].tx, txs.GetTransactions()[0])
-		assertTxIsIdentify(t, indexs[38].tx, txs.GetTransactions()[19])
+		assertTxIsIdentify(t, indexs[38].tx, txs.GetTransactions()[17])
 		assertTxIsIdentify(t, indexs[27].tx, txs.GetTransactions()[6])
-		assertTxIsIdentify(t, indexs[39].tx, txs.GetTransactions()[20])
+		assertTxIsIdentify(t, indexs[39].tx, txs.GetTransactions()[18])
 
+	}
+	//commit more tx
+
+	u_commit := model.NewscuttlebuttUpdate(&txPoolCommited{
+		txs:       []string{indexs[21].tx.GetTxid(), indexs[27].tx.GetTxid(), indexs[39].tx.GetTxid()},
+		commitedH: 4,
+	})
+
+	err = m.RecvUpdate(u_commit)
+	if err != nil {
+		t.Fatal("do update fail", err)
+	}
+
+	if txglobal.ind[indexs[21].tx.GetTxid()].committedH != 4 {
+		t.Fatal("commit update fail", txglobal.ind)
+	}
+
+	del_commit := model.NewscuttlebuttUpdate(nil)
+	del_commit.RemovePeers([]string{testname})
+
+	err = m.RecvUpdate(del_commit)
+	if err != nil {
+		t.Fatal("do update fail", err)
+	}
+
+	if len(txglobal.ind) > 0 {
+		t.Fatal("status still have ghost index", txglobal.ind)
 	}
 }

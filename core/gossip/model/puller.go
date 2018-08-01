@@ -70,13 +70,23 @@ func (p *Puller) NotifyUpdate(ud Update) {
 	p.update <- ud
 }
 
+type emptyUpdate struct{}
+
+func (emptyUpdate) Error() string { return "update is null" }
+
+var EmptyUpdate = emptyUpdate{}
+
 func (p *Puller) Process(ctx context.Context) (e error) {
 
 	select {
 	case <-ctx.Done():
 		e = ctx.Err()
 	case ud := <-p.update:
-		e = p.model.RecvUpdate(ud)
+		if ud == nil {
+			e = EmptyUpdate
+		} else {
+			e = p.model.RecvUpdate(ud)
+		}
 	}
 
 	return

@@ -3,9 +3,11 @@ package txnetwork
 import (
 	"container/list"
 	"github.com/abchain/fabric/core/gossip"
+	model "github.com/abchain/fabric/core/gossip/model"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 	"sync"
+	"time"
 )
 
 var global *txNetworkGlobal
@@ -22,13 +24,7 @@ type peerStatus struct {
 	peerId string
 	peerTxStatusUpdate
 	chainState []byte
-}
-
-func (s *peerStatus) createPeerTxItem() *txMemPoolItem {
-	return &txMemPoolItem{
-		digest:       s.GetState(),
-		digestSeries: s.GetNum(),
-	}
+	lastAccess time.Time
 }
 
 func (s *peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
@@ -37,14 +33,19 @@ func (s *peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.Scutt
 		panic("Type error, not standardVClock")
 	}
 
-	return peerTxStatusUpdate, u_in
+	return s.peerTxStatusUpdate, u_in
 }
 
-func (s *peerStatus) Update(u_in model.ScuttlebuttPeerUpdate, _ model.ScuttlebuttStatus) error {
+func (s *peerStatus) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
 
 	u, ok := u_in.(peerTxStatusUpdate)
 	if !ok {
 		panic("Type error, not peerTxStatusUpdate")
+	}
+
+	g, ok := g_in.(*txNetworkGlobal)
+	if !ok {
+		panic("Type error, not txNetworkGlobal")
 	}
 
 	//scuttlebutt mode should avoiding this
@@ -54,14 +55,14 @@ func (s *peerStatus) Update(u_in model.ScuttlebuttPeerUpdate, _ model.Scuttlebut
 
 	//TODO: verify the signature of incoming data
 
-	//lite-copy data (not just obtain the pointer)
 	//we must lock global part
-	global.Lock()
-	defer global.Unlock()
+	g.Lock()
+	defer g.Unlock()
 	//DO WE NEED COPY?
-	cpy := *u.Gossip_Digest_PeerState
-	s.Gossip_Digest_PeerState = &cpy
+	s.peerTxStatusUpdate = u
+	s.lastAccess = time.Now()
 
+	g.accessPeer(s.peerId)
 	return nil
 }
 
@@ -70,29 +71,121 @@ type selfPeerStatus struct {
 	sync.Once
 }
 
+func (s *selfPeerStatus) getSelfStatus() *peerStatus {
+
+	s.Do(
+		func() {
+			//TODO: we generate id and endorse it
+			s.peerId = util.GenerateUUID()
+			s.beginTxDigest = util.GenerateBytesUUID()
+		})
+
+	return &s.peerStatus
+}
+
+//txnetworkglobal manage all the peers across whole networks (mutiple peers)
 type txNetworkGlobal struct {
+	maxPeers int
 	sync.RWMutex
 	lruQueue  *list.List
 	lruIndex  map[string]*list.Element
-	selfPeer  *selfPeerStatus
+	stubs     *gossip.GossipStub
 	onevicted []func([]string)
 }
 
-func (*txNetworkGlobal) GenDigest() model.Digest                { return nil }
-func (*txNetworkGlobal) MakeUpdate(_ model.Digest) model.Update { return nil }
-func (*txNetworkGlobal) Update(_ model.Update) error            { return nil }
-
-func (*txNetworkGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
-
-}
-
-func (*txNetworkGlobal) RemovePeer(model.ScuttlebuttPeerStatus) {
-
-}
-
+func (*txNetworkGlobal) GenDigest() model.Digest                                { return nil }
+func (*txNetworkGlobal) MakeUpdate(_ model.Digest) model.Update                 { return nil }
+func (*txNetworkGlobal) Update(_ model.Update) error                            { return nil }
 func (*txNetworkGlobal) MissedUpdate(string, model.ScuttlebuttPeerUpdate) error { return nil }
 
+func (g *txNetworkGlobal) accessPeer(id string) {
+
+	i, ok := g.lruIndex[id]
+
+	if ok {
+		g.lruQueue.MoveToFront(i)
+	}
+}
+
+func (g *txNetworkGlobal) truncateTailPeer(cnt int) (ret []string) {
+
+	for ; cnt > 0; cnt-- {
+		v, ok := g.lruQueue.Remove(g.lruQueue.Back()).(*peerStatus)
+		if !ok {
+			panic("Type error, not peerStatus")
+		}
+		delete(g.lruIndex, v.peerId)
+		ret = append(ret, v.peerId)
+	}
+
+	return
+}
+
+func (g *txNetworkGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
+	g.Lock()
+	defer g.Unlock()
+
+	item, ok := g.lruIndex[id]
+
+	if ok {
+		return nil
+	}
+
+	if len(g.lruIndex) > g.maxPeers {
+		g.truncateTailPeer(len(g.lruIndex) - g.maxPeers)
+	}
+
+	//if we can't truncate anypeer, just give up
+	if len(g.lruIndex) > g.maxPeers {
+		return nil
+	}
+
+	ret := &peerStatus{peerId: id}
+	g.lruIndex[id] = g.lruQueue.PushBack(ret)
+
+	return ret
+}
+
+func (g *txNetworkGlobal) RemovePeer(peer_in model.ScuttlebuttPeerStatus) {
+
+	peer, ok := peer_in.(*peerStatus)
+	if !ok {
+		panic("Type error, not peerStatus")
+	}
+
+	g.Lock()
+	defer g.Unlock()
+
+	item, ok := g.lruIndex[peer.peerId]
+
+	if ok {
+		g.lruQueue.Remove(item)
+		delete(g.lruIndex, peer.peerId)
+	}
+}
+
+func (g *txNetworkGlobal) QueryPeer(id string) *pb.Gossip_Digest_PeerState {
+	g.RLock()
+	defer g.RUnlock()
+
+	i, ok := g.lruIndex[id]
+	if ok {
+		return i.Value.(*peerStatus).Gossip_Digest_PeerState
+	}
+
+	return nil
+}
+
+func (g *txNetworkGlobal) BlockPeer(id string) {
+	g.RLock()
+	defer g.RUnlock()
+}
+
 func GetNetworkStatus() *txNetworkGlobal { return global }
+
+type globalCat struct {
+	policy gossip.CatalogPolicies
+}
 
 func init() {
 
@@ -106,18 +199,54 @@ func init() {
 }
 
 func initNetworkStatus(stub *gossip.GossipStub) {
+
+	self := &peerStatus{
+		peerId: util.GenerateUUID(),
+		peerTxStatusUpdate{&pb.Gossip_Digest_PeerState{
+			State: util.GenerateBytesUUID(),
+			//TODO: we must endorse it
+		}},
+	}
+
+	global.Lock()
+	global.stubs = append(global.stubs, stub)
+	global.lruIndex[self.peerId] = global.lruQueue.PushBack(self)
+	global.Unlock()
+
+	selfstatus := model.NewScuttlebuttStatus(global)
+	selfstatus.SetSelfPeer(self.peerId, self)
+	m := model.NewGossipModel(selfstatus)
+
+	// globalcat :=
+	// globalcat.policy = gossip.NewCatalogPolicyDefault()
+
+	stub.AddCatalogHandler(globalCatName,
+		gossip.NewCatalogHandlerImpl(stub.GetSStub(),
+			stub.GetStubContext(), nil, m))
+
 }
 
-func (g *txNetworkGlobal) getSelfStatus() *selfPeerStatus {
+const (
+	globalCatName = "global"
+)
 
-	g.selfPeer.Do(
-		func() {
-			//TODO: we generate id and endorse it
-			g.selfPeer.peerId = util.GenerateUUID()
-			g.selfPeer.beginTxDigest = util.GenerateBytesUUID()
-		})
+//Implement for CatalogHelper
+func (c *globalCat) Name() string                        { return hotTxCatName }
+func (c *globalCat) GetPolicies() gossip.CatalogPolicies { return c.policy }
 
-	return g.selfPeer
+func (c *globalCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
+
+}
+
+func (c *globalCat) TransPbToDigest(msg *pb.Gossip_Digest) model.Digest {
+}
+
+func (c *globalCat) UpdateMessage() proto.Message { return new(pb.Gossip_Tx) }
+
+func (c *globalCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Update, msg_in proto.Message) proto.Message {
+}
+
+func (c *globalCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Message) (model.Update, error) {
 }
 
 func (g *txNetworkGlobal) regNotify(f func([]string)) {
@@ -139,79 +268,4 @@ func (g *txNetworkGlobal) notifyEvict(peers []*peerStatus) {
 	for _, f := range g.onevicted {
 		f(ids)
 	}
-}
-
-func (g *txNetworkGlobal) addNewPeer(id string) *peerStatus {
-	g.Lock()
-	defer g.Unlock()
-
-	item, ok := g.lruIndex[id]
-
-	if ok {
-		return item.Value.(*peerStatus)
-	}
-
-	g.lruIndex[id] = g.lruQueue.PushBack(&peerStatus{peerId: id})
-
-	return g.lruQueue.Back().Value.(*peerStatus)
-}
-
-func (g *txNetworkGlobal) queryPeer(id string) *peerStatus {
-	g.RLock()
-	defer g.RUnlock()
-
-	i, ok := g.lruIndex[id]
-	if ok {
-		return i.Value.(*peerStatus)
-	}
-
-	return nil
-}
-
-func (g *txNetworkGlobal) accessPeer(id string) {
-
-	g.Lock()
-	defer g.Unlock()
-
-	i, ok := g.lruIndex[id]
-
-	if ok {
-		g.lruQueue.MoveToFront(i)
-	}
-}
-
-func (g *txNetworkGlobal) updatePeer(id string, u *peerStatus) {
-
-	//YES, it is read-lock
-	g.RLock()
-	defer g.RUnlock()
-
-	i, ok := g.lruIndex[id]
-	if ok {
-		i.Value = u
-	}
-}
-
-func (g *txNetworkGlobal) truncateTailPeer(cnt int) (ret []*peerStatus) {
-
-	g.Lock()
-	defer g.Unlock()
-
-	for ; cnt > 0; cnt-- {
-		v, ok := g.lruQueue.Remove(g.lruQueue.Back()).(*peerStatus)
-		if !ok {
-			panic("Type error, not peerStatus")
-		}
-		delete(g.lruIndex, v.peerId)
-		ret = append(ret, v)
-	}
-
-	return
-}
-
-func (g *txNetworkGlobal) peerSize() int {
-	g.RLock()
-	defer g.RUnlock()
-
-	return len(g.lruIndex)
 }

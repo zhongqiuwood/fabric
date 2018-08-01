@@ -229,7 +229,7 @@ func (h *sessionHandler) EncodeUpdate(u model.Update) proto.Message {
 
 func (h *sessionHandler) CanPull() model.PullerHandler {
 
-	if !h.cpo.AllowRecvUpdate() {
+	if !h.GetPolicies().AllowRecvUpdate() || !h.cpo.AllowRecvUpdate() {
 		logger.Infof("Reject a responding pulling to peer [%s]", h.cpo.GetId())
 		return nil
 	}
@@ -250,6 +250,9 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 				//when we succefully accept an update, we also schedule a new push process
 				if err == nil {
 					h.executePush(map[string]bool{h.cpo.GetId(): true})
+					return
+				} else if err == model.EmptyUpdate {
+					logger.Debug("pull nothing from peer [%s]", h.cpo.GetId())
 					return
 				} else {
 					h.cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
@@ -354,28 +357,26 @@ func (h *catalogHandler) executePush(excluded map[string]bool) error {
 
 		if pos := h.pulls.newPuller(cpo, false); pos != nil {
 			logger.Debugf("start pulling on stream to %s", cpo.GetId())
-
-			var err error
 			pos.Puller = model.NewPuller(&sessionHandler{h, cpo}, strm.StreamHandler, h.model)
 
-			if pos.Puller != nil {
-				pctx, _ := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
-				err = pos.Puller.Process(pctx)
+			if pos.Puller == nil {
+				logger.Info("we just gave up whole process after the pulling to %s", cpo.GetId())
+				h.pulls.popPuller(cpo)
+				//***GIVEN UP THE WHOLE PUSH PROCESS***
+				break
+			}
 
-				logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
-				if err == context.DeadlineExceeded {
-					cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
-				}
-			} else {
-				logger.Info("we just gave up the pulling to %s", cpo.GetId())
-				err = fmt.Errorf("Give up pulling")
+			pctx, _ := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+			err := pos.Puller.Process(pctx)
+
+			logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
+			if err == context.DeadlineExceeded {
+				cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
 			}
 
 			if err != nil {
-				pos = h.pulls.popPuller(cpo)
-			}
-
-			if pos.gotPush {
+				h.pulls.popPuller(cpo)
+			} else if pos.gotPush {
 				pushedCnt++
 				logger.Debugf("Scheduled pulling has pushed our status to peer [%s]", cpo.GetId())
 			}

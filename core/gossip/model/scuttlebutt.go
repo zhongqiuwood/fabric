@@ -118,8 +118,8 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 	}
 
 	for id, ss := range u.PeerUpdate() {
-		//remove request
-		if ss == nil {
+		//remove request (notice you can't remove selfpeer)
+		if ss == nil && s.Peers[id] != s.Peers[""] {
 			s.RemovePeer(s.Peers[id])
 			delete(s.Peers, id)
 		} else {

@@ -19,6 +19,13 @@ type txMemPoolItem struct {
 	next *txMemPoolItem
 }
 
+func createPeerTxItem(s *pb.Gossip_Digest_PeerState) *txMemPoolItem {
+	return &txMemPoolItem{
+		digest:       s.GetState(),
+		digestSeries: s.GetNum(),
+	}
+}
+
 //a item is cloned without next
 func (t *txMemPoolItem) clone() *txMemPoolItem {
 	n := new(txMemPoolItem)
@@ -200,14 +207,14 @@ func (g *txPoolGlobal) Update(u_in model.Update) error {
 func (g *txPoolGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 
 	//check if we have known this peer
-	peerStatus := GetNetworkStatus().queryPeer(id)
+	peerStatus := GetNetworkStatus().QueryPeer(id)
 	if peerStatus == nil {
 		return nil
 	}
 
 	ret := new(peerTxMemPool)
 	ret.peerId = id
-	ret.reset(peerStatus.createPeerTxItem())
+	ret.reset(createPeerTxItem(peerStatus))
 	return ret
 }
 
@@ -468,7 +475,7 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	}
 
 	//checkout global status
-	peerStatus := GetNetworkStatus().queryPeer(p.peerId)
+	peerStatus := GetNetworkStatus().QueryPeer(p.peerId)
 	if peerStatus == nil {
 		//boom ..., but it may be caused by an stale peer-removing so not
 		//consider as error
@@ -481,7 +488,7 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	if peerStatus.GetNum() > p.lastSeries() {
 		logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
 			p.peerId, p.last.digest, p.last.digestSeries)
-		p.reset(peerStatus.createPeerTxItem())
+		p.reset(createPeerTxItem(peerStatus))
 	} else {
 		p.purge(peerStatus.GetNum(), g)
 	}
@@ -651,6 +658,11 @@ func (c *hotTxCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Mes
 	msg, ok := msg_in.(*pb.Gossip_Tx)
 	if !ok {
 		panic("Type error, not Gossip_Tx")
+	}
+
+	//can return null data
+	if len(msg.Txs) == 0 {
+		return nil, nil
 	}
 
 	u := model.NewscuttlebuttUpdate(txPoolGlobalUpdate{cpo})

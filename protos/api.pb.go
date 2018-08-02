@@ -56,7 +56,9 @@ It has these top-level messages:
 	HelloMessage
 	Gossip
 	HotTransactionBlock
+	PeerTxState
 	Gossip_Tx
+	Gossip_TxState
 	Message
 	Response
 	GlobalState

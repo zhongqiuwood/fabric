@@ -19,9 +19,9 @@ type txMemPoolItem struct {
 	next *txMemPoolItem
 }
 
-func createPeerTxItem(s *pb.Gossip_Digest_PeerState) *txMemPoolItem {
+func createPeerTxItem(s *pb.PeerTxState) *txMemPoolItem {
 	return &txMemPoolItem{
-		digest:       s.GetState(),
+		digest:       s.GetDigest(),
 		digestSeries: s.GetNum(),
 	}
 }
@@ -584,35 +584,15 @@ func (c *hotTxCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
 		panic("Type error, not ScuttlebuttDigest")
 	}
 
-	msg := new(pb.Gossip_Digest)
-
-	gd, ok := d.GlobalDigest().(txPoolGlobalDigest)
-	if ok {
-		msg.Epoch = gd.epoch
-	}
-
-	msg.Data = make(map[string]*pb.Gossip_Digest_PeerState)
-
-	for id, pd := range d.PeerDigest() {
-
-		msg.Data[id] = &pb.Gossip_Digest_PeerState{
-			Num: uint64(pd.(standardVClock)),
-		}
-	}
-
-	return msg
+	gd = d.GlobalDigest().(txPoolGlobalDigest)
+	return toPbDigestStd(d, gd.epoch)
 
 }
 
 func (c *hotTxCat) TransPbToDigest(msg *pb.Gossip_Digest) model.Digest {
 
-	dout := model.NewscuttlebuttDigest(msg)
+	return parsePbDigestStd(msg, msg)
 
-	for id, ps := range msg.Data {
-		dout.SetPeerDigest(id, standardVClock(ps.GetNum()))
-	}
-
-	return dout
 }
 
 func (c *hotTxCat) UpdateMessage() proto.Message { return new(pb.Gossip_Tx) }

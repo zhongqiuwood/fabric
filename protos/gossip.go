@@ -11,7 +11,7 @@ func (m *Gossip) EstimateSize() (total int) {
 	switch v := m.GetM().(type) {
 	case (*Gossip_Dig):
 		for _, i := range v.Dig.Data {
-			total = total + len(i.State) + len(i.Signature) + 8 //the bytes of a num
+			total = total + len(i.State) + 8 //the bytes of a num
 		}
 		total = total + len(v.Dig.Epoch)
 	case (*Gossip_Ud):

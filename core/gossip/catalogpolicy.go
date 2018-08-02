@@ -20,6 +20,7 @@ func NewCatalogPolicyDefault() (ret *catalogPolicyImpl) {
 		allowUpdate:   true,
 		pushCount:     def_PushCount,
 		maxTrackPeers: def_TrackPeers,
+		pullTimeout:   def_PullTimeout,
 	}
 
 	return

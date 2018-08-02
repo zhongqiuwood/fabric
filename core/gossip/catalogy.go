@@ -300,10 +300,9 @@ func (h *catalogHandler) HandleUpdate(msg *pb.Gossip_Update, cpo CatalogPeerPoli
 		return
 	}
 
-	var umsg proto.Message
+	umsg := h.CatalogHelper.UpdateMessage()
 
 	if len(msg.Payload) > 0 {
-		umsg = h.CatalogHelper.UpdateMessage()
 		err := proto.Unmarshal(msg.Payload, umsg)
 		if err != nil {
 			cpo.RecordViolation(fmt.Errorf("Unmarshal message for update in catalog %s fail: %s", h.Name(), err))
@@ -370,12 +369,13 @@ func (h *catalogHandler) executePush(excluded map[string]bool) error {
 			err := pos.Puller.Process(pctx)
 
 			logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
-			if err == context.DeadlineExceeded {
-				cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
-			}
 
 			if err != nil {
 				h.pulls.popPuller(cpo)
+				if err != context.DeadlineExceeded {
+					cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
+				}
+
 			} else if pos.gotPush {
 				pushedCnt++
 				logger.Debugf("Scheduled pulling has pushed our status to peer [%s]", cpo.GetId())

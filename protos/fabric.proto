@@ -177,7 +177,6 @@ message Gossip {
         message PeerState{
             bytes state = 1;
             uint64 num  = 2;
-            bytes signature = 5;
         }
 /*string is used to represent peerID*/        
         map<string, PeerState> data = 1;
@@ -204,9 +203,19 @@ message HotTransactionBlock {
     uint64 beginSeries = 2;
 }
 
+message PeerTxState{
+    bytes digest = 1;
+    uint64 num  = 2;
+    bytes signature = 5;
+    bytes endorsement = 6;
+}
 
 message Gossip_Tx{
     map<string, HotTransactionBlock> txs = 1;
+}
+
+message Gossip_TxState{
+    map<string, PeerTxState> txs = 1;
 }
 
 message Message {

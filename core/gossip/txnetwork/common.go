@@ -36,13 +36,13 @@ func (a standardVClock) Less(b_in model.VClock) bool {
 	return a < b
 }
 
-func toPbDigestStd(model.ScuttlebuttDigest, epoch []byte) *pb.Gossip_Digest{
+func toPbDigestStd(d model.ScuttlebuttDigest, epoch []byte) *pb.Gossip_Digest {
 	msg := new(pb.Gossip_Digest)
 
-	if len(epoch) != 0{
+	if len(epoch) != 0 {
 		msg.Epoch = epoch
 	}
-	
+
 	msg.Data = make(map[string]*pb.Gossip_Digest_PeerState)
 
 	for id, pd := range d.PeerDigest() {
@@ -51,11 +51,11 @@ func toPbDigestStd(model.ScuttlebuttDigest, epoch []byte) *pb.Gossip_Digest{
 			Num: uint64(pd.(standardVClock)),
 		}
 	}
-	
+
 	return msg
 }
 
-func parsePbDigestStd(msg *pb.Gossip_Digest, core interface{}) model.NewscuttlebuttDigest{
+func parsePbDigestStd(msg *pb.Gossip_Digest, core interface{}) model.ScuttlebuttDigest {
 
 	dout := model.NewscuttlebuttDigest(model.Digest(core))
 

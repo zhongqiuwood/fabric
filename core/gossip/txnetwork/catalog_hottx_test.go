@@ -87,6 +87,7 @@ func populatePoolItems(t *testing.T, n int) *peerTxs {
 
 func TestPeerTxs(t *testing.T) {
 
+	initGlobalStatus()
 	txs := populatePoolItems(t, 3)
 
 	if txs.lastSeries() != 3 {
@@ -181,6 +182,7 @@ func formTestData(ledger *ledger.Ledger, txchain *peerTxs, commitsetting [][]int
 
 func TestPeerUpdate(t *testing.T) {
 
+	initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
 
 	txchain := populatePoolItems(t, 10)
@@ -267,6 +269,7 @@ func TestPeerUpdate(t *testing.T) {
 
 func TestPeerTxPool(t *testing.T) {
 
+	initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
 
 	txchainBase := populatePoolItems(t, 39)
@@ -363,7 +366,8 @@ func TestPeerTxPool(t *testing.T) {
 
 	//must also add global state ...
 	pstatus := GetNetworkStatus().addNewPeer("test")
-	pstatus.State = txchainBase.head.digest
+	pstatus.Digest = txchainBase.head.digest
+	pstatus.Endorsement = []byte{2, 3, 3}
 
 	pool.peerId = "anotherTest"
 
@@ -467,6 +471,7 @@ func TestPeerTxPool(t *testing.T) {
 
 func TestCatalogyHandler(t *testing.T) {
 
+	initGlobalStatus()
 	l := initTestLedgerWrapper(t)
 
 	txchainBase := populatePoolItems(t, 39)
@@ -476,7 +481,8 @@ func TestCatalogyHandler(t *testing.T) {
 	const testname = "test"
 
 	pstatus := GetNetworkStatus().addNewPeer(testname)
-	pstatus.State = txchainBase.head.digest
+	pstatus.Digest = txchainBase.head.digest
+	pstatus.Endorsement = []byte{2, 3, 3}
 
 	txglobal := new(txPoolGlobal)
 	txglobal.ind = make(map[string]*txMemPoolItem)

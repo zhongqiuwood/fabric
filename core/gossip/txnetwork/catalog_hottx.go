@@ -561,7 +561,15 @@ func initHotTx(stub *gossip.GossipStub) {
 	hotTx := new(hotTxCat)
 	hotTx.policy = gossip.NewCatalogPolicyDefault()
 
-	m := model.NewGossipModel(model.NewScuttlebuttStatus(txglobal))
+	selfStatus := model.NewScuttlebuttStatus(txglobal)
+
+	gself := GetNetworkStatus().SelfPeer(stub)
+	self := &peerTxMemPool{peerId: gself.peerId}
+	self.reset(createPeerTxItem(gself.PeerTxState))
+
+	selfStatus.SetSelfPeer(self.peerId, self)
+
+	m := model.NewGossipModel(selfStatus)
 
 	stub.AddCatalogHandler(hotTxCatName,
 		gossip.NewCatalogHandlerImpl(stub.GetSStub(),
@@ -584,7 +592,7 @@ func (c *hotTxCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
 		panic("Type error, not ScuttlebuttDigest")
 	}
 
-	gd = d.GlobalDigest().(txPoolGlobalDigest)
+	gd := d.GlobalDigest().(txPoolGlobalDigest)
 	return toPbDigestStd(d, gd.epoch)
 
 }

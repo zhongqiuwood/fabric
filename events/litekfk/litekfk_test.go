@@ -65,7 +65,7 @@ func dumpbatch(t *testing.T, b *batch) {
 	t.Log("batch: ", b.series, "@", b.wriPos, ":", dumplog, " with", b.readers)
 }
 
-func dumpTopic(t *testing.T, title string, u *topicUint) {
+func dumpTopic(t *testing.T, title string, u *topicUnit) {
 
 	t.Log(" ------ Dumping topic for phase", title)
 
@@ -79,7 +79,7 @@ func dumpTopic(t *testing.T, title string, u *topicUint) {
 
 }
 
-func checkTopic(t *testing.T, u *topicUint, tailId int, headId int, startId int) {
+func checkTopic(t *testing.T, u *topicUnit, tailId int, headId int, startId int) {
 
 	if err := checkbatch(u.getTail().batch(), tailId); err != nil {
 		t.Fatal("tail error", err)

@@ -11,9 +11,13 @@ type readerPosCache struct {
 	logpos int
 }
 
+func (c *readerPosCache) Equal(p *readerPos) bool {
+	return c.batch == p.batch() && c.logpos == p.logpos
+}
+
 type reader struct {
 	cli       client
-	target    *topicUint
+	target    *topicUnit
 	current   *readerPosCache
 	end       *readerPosCache
 	autoReset bool
@@ -34,7 +38,7 @@ const (
 	ReadPos_ResumeOrLatest
 )
 
-func (c client) UnReg(t *topicUint) {
+func (c client) UnReg(t *topicUnit) {
 	t.clients.Lock()
 	defer t.clients.Unlock()
 
@@ -66,7 +70,7 @@ func (c client) UnReg(t *topicUint) {
 	}
 }
 
-func (c client) Read(t *topicUint, beginPos int) (*reader, error) {
+func (c client) Read(t *topicUnit, beginPos int) (*reader, error) {
 	t.clients.Lock()
 	defer t.clients.Unlock()
 
@@ -171,15 +175,7 @@ func (r *reader) commit() error {
 	return nil
 }
 
-func (r *reader) AutoReset(br bool) {
-	r.autoReset = br
-}
-
-func (r *reader) Position() uint64 {
-	return r.target._position(r.current.batch, r.current.logpos)
-}
-
-func (r *reader) ReadOne() (interface{}, error) {
+func (r *reader) readOne() (interface{}, error) {
 
 	if r.eof() {
 		return nil, ErrEOF
@@ -188,10 +184,11 @@ func (r *reader) ReadOne() (interface{}, error) {
 	v := r.current.logs[r.current.logpos]
 	r.current.logpos++
 
-	return v, r.commit()
+	return v, nil
 }
 
-func (r *reader) ReadBatch() (ret []interface{}, e error) {
+func (r *reader) readBatch() (ret []interface{}, e error) {
+
 	if r.eof() {
 		e = ErrEOF
 		return
@@ -205,6 +202,80 @@ func (r *reader) ReadBatch() (ret []interface{}, e error) {
 		r.current.logpos = r.target.conf.batchsize
 	}
 
-	e = r.commit()
 	return
+}
+
+func (r *reader) CurrentEnd() *readerPosCache {
+	return r.end
+}
+
+func (r *reader) AutoReset(br bool) {
+	r.autoReset = br
+}
+
+func (r *reader) Position() uint64 {
+	return r.target._position(r.current.batch, r.current.logpos)
+}
+
+func (r *reader) Reset() {
+	r.end = r.target.getTail().toCache()
+}
+
+func (r *reader) ReadOne() (interface{}, error) {
+
+	v, err := r.readOne()
+	if err == nil {
+		return v, r.commit()
+	} else {
+		return v, err
+	}
+
+}
+
+func (r *reader) ReadBatch() ([]interface{}, error) {
+
+	v, err := r.readBatch()
+	if err == nil {
+		return v, r.commit()
+	} else {
+		return v, err
+	}
+}
+
+type readTx struct {
+	*reader
+	txerr error
+	txPos int
+}
+
+func (r *reader) TransactionRead() *readTx {
+	return &readTx{r, nil, r.current.logpos}
+}
+
+func (r *readTx) ReadOne() (interface{}, error) {
+	v, e := r.readOne()
+	r.txerr = e
+	return v, e
+}
+
+func (r *readTx) ReadBatch() ([]interface{}, error) {
+	v, e := r.readBatch()
+	r.txerr = e
+	return v, e
+}
+
+func (r *readTx) Commit() error {
+
+	if r.txerr != nil {
+		return r.txerr
+	}
+
+	r.txerr = r.commit()
+	return r.txerr
+}
+
+func (r *readTx) Rollback() error {
+
+	r.current.logpos = r.txPos
+	return nil
 }

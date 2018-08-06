@@ -59,7 +59,7 @@ func (cr *clientReg) AssignClient() client {
 	return c
 }
 
-type topicUint struct {
+type topicUnit struct {
 	sync.RWMutex
 	conf    *topicConfiguration
 	data    *list.List
@@ -69,9 +69,9 @@ type topicUint struct {
 	clients clientReg
 }
 
-func InitTopic(conf *topicConfiguration) *topicUint {
+func InitTopic(conf *topicConfiguration) *topicUnit {
 
-	ret := &topicUint{
+	ret := &topicUnit{
 		conf:   conf,
 		dryRun: true,
 		data:   list.New(),
@@ -89,14 +89,14 @@ func InitTopic(conf *topicConfiguration) *topicUint {
 	return ret
 }
 
-func (t *topicUint) getStart() *readerPos {
+func (t *topicUnit) getStart() *readerPos {
 	t.RLock()
 	defer t.RUnlock()
 
 	return &readerPos{Element: t.start.Element}
 }
 
-func (t *topicUint) getTail() *readerPos {
+func (t *topicUnit) getTail() *readerPos {
 	t.RLock()
 	defer t.RUnlock()
 
@@ -106,30 +106,30 @@ func (t *topicUint) getTail() *readerPos {
 	}
 }
 
-func (t *topicUint) _head() *readerPos {
+func (t *topicUnit) _head() *readerPos {
 
 	return &readerPos{Element: t.data.Front()}
 }
 
-func (t *topicUint) _position(b *batch, offset int) uint64 {
+func (t *topicUnit) _position(b *batch, offset int) uint64 {
 	return b.series*uint64(t.conf.maxbatch) + uint64(offset)
 }
 
-func (t *topicUint) setDryrun(d bool) {
+func (t *topicUnit) setDryrun(d bool) {
 	t.Lock()
 	defer t.Unlock()
 
 	t.dryRun = d
 }
 
-func (t *topicUint) setPassed(n *readerPos) {
+func (t *topicUnit) setPassed(n *readerPos) {
 	t.Lock()
 	defer t.Unlock()
 
 	t.passed = n
 }
 
-func (t *topicUint) addBatch() (ret *batch) {
+func (t *topicUnit) addBatch() (ret *batch) {
 
 	t.Lock()
 	defer t.Unlock()
@@ -182,18 +182,18 @@ func (t *topicUint) addBatch() (ret *batch) {
 	return
 }
 
-func (t *topicUint) Clients() *clientReg {
+func (t *topicUnit) Clients() *clientReg {
 	return &t.clients
 }
 
-func (t *topicUint) CurrentPos() uint64 {
+func (t *topicUnit) CurrentPos() uint64 {
 
 	tail := t.getTail()
 
 	return t._position(tail.batch(), tail.logpos)
 }
 
-func (t *topicUint) Write(i interface{}) error {
+func (t *topicUnit) Write(i interface{}) error {
 
 	t.Lock()
 	defer t.Unlock()

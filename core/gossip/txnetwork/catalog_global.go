@@ -248,8 +248,10 @@ func (g *txNetworkGlobal) SelfPeer(stub *gossip.GossipStub) *peerStatus {
 	g.Lock()
 	defer g.Unlock()
 
-	if _, ok := g.selfpeers[stub]; !ok {
+	if s, ok := g.selfpeers[stub]; !ok {
 		g.selfpeers[stub] = &selfPeerStatus{}
+	} else {
+		return s.peerStatus
 	}
 
 	self := g.selfpeers[stub].create()

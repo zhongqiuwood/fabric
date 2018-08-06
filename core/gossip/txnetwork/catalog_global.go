@@ -100,6 +100,7 @@ func (s *selfPeerStatus) create() *peerStatus {
 			peerTxStatusUpdate{&pb.PeerTxState{
 				Digest: util.GenerateBytesUUID(),
 				//TODO: we must endorse it
+				Endorsement: []byte{1},
 			}},
 			time.Now(),
 		}

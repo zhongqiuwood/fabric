@@ -113,8 +113,98 @@ func TestTxGlobal(t *testing.T) {
 	}
 
 	//update local
+	uself := model.NewscuttlebuttUpdate(nil)
+	uself.UpdateLocal(peerTxStatusUpdate{createState([]byte{2}, 4, false)})
+
+	err = m.RecvUpdate(uself)
+	if err != nil {
+		t.Fatal("recv update fail 2", err)
+	}
+
+	if self.Num != 4 {
+		t.Fatal("self update fail", self)
+	}
+
+	if len(self.Endorsement) == 0 {
+		t.Fatal("self miss endorsement after updating")
+	}
 
 	//pick 2
+	pbin.Data[testpeername].Num = 2
+	pbin.Data[self.peerId] = &pb.Gossip_Digest_PeerState{}
 
-	//update test peer 2
+	uout2 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
+
+	msgout2 := globalcat.EncodeUpdate(nil, uout2, globalcat.UpdateMessage()).(*pb.Gossip_TxState)
+
+	if s, ok := msgout2.Txs[testpeername]; ok {
+
+		if s.Num != 3 {
+			t.Fatal("wrong testpeer state", msgout2)
+		}
+
+		if len(s.Endorsement) != 0 {
+			t.Fatal("include unexpected endorsement", msgout2)
+		}
+
+	} else {
+		t.Fatal("could not get update of testpeer", msgout2)
+	}
+
+	if s, ok := msgout2.Txs[self.peerId]; ok {
+
+		if s.Num != 4 {
+			t.Fatal("wrong selfpeer state", msgout2)
+		}
+
+		if len(s.Endorsement) == 0 {
+			t.Fatal("do not include endorsement", msgout2)
+		}
+
+	} else {
+		t.Fatal("could not get update of selfpeere", msgout2)
+	}
+
+	//remove testpeer
+	urem := model.NewscuttlebuttUpdate(nil)
+	urem.RemovePeers([]string{testpeername})
+
+	err = m.RecvUpdate(urem)
+	if err != nil {
+		t.Fatal("recv update fail 3", err)
+	}
+
+	if _, ok := global.lruIndex[testpeername]; ok {
+		t.Fatal("testpeer do not removed")
+	}
+
+	if global.lruQueue.Len() > 0 {
+		t.Fatal("wrong lru queue")
+	}
+
+	uout3 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
+
+	msgout3 := globalcat.EncodeUpdate(nil, uout3, globalcat.UpdateMessage()).(*pb.Gossip_TxState)
+
+	if _, ok := msgout3.Txs[testpeername]; ok {
+		t.Fatal("pick ghost test peer")
+	}
+
+	if s, ok := msgout3.Txs[self.peerId]; ok {
+
+		if s.Num != 4 {
+			t.Fatal("wrong selfpeer state", msgout3)
+		}
+
+		if len(s.Endorsement) == 0 {
+			t.Fatal("do not include endorsement", msgout3)
+		}
+
+	} else {
+		t.Fatal("could not get update of selfpeere", msgout3)
+	}
+}
+
+func TestTxGlobalTruncate(t *testing.T) {
+	initGlobalStatus()
 }

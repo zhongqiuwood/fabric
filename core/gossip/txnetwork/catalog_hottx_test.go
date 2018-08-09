@@ -344,7 +344,10 @@ func TestPeerTxPool(t *testing.T) {
 	//test update
 	txChainAdd := prolongItemChain(t, txchainBase.last, 20)
 
-	txChainAdd.head = txChainAdd.head.next
+	//"cut" the new chain ..., keep baseChain unchange
+	newAddHead := txChainAdd.head.next
+	txChainAdd.head.next = nil
+	txChainAdd.head = newAddHead
 
 	//collect more items ...
 	for i := txChainAdd.head; i != nil; i = i.next {
@@ -383,6 +386,7 @@ func TestPeerTxPool(t *testing.T) {
 
 	//now peerid is right
 	pool.peerId = "test"
+
 	err = pool.Update(udt, txGlobal)
 	if err != nil {
 		t.Fatal("update actual fail", err)
@@ -427,6 +431,18 @@ func TestPeerTxPool(t *testing.T) {
 	checkTx(42)
 	checkTx(45)
 	checkTx(55)
+
+	//test update including older data
+	anotherpool := new(peerTxMemPool)
+	anotherpool.reset(indexs[5])
+
+	newChainArr := udt.Transactions
+	udt := txPeerUpdate{new(pb.HotTransactionBlock)}
+	udt.fromTxs(indexs[39], 0)
+	if udt.BeginSeries != 39 || len(udt.Transactions) != 1 {
+		panic("wrong udt")
+	}
+	udt.Transactions = append(udt.Transactions, newChainArr...)
 
 	//test purge
 	pool.purge(50, txGlobal)

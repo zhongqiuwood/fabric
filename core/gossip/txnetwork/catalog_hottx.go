@@ -39,7 +39,17 @@ type peerTxs struct {
 	last *txMemPoolItem
 }
 
-//return whether tx2 is precede of the digest of tx1
+func getTxDigest(tx *pb.Transaction) []byte {
+	return []byte("not imply")
+}
+
+//return whether tx is match to the digest
+func txIsMatch(digest []byte, tx *pb.Transaction) bool {
+	//TODO: check tx2's nonce and tx1's txid
+	return true
+}
+
+//return whether tx2 is precede of the digest
 func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	//TODO: check tx2's nonce and tx1's txid
 	return true
@@ -331,6 +341,10 @@ func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, 
 			}
 		}
 
+		if last != nil && !txIsPrecede(last.digest, tx) {
+			return nil, fmt.Errorf("update have invalid transactions chain for tx at %d", last.digestSeries+1)
+		}
+
 		if txcommon.secHelper != nil {
 			tx, err = txcommon.secHelper.TransactionPreValidation(tx)
 			if err != nil {
@@ -340,6 +354,7 @@ func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, 
 
 		last = current
 		current.tx = tx
+		current.digest = getTxDigest(tx)
 
 		//** we always check the commiting status
 		//first we must check the commited status
@@ -388,6 +403,7 @@ func (p *peerTxMemPool) reset(txbeg *txMemPoolItem) {
 }
 
 func (p *peerTxMemPool) To() model.VClock {
+
 	return standardVClock(p.lastSeries())
 }
 
@@ -483,17 +499,20 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		return nil
 	}
 
+	isReset := false
+	updatePos := p.lastSeries() + 1
 	//purge on each update first
 	//our data is outdate, all cache is clear .... ...
-	if peerStatus.GetNum() > p.lastSeries() {
+	if peerStatus.GetNum() > updatePos {
 		logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
 			p.peerId, p.last.digest, p.last.digestSeries)
-		p.reset(createPeerTxItem(peerStatus))
+		isReset = true
+		updatePos = peerStatus.GetNum()
 	} else {
 		p.purge(peerStatus.GetNum(), g)
 	}
 
-	inTxs, err := u.toTxs(g.ledger, p.lastSeries())
+	inTxs, err := u.toTxs(g.ledger, updatePos)
 
 	if err != nil {
 		return err
@@ -501,18 +520,29 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		return nil
 	}
 
-	oldlast := p.last
-	err = p.concat(inTxs)
-	if err != nil {
-		//there is many possible for a far-end provided nonsense update for you
-		//(caused by itself or the original peer) so we just simply omit it
-		logger.Errorf("We may obtain branched data from peer %s: %s", p.peerId, err)
-		return nil
+	if isReset {
+
+		if !txIsMatch(peerStatus.GetDigest(), inTxs.head.tx) {
+			logger.Errorf("We may obtain branched data from peer %s: %s", p.peerId, err)
+			return nil
+		}
+		//we build jupming index after binding incoming txs, so we can't reset the whole
+		//txs here, but just change the head
+		p.head = inTxs.head
+
+	} else {
+		err = p.concat(inTxs)
+		if err != nil {
+			//there is many possible for a far-end provided nonsense update for you
+			//(caused by itself or the original peer) so we just simply omit it
+			logger.Errorf("We may obtain branched data from peer %s: %s", p.peerId, err)
+			return nil
+		}
 	}
 
 	var mergeCnt int
 	//we need to construct the index ...
-	for beg := oldlast.next; beg != nil; beg = beg.next {
+	for beg := inTxs.head; beg != nil; beg = beg.next {
 
 		g.index(beg)
 		if beg.digestSeries == (beg.digestSeries/jumplistInterval)*jumplistInterval {

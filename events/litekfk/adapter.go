@@ -44,11 +44,11 @@ type TopicWatcher struct {
 	*topicUnit
 }
 
-func (w Topic) GetStart() *readerPos {
+func (w TopicWatcher) GetStart() *readerPos {
 	return &readerPos{Element: w.start.Element}
 }
 
-func (w Topic) GetTail() *readerPos {
+func (w TopicWatcher) GetTail() *readerPos {
 	return &readerPos{
 		Element: w.data.Back(),
 		logpos:  w.data.Back().Value.(*batch).wriPos,

@@ -67,8 +67,8 @@ func parsePbDigestStd(msg *pb.Gossip_Digest, core interface{}) model.Scuttlebutt
 }
 
 //notify remove any peer in a scuttlebutt model
-func registerEvictFunc(catname string, m *model.Model) {
-	GetNetworkStatus().regNotify(func(ids []string) {
+func registerEvictFunc(target *txNetworkGlobal, catname string, m *model.Model) {
+	target.RegNotify(func(ids []string) {
 
 		ru := model.NewscuttlebuttUpdate(nil)
 		ru.RemovePeers(ids)

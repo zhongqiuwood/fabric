@@ -13,7 +13,7 @@ type ScuttlebuttPeerUpdate interface {
 type ScuttlebuttPeerStatus interface {
 	To() VClock
 	PickFrom(VClock, Update) (ScuttlebuttPeerUpdate, Update)
-	Update(ScuttlebuttPeerUpdate, ScuttlebuttStatus) error
+	Update(string, ScuttlebuttPeerUpdate, ScuttlebuttStatus) error
 }
 
 type ScuttlebuttDigest interface {
@@ -89,7 +89,7 @@ func (u *scuttlebuttUpdateIn) RemovePeers(ids []string) {
 type ScuttlebuttStatus interface {
 	Status
 	NewPeer(string) ScuttlebuttPeerStatus
-	RemovePeer(ScuttlebuttPeerStatus)
+	RemovePeer(string, ScuttlebuttPeerStatus)
 	MissedUpdate(string, ScuttlebuttPeerUpdate) error
 }
 
@@ -120,14 +120,14 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 	for id, ss := range u.PeerUpdate() {
 		//remove request (notice you can't remove selfpeer)
 		if ss == nil && s.Peers[id] != s.Peers[""] {
-			s.RemovePeer(s.Peers[id])
+			s.RemovePeer(id, s.Peers[id])
 			delete(s.Peers, id)
 		} else {
 
 			pss, ok := s.Peers[id]
 			if ok {
 				if pss.To().Less(ss.To()) {
-					err = pss.Update(ss, s.ScuttlebuttStatus)
+					err = pss.Update(id, ss, s.ScuttlebuttStatus)
 				} else {
 					err = s.MissedUpdate(id, ss)
 				}

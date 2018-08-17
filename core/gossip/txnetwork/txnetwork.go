@@ -3,129 +3,169 @@ package txnetwork
 import (
 	"fmt"
 	"github.com/abchain/fabric/core/gossip"
-	_ "github.com/abchain/fabric/core/gossip/model"
-	_ "github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"sync"
 )
 
-type txNetworkEntry struct {
-	topic     litekfk.Topic
-	txOut     chan *pb.Transaction
-	newTxCond *sync.Cond
-	onEnd     context.CancelFunc
-	context.Context
+type entryGlobal struct {
+	sync.Mutex
+	entries map[*gossip.GossipStub]*txNetworkEntry
 }
 
-var (
-	maxOutputBatch = 20
+var entryglobal entryGlobal
+
+func GetNetworkEntry(stub *gossip.GossipStub) *txNetworkEntry {
+	entryglobal.Lock()
+	defer entryglobal.Unlock()
+
+	return entryglobal.entries[stub]
+}
+
+func init() {
+
+	gossip.RegisterCat = append(gossip.RegisterCat, initTxnetworkEntrance)
+}
+
+func initTxnetworkEntrance(stub *gossip.GossipStub) {
+
+	entryglobal.Lock()
+	defer entryglobal.Unlock()
+
+	entryglobal.entries[stub] = NewTxNetworkEntry(stub.GetStubContext())
+}
+
+type TxNetworkHandler interface {
+	HandleTxs(tx []*PendingTransaction)
+}
+
+type txNetworkEntry struct {
+	topic     litekfk.Topic
+	newTxCond *sync.Cond
+	context.Context
+	TxNetworkHandler
+}
+
+const (
+	maxOutputBatch = 16
 )
 
-func NewTxNetworkEntry(ctx context.Context, thread int) *txNetworkEntry {
+func NewTxNetworkEntry(ctx context.Context) *txNetworkEntry {
 
 	conf := litekfk.NewDefaultConfig()
 	topic := litekfk.CreateTopic(conf)
 
 	return &txNetworkEntry{
 		topic:     topic,
-		txOut:     make(chan *pb.Transaction, thread*maxOutputBatch),
 		newTxCond: sync.NewCond(topic),
 		Context:   ctx,
 	}
 }
 
-func NewDefaultTxNetworkEntry(ctx context.Context) *txNetworkEntry {
-	return NewTxNetworkEntry(ctx, 1)
-}
-
-func (e *txNetworkEntry) pumper(ctx context.Context, cli *litekfk.Client) {
+func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
+	cli := e.topic.NewClient()
 	defer cli.UnReg()
 
 	watcher := e.topic.Watcher()
 
 	rd, rerr := cli.Read(litekfk.ReadPos_Default)
 	if rerr != nil {
-		panic(fmt.Errorf("Pumper is failed when inited: %v", rerr))
+		panic(fmt.Errorf("Worker is failed when inited: %v", rerr))
 	}
 
 	rd.AutoReset(true)
 
+	gctx, endf := context.WithCancel(ctx)
+
+	//start the guard
+	go func() {
+		<-ctx.Done()
+		logger.Info("Guard will make worker for txnetwork quitting")
+
+		e.topic.Lock()
+		endf()
+		e.topic.Unlock()
+
+		e.newTxCond.Broadcast()
+
+	}()
+
+	var txBuffer [maxOutputBatch]*PendingTransaction
+	txs := txBuffer[:0]
+
 	for {
 
 		if item, err := rd.ReadOne(); err == litekfk.ErrEOF {
-			e.topic.Lock()
-			if rd.CurrentEnd().Equal(watcher.GetTail()) {
-				e.newTxCond.Wait()
-			}
-			e.topic.Unlock()
 
-			select {
-			case <-ctx.Done():
-				logger.Info("Pumper for txnetwork is quit")
-				return
-			default:
+			if len(txs) > 0 {
+				h.HandleTxs(txs)
+				txs = txBuffer[:0]
+			} else {
+				//goto sleeping phase
+				e.topic.Lock()
+
+				select {
+				case <-gctx.Done():
+					logger.Info("Worker for txnetwork is quit")
+					e.topic.Unlock()
+					return
+				default:
+				}
+
+				if rd.CurrentEnd().Equal(watcher.GetTail()) {
+					e.newTxCond.Wait()
+				}
+				e.topic.Unlock()
 			}
+
 		} else if err != nil {
 			//we have autoreset so we won't be drop out
 			//if we still fail it should be a panic
-			panic(fmt.Errorf("Pumper has unknown failure: %v", err))
+			panic(fmt.Errorf("Worker has unknown failure: %v", err))
 		} else {
-			select {
-			case <-ctx.Done():
-				logger.Info("Pumper for txnetwork is quit")
-				return
-			case e.txOut <- item.(*pb.Transaction):
+			txs = append(txs, item.(*PendingTransaction))
+			if len(txs) >= maxOutputBatch {
+				h.HandleTxs(txs)
+				txs = txBuffer[:0]
 			}
+		}
+
+		select {
+		case <-gctx.Done():
+			logger.Info("Worker for txnetwork is quit")
+			return
+		default:
 		}
 
 	}
 }
 
-func (e *txNetworkEntry) Start() {
+func (e *txNetworkEntry) Start(h TxNetworkHandler) {
 
-	if e.onEnd != nil {
-		e.Finalize()
-	}
+	ctx, _ := context.WithCancel(e)
 
-	ctx, ef := context.WithCancel(e)
-	e.onEnd = ef
-	cli := e.topic.NewClient()
-
-	go e.pumper(ctx, cli)
+	go e.worker(ctx, h)
 }
 
-func (e *txNetworkEntry) Finalize() {
-
-	if e.onEnd == nil {
-		return
-	}
-
-	e.onEnd()
-	e.newTxCond.Broadcast()
+type PendingTransaction struct {
+	*pb.Transaction
+	endorser string
+	attrs    []string
 }
 
-func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction) error {
+func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string, attrs ...string) error {
 
 	if e == nil {
 		return fmt.Errorf("txNetwork not init yet")
 	}
 
-	err := e.topic.Write(tx)
+	err := e.topic.Write(&PendingTransaction{tx, client, attrs})
 	if err != nil {
 		logger.Error("Write tx fail", err)
 		return err
 	}
 
 	e.newTxCond.Broadcast()
-	return nil
-}
-
-type txNetworkUpdater struct {
-	stub *gossip.GossipStub
-}
-
-func (e *txNetworkEntry) handleTxTask(tx *pb.Transaction) error {
 	return nil
 }

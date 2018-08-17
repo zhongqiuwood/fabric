@@ -166,7 +166,7 @@ func (s *scheduleWorks) newSchedule(ctx context.Context, wishCount int) (context
 
 type catalogHandler struct {
 	CatalogHelper
-	hctx     context.Context
+	hctx     context.Context //hctx CAN NOT be used for waiting directly!
 	model    *model.Model
 	pulls    pullWorks
 	schedule scheduleWorks

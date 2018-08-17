@@ -1,20 +1,14 @@
 package txnetwork
 
 import (
-	"container/list"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	pb "github.com/abchain/fabric/protos"
 	"testing"
 )
 
-func initGlobalStatus() {
-	global = &txNetworkGlobal{
-		maxPeers:  def_maxPeer,
-		lruQueue:  list.New(),
-		lruIndex:  make(map[string]*list.Element),
-		selfpeers: make(map[*gossip.GossipStub]*selfPeerStatus),
-	}
+func initGlobalStatus() *txNetworkGlobal {
+	return CreateTxNetworkGlobal()
 }
 
 func createState(digest []byte, num uint64, endorse bool) *pb.PeerTxState {
@@ -30,11 +24,10 @@ func createState(digest []byte, num uint64, endorse bool) *pb.PeerTxState {
 }
 
 func TestTxGlobal(t *testing.T) {
-	initGlobalStatus()
+	global := initGlobalStatus()
 
-	self := global.SelfPeer(nil)
 	selfstatus := model.NewScuttlebuttStatus(global)
-	selfstatus.SetSelfPeer(self.peerId, self)
+	selfstatus.SetSelfPeer(global.selfId, &peerStatus{global.QuerySelf()})
 	m := model.NewGossipModel(selfstatus)
 
 	globalcat := new(globalCat)
@@ -114,12 +107,14 @@ func TestTxGlobal(t *testing.T) {
 
 	//update local
 	uself := model.NewscuttlebuttUpdate(nil)
-	uself.UpdateLocal(peerTxStatusUpdate{createState([]byte{2}, 4, false)})
+	uself.UpdateLocal(peerStatus{createState([]byte{2}, 4, false)})
 
 	err = m.RecvUpdate(uself)
 	if err != nil {
 		t.Fatal("recv update fail 2", err)
 	}
+
+	self := global.QuerySelf()
 
 	if self.Num != 4 {
 		t.Fatal("self update fail", self)
@@ -131,7 +126,7 @@ func TestTxGlobal(t *testing.T) {
 
 	//pick 2
 	pbin.Data[testpeername].Num = 2
-	pbin.Data[self.peerId] = &pb.Gossip_Digest_PeerState{}
+	pbin.Data[global.selfId] = &pb.Gossip_Digest_PeerState{}
 
 	uout2 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
 
@@ -151,7 +146,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("could not get update of testpeer", msgout2)
 	}
 
-	if s, ok := msgout2.Txs[self.peerId]; ok {
+	if s, ok := msgout2.Txs[global.selfId]; ok {
 
 		if s.Num != 4 {
 			t.Fatal("wrong selfpeer state", msgout2)
@@ -190,7 +185,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("pick ghost test peer")
 	}
 
-	if s, ok := msgout3.Txs[self.peerId]; ok {
+	if s, ok := msgout3.Txs[global.selfId]; ok {
 
 		if s.Num != 4 {
 			t.Fatal("wrong selfpeer state", msgout3)
@@ -206,5 +201,5 @@ func TestTxGlobal(t *testing.T) {
 }
 
 func TestTxGlobalTruncate(t *testing.T) {
-	initGlobalStatus()
+
 }

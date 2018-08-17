@@ -90,7 +90,7 @@ func (s *testPeerStatus) PickFrom(v_in VClock, u Update) (ScuttlebuttPeerUpdate,
 
 func (s *testPeerStatus) OutDate(ScuttlebuttStatus) {}
 
-func (s *testPeerStatus) Update(u_in ScuttlebuttPeerUpdate, gs_in ScuttlebuttStatus) error {
+func (s *testPeerStatus) Update(id string, u_in ScuttlebuttPeerUpdate, gs_in ScuttlebuttStatus) error {
 
 	u := transUpdate(u_in)
 	gs := transStatus(gs_in)
@@ -116,7 +116,7 @@ func (*testStatus) NewPeer(string) ScuttlebuttPeerStatus { return &testPeerStatu
 
 func (*testStatus) MissedUpdate(string, ScuttlebuttPeerUpdate) error { return nil }
 
-func (*testStatus) RemovePeer(ScuttlebuttPeerStatus) {}
+func (*testStatus) RemovePeer(string, ScuttlebuttPeerStatus) {}
 
 type TestPeer interface {
 	CreateModel() *Model

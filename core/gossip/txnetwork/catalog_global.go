@@ -12,23 +12,15 @@ import (
 	"time"
 )
 
-var global *txNetworkGlobal
-
-type peerTxStatusUpdate struct {
+type peerStatus struct {
 	*pb.PeerTxState
 }
 
-func (u peerTxStatusUpdate) To() model.VClock {
-	return standardVClock(u.GetNum())
+func (s peerStatus) To() model.VClock {
+	return s.To()
 }
 
-type peerStatus struct {
-	peerId string
-	peerTxStatusUpdate
-	lastAccess time.Time
-}
-
-func (s *peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
+func (s peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 	d, ok := d_in.(standardVClock)
 	if !ok {
 		panic("Type error, not standardVClock")
@@ -36,22 +28,22 @@ func (s *peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.Scutt
 
 	//we only copy endorsment in first picking (with d is 0)
 	if uint64(d) == 0 {
-		return s.peerTxStatusUpdate, u_in
+		return peerStatus{s.PeerTxState}, u_in
 	} else {
-		ret := peerTxStatusUpdate{new(pb.PeerTxState)}
+		ret := new(pb.PeerTxState)
 		ret.Num = s.GetNum()
 		ret.Digest = s.GetDigest()
 		ret.Signature = s.GetSignature()
-		return ret, u_in
+		return peerStatus{ret}, u_in
 	}
 
 }
 
-func (s *peerStatus) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
+func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
 
-	u, ok := u_in.(peerTxStatusUpdate)
+	u, ok := u_in.(peerStatus)
 	if !ok {
-		panic("Type error, not peerTxStatusUpdate")
+		panic("Type error, not peerStatus")
 	}
 
 	g, ok := g_in.(*txNetworkGlobal)
@@ -76,50 +68,38 @@ func (s *peerStatus) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scuttle
 
 	//TODO: verify the signature of incoming data
 
-	//we must lock global part
+	s.PeerTxState = u.PeerTxState
+
+	//update global part ...
 	g.Lock()
 	defer g.Unlock()
-	//DO WE NEED COPY?
-	s.peerTxStatusUpdate = u
-	s.lastAccess = time.Now()
+	if item, ok := g.lruIndex[id]; ok {
 
-	g.accessPeer(s.peerId)
+		if s, ok := item.Value.(*peerStatusItem); ok {
+			s.PeerTxState = u.PeerTxState
+			s.lastAccess = time.Now()
+			g.lruQueue.MoveToFront(item)
+		}
+
+	}
+
 	return nil
 }
 
-type selfPeerStatus struct {
-	sync.Once
-	*peerStatus
-}
-
-func (s *selfPeerStatus) create() *peerStatus {
-
-	s.Do(func() {
-		s.peerStatus = &peerStatus{
-			util.GenerateUUID(),
-			peerTxStatusUpdate{&pb.PeerTxState{
-				Digest: util.GenerateBytesUUID(),
-				//TODO: we must endorse it
-				Endorsement: []byte{1},
-			}},
-			time.Now(),
-		}
-
-		logger.Infof("Create self peer [%s]", s.peerStatus.peerId)
-	})
-
-	return s.peerStatus
+type peerStatusItem struct {
+	peerId string
+	*pb.PeerTxState
+	lastAccess time.Time
 }
 
 //txnetworkglobal manage all the peers across whole networks (mutiple peers)
 type txNetworkGlobal struct {
 	maxPeers int
 	sync.RWMutex
+	selfId    string
 	lruQueue  *list.List
 	lruIndex  map[string]*list.Element
 	onevicted []func([]string)
-
-	selfpeers map[*gossip.GossipStub]*selfPeerStatus
 }
 
 func (*txNetworkGlobal) GenDigest() model.Digest                                { return nil }
@@ -127,19 +107,10 @@ func (*txNetworkGlobal) MakeUpdate(_ model.Digest) model.Update                 
 func (*txNetworkGlobal) Update(_ model.Update) error                            { return nil }
 func (*txNetworkGlobal) MissedUpdate(string, model.ScuttlebuttPeerUpdate) error { return nil }
 
-func (g *txNetworkGlobal) accessPeer(id string) {
-
-	i, ok := g.lruIndex[id]
-
-	if ok {
-		g.lruQueue.MoveToFront(i)
-	}
-}
-
 func (g *txNetworkGlobal) truncateTailPeer(cnt int) (ret []string) {
 
 	for ; cnt > 0; cnt-- {
-		v, ok := g.lruQueue.Remove(g.lruQueue.Back()).(*peerStatus)
+		v, ok := g.lruQueue.Remove(g.lruQueue.Back()).(*peerStatusItem)
 		if !ok {
 			panic("Type error, not peerStatus")
 		}
@@ -158,7 +129,11 @@ func (g *txNetworkGlobal) addNewPeer(id string) *peerStatus {
 	}
 
 	if len(g.lruIndex) > g.maxPeers {
-		g.truncateTailPeer(len(g.lruIndex) - g.maxPeers)
+		ids := g.truncateTailPeer(len(g.lruIndex) - g.maxPeers)
+		//notify evicted
+		for _, f := range g.onevicted {
+			f(ids)
+		}
 	}
 
 	//if we can't truncate anypeer, just give up
@@ -167,14 +142,14 @@ func (g *txNetworkGlobal) addNewPeer(id string) *peerStatus {
 		return nil
 	}
 
-	ret := &peerStatus{
+	ret := &peerStatusItem{
 		id,
-		peerTxStatusUpdate{&pb.PeerTxState{}},
+		new(pb.PeerTxState),
 		time.Time{},
 	}
 	g.lruIndex[id] = g.lruQueue.PushBack(ret)
 
-	return ret
+	return &peerStatus{ret.PeerTxState}
 }
 
 func (g *txNetworkGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
@@ -184,21 +159,20 @@ func (g *txNetworkGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 	return g.addNewPeer(id)
 }
 
-func (g *txNetworkGlobal) RemovePeer(peer_in model.ScuttlebuttPeerStatus) {
-
-	peer, ok := peer_in.(*peerStatus)
-	if !ok {
-		panic("Type error, not peerStatus")
-	}
+func (g *txNetworkGlobal) RemovePeer(id string, _ model.ScuttlebuttPeerStatus) {
 
 	g.Lock()
 	defer g.Unlock()
 
-	item, ok := g.lruIndex[peer.peerId]
+	item, ok := g.lruIndex[id]
 
 	if ok {
 		g.lruQueue.Remove(item)
-		delete(g.lruIndex, peer.peerId)
+		delete(g.lruIndex, id)
+
+		for _, f := range g.onevicted {
+			f([]string{id})
+		}
 	}
 }
 
@@ -208,7 +182,7 @@ func (g *txNetworkGlobal) QueryPeer(id string) *pb.PeerTxState {
 
 	i, ok := g.lruIndex[id]
 	if ok {
-		s := i.Value.(*peerStatus).PeerTxState
+		s := i.Value.(*peerStatusItem).PeerTxState
 		if len(s.Endorsement) == 0 {
 			//never return an peer which is not inited
 			return nil
@@ -219,50 +193,82 @@ func (g *txNetworkGlobal) QueryPeer(id string) *pb.PeerTxState {
 	return nil
 }
 
+func (g *txNetworkGlobal) QuerySelf() *pb.PeerTxState {
+	ret := g.QueryPeer(g.selfId)
+	if ret == nil {
+		panic(fmt.Errorf("Do not create self peer [%s] in network", g.selfId))
+	}
+	return ret
+}
+
 func (g *txNetworkGlobal) BlockPeer(id string) {
 	g.RLock()
 	defer g.RUnlock()
 }
 
-func (g *txNetworkGlobal) regNotify(f func([]string)) {
+func (g *txNetworkGlobal) RegNotify(f func([]string)) {
 	g.Lock()
 	defer g.Unlock()
 	g.onevicted = append(g.onevicted, f)
 }
 
-func (g *txNetworkGlobal) notifyEvict(peers []*peerStatus) {
-	g.RLock()
-	defer g.RUnlock()
-
-	ids := make([]string, len(peers))
-
-	for i, p := range peers {
-		ids[i] = p.peerId
-	}
-
-	for _, f := range g.onevicted {
-		f(ids)
-	}
+type networkIndexs struct {
+	sync.Mutex
+	ind map[*gossip.GossipStub]*txNetworkGlobal
 }
 
-func (g *txNetworkGlobal) SelfPeer(stub *gossip.GossipStub) *peerStatus {
+func (g *networkIndexs) GetNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
 	g.Lock()
 	defer g.Unlock()
 
-	if s, ok := g.selfpeers[stub]; !ok {
-		g.selfpeers[stub] = &selfPeerStatus{}
+	if n, ok := g.ind[stub]; ok {
+		return n
 	} else {
-		return s.peerStatus
+		return nil
 	}
-
-	self := g.selfpeers[stub].create()
-	//*** self peer never come into LRU!
-	g.lruIndex[self.peerId] = &list.Element{Value: self}
-
-	return self
 }
 
-func GetNetworkStatus() *txNetworkGlobal { return global }
+func CreateTxNetworkGlobal() *txNetworkGlobal {
+	ret := &txNetworkGlobal{
+		maxPeers: def_maxPeer,
+		lruQueue: list.New(),
+		lruIndex: make(map[string]*list.Element),
+		selfId:   util.GenerateUUID(),
+	}
+
+	//also create self peer
+	self := &peerStatusItem{
+		"",
+		&pb.PeerTxState{
+			Digest: util.GenerateBytesUUID(),
+			//TODO: we must endorse it
+			Endorsement: []byte{1},
+		},
+		time.Now(),
+	}
+
+	logger.Infof("Create self peer [%s]", ret.selfId)
+	ret.lruIndex[ret.selfId] = &list.Element{Value: self}
+
+	return ret
+}
+
+func (g *networkIndexs) CreateNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
+	g.Lock()
+	defer g.Unlock()
+
+	if n, ok := g.ind[stub]; ok {
+		return n
+	}
+
+	ret := CreateTxNetworkGlobal()
+	g.ind[stub] = ret
+	return ret
+}
+
+var global networkIndexs
+
+func GetNetworkStatus() *networkIndexs { return &global }
 
 type globalCat struct {
 	policy gossip.CatalogPolicies
@@ -270,21 +276,16 @@ type globalCat struct {
 
 func init() {
 
-	global = &txNetworkGlobal{
-		maxPeers:  def_maxPeer,
-		lruQueue:  list.New(),
-		lruIndex:  make(map[string]*list.Element),
-		selfpeers: make(map[*gossip.GossipStub]*selfPeerStatus),
-	}
-
+	global.ind = make(map[*gossip.GossipStub]*txNetworkGlobal)
 	gossip.RegisterCat = append(gossip.RegisterCat, initNetworkStatus)
 }
 
 func initNetworkStatus(stub *gossip.GossipStub) {
 
-	self := global.SelfPeer(stub)
-	selfstatus := model.NewScuttlebuttStatus(global)
-	selfstatus.SetSelfPeer(self.peerId, self)
+	network := global.CreateNetwork(stub)
+	selfstatus := model.NewScuttlebuttStatus(network)
+
+	selfstatus.SetSelfPeer(network.selfId, &peerStatus{network.QuerySelf()})
 	m := model.NewGossipModel(selfstatus)
 
 	globalcat := new(globalCat)
@@ -330,7 +331,7 @@ func (c *globalCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Upda
 	msg := &pb.Gossip_TxState{make(map[string]*pb.PeerTxState)}
 
 	for id, iu_in := range u.PeerUpdate() {
-		iu, ok := iu_in.(peerTxStatusUpdate)
+		iu, ok := iu_in.(peerStatus)
 		if !ok {
 			panic("Type error, not peerTxStatusUpdate")
 		}
@@ -348,7 +349,7 @@ func (c *globalCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Me
 
 	u := model.NewscuttlebuttUpdate(nil)
 	for id, iu := range msg.Txs {
-		u.UpdatePeer(id, peerTxStatusUpdate{iu})
+		u.UpdatePeer(id, peerStatus{iu})
 	}
 
 	return u, nil

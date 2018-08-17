@@ -55,12 +55,6 @@ func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	return true
 }
 
-func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
-	//TODO: now we just put something in the nonce ...
-	tx.Nonce = []byte{2, 3, 3}
-	return tx
-}
-
 func (p *peerTxs) lastSeries() uint64 {
 	if p == nil || p.last == nil {
 		return 0
@@ -158,6 +152,7 @@ func (*txPoolCommited) Gossip_IsUpdateIn() bool { return true }
 type txPoolGlobal struct {
 	ind        map[string]*txMemPoolItem
 	ledger     *ledger.Ledger
+	network    *txNetworkGlobal
 	currentCpo gossip.CatalogPeerPolicies
 }
 
@@ -217,13 +212,12 @@ func (g *txPoolGlobal) Update(u_in model.Update) error {
 func (g *txPoolGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 
 	//check if we have known this peer
-	peerStatus := GetNetworkStatus().QueryPeer(id)
+	peerStatus := g.network.QueryPeer(id)
 	if peerStatus == nil {
 		return nil
 	}
 
 	ret := new(peerTxMemPool)
-	ret.peerId = id
 	ret.reset(createPeerTxItem(peerStatus))
 	return ret
 }
@@ -232,7 +226,7 @@ func (g *txPoolGlobal) MissedUpdate(string, model.ScuttlebuttPeerUpdate) error {
 	return nil
 }
 
-func (g *txPoolGlobal) RemovePeer(s_in model.ScuttlebuttPeerStatus) {
+func (g *txPoolGlobal) RemovePeer(id string, s_in model.ScuttlebuttPeerStatus) {
 	if s_in == nil {
 		return
 	}
@@ -248,7 +242,7 @@ func (g *txPoolGlobal) RemovePeer(s_in model.ScuttlebuttPeerStatus) {
 		delCount++
 	}
 
-	logger.Infof("Peer %s is removed, clean %d indexs", s.peerId, delCount)
+	logger.Infof("Peer %s is removed, clean %d indexs", id, delCount)
 }
 
 func (g *txPoolGlobal) index(i *txMemPoolItem) {
@@ -381,7 +375,6 @@ const (
 
 type peerTxMemPool struct {
 	*peerTxs
-	peerId string
 	//index help us to seek by a txid, it do not need to consensus with the size
 	//field in peerTxs
 	jlindex map[uint64]*txMemPoolItem
@@ -474,7 +467,7 @@ func (p *peerTxMemPool) purge(purgeto uint64, g *txPoolGlobal) {
 // for example, fill some update under un-existed peer name
 // so we given up scoring the peer until we have more solid process
 // to verify the correctness of data from far-end
-func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
+func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
 
 	if u_in == nil {
 		return nil
@@ -491,11 +484,11 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	}
 
 	//checkout global status
-	peerStatus := GetNetworkStatus().QueryPeer(p.peerId)
+	peerStatus := g.network.QueryPeer(id)
 	if peerStatus == nil {
 		//boom ..., but it may be caused by an stale peer-removing so not
 		//consider as error
-		logger.Warningf("Unknown status in global for peer %s", p.peerId)
+		logger.Warningf("Unknown status in global for peer %s", id)
 		return nil
 	}
 
@@ -505,7 +498,7 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	//our data is outdate, all cache is clear .... ...
 	if peerStatus.GetNum() > updatePos {
 		logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
-			p.peerId, p.last.digest, p.last.digestSeries)
+			id, p.last.digest, p.last.digestSeries)
 		isReset = true
 		updatePos = peerStatus.GetNum()
 	} else {
@@ -523,7 +516,7 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 	if isReset {
 
 		if !txIsMatch(peerStatus.GetDigest(), inTxs.head.tx) {
-			logger.Errorf("We may obtain branched data from peer %s: %s", p.peerId, err)
+			logger.Errorf("We may obtain branched data from peer %s: %s", id, err)
 			return nil
 		}
 		//we build jupming index after binding incoming txs, so we can't reset the whole
@@ -535,7 +528,7 @@ func (p *peerTxMemPool) Update(u_in model.ScuttlebuttPeerUpdate, g_in model.Scut
 		if err != nil {
 			//there is many possible for a far-end provided nonsense update for you
 			//(caused by itself or the original peer) so we just simply omit it
-			logger.Errorf("We may obtain branched data from peer %s: %s", p.peerId, err)
+			logger.Errorf("We may obtain branched data from peer %s: %s", id, err)
 			return nil
 		}
 	}
@@ -587,24 +580,25 @@ func initHotTx(stub *gossip.GossipStub) {
 	txglobal := new(txPoolGlobal)
 	txglobal.ind = make(map[string]*txMemPoolItem)
 	txglobal.ledger = l
+	txglobal.network = global.CreateNetwork(stub)
 
 	hotTx := new(hotTxCat)
 	hotTx.policy = gossip.NewCatalogPolicyDefault()
 
 	selfStatus := model.NewScuttlebuttStatus(txglobal)
 
-	gself := GetNetworkStatus().SelfPeer(stub)
-	self := &peerTxMemPool{peerId: gself.peerId}
-	self.reset(createPeerTxItem(gself.PeerTxState))
+	self := &peerTxMemPool{}
+	self.reset(createPeerTxItem(txglobal.network.QuerySelf()))
 
-	selfStatus.SetSelfPeer(self.peerId, self)
+	selfStatus.SetSelfPeer(txglobal.network.selfId, self)
 
 	m := model.NewGossipModel(selfStatus)
 
 	stub.AddCatalogHandler(hotTxCatName,
 		gossip.NewCatalogHandlerImpl(stub.GetSStub(),
 			stub.GetStubContext(), hotTx, m))
-	registerEvictFunc(hotTxCatName, m)
+
+	registerEvictFunc(txglobal.network, hotTxCatName, m)
 }
 
 const (

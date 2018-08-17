@@ -269,7 +269,7 @@ func TestPeerUpdate(t *testing.T) {
 
 func TestPeerTxPool(t *testing.T) {
 
-	initGlobalStatus()
+	global := initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
 
 	txchainBase := populatePoolItems(t, 39)
@@ -355,8 +355,9 @@ func TestPeerTxPool(t *testing.T) {
 	}
 
 	txGlobal := &txPoolGlobal{
-		ind:    make(map[string]*txMemPoolItem),
-		ledger: ledger,
+		ind:     make(map[string]*txMemPoolItem),
+		ledger:  ledger,
+		network: global,
 	}
 
 	udt := txPeerUpdate{new(pb.HotTransactionBlock)}
@@ -368,14 +369,12 @@ func TestPeerTxPool(t *testing.T) {
 	}
 
 	//must also add global state ...
-	pstatus := GetNetworkStatus().addNewPeer("test")
+	pstatus := global.addNewPeer("test")
 	pstatus.Digest = txchainBase.head.digest
 	pstatus.Endorsement = []byte{2, 3, 3}
 
-	pool.peerId = "anotherTest"
-
 	//you update an unknown peer, no effect in fact
-	err := pool.Update(udt, txGlobal)
+	err := pool.Update("anotherTest", udt, txGlobal)
 	if err != nil {
 		t.Fatal("update fail", err)
 	}
@@ -385,9 +384,8 @@ func TestPeerTxPool(t *testing.T) {
 	}
 
 	//now peerid is right
-	pool.peerId = "test"
 
-	err = pool.Update(udt, txGlobal)
+	err = pool.Update("test", udt, txGlobal)
 	if err != nil {
 		t.Fatal("update actual fail", err)
 	}
@@ -437,7 +435,7 @@ func TestPeerTxPool(t *testing.T) {
 	anotherpool.reset(indexs[5])
 
 	newChainArr := udt.Transactions
-	udt := txPeerUpdate{new(pb.HotTransactionBlock)}
+	udt = txPeerUpdate{new(pb.HotTransactionBlock)}
 	udt.fromTxs(indexs[39], 0)
 	if udt.BeginSeries != 39 || len(udt.Transactions) != 1 {
 		panic("wrong udt")
@@ -487,7 +485,7 @@ func TestPeerTxPool(t *testing.T) {
 
 func TestCatalogyHandler(t *testing.T) {
 
-	initGlobalStatus()
+	global := initGlobalStatus()
 	l := initTestLedgerWrapper(t)
 
 	txchainBase := populatePoolItems(t, 39)
@@ -496,13 +494,14 @@ func TestCatalogyHandler(t *testing.T) {
 
 	const testname = "test"
 
-	pstatus := GetNetworkStatus().addNewPeer(testname)
+	pstatus := global.addNewPeer(testname)
 	pstatus.Digest = txchainBase.head.digest
 	pstatus.Endorsement = []byte{2, 3, 3}
 
 	txglobal := new(txPoolGlobal)
 	txglobal.ind = make(map[string]*txMemPoolItem)
 	txglobal.ledger = l
+	txglobal.network = global
 
 	hotTx := new(hotTxCat)
 

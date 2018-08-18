@@ -11,7 +11,6 @@ import (
 	"os"
 	"io/ioutil"
 	"github.com/abchain/fabric/core/util"
-	"encoding/hex"
 )
 
 var populatedTxCnt = 32
@@ -47,15 +46,13 @@ func TestSwitchCheckpoint(t *testing.T) {
 
 func TestTraverseGS(t *testing.T) {
 
-	//return
-
 	db.Start()
 	defer deleteTestDBPath()
 	defer db.Stop()
 
 	//                                                                  <n1>
 	//                                                                   |
-	//                             <n11>--<c11>---<c12>---<n12>--<c13>--<b2>---<n13>---<n14>
+	//                            <n11>--<c11>---<c12>---<n12>--<c13>--<b2>---<n13>---<n14>
 	//                             |
 	//   <stateroot>----<c21>----<b0>----<c22>---<c23>---<n21>--<c24>--<b1>---<n22>---<n23>
 	//                            |                                     |
@@ -186,14 +183,6 @@ func TestTraverseGS(t *testing.T) {
 	gs = globalDataDB.GetGlobalState([]byte("b4"))
 	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
 
-
-	publicKeyInString := hex.EncodeToString([]byte("stateroot"))
-	publicKeyInString = string([]byte("stateroot"))
-	publicKeyInString = util.EncodeStatehash([]byte("stateroot"))
-
-	if len(publicKeyInString) == 0 {
-		return
-	}
 
 	branch2CheckpointsMap := traverseGlobalStateGraph([]byte("stateroot"), checkpointsMap)
 

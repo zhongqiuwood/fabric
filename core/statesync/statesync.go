@@ -24,6 +24,17 @@ var stateSyncCore *StateSync
 var syncerErr error
 var once sync.Once
 
+
+func NewStateSync(p peer.Peer) {
+
+	once.Do(func() {
+		stateSyncCore, syncerErr = GetNewStateSync(p)
+		if syncerErr != nil {
+			logger.Error("Create new state syncer fail:", syncerErr)
+		}
+	})
+}
+
 func GetNewStateSync(p peer.Peer) (*StateSync, error) {
 
 	stub := p.GetStreamStub("sync")
@@ -39,16 +50,6 @@ func GetStateSync() (*StateSync, error) {
 	return stateSyncCore, syncerErr
 }
 
-func NewStateSync(p peer.Peer) {
-	logger.Debug("State sync module inited")
-
-	once.Do(func() {
-		stateSyncCore, syncerErr = GetNewStateSync(p)
-		if syncerErr != nil {
-			logger.Error("Create new state syncer fail:", syncerErr)
-		}
-	})
-}
 
 type StateSync struct {
 	*pb.StreamStub
@@ -67,8 +68,9 @@ type ErrHandlerFatal struct {
 
 //main entry for statesync: it is synchronous and NOT re-entriable, but you can call IsBusy
 //at another thread and check its status
-func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt) error {
+func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer []*pb.PeerID) error {
 
+	var err error
 	s.Lock()
 	if s.curTask != nil {
 		s.Unlock()
@@ -78,6 +80,12 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 	s.curTask = ctx
 	s.curCorrrelation++
 	s.Unlock()
+	handlers := s.PickHandlers(peer)
+
+	for _, handler := range handlers {
+		err = handler.ExecuteSync(targetState)
+		break
+	}
 
 	defer func() {
 		s.Lock()
@@ -85,7 +93,7 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 		s.Unlock()
 	}()
 
-	return fmt.Errorf("Not implied")
+	return err
 }
 
 //if busy, return current correlation Id, els return 0
@@ -102,22 +110,46 @@ func (s *StateSync) IsBusy() uint64 {
 }
 
 type stateSyncHandler struct {
-	peerId  *pb.PeerID
-	handler *fsm.FSM
+	//localPeerId   *pb.PeerID
+	remotePeerId  *pb.PeerID
+	fsmHandler *fsm.FSM
 	server  *stateServer
 	client  *syncer
 	stream  *pb.StreamHandler
 	sync.Once
 }
 
-func newStateSyncHandler(id *pb.PeerID) pb.StreamHandlerImpl {
-	logger.Debug("create handler for peer", id)
+func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
+	logger.Debug("create handler for peer", remoterId)
 	h := &stateSyncHandler{
-		peerId: id,
+		//localPeerId: localId,
+		remotePeerId: remoterId,
 	}
 
-	h.handler = newHandler(h)
+	h.fsmHandler = newFsmHandler(h)
+
 	return h
+}
+
+func (h *stateSyncHandler) leaveIdle(e *fsm.Event) {
+
+	stateUpdate := "leaveIdle"
+	h.dumpStateUpdate(stateUpdate)
+}
+
+func (h *stateSyncHandler) enterIdle(e *fsm.Event) {
+
+	stateUpdate := "enterIdle"
+	h.dumpStateUpdate(stateUpdate)
+}
+
+func (h *stateSyncHandler) dumpStateUpdate(stateUpdate string) {
+	logger.Debugf("StateSyncHandler Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
+		stateUpdate, 0, h.remotePeerIdName())
+}
+
+func (h *stateSyncHandler) remotePeerIdName() string {
+	return h.remotePeerId.Name
 }
 
 //this should be call with a stateSyncHandler whose HandleMessage is called at least once
@@ -127,16 +159,15 @@ func pickStreamHandler(h *stateSyncHandler) *pb.StreamHandler {
 		return nil
 	}
 
-	streams := stateSyncCore.PickHandlers([]*pb.PeerID{h.peerId})
+	streamHandlers := stateSyncCore.PickHandlers([]*pb.PeerID{h.remotePeerId})
 	h.Do(func() {
-		if len(streams) > 0 {
-			h.stream = streams[0]
+		if len(streamHandlers) > 0 {
+			h.stream = streamHandlers[0]
 		}
 
 	})
 
 	return h.stream
-
 }
 
 func (h *stateSyncHandler) Stop() { return }
@@ -151,7 +182,7 @@ func (h *stateSyncHandler) HandleMessage(m proto.Message) error {
 
 	wrapmsg := m.(*pb.SyncMsg)
 
-	err := h.handler.Event(wrapmsg.Type.String(), wrapmsg)
+	err := h.fsmHandler.Event(wrapmsg.Type.String(), wrapmsg)
 
 	//CAUTION: DO NOT return error in non-fatal case or you will end the stream
 	if err != nil {
@@ -168,6 +199,20 @@ func (h *stateSyncHandler) HandleMessage(m proto.Message) error {
 func (h *stateSyncHandler) BeforeSendMessage(proto.Message) error {
 	return nil
 }
+
 func (h *stateSyncHandler) OnWriteError(e error) {
 	logger.Error("Sync handler encounter writer error:", e)
 }
+
+func (h *stateSyncHandler) InitStreamHandlerImpl() {
+
+	streamHandler := pickStreamHandler(h)
+
+	h.server = newStateServer(h, streamHandler)
+	h.client = newSyncer(nil, h, streamHandler)
+}
+
+func (h *stateSyncHandler) ExecuteSync(targetState []byte) error {
+	return h.client.InitiateSync(targetState)
+}
+

@@ -86,6 +86,7 @@ type Ledger struct {
 	state            *state.State
 	currentID        interface{}
 	currentStateHash []byte
+	snapshotMap      *dbsnapshotMap
 }
 
 var ledger *Ledger
@@ -117,13 +118,18 @@ func GetNewLedger() (*Ledger, error) {
 		return nil, err
 	}
 
-	state := state.NewState()
+	snapshotMap := newSnapshotMap()
 
 	err = sanityCheck()
 	if err != nil {
 		return nil, err
 	}
-	return &Ledger{blockchain, txpool, state, nil, nil}, nil
+
+	return &Ledger{blockchain, txpool, nil,nil, nil, snapshotMap}, nil
+
+	state := state.NewState()
+	return &Ledger{blockchain, txpool, state,
+		nil, nil, snapshotMap}, nil
 }
 
 func sanityCheck() error {
@@ -220,7 +226,8 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 		ledgerLogger.Warningf("Try to add existed globalstate: %x", state)
 	}
 
-	ledgerLogger.Info("Add globalstate [%x] on parent [%x]", state, parent)
+	ledgerLogger.Infof("Add globalstate [%x]", state)
+	ledgerLogger.Infof("      on parent [%x]", parent)
 	return nil
 }
 
@@ -252,6 +259,36 @@ func (ledger *Ledger) SwitchToCheckpointState(statehash []byte) error {
 	//return db.GetGlobalDBHandle().GetGlobalState(statehash)
 	return nil
 }
+
+
+func (ledger *Ledger) GetBlockByNumberBySnapshot(syncid string, blockNumber uint64) (*protos.Block, error) {
+	return ledger.snapshotMap.GetBlockByNumber(syncid, blockNumber)
+}
+
+func (ledger *Ledger) GetBlockchainSizeBySnapshot(syncid string) (uint64, error) {
+	return ledger.snapshotMap.GetBlockchainSize(syncid)
+}
+
+func (ledger *Ledger) ReleaseSnapshot(syncid string) {
+	ledger.snapshotMap.ReleaseSnapshot(syncid)
+}
+
+
+func (ledger *Ledger) GetStateDeltaBySnapshot(syncid string, blockNumber uint64) (*statemgmt.StateDelta, error) {
+
+	size, err := ledger.snapshotMap.GetBlockchainSize(syncid)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if blockNumber >= size {
+		return nil, ErrOutOfBounds
+	}
+
+	return ledger.snapshotMap.GetStateDelta(syncid, blockNumber)
+}
+
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
@@ -361,6 +398,9 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	//all commit done, we can add global state
+	ledgerLogger.Debugf("BlockchainSize: %d, newBlockNumber: %d",
+		ledger.GetBlockchainSize(),	newBlockNumber)
+
 	dbErr = ledger.AddGlobalState(ledger.currentStateHash, stateHash)
 
 	if dbErr != nil {
@@ -379,6 +419,11 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	if len(transactionResults) != 0 {
 		ledgerLogger.Debug("There were some erroneous transactions. We need to send a 'TX rejected' message here.")
 	}
+
+	if newBlockNumber == 2 || newBlockNumber == 5 || newBlockNumber == 7 {
+		db.GetDBHandle().CheckpointCurrent(stateHash)
+	}
+
 
 	// docp := viper.GetBool("peer.db.perBlockPerCheckpoint")
 	// if protos.CurrentDbVersion == 1 && docp {

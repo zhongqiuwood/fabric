@@ -259,8 +259,9 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 	peer.pctx = pctx
 	peer.onEnd = endf
 
-	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory())
-	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory())
+
+	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory(), "gossipStub")
+	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory(), "syncStub")
 
 	//mapping of all streamstubs above:
 	peer.streamStubs = map[string]*pb.StreamStub{
@@ -502,9 +503,9 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 				continue
 			}
 
-			go func(conn *grpc.ClientConn, k *pb.PeerID) {
-				peerLogger.Debugf("start streamhandler %s for peer %s", name, key.GetName())
-				err := stub.HandleClient(conn, k)
+			go func(conn *grpc.ClientConn, remotePeer *pb.PeerID) {
+				peerLogger.Debugf("start streamhandler %s for remote peer %s", name, key.GetName())
+				err := stub.HandleClient(conn, remotePeer, p.self.ID)
 				if err != nil {
 					peerLogger.Errorf("streamhandler %s fail: %s", name, err)
 				}

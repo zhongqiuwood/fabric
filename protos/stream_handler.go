@@ -8,6 +8,7 @@ import (
 	"io"
 	"math/rand"
 	"sync"
+	"github.com/looplab/fsm"
 )
 
 /*
@@ -52,6 +53,8 @@ type StreamHandlerImpl interface {
 	BeforeSendMessage(proto.Message) error
 	OnWriteError(error)
 	Stop()
+	ExecuteSync(targetState []byte) error
+	InitStreamHandlerImpl()
 }
 
 type StreamHandler struct {
@@ -62,6 +65,7 @@ type StreamHandler struct {
 	enableLoss  bool
 	writeQueue  chan proto.Message
 	writeExited chan error
+	remotePeerid *PeerID
 }
 
 const (
@@ -78,18 +82,65 @@ func newStreamHandler(impl StreamHandlerImpl) *StreamHandler {
 	}
 }
 
-func (h *StreamHandler) GetName() string {
-	if h == nil {
-		return ""
+
+func (streamHandler *StreamHandler) SendSyncMsg(e *fsm.Event, msgType SyncMsg_Type, payloadMsg proto.Message) error {
+
+	logger.Debugf("SendSyncMsg <%s> to <%s>", msgType.String(), streamHandler.remotePeerid.Name)
+
+	var data = []byte(nil)
+
+	if payloadMsg != nil {
+		tmp, err := proto.Marshal(payloadMsg)
+		if err != nil {
+			lerr := fmt.Errorf("Error Marshalling payload message for <%s>: %s", msgType.String(), err)
+			logger.Info(lerr.Error())
+			if e != nil {
+				e.Cancel(&fsm.NoTransitionError{Err: lerr})
+			}
+			return lerr
+		}
+		data = tmp
 	}
+
+	err := streamHandler.SendMessage(&SyncMsg{
+		Type: msgType,
+		Payload: data})
+
+	if err != nil {
+		logger.Errorf("Error sending %s : %s", msgType, err)
+	}
+	return err
+}
+
+func (streamHandler *StreamHandler) LoadSyncMsg(e *fsm.Event, payloadMsg proto.Message) *SyncMsg {
+
+	logger.Debugf("LoadSyncMsg from <%s>", streamHandler.remotePeerid.Name)
+
+	if _, ok := e.Args[0].(*SyncMsg); !ok {
+		e.Cancel(fmt.Errorf("Received unexpected sync message type"))
+		return nil
+	}
+	msg := e.Args[0].(*SyncMsg)
+
+	if payloadMsg != nil {
+		err := proto.Unmarshal(msg.Payload, payloadMsg)
+		if err != nil {
+			e.Cancel(fmt.Errorf("Error unmarshalling %s: %s", msg.Type.String(), err))
+			return nil
+		}
+	}
+
+	logger.Debugf("LoadSyncMsg <%s> from <%s>", msg.Type.String(), streamHandler.remotePeerid.Name)
+
+	return msg
+}
+
+
+func (h *StreamHandler) GetName() string {
 	return h.name
 }
 
 func (h *StreamHandler) SendMessage(m proto.Message) error {
-
-	if h == nil {
-		return fmt.Errorf("Stream is not exist")
-	}
 
 	h.RLock()
 	defer h.RUnlock()
@@ -137,7 +188,9 @@ func (h *StreamHandler) endHandler() {
 
 }
 
-func (h *StreamHandler) handleStream(stream grpc.Stream) error {
+func (h *StreamHandler) handleStream(stream grpc.Stream, remotePeerid *PeerID) error {
+
+	h.InitStreamHandlerImpl()
 
 	//dispatch write goroutine
 	go h.handleWrite(stream)
@@ -182,14 +235,17 @@ type shandlerMap struct {
 type StreamStub struct {
 	StreamHandlerFactory
 	handlerMap *shandlerMap
+	Name string
 }
 
-func NewStreamStub(factory StreamHandlerFactory) *StreamStub {
+func NewStreamStub(factory StreamHandlerFactory, name string) *StreamStub {
+
 	return &StreamStub{
 		StreamHandlerFactory: factory,
 		handlerMap: &shandlerMap{
 			m: make(map[PeerID]*StreamHandler),
 		},
+		Name: name,
 	}
 }
 
@@ -202,8 +258,6 @@ func (s *StreamStub) registerHandler(h *StreamHandler, peerid *PeerID) error {
 	}
 	h.name = peerid.Name
 	s.handlerMap.m[*peerid] = h
-
-	logger.Debugf("register handler for far-end peer %s", peerid.GetName())
 	return nil
 }
 
@@ -211,7 +265,6 @@ func (s *StreamStub) unRegisterHandler(peerid *PeerID) {
 	s.handlerMap.Lock()
 	defer s.handlerMap.Unlock()
 	if _, ok := s.handlerMap.m[*peerid]; ok {
-		logger.Debugf("unregister handler for far-end peer %s", peerid.GetName())
 		delete(s.handlerMap.m, *peerid)
 	}
 }
@@ -252,10 +305,9 @@ func (s *StreamStub) deliverHandlers(ctx context.Context, peerids []*PeerID, out
 			select {
 			case out <- &PickedStreamHandler{id, nil, h}:
 			case <-ctx.Done():
-				break
+				return
 			}
 		}
-
 	}
 
 	close(out)
@@ -314,6 +366,7 @@ func (s *StreamStub) PickHandler(peerid *PeerID) *StreamHandler {
 	return strms[0]
 }
 
+
 func (s *StreamStub) PickHandlers(peerids []*PeerID) []*StreamHandler {
 
 	s.handlerMap.Lock()
@@ -366,7 +419,7 @@ func (s *StreamStub) Broadcast(ctx context.Context, m proto.Message) (err error,
 
 }
 
-func (s *StreamStub) HandleClient(conn *grpc.ClientConn, peerid *PeerID) error {
+func (s *StreamStub) HandleClient(conn *grpc.ClientConn, remotePeerid *PeerID, localPeerid *PeerID) error {
 	clistrm, err := s.NewClientStream(conn)
 
 	if err != nil {
@@ -375,49 +428,58 @@ func (s *StreamStub) HandleClient(conn *grpc.ClientConn, peerid *PeerID) error {
 
 	defer clistrm.CloseSend()
 
-	err = clistrm.SendMsg(peerid)
+	// handshake: send my id to remote peer
+	err = clistrm.SendMsg(localPeerid)
 	if err != nil {
 		return err
 	}
 
-	himpl, err := s.NewStreamHandlerImpl(peerid, s, true)
+	// himpl is stateSyncHandler or GossipHandlerImpl
+	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, true)
 
 	if err != nil {
 		return err
 	}
 
-	h := newStreamHandler(himpl)
+	streamHandler := newStreamHandler(himpl)
+	streamHandler.remotePeerid = remotePeerid
 
-	err = s.registerHandler(h, peerid)
+	err = s.registerHandler(streamHandler, remotePeerid)
 	if err != nil {
 		return err
 	}
 
-	defer s.unRegisterHandler(peerid)
-	return h.handleStream(clistrm)
+	defer s.unRegisterHandler(remotePeerid)
+	err = streamHandler.handleStream(clistrm, remotePeerid)
+
+	return err
+
 }
 
 func (s *StreamStub) HandleServer(stream grpc.ServerStream) error {
 
-	id := new(PeerID)
-	err := stream.RecvMsg(id)
+	remotePeerid := new(PeerID)
+
+	// handshake: receive remote peer id
+	err := stream.RecvMsg(remotePeerid)
 	if err != nil {
 		return err
 	}
 
-	himpl, err := s.NewStreamHandlerImpl(id, s, false)
+	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, false)
 
 	if err != nil {
 		return err
 	}
 
-	h := newStreamHandler(himpl)
+	streamHandler := newStreamHandler(himpl)
+	streamHandler.remotePeerid = remotePeerid
 
-	err = s.registerHandler(h, id)
+	err = s.registerHandler(streamHandler, remotePeerid)
 	if err != nil {
 		return err
 	}
 
-	defer s.unRegisterHandler(id)
-	return h.handleStream(stream)
+	defer s.unRegisterHandler(remotePeerid)
+	return streamHandler.handleStream(stream, remotePeerid)
 }

@@ -17,7 +17,7 @@ type peerStatus struct {
 }
 
 func (s peerStatus) To() model.VClock {
-	return s.To()
+	return standardVClock(s.GetNum())
 }
 
 func (s peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
@@ -73,6 +73,10 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 	//update global part ...
 	g.Lock()
 	defer g.Unlock()
+	//in case we are update local
+	if id == "" {
+		id = g.selfId
+	}
 	if item, ok := g.lruIndex[id]; ok {
 
 		if s, ok := item.Value.(*peerStatusItem); ok {
@@ -248,7 +252,8 @@ func CreateTxNetworkGlobal() *txNetworkGlobal {
 	}
 
 	logger.Infof("Create self peer [%s]", ret.selfId)
-	ret.lruIndex[ret.selfId] = &list.Element{Value: self}
+	item := &list.Element{Value: self}
+	ret.lruIndex[ret.selfId] = item
 
 	return ret
 }

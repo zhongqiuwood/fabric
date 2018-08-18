@@ -491,6 +491,7 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 	//also start all other stream stubs
 	ctxk := peerConnCtxKey("conn")
 	v := ctx.Value(ctxk)
+
 	if v == nil {
 		peerLogger.Errorf("No connection can be found in context")
 	} else {
@@ -508,7 +509,7 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 				if err != nil {
 					peerLogger.Errorf("streamhandler %s fail: %s", name, err)
 				}
-			}(v.(*grpc.ClientConn), key)
+			}(v.(*grpc.ClientConn), p.self.ID)
 		}
 	}
 

@@ -347,6 +347,7 @@ func TestPeerTxPool(t *testing.T) {
 	//"cut" the new chain ..., keep baseChain unchange
 	newAddHead := txChainAdd.head.next
 	txChainAdd.head.next = nil
+
 	txChainAdd.head = newAddHead
 
 	//collect more items ...
@@ -430,17 +431,29 @@ func TestPeerTxPool(t *testing.T) {
 	checkTx(45)
 	checkTx(55)
 
+	//"cut" the new chain again (which is concat in update of pool)
+	indexs[39].next = nil
 	//test update including older data
 	anotherpool := new(peerTxMemPool)
 	anotherpool.reset(indexs[5])
 
+	if anotherpool.lastSeries() != 39 {
+		panic("wrong resetting")
+	}
+
 	newChainArr := udt.Transactions
 	udt = txPeerUpdate{new(pb.HotTransactionBlock)}
-	udt.fromTxs(indexs[39], 0)
+	udt.fromTxs(&peerTxs{indexs[39], indexs[39]}, 0)
 	if udt.BeginSeries != 39 || len(udt.Transactions) != 1 {
 		panic("wrong udt")
 	}
 	udt.Transactions = append(udt.Transactions, newChainArr...)
+
+	anotherpool.Update("test", udt, txGlobal)
+
+	if anotherpool.lastSeries() != 59 {
+		t.Fatal("unexpected last for update with old data", pool.lastSeries())
+	}
 
 	//test purge
 	pool.purge(50, txGlobal)

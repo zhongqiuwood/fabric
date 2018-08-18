@@ -10,6 +10,10 @@ import (
 	pb "github.com/abchain/fabric/protos"
 )
 
+const (
+	epochInterval = uint64(512)
+)
+
 type txNetworkHandlerImpl struct {
 	*gossip.GossipStub
 	defaultEndorser crypto.Client
@@ -25,14 +29,61 @@ func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
 	return tx
 }
 
+func (t *txNetworkHandlerImpl) updateHotTx(txs *pb.HotTransactionBlock, lastDigest []byte, lastSeries uint64) {
+
+	hotcat := t.GossipStub.GetCatalogHandler(hotTxCatName)
+	if hotcat == nil {
+		panic("Can't not found corresponding catalogHandler")
+	}
+
+	selfUpdate := model.NewscuttlebuttUpdate(nil)
+	selfUpdate.UpdateLocal(txPeerUpdate{txs})
+
+	if err := hotcat.Model().Update(selfUpdate); err != nil {
+		logger.Errorf("Update hot transaction to self fail!")
+	} else {
+		t.lastDigest = lastDigest
+		t.lastSeries = lastSeries
+
+		//notify our peer is updated
+		hotcat.SelfUpdate()
+	}
+}
+
 func (t *txNetworkHandlerImpl) updateEpoch() {
 
+	//we do not need to update catalogy for the first time
+	if t.epochSeries == 0 {
+		t.epochDigest = t.lastDigest
+		t.epochSeries = t.lastSeries
+		return
+	}
+
+	globalcat := t.GossipStub.GetCatalogHandler(globalCatName)
+	if globalcat == nil {
+		panic("Can't not found corresponding catalogHandler")
+	}
+
+	newstate := &pb.PeerTxState{Digest: t.epochDigest, Num: t.epochSeries}
+	//TODO: make signature
+
+	selfUpdate := model.NewscuttlebuttUpdate(nil)
+	selfUpdate.UpdateLocal(peerStatus{newstate})
+
+	if err := globalcat.Model().Update(selfUpdate); err != nil {
+		logger.Errorf("Update hot transaction to self fail!")
+	} else {
+		t.epochDigest = t.lastDigest
+		t.epochSeries = t.lastSeries
+
+		//notify our peer is updated
+		globalcat.SelfUpdate()
+	}
 }
 
 func (t *txNetworkHandlerImpl) HandleTxs(txs []PendingTransaction) error {
 
-	selfUpdate := model.NewscuttlebuttUpdate(nil)
-	txUpdate := txPeerUpdate{new(pb.HotTransactionBlock)}
+	outtxs := new(pb.HotTransactionBlock)
 
 	lastDigest := t.lastDigest
 	lastSeries := t.lastSeries
@@ -56,23 +107,13 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []PendingTransaction) error {
 		lastDigest = getTxDigest(tx.Transaction)
 		lastSeries = lastSeries + 1
 
-		txUpdate.Transactions = append(txUpdate.Transactions, tx.Transaction)
+		outtxs.Transactions = append(outtxs.Transactions, tx.Transaction)
 	}
 
-	selfUpdate.UpdateLocal(txUpdate)
+	t.updateHotTx(outtxs, lastDigest, lastSeries)
 
-	hotcat := t.GossipStub.GetCatalogHandler(hotTxCatName)
-	if hotcat == nil {
-		panic("Can't not found corresponding catalogHandler")
-	}
-	if err := hotcat.Model().Update(selfUpdate); err != nil {
-		logger.Errorf("Update hot transaction to self fail!")
-	} else {
-		t.lastDigest = lastDigest
-		t.lastSeries = lastSeries
-
-		//notify our peer is updated
-		hotcat.SelfUpdate()
+	if t.epochSeries+epochInterval < t.lastSeries {
+		t.updateEpoch()
 	}
 
 	return nil

@@ -444,7 +444,7 @@ func (p *peerTxMemPool) purge(purgeto uint64, g *txPoolGlobal) {
 	}
 
 	//purge global index first
-	for beg := p.head; beg != preserved.head; beg = beg.next {
+	for beg := p.head; beg.digestSeries < preserved.head.digestSeries; beg = beg.next {
 		delete(g.ind, beg.tx.GetTxid())
 	}
 

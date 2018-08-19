@@ -9,21 +9,22 @@ import (
 	"golang.org/x/net/context"
 	"time"
 	"github.com/spf13/viper"
-	"bytes"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/flogging"
+	"bytes"
 )
 
 type syncer struct {
 	context.Context
-	*pb.StreamHandler
 	parent *stateSyncHandler
 	ledger *ledger.Ledger
-	positionResp chan *pb.SyncStateResp
 	blocksResp chan *pb.SyncBlocks
-	deltaResp  chan *pb.SyncStateDeltas
+
+	positionResp chan *pb.SyncStateResp
+	deltaResp    chan *pb.SyncBlockState
+
 	correlationId uint64
 
 	maxStateDeltas     int    // The maximum number of state deltas to attempt to retrieve before giving up and performing a full state snapshot retrieval
@@ -59,14 +60,13 @@ func newSyncer(ctx context.Context, h *stateSyncHandler, streamHandler *pb.Strea
 
 	sts = &syncer{positionResp: make(chan *pb.SyncStateResp),
 		ledger:        l,
-		StreamHandler: streamHandler,
 		Context:       ctx,
 		parent:        h,
 	}
 
 	var err error
 	sts.blocksResp = make(chan *pb.SyncBlocks)
-	sts.deltaResp = make(chan *pb.SyncStateDeltas)
+	sts.deltaResp = make(chan *pb.SyncBlockState)
 
 	sts.RecoverDamage = viper.GetBool("statetransfer.recoverdamage")
 
@@ -110,77 +110,6 @@ func newSyncer(ctx context.Context, h *stateSyncHandler, streamHandler *pb.Strea
 	return
 }
 
-func (sts *syncer) InitiateSync(targetState []byte) error {
-
-	defer logger.Infof("[%s]: Exit InitiateSync to <%s>", flogging.GoRDef, sts.parent.remotePeerIdName())
-	defer sts.fini()
-
-	logger.Infof("[%s]: Enter InitiateSync to <%s>", flogging.GoRDef, sts.parent.remotePeerIdName())
-	//---------------------------------------------------------------------------
-	// 1. query
-	//---------------------------------------------------------------------------
-	mostRecentIdenticalHistoryPosition, endBlockNumber, err := sts.getSyncTargetBlockNumber()
-	if err != nil {
-		logger.Errorf("[%s]: InitiateSync, getSyncTargetBlockNumber err: %s", flogging.GoRDef, err)
-		return err
-	}
-	logger.Infof("[%s]: InitiateSync, query done. mostRecentIdenticalHistoryPosition:%d",
-		flogging.GoRDef, mostRecentIdenticalHistoryPosition)
-
-	startBlockNumber := mostRecentIdenticalHistoryPosition
-
-	//---------------------------------------------------------------------------
-	// 2. switch to the right checkpoint
-	//---------------------------------------------------------------------------
-	//checkpointPosition, err := sts.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
-	//if err != nil {
-	//	logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
-	//
-	//	return err
-	//}
-	//startBlockNumber = checkpointPosition + 1
-	//logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
-	//	flogging.GoRDef, startBlockNumber, endBlockNumber)
-
-
-	//---------------------------------------------------------------------------
-	// 3. sync blocks
-	//---------------------------------------------------------------------------
-	// explicitly go to syncblocks state
-	sts.parent.fsmHandler.Event(enterGetBlock)
-	logger.Infof("[%s]: explicitly go to syncblocks state, startBlockNumber<%d>, endBlockNumber<%d>",
-		flogging.GoRDef, startBlockNumber, endBlockNumber)
-
-	err = sts.syncBlocks(startBlockNumber, endBlockNumber)
-	if err != nil {
-		logger.Errorf("[%s]: InitiateSync, sync blocks err: %s", flogging.GoRDef, err)
-		return err
-	}
-	logger.Infof("[%s]: InitiateSync, sync blocks done", flogging.GoRDef)
-
-	//---------------------------------------------------------------------------
-	// 4. sync detals
-	//---------------------------------------------------------------------------
-	// explicitly go to syncdelta state
-	sts.parent.fsmHandler.Event(enterGetDelta)
-	_, err = sts.syncDeltas(startBlockNumber, endBlockNumber)
-
-	if err != nil {
-		logger.Errorf("[%s]: InitiateSync, syncDeltas err: %s", flogging.GoRDef, err)
-		return err
-	}
-	logger.Infof("[%s]: InitiateSync, sync detals done", flogging.GoRDef)
-
-	//---------------------------------------------------------------------------
-	// 5. sync snapshot
-	//---------------------------------------------------------------------------
-
-	//---------------------------------------------------------------------------
-	// 6. the end
-	//---------------------------------------------------------------------------
-	return err
-}
-
 
 //---------------------------------------------------------------------------
 // 1. receive start confirmed
@@ -188,7 +117,8 @@ func (sts *syncer) InitiateSync(targetState []byte) error {
 func (sts *syncer) afterSyncStartResponse(e *fsm.Event) {
 	// implicitly go into synclocating state
 	payloadMsg := &pb.SyncStateResp{}
-	msg := sts.LoadSyncMsg(e, payloadMsg)
+
+	msg := sts.parent.onRecvSyncMsg(e, payloadMsg)
 	if msg == nil {
 		return
 	}
@@ -200,7 +130,7 @@ func (sts *syncer) afterSyncStartResponse(e *fsm.Event) {
 //---------------------------------------------------------------------------
 func (sts *syncer) afterQueryResponse(e *fsm.Event) {
 	payloadMsg := &pb.SyncStateResp{}
-	msg := sts.LoadSyncMsg(e, payloadMsg)
+	msg := sts.parent.onRecvSyncMsg(e, payloadMsg)
 	if msg == nil {
 		return
 	}
@@ -213,7 +143,7 @@ func (sts *syncer) afterQueryResponse(e *fsm.Event) {
 func (sts *syncer) afterSyncBlocks(e *fsm.Event) {
 
 	payloadMsg := &pb.SyncBlocks{}
-	msg := sts.LoadSyncMsg(e, payloadMsg)
+	msg := sts.parent.onRecvSyncMsg(e, payloadMsg)
 	if msg == nil {
 		return
 	}
@@ -225,8 +155,8 @@ func (sts *syncer) afterSyncBlocks(e *fsm.Event) {
 //---------------------------------------------------------------------------
 func (sts *syncer) afterSyncStateDeltas(e *fsm.Event) {
 
-	payloadMsg := &pb.SyncStateDeltas{}
-	msg := sts.LoadSyncMsg(e, payloadMsg)
+	payloadMsg := &pb.SyncBlockState{}
+	msg := sts.parent.onRecvSyncMsg(e, payloadMsg)
 	if msg == nil {
 		return
 	}
@@ -248,7 +178,7 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
 	sts.parent.fsmHandler.Event(enterSyncBegin)
 	// todo create a fake fsm.Event
-	err := sts.SendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_START, nil)
+	err := sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_START, nil)
 
 	if err != nil {
 		return 0, 0, err
@@ -280,7 +210,7 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
 		targetBlockNumber = (start + end) / 2
 
-		err = sts.SendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_QUERY,
+		err = sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_QUERY,
 			&pb.SyncStateQuery{uint32(sts.correlationId), targetBlockNumber})
 
 		if err != nil {
@@ -316,6 +246,46 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 }
 
 
+func (sts *syncer) sanityCheckBlock(block *pb.Block, stateHash []byte,
+	deltaMessage *pb.SyncBlockState) ([]byte, error){
+
+	success := false
+	lastStateHash := stateHash
+	stateHash, err := sts.ledger.GetCurrentStateHash()
+	if err != nil {
+		logger.Warningf("Could not compute state hash for some reason: %s", err)
+	}
+
+	logger.Debugf("Played state forward from %s to block %d with StateHash (%x), "+
+		"block has StateHash (%x)",
+		sts.parent.remotePeerIdName(),
+		deltaMessage.Range.End, stateHash,
+		block.StateHash)
+
+	if bytes.Equal(block.StateHash, stateHash) {
+		success = true
+		//add new statehash, and we omit errors
+		sts.ledger.AddGlobalState(lastStateHash, stateHash)
+		lastStateHash = stateHash
+	}
+
+	if !success {
+		if sts.ledger.RollbackStateDelta(deltaMessage) != nil {
+			sts.stateValid = false
+			err = fmt.Errorf(
+				"played state forward according to %s, but the state hash did not match, "+
+					"failed to roll back, invalidated state",
+				sts.parent.remotePeerIdName())
+			return nil, err
+		}
+		err = fmt.Errorf("Played state forward according to %s, "+
+			"but the state hash did not match, rolled back", sts.parent.remotePeerIdName())
+		return nil, err
+	}
+
+	return lastStateHash, nil
+}
+
 func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, error) {
 	logger.Debugf("Attempting to play state forward from %v to block %d",
 		sts.parent.remotePeerIdName(),
@@ -325,11 +295,11 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 	intermediateBlock := endBlockNumber
 	currentStateBlockNumber := startBlockNumber
 
-	block, err := sts.ledger.GetBlockByNumber(startBlockNumber - 1)
+	localBlock, err := sts.ledger.GetBlockByNumber(startBlockNumber - 1)
 	if err != nil {
 		return startBlockNumber, err
 	}
-	lastStateHash := block.StateHash
+	lastStateHash := localBlock.StateHash
 
 	logger.Debugf("Requesting state delta range from %d to %d",
 		startBlockNumber, intermediateBlock)
@@ -340,7 +310,7 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 		intermediateBlock,
 	}
 	payloadMsg := &pb.SyncStateDeltasRequest{Range: syncBlockRange}
-	err = sts.SendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_GET_DELTAS, payloadMsg)
+	err = sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_GET_DELTAS, payloadMsg)
 
 	if err != nil {
 		return startBlockNumber, fmt.Errorf("Received an error while trying to get " +
@@ -367,71 +337,37 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 				break
 			}
 
-			for _, delta := range deltaMessage.Deltas {
+			for _, syncData := range deltaMessage.Syncdata {
 
+				delta := syncData.StateDelta
+				block := syncData.Block
 				umDelta := &statemgmt.StateDelta{}
 				if err := umDelta.Unmarshal(delta); nil != err {
 					err = fmt.Errorf("Received a corrupt state delta from %s : %s",
 						sts.parent.remotePeerIdName(), err)
 					break
 				}
-
 				logger.Debugf("Range.Start<%d>, Range.End<%d>. sts.ledger.ApplyStateDelta: sts.currentStateBlockNumber<%d>",
 					deltaMessage.Range.Start,
 					deltaMessage.Range.End,
 					currentStateBlockNumber)
-
 				sts.ledger.ApplyStateDelta(deltaMessage, umDelta)
 
-				success := false
-
-				testBlock, err := sts.ledger.GetBlockByNumber(currentStateBlockNumber)
-
-				if err != nil {
-					logger.Warningf("Could not retrieve block %d, though it should be present",
-						deltaMessage.Range.End)
-				} else {
-
-					stateHash, err = sts.ledger.GetCurrentStateHash()
+				if block != nil {
+					lastStateHash, err = sts.sanityCheckBlock(block, lastStateHash, deltaMessage)
 					if err != nil {
-						logger.Warningf("Could not compute state hash for some reason: %s", err)
-					}
-					logger.Debugf("Played state forward from %s to block %d with StateHash (%x), " +
-						"block has StateHash (%x)",
-						sts.parent.remotePeerIdName(),
-						deltaMessage.Range.End, stateHash,
-						testBlock.StateHash)
-
-					if bytes.Equal(testBlock.StateHash, stateHash) {
-						success = true
-						//add new statehash, and we omit errors
-						sts.ledger.AddGlobalState(lastStateHash, stateHash)
-						lastStateHash = stateHash
-					}
-				}
-
-				if !success {
-					if sts.ledger.RollbackStateDelta(deltaMessage) != nil {
-						sts.stateValid = false
-						err = fmt.Errorf(
-							"played state forward according to %s, but the state hash did not match, " +
-								"failed to roll back, invalidated state",
-							sts.parent.remotePeerIdName())
 						break
 					}
-					err = fmt.Errorf("Played state forward according to %s, " +
-						"but the state hash did not match, rolled back", sts.parent.remotePeerIdName())
-					break
-
 				}
 
 				logger.Debugf("sts.ledger.CommitStateDelta: sts.currentStateBlockNumber<%d>",
 					currentStateBlockNumber)
 
-				if sts.ledger.CommitStateDelta(deltaMessage) != nil {
+				if sts.ledger.CommitBlockAndStateDelta(currentStateBlockNumber, block, deltaMessage) != nil {
 					sts.stateValid = false
 					err = fmt.Errorf("Played state forward according to %s, " +
 						"hashes matched, but failed to commit, invalidated state", sts.parent.remotePeerIdName())
+					logger.Errorf("err <%s>", err)
 					break
 				}
 
@@ -456,7 +392,9 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 		}
 	}
 
-	logger.Infof("State is now valid at block %d and hash %x", currentStateBlockNumber, stateHash)
+	if err == nil {
+		logger.Infof("State is now valid at block %d and hash %x", currentStateBlockNumber, stateHash)
+	}
 	return currentStateBlockNumber, err
 }
 
@@ -486,7 +424,7 @@ func (sts *syncer) syncBlocks(startBlock, endBlock uint64) error {
 			sts.correlationId,
 			blockCursor, intermediateBlock)
 
-		err = sts.SendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_GET_BLOCKS,
+		err = sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_GET_BLOCKS,
 			&pb.SyncBlockRange{
 				sts.correlationId,
 				blockCursor,
@@ -619,38 +557,6 @@ func (sts *syncer) dumpStateUpdate(stateUpdate string) {
 		stateUpdate, sts.correlationId, sts.parent.remotePeerIdName())
 }
 
-func (sts *syncer) fini() {
-
-	err := sts.SendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_END, nil)
-
-	if err != nil {
-		logger.Errorf("[%s]: SendSyncMsg SyncMsg_SYNC_SESSION_END err: %s", flogging.GoRDef, err)
-	}
-
-	sts.parent.fsmHandler.Event(enterSyncFinish)
-
-	select {
-	case <-sts.positionResp:
-	default:
-		logger.Debugf("close positionResp channel")
-		close(sts.positionResp)
-	}
-
-	select {
-	case <-sts.blocksResp:
-	default:
-		logger.Debugf("close blocksResp channel")
-		close(sts.blocksResp)
-	}
-
-	select {
-	case <-sts.deltaResp:
-	default:
-		logger.Debugf("close deltaResp channel")
-		close(sts.deltaResp)
-	}
-}
-
 
 //------------------------------------------------------------------
 // The Global State Graph
@@ -663,8 +569,6 @@ func (sts *syncer) fini() {
 //                |                                 |
 //                V                                 V
 //               [ ]                               [B1]
-//               [ ]                               [B2]
-
 
 // host 1
 // [G]->[]->[C1]->[A]->[]->[C2]->[]->[C3]-[][][][]->[B]->[]->[startBlockNumber]->[][][]
@@ -707,7 +611,8 @@ func (sts *syncer) switchToBestCheckpoint(startBlockNumber uint64) (uint64, erro
 		checkpointsMap[util.EncodeStatehash(cp)] = true
 	}
 
-	sts.branchNode2CheckpointMap = traverseGlobalStateGraph(genesis.StateHash, checkpointsMap)
+	sts.branchNode2CheckpointMap = traverseGlobalStateGraph(genesis.StateHash, checkpointsMap, true)
+
 
 	var checkpointPosition uint64
 	var checkpointStatehash []byte
@@ -790,7 +695,7 @@ func (sts *syncer) switchToCheckpointByBranchNode(branchNodeStateHash []byte) (u
 }
 
 
-func traverseGlobalStateGraph(genesisStateHash []byte, checkpointsMap map[string]bool) map[string][][]byte {
+func traverseGlobalStateGraph(genesisStateHash []byte, checkpointsMap map[string]bool, hexEncoded bool) map[string][][]byte {
 
 	var stateHashList [][] byte
 	branchNode2CheckpointMap := make(map[string][][]byte)
@@ -800,12 +705,16 @@ func traverseGlobalStateGraph(genesisStateHash []byte, checkpointsMap map[string
 	for i := 0; i < len(stateHashList) ; i++ {
 
 		stateHash := stateHashList[i]
-		nextBranchNodeStateHash, checkpointList := traverseTillBranch(stateHash, checkpointsMap)
+		nextBranchNodeStateHash, checkpointList := traverseTillBranch(stateHash, checkpointsMap, hexEncoded)
 
 		if nextBranchNodeStateHash != nil {
 
-			stringStateHash := util.EncodeStatehash(nextBranchNodeStateHash)
-			//stringStateHash := string(nextBranchNodeStateHash)
+			var stringStateHash string
+			if hexEncoded {
+				stringStateHash = util.EncodeStatehash(nextBranchNodeStateHash)
+			} else {
+				stringStateHash = string(nextBranchNodeStateHash)
+			}
 			_, ok := branchNode2CheckpointMap[stringStateHash]
 			if !ok {
 				branchNode2CheckpointMap[stringStateHash] = checkpointList
@@ -821,13 +730,20 @@ func traverseGlobalStateGraph(genesisStateHash []byte, checkpointsMap map[string
 	return branchNode2CheckpointMap
 }
 
-func traverseTillBranch(startStateHash []byte, checkpointMap map[string]bool) ([]byte, [][] byte) {
+func traverseTillBranch(startStateHash []byte, checkpointMap map[string]bool, hexEncoded bool) ([]byte, [][] byte) {
 	var checkpointList [][] byte
 	curcorStateHash := startStateHash
 
 	for {
-		_, ok := checkpointMap[util.EncodeStatehash(curcorStateHash)]
-		//_, ok := checkpointMap[string(curcorStateHash)]
+
+		var stringStateHash string
+		if hexEncoded {
+			stringStateHash = util.EncodeStatehash(curcorStateHash)
+		} else {
+			stringStateHash = string(curcorStateHash)
+		}
+
+		_, ok := checkpointMap[stringStateHash]
 		if ok {
 			checkpointList = append(checkpointList, curcorStateHash)
 		}

@@ -98,6 +98,8 @@ func main() {
 
 		//scan(orgdb.GetIterator(db.IndexesCF).Iterator, db.IndexesCF, nil)
 		scan(orgdb.GetIterator(db.BlockchainCF).Iterator, db.BlockchainCF, blockDetailPrinter)
+		scan(orgdb.GetIterator(db.StateCF).Iterator, db.StateCF, nil)
+		scan(orgdb.GetIterator(db.StateDeltaCF).Iterator, db.StateDeltaCF, nil)
 		scan(orgdb.GetIterator(db.PersistCF).Iterator, db.PersistCF, nil)
 
 		//scan(txdb.GetIterator(db.TxCF), db.TxCF, txDetailPrinter)

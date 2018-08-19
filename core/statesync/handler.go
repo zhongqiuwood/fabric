@@ -52,7 +52,6 @@ func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 			"before_" + pb.SyncMsg_SYNC_SESSION_QUERY.String():        func(e *fsm.Event) { h.server.beforeQuery(e) },
 			"before_" + pb.SyncMsg_SYNC_SESSION_GET_BLOCKS.String():   func(e *fsm.Event) { h.server.beforeGetBlocks(e) },
 			"before_" + pb.SyncMsg_SYNC_SESSION_GET_DELTAS.String():   func(e *fsm.Event) { h.server.beforeGetDeltas(e) },
-			"before_" + pb.SyncMsg_SYNC_SESSION_GET_SNAPSHOT.String(): func(e *fsm.Event) { h.server.beforeGetSnapshot(e) },
 			"before_" + pb.SyncMsg_SYNC_SESSION_END.String():          func(e *fsm.Event) { h.server.beforeSyncEnd(e) },
 			"leave_serve":                                             func(e *fsm.Event) { h.server.leaveServe(e) },
 			"enter_serve":                                             func(e *fsm.Event) { h.server.enterServe(e) },
@@ -73,7 +72,6 @@ func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 			"enter_syncblock":                                     func(e *fsm.Event) { h.client.enterSyncBlocks(e) },
 			"enter_syncsnapshot":                                  func(e *fsm.Event) { h.client.enterSyncStateSnapshot(e) },
 			"enter_syncdelta":                                     func(e *fsm.Event) { h.client.enterSyncStateDeltas(e) },
-
 		},
 	)
 

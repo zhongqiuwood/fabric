@@ -45,12 +45,11 @@ func (h *GossipHandlerImpl) BeforeSendMessage(proto.Message) error {
 func (h *GossipHandlerImpl) OnWriteError(e error) {
 	logger.Error("Gossip handler encounter writer error:", e)
 }
-func (h *GossipHandlerImpl) ExecuteSync(targetState []byte) error {
-	return nil
-}
-func (h *GossipHandlerImpl) InitStreamHandlerImpl() {
+
+func (h *GossipHandlerImpl) OnHandleStream() {
 
 }
+
 
 
 type GossipFactory func(*pb.PeerID, *pb.StreamStub) GossipHandler

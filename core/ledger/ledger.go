@@ -125,8 +125,6 @@ func GetNewLedger() (*Ledger, error) {
 		return nil, err
 	}
 
-	return &Ledger{blockchain, txpool, nil,nil, nil, snapshotMap}, nil
-
 	state := state.NewState()
 	return &Ledger{blockchain, txpool, state,
 		nil, nil, snapshotMap}, nil
@@ -231,35 +229,6 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 	return nil
 }
 
-func (ledger *Ledger) SwitchToCheckpointState(statehash []byte) error {
-
-	//startNumber := uint64(0)
-	//
-	//block, _:= ledger.GetBlockByNumber(fromBlockNumber)
-	//
-	//gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
-	//
-	//if gs.LastBranchNodeStateHash != nil {
-	//
-	//	db.GetDBHandle().StateSwitch(gs.LastBranchNodeStateHash)
-	//
-	//	startNumber = db.GetGlobalDBHandle().GetGlobalState(gs.LastBranchNodeStateHash).Count
-	//
-	//} else {
-	//	block, _= ledger.GetBlockByNumber(1)
-	//	db.GetDBHandle().StateSwitch(block.StateHash)
-	//}
-
-	//
-	//gs.Branched()
-	//
-	//stateHash := db.GetGlobalDBHandle().GetGlobalState()
-	//db.GetDBHandle().StateSwitch()
-
-	//return db.GetGlobalDBHandle().GetGlobalState(statehash)
-	return nil
-}
-
 
 func (ledger *Ledger) GetBlockByNumberBySnapshot(syncid string, blockNumber uint64) (*protos.Block, error) {
 	return ledger.snapshotMap.GetBlockByNumber(syncid, blockNumber)
@@ -272,7 +241,6 @@ func (ledger *Ledger) GetBlockchainSizeBySnapshot(syncid string) (uint64, error)
 func (ledger *Ledger) ReleaseSnapshot(syncid string) {
 	ledger.snapshotMap.ReleaseSnapshot(syncid)
 }
-
 
 func (ledger *Ledger) GetStateDeltaBySnapshot(syncid string, blockNumber uint64) (*statemgmt.StateDelta, error) {
 
@@ -398,9 +366,6 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	//all commit done, we can add global state
-	ledgerLogger.Debugf("BlockchainSize: %d, newBlockNumber: %d",
-		ledger.GetBlockchainSize(),	newBlockNumber)
-
 	dbErr = ledger.AddGlobalState(ledger.currentStateHash, stateHash)
 
 	if dbErr != nil {
@@ -420,20 +385,9 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		ledgerLogger.Debug("There were some erroneous transactions. We need to send a 'TX rejected' message here.")
 	}
 
-	if newBlockNumber == 2 || newBlockNumber == 5 || newBlockNumber == 7 {
-		db.GetDBHandle().CheckpointCurrent(stateHash)
-	}
-
-
-	// docp := viper.GetBool("peer.db.perBlockPerCheckpoint")
-	// if protos.CurrentDbVersion == 1 && docp {
-	// 	stringHash := fmt.Sprintf("%x", stateHash)
-	// 	if stringHash == "" && newBlockNumber == 0 {
-	// 		stringHash = "0"
-	// 	}
-
-	// 	db.GetDBHandle().ProduceCheckpoint(newBlockNumber, stringHash)
-	// }
+	ledgerLogger.Debugf("Committed: last block number: %d, blockchain size(heigth): %d",
+		newBlockNumber,
+		ledger.GetBlockchainSize())
 
 	return nil
 }
@@ -698,6 +652,41 @@ func (ledger *Ledger) GetBlockNumberByTxid(txID string) (uint64, uint64, error) 
 func (ledger *Ledger) GetBlockchainSize() uint64 {
 	return ledger.blockchain.getSize()
 }
+
+
+func (ledger *Ledger) CommitBlockAndStateDelta(blockNum uint64, block *protos.Block, id interface{}) error {
+	err := ledger.checkValidIDCommitORRollback(id)
+	if err != nil {
+		return err
+	}
+	defer ledger.resetForNextTxGroup(true)
+
+	writeBatch := db.GetDBHandle().NewWriteBatch()
+	defer writeBatch.Destroy()
+	ledger.state.CommitStateDeltaByBlockNum(blockNum, writeBatch)
+
+	if block != nil {
+
+		if block.GetTransactions() != nil {
+			err = ledger.txpool.putTransaction(block.Transactions)
+		} else {
+			err = ledger.txpool.commitTransaction(block.GetTxids())
+		}
+
+		if err != nil {
+			return err
+		}
+
+		err = ledger.blockchain.commitRawBlock(block, blockNum, writeBatch)
+		if err != nil {
+			return err
+		}
+		sendProducerBlockEvent(block)
+	}
+
+	return writeBatch.BatchCommit()
+}
+
 
 // PutBlock put a raw block on the chain and also commit the corresponding transactions
 func (ledger *Ledger) PutBlock(blockNumber uint64, block *protos.Block) error {

@@ -276,6 +276,36 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) {
 	blockchain.lastProcessedBlock = nil
 }
 
+func (blockchain *blockchain) commitRawBlock(block *protos.Block, blockNumber uint64,
+	writeBatch *db.DBWriteBatch) error {
+	blockBytes, blockBytesErr := block.GetBlockBytes()
+	if blockBytesErr != nil {
+		return blockBytesErr
+	}
+
+	cf := writeBatch.GetDBHandle().BlockchainCF
+	writeBatch.PutCF(cf, encodeBlockNumberDBKey(blockNumber), blockBytes)
+
+	blockHash, err := block.GetHash()
+	if err != nil {
+		return err
+	}
+
+	// Need to check as we support out of order blocks in cases such as block/state synchronization. This is
+	// real blockchain height, not size.
+	if blockchain.getSize() < blockNumber+1 {
+		sizeBytes := util.EncodeUint64(blockNumber + 1)
+		writeBatch.PutCF(cf, blockCountKey, sizeBytes)
+		blockchain.size = blockNumber + 1
+		blockchain.previousBlockHash = blockHash
+	}
+
+	if blockchain.indexer.isSynchronous() {
+		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
+	}
+	return nil
+}
+
 func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
 	blockBytes, blockBytesErr := block.GetBlockBytes()
 	if blockBytesErr != nil {

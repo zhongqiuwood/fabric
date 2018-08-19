@@ -164,8 +164,21 @@ type handlerMap struct {
 // EngineFactory for creating new engines
 type EngineFactory func(Peer) (Engine, error)
 
+type SyncEvent struct {
+	Ctx context.Context
+	TargetState []byte
+	Peer *pb.PeerID
+}
+
+type SyncEventCallback struct {
+	Err error
+}
+
 // Impl implementation of the Peer service
 type Impl struct {
+	SyncEvent            chan *SyncEvent
+	SyncEventCallback    chan *SyncEventCallback
+
 	self  *pb.PeerEndpoint
 	pctx  context.Context
 	onEnd context.CancelFunc
@@ -272,6 +285,9 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 	peer.streamFilters = map[string]StreamFilter{
 		"sync": syncstub.StreamFilter{self},
 	}
+
+	peer.SyncEvent = make(chan *SyncEvent, 1)
+	peer.SyncEventCallback = make(chan *SyncEventCallback, 1)
 
 	return peer
 }
@@ -483,9 +499,12 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 	}
 	p.handlerMap.m[*key] = messageHandler
 	p.handlerMap.cachedPeerList = nil
-	peerLogger.Debugf("registered handler with key: %s", key)
+	peerLogger.Debugf("registered handler with key: %s, active: %t", key, initiated)
 
 	if !initiated {
+
+		peerLogger.Debugf("registered handler with key: %s, active: %t", key, initiated)
+
 		return nil
 	}
 
@@ -497,19 +516,26 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 	} else {
 		for name, stub := range p.streamStubs {
 
+			peerLogger.Debugf("loop streamhandler %s for remote peer %s", name, key.GetName())
+
 			//do filter first
 			ep, _ := messageHandler.To()
 			if filter, ok := p.streamFilters[name]; ok && !filter.QualitifiedPeer(&ep) {
+
+				peerLogger.Debugf("ignore streamhandler %s for remote peer %s", name, key.GetName())
 				continue
 			}
 
-			go func(conn *grpc.ClientConn, remotePeer *pb.PeerID) {
-				peerLogger.Debugf("start streamhandler %s for remote peer %s", name, key.GetName())
-				err := stub.HandleClient(conn, remotePeer, p.self.ID)
+			go func(conn *grpc.ClientConn, name string, stubTmp *pb.StreamStub) {
+
+				peerLogger.Debugf("start <%s> streamhandler for peer %s", name, key.GetName())
+
+				err := stubTmp.HandleClient(conn, key, p.self.ID)
 				if err != nil {
-					peerLogger.Errorf("streamhandler %s fail: %s", name, err)
+					peerLogger.Errorf("<%s> streamhandler fail: %s", name, err)
 				}
-			}(v.(*grpc.ClientConn), key)
+			}(v.(*grpc.ClientConn), name, stub)
+
 		}
 	}
 

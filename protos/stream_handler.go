@@ -8,7 +8,6 @@ import (
 	"io"
 	"math/rand"
 	"sync"
-	"github.com/looplab/fsm"
 )
 
 /*
@@ -53,8 +52,7 @@ type StreamHandlerImpl interface {
 	BeforeSendMessage(proto.Message) error
 	OnWriteError(error)
 	Stop()
-	ExecuteSync(targetState []byte) error
-	InitStreamHandlerImpl()
+	OnHandleStream()
 }
 
 type StreamHandler struct {
@@ -65,7 +63,6 @@ type StreamHandler struct {
 	enableLoss  bool
 	writeQueue  chan proto.Message
 	writeExited chan error
-	remotePeerid *PeerID
 }
 
 const (
@@ -81,60 +78,6 @@ func newStreamHandler(impl StreamHandlerImpl) *StreamHandler {
 		writeExited:       make(chan error),
 	}
 }
-
-
-func (streamHandler *StreamHandler) SendSyncMsg(e *fsm.Event, msgType SyncMsg_Type, payloadMsg proto.Message) error {
-
-	logger.Debugf("SendSyncMsg <%s> to <%s>", msgType.String(), streamHandler.remotePeerid.Name)
-
-	var data = []byte(nil)
-
-	if payloadMsg != nil {
-		tmp, err := proto.Marshal(payloadMsg)
-		if err != nil {
-			lerr := fmt.Errorf("Error Marshalling payload message for <%s>: %s", msgType.String(), err)
-			logger.Info(lerr.Error())
-			if e != nil {
-				e.Cancel(&fsm.NoTransitionError{Err: lerr})
-			}
-			return lerr
-		}
-		data = tmp
-	}
-
-	err := streamHandler.SendMessage(&SyncMsg{
-		Type: msgType,
-		Payload: data})
-
-	if err != nil {
-		logger.Errorf("Error sending %s : %s", msgType, err)
-	}
-	return err
-}
-
-func (streamHandler *StreamHandler) LoadSyncMsg(e *fsm.Event, payloadMsg proto.Message) *SyncMsg {
-
-	logger.Debugf("LoadSyncMsg from <%s>", streamHandler.remotePeerid.Name)
-
-	if _, ok := e.Args[0].(*SyncMsg); !ok {
-		e.Cancel(fmt.Errorf("Received unexpected sync message type"))
-		return nil
-	}
-	msg := e.Args[0].(*SyncMsg)
-
-	if payloadMsg != nil {
-		err := proto.Unmarshal(msg.Payload, payloadMsg)
-		if err != nil {
-			e.Cancel(fmt.Errorf("Error unmarshalling %s: %s", msg.Type.String(), err))
-			return nil
-		}
-	}
-
-	logger.Debugf("LoadSyncMsg <%s> from <%s>", msg.Type.String(), streamHandler.remotePeerid.Name)
-
-	return msg
-}
-
 
 func (h *StreamHandler) GetName() string {
 	return h.name
@@ -158,7 +101,6 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 	}
 
 	return nil
-
 }
 
 func (h *StreamHandler) handleWrite(stream grpc.Stream) {
@@ -188,9 +130,9 @@ func (h *StreamHandler) endHandler() {
 
 }
 
-func (h *StreamHandler) handleStream(stream grpc.Stream, remotePeerid *PeerID) error {
+func (h *StreamHandler) handleStream(stream grpc.Stream) error {
 
-	h.InitStreamHandlerImpl()
+	h.OnHandleStream()
 
 	//dispatch write goroutine
 	go h.handleWrite(stream)
@@ -252,8 +194,16 @@ func NewStreamStub(factory StreamHandlerFactory, name string) *StreamStub {
 func (s *StreamStub) registerHandler(h *StreamHandler, peerid *PeerID) error {
 	s.handlerMap.Lock()
 	defer s.handlerMap.Unlock()
+
+	logger.Infof("%s: handlerMap size[%d], StreamStub registerHandler for peer %s",
+		s.Name,
+		len(s.handlerMap.m),
+		peerid)
+
 	if _, ok := s.handlerMap.m[*peerid]; ok {
 		// Duplicate,
+
+		logger.Infof("Duplicate handler for peer %s", peerid)
 		return fmt.Errorf("Duplicate handler for peer %s", peerid)
 	}
 	h.name = peerid.Name
@@ -428,6 +378,8 @@ func (s *StreamStub) HandleClient(conn *grpc.ClientConn, remotePeerid *PeerID, l
 
 	defer clistrm.CloseSend()
 
+	logger.Infof("StreamStub SendMsg: %s", localPeerid)
+
 	// handshake: send my id to remote peer
 	err = clistrm.SendMsg(localPeerid)
 	if err != nil {
@@ -442,7 +394,6 @@ func (s *StreamStub) HandleClient(conn *grpc.ClientConn, remotePeerid *PeerID, l
 	}
 
 	streamHandler := newStreamHandler(himpl)
-	streamHandler.remotePeerid = remotePeerid
 
 	err = s.registerHandler(streamHandler, remotePeerid)
 	if err != nil {
@@ -450,7 +401,7 @@ func (s *StreamStub) HandleClient(conn *grpc.ClientConn, remotePeerid *PeerID, l
 	}
 
 	defer s.unRegisterHandler(remotePeerid)
-	err = streamHandler.handleStream(clistrm, remotePeerid)
+	err = streamHandler.handleStream(clistrm)
 
 	return err
 
@@ -460,11 +411,14 @@ func (s *StreamStub) HandleServer(stream grpc.ServerStream) error {
 
 	remotePeerid := new(PeerID)
 
+
 	// handshake: receive remote peer id
 	err := stream.RecvMsg(remotePeerid)
 	if err != nil {
 		return err
 	}
+
+	logger.Infof("StreamStub RecvMsg: %v", remotePeerid)
 
 	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, false)
 
@@ -473,7 +427,6 @@ func (s *StreamStub) HandleServer(stream grpc.ServerStream) error {
 	}
 
 	streamHandler := newStreamHandler(himpl)
-	streamHandler.remotePeerid = remotePeerid
 
 	err = s.registerHandler(streamHandler, remotePeerid)
 	if err != nil {
@@ -481,5 +434,5 @@ func (s *StreamStub) HandleServer(stream grpc.ServerStream) error {
 	}
 
 	defer s.unRegisterHandler(remotePeerid)
-	return streamHandler.handleStream(stream, remotePeerid)
+	return streamHandler.handleStream(stream)
 }

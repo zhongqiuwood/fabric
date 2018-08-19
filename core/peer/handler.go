@@ -30,6 +30,7 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/flogging"
 )
 
 const DefaultSyncSnapshotTimeout time.Duration = 60 * time.Second
@@ -304,6 +305,26 @@ func (d *Handler) beforeBlockAdded(e *fsm.Event) {
 		e.Cancel(fmt.Errorf("Received unexpected message type"))
 		return
 	}
+
+	bs := &pb.BlockState{}
+	err := proto.Unmarshal(msg.Payload, bs)
+	if err != nil {
+		return
+	}
+
+	peerLogger.Infof("Local heigth<%d>, remote heigth<%d>",
+		d.ledger.GetBlockchainSize(),
+		bs.Height)
+
+	if bs.Height > d.ledger.GetBlockchainSize() {
+		event := &SyncEvent{nil, nil, d.ToPeerEndpoint.ID}
+		d.Coordinator.SyncEvent <- event
+		select {
+		case cb := <-d.Coordinator.SyncEventCallback :
+			peerLogger.Infof("[%s]: SyncEvent Callback <%v>", flogging.GoRDef, cb)
+		}
+	}
+
 	// Add the block and any delta state to the ledger
 	_ = msg
 }
@@ -320,7 +341,7 @@ func (d *Handler) HandleMessage(msg *pb.Message) error {
 	}
 	err := d.FSM.Event(msg.Type.String(), msg)
 	if err != nil {
-		if _, ok := err.(*fsm.NoTransitionError); !ok {
+		if _, ok := err.(fsm.NoTransitionError); !ok {
 			// Only allow NoTransitionError's, all others are considered true error.
 			return fmt.Errorf("Peer FSM failed while handling message (%s): current state: %s, error: %s", msg.Type.String(), d.FSM.Current(), err)
 			//t.Error("expected only 'NoTransitionError'")

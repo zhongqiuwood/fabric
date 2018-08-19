@@ -333,6 +333,31 @@ func (state *State) CommitStateDelta() error {
 	return writeBatch.BatchCommit()
 }
 
+func (state *State) CommitStateDeltaByBlockNum(blockNumber uint64, writeBatch *db.DBWriteBatch) {
+	logger.Debug("state.addChangesForPersistence()...start")
+	if state.updateStateImpl {
+		state.stateImpl.PrepareWorkingSet(state.stateDelta)
+		state.updateStateImpl = false
+	}
+
+	state.stateImpl.AddChangesForPersistence(writeBatch)
+
+	serializedStateDelta := state.stateDelta.Marshal()
+	cf := writeBatch.GetDBHandle().StateDeltaCF
+	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
+	writeBatch.PutCF(cf, encodeStateDeltaKey(blockNumber), serializedStateDelta)
+
+	if blockNumber >= state.historyStateDeltaSize {
+		blockNumberToDelete := blockNumber - state.historyStateDeltaSize
+		logger.Debugf("Deleting state-delta corresponding to block number[%d]", blockNumberToDelete)
+		writeBatch.DeleteCF(cf, encodeStateDeltaKey(blockNumberToDelete))
+	} else {
+		logger.Debugf("Not deleting previous state-delta. Block number [%d] is smaller than historyStateDeltaSize [%d]",
+			blockNumber, state.historyStateDeltaSize)
+	}
+	logger.Debug("state.addChangesForPersistence()...finished")
+}
+
 // DeleteState deletes ALL state keys/values from the DB. This is generally
 // only used during state synchronization when creating a new state from
 // a snapshot.

@@ -69,6 +69,7 @@ It has these top-level messages:
 	SyncStateSnapshot
 	SyncStateDeltasRequest
 	SyncStateDeltas
+	SyncBlockState
 	SyncMsg
 	SyncStateQuery
 	SyncStateResp

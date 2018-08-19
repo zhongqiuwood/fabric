@@ -11,15 +11,41 @@ import (
 	"os"
 	"io/ioutil"
 	"github.com/abchain/fabric/core/util"
+	"encoding/hex"
 )
 
 var populatedTxCnt = 32
 
 
 func TestMain(m *testing.M) {
+
+	shash := []byte("stateroot")
+
+	publicKeyInString := hex.EncodeToString([]byte("stateroot"))
+
+	publicKeyInString = string([]byte("stateroot"))
+
+	publicKeyInString = util.EncodeStatehash([]byte("stateroot"))
+
+	if len(publicKeyInString) == 0 || len(shash) == 0 {
+		return
+	}
+
 	setupTestConfig()
 	os.Exit(m.Run())
 }
+
+func b2s(bv []byte) string {
+	return string(bv)
+	return hex.EncodeToString(bv)
+}
+
+func s2b(sv string) []byte {
+	return []byte(sv)
+	bv, _ := hex.DecodeString(sv)
+	return bv
+}
+
 
 func setupTestConfig() {
 	tempDir, err := ioutil.TempDir("", "fabric-db-test")
@@ -45,6 +71,7 @@ func TestSwitchCheckpoint(t *testing.T) {
 }
 
 func TestTraverseGS(t *testing.T) {
+
 
 	db.Start()
 	defer deleteTestDBPath()
@@ -136,7 +163,7 @@ func TestTraverseGS(t *testing.T) {
 	globalDataDB := db.GetGlobalDBHandle()
 
 	//random populating ...
-	err := globalDataDB.PutGenesisGlobalState([]byte("stateroot"))
+	err := globalDataDB.PutGenesisGlobalState(s2b("stateroot"))
 	if err != nil {
 		t.Fatal("Add state fail", err)
 	}
@@ -153,7 +180,7 @@ func TestTraverseGS(t *testing.T) {
 
 		t.Log("Add state", tsk)
 
-		err = globalDataDB.AddGlobalState([]byte(tsk[0]), []byte(newstate))
+		err = globalDataDB.AddGlobalState(s2b(tsk[0]), s2b(newstate))
 		if err != nil {
 			t.Fatal("Add state fail", err)
 		}
@@ -168,29 +195,29 @@ func TestTraverseGS(t *testing.T) {
 		curTasks = addTask(curTasks[:len(curTasks)-1], newstate)
 	}
 
-	gs := globalDataDB.GetGlobalState([]byte("b0"))
+	gs := globalDataDB.GetGlobalState(s2b("b0"))
 	assertIntEqual(t, len(gs.NextNodeStateHash), 3)
 
-	gs = globalDataDB.GetGlobalState([]byte("b1"))
+	gs = globalDataDB.GetGlobalState(s2b("b1"))
 	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
 
-	gs = globalDataDB.GetGlobalState([]byte("b2"))
+	gs = globalDataDB.GetGlobalState(s2b("b2"))
 	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
 
-	gs = globalDataDB.GetGlobalState([]byte("b3"))
+	gs = globalDataDB.GetGlobalState(s2b("b3"))
 	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
 
-	gs = globalDataDB.GetGlobalState([]byte("b4"))
+	gs = globalDataDB.GetGlobalState(s2b("b4"))
 	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
 
 
-	branch2CheckpointsMap := traverseGlobalStateGraph([]byte("stateroot"), checkpointsMap)
+	branch2CheckpointsMap := traverseGlobalStateGraph(s2b("stateroot"), checkpointsMap, false)
 
-	sanityCheck(t, []byte("b0"), branch2CheckpointsMap, checkpoint2BranchMap)
-	sanityCheck(t, []byte("b1"), branch2CheckpointsMap, checkpoint2BranchMap)
-	sanityCheck(t, []byte("b2"), branch2CheckpointsMap, checkpoint2BranchMap)
-	sanityCheck(t, []byte("b3"), branch2CheckpointsMap, checkpoint2BranchMap)
-	sanityCheck(t, []byte("b4"), branch2CheckpointsMap, checkpoint2BranchMap)
+	sanityCheck(t, s2b("b0"), branch2CheckpointsMap, checkpoint2BranchMap)
+	sanityCheck(t, s2b("b1"), branch2CheckpointsMap, checkpoint2BranchMap)
+	sanityCheck(t, s2b("b2"), branch2CheckpointsMap, checkpoint2BranchMap)
+	sanityCheck(t, s2b("b3"), branch2CheckpointsMap, checkpoint2BranchMap)
+	sanityCheck(t, s2b("b4"), branch2CheckpointsMap, checkpoint2BranchMap)
 }
 
 
@@ -201,8 +228,8 @@ func sanityCheck(t *testing.T, branchStateHash []byte, branch2CheckpointsMap map
 	assertTrue(t, len(checkpointStateHashList) > 0)
 
 	for _, cp := range checkpointStateHashList {
-		t.Log("branch->checkpoint:", string(branchStateHash), string(cp))
-		branchStateHashString, ok := checkpoint2BranchMap[string(cp)]
+		t.Log("branch->checkpoint:", b2s(branchStateHash), b2s(cp))
+		branchStateHashString, ok := checkpoint2BranchMap[b2s(cp)]
 		assertTrue(t, ok)
 		assertByteEqual(t, branchStateHash, branchStateHashString)
 	}

@@ -38,6 +38,7 @@ func initTxnetworkEntrance(stub *gossip.GossipStub) {
 
 type TxNetworkHandler interface {
 	HandleTxs(tx []*PendingTransaction)
+	Release()
 }
 
 type txNetworkEntry struct {
@@ -60,6 +61,23 @@ func NewTxNetworkEntry(ctx context.Context) *txNetworkEntry {
 		topic:     topic,
 		newTxCond: sync.NewCond(topic),
 		Context:   ctx,
+	}
+}
+
+func (e *txNetworkEntry) waitForTx(ctx context.Context, cond func() bool) {
+
+	e.topic.Lock()
+	defer e.topic.Unlock()
+
+	select {
+	case <-ctx.Done():
+		logger.Info("Worker for txnetwork is quit")
+		return
+	default:
+	}
+
+	if cond() {
+		e.newTxCond.Wait()
 	}
 }
 
@@ -92,7 +110,11 @@ func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 	}()
 
 	var txBuffer [maxOutputBatch]*PendingTransaction
+
 	txs := txBuffer[:0]
+	waitCond := func() bool {
+		return rd.CurrentEnd().Equal(watcher.GetTail())
+	}
 
 	for {
 
@@ -102,21 +124,8 @@ func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 				h.HandleTxs(txs)
 				txs = txBuffer[:0]
 			} else {
-				//goto sleeping phase
-				e.topic.Lock()
 
-				select {
-				case <-gctx.Done():
-					logger.Info("Worker for txnetwork is quit")
-					e.topic.Unlock()
-					return
-				default:
-				}
-
-				if rd.CurrentEnd().Equal(watcher.GetTail()) {
-					e.newTxCond.Wait()
-				}
-				e.topic.Unlock()
+				e.waitForTx(gctx, waitCond)
 			}
 
 		} else if err != nil {

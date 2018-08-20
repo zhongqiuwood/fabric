@@ -295,6 +295,35 @@ func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64) {
 	}
 }
 
+//only use for local updating
+func (u txPeerUpdate) toTxsFast() *peerTxs {
+
+	if len(u.Transactions) == 0 {
+		return nil
+	}
+
+	head := &txMemPoolItem{
+		//		tx:           txs.Transactions[0],
+		//		digest:       txToDigestState(txs.Transactions[0]),
+		digestSeries: u.BeginSeries,
+	}
+
+	current := head
+	var last *txMemPoolItem
+
+	for _, tx := range u.Transactions {
+		last = current
+		current.tx = tx
+		current.digest = getTxDigest(tx)
+
+		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
+		last.next = current
+	}
+
+	last.next = nil //seal the tail
+	return &peerTxs{head, last}
+}
+
 func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, error) {
 
 	if len(u.Transactions) == 0 {
@@ -505,7 +534,15 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 		p.purge(peerStatus.GetNum(), g)
 	}
 
-	inTxs, err := u.toTxs(g.ledger, updatePos)
+	var inTxs *peerTxs
+	var err error
+
+	if id == "" {
+		//we have fast entrance for localupdate
+		inTxs = u.toTxsFast()
+	} else {
+		inTxs, err = u.toTxs(g.ledger, updatePos)
+	}
 
 	if err != nil {
 		return err

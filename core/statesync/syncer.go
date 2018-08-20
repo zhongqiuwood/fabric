@@ -54,7 +54,7 @@ func newSyncer2() (sts *syncer) {
 }
 
 
-func newSyncer(ctx context.Context, h *stateSyncHandler, streamHandler *pb.StreamHandler) (sts *syncer) {
+func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 
 	l, _ := ledger.GetLedger()
 

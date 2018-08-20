@@ -52,7 +52,6 @@ type StreamHandlerImpl interface {
 	BeforeSendMessage(proto.Message) error
 	OnWriteError(error)
 	Stop()
-	OnHandleStream()
 }
 
 type StreamHandler struct {
@@ -132,8 +131,6 @@ func (h *StreamHandler) endHandler() {
 
 func (h *StreamHandler) handleStream(stream grpc.Stream) error {
 
-	h.OnHandleStream()
-
 	//dispatch write goroutine
 	go h.handleWrite(stream)
 
@@ -195,15 +192,8 @@ func (s *StreamStub) registerHandler(h *StreamHandler, peerid *PeerID) error {
 	s.handlerMap.Lock()
 	defer s.handlerMap.Unlock()
 
-	logger.Infof("%s: handlerMap size[%d], StreamStub registerHandler for peer %s",
-		s.Name,
-		len(s.handlerMap.m),
-		peerid)
-
 	if _, ok := s.handlerMap.m[*peerid]; ok {
 		// Duplicate,
-
-		logger.Infof("Duplicate handler for peer %s", peerid)
 		return fmt.Errorf("Duplicate handler for peer %s", peerid)
 	}
 	h.name = peerid.Name
@@ -378,8 +368,6 @@ func (s *StreamStub) HandleClient(conn *grpc.ClientConn, remotePeerid *PeerID, l
 
 	defer clistrm.CloseSend()
 
-	logger.Infof("StreamStub SendMsg: %s", localPeerid)
-
 	// handshake: send my id to remote peer
 	err = clistrm.SendMsg(localPeerid)
 	if err != nil {
@@ -411,14 +399,11 @@ func (s *StreamStub) HandleServer(stream grpc.ServerStream) error {
 
 	remotePeerid := new(PeerID)
 
-
 	// handshake: receive remote peer id
 	err := stream.RecvMsg(remotePeerid)
 	if err != nil {
 		return err
 	}
-
-	logger.Infof("StreamStub RecvMsg: %v", remotePeerid)
 
 	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, false)
 

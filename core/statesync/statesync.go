@@ -85,8 +85,6 @@ type stateSyncHandler struct {
 	fsmHandler *fsm.FSM
 	server  *stateServer
 	client  *syncer
-	stream  *pb.StreamHandler
-	sync.Once
 }
 
 func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
@@ -98,9 +96,11 @@ func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 
 	h.fsmHandler = newFsmHandler(h)
 
+	h.server = newStateServer(h)
+	h.client = newSyncer(nil, h)
+
 	return h
 }
-
 
 
 func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
@@ -180,16 +180,15 @@ func (syncHandler *stateSyncHandler) run(targetState []byte) error {
 	//---------------------------------------------------------------------------
 	// 2. switch to the right checkpoint
 	//---------------------------------------------------------------------------
-	//checkpointPosition, err := syncHandler.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
-	//if err != nil {
-	//	logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
-	//
-	//	return err
-	//}
-	//startBlockNumber = checkpointPosition + 1
-	//logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
-	//	flogging.GoRDef, startBlockNumber, endBlockNumber)
+	checkpointPosition, err := syncHandler.client.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
+	if err != nil {
+		logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
 
+		return err
+	}
+	startBlockNumber = checkpointPosition + 1
+	logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
+		flogging.GoRDef, startBlockNumber, endBlockNumber)
 
 	//---------------------------------------------------------------------------
 	// 3. sync detals & blocks
@@ -236,7 +235,6 @@ func (syncHandler *stateSyncHandler) fini() {
 func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMsg_Type, payloadMsg proto.Message) error {
 
 	logger.Debugf("<%s> to <%s>", msgType.String(), syncHandler.remotePeerIdName())
-
 	var data = []byte(nil)
 
 	if payloadMsg != nil {
@@ -252,14 +250,41 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 		data = tmp
 	}
 
-	err := syncHandler.stream.SendMessage(&pb.SyncMsg{
-		Type: msgType,
-		Payload: data})
+	stream, err := pickStreamHandler(syncHandler)
 
-	if err != nil {
-		logger.Errorf("Error sending %s : %s", msgType, err)
+	if err == nil {
+		err = stream.SendMessage(&pb.SyncMsg{
+			Type:    msgType,
+			Payload: data})
+
+		if err != nil {
+			logger.Errorf("Error sending %s : %s", msgType, err)
+		}
+	} else {
+		logger.Errorf("%s", err)
 	}
 	return err
+}
+
+
+func pickStreamHandler(h *stateSyncHandler) (*pb.StreamHandler, error) {
+
+	if syncerErr != nil {
+		return nil, syncerErr
+	}
+
+	var err error
+	var stream *pb.StreamHandler
+
+	streamHandlers := stateSyncCore.PickHandlers([]*pb.PeerID{&pb.PeerID{h.remotePeerIdName()}})
+	if len(streamHandlers) > 0 {
+		stream = streamHandlers[0]
+	} else {
+		err = fmt.Errorf("Failed to pick a stream handler <%s>.",
+			h.remotePeerIdName())
+	}
+
+	return stream, err
 }
 
 func (syncHandler *stateSyncHandler) onRecvSyncMsg(e *fsm.Event, payloadMsg proto.Message) *pb.SyncMsg {
@@ -306,24 +331,6 @@ func (h *stateSyncHandler) remotePeerIdName() string {
 	return h.remotePeerId.GetName()
 }
 
-//this should be call with a stateSyncHandler whose HandleMessage is called at least once
-func pickStreamHandler(h *stateSyncHandler) *pb.StreamHandler {
-
-	if syncerErr != nil {
-		return nil
-	}
-
-	streamHandlers := stateSyncCore.PickHandlers([]*pb.PeerID{&pb.PeerID{h.remotePeerIdName()}})
-	h.Do(func() {
-		if len(streamHandlers) > 0 {
-			h.stream = streamHandlers[0]
-		}
-
-	})
-
-	return h.stream
-}
-
 func (h *stateSyncHandler) Stop() { return }
 
 func (h *stateSyncHandler) Tag() string { return "StateSync" }
@@ -351,6 +358,7 @@ func (h *stateSyncHandler) HandleMessage(m proto.Message) error {
 }
 
 func (h *stateSyncHandler) BeforeSendMessage(proto.Message) error {
+
 	return nil
 }
 
@@ -358,10 +366,5 @@ func (h *stateSyncHandler) OnWriteError(e error) {
 	logger.Error("Sync handler encounter writer error:", e)
 }
 
-func (h *stateSyncHandler) OnHandleStream() {
-	streamHandler := pickStreamHandler(h)
-	h.server = newStateServer(h, streamHandler)
-	h.client = newSyncer(nil, h, streamHandler)
-}
 
 

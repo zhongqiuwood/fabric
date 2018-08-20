@@ -13,7 +13,7 @@ type stateServer struct {
 	correlationId uint64
 }
 
-func newStateServer(h *stateSyncHandler, streamHandler *pb.StreamHandler) (s *stateServer) {
+func newStateServer(h *stateSyncHandler) (s *stateServer) {
 
 	s = &stateServer{
 		parent: h,

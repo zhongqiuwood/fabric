@@ -12,6 +12,7 @@ import (
 	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"sync"
+	"github.com/abchain/fabric/flogging"
 )
 
 var logger = logging.MustGetLogger("statesync")
@@ -23,6 +24,17 @@ func init() {
 var stateSyncCore *StateSync
 var syncerErr error
 var once sync.Once
+
+
+func NewStateSync(p peer.Peer) {
+
+	once.Do(func() {
+		stateSyncCore, syncerErr = GetNewStateSync(p)
+		if syncerErr != nil {
+			logger.Error("Create new state syncer fail:", syncerErr)
+		}
+	})
+}
 
 func GetNewStateSync(p peer.Peer) (*StateSync, error) {
 
@@ -39,22 +51,12 @@ func GetStateSync() (*StateSync, error) {
 	return stateSyncCore, syncerErr
 }
 
-func NewStateSync(p peer.Peer) {
-	logger.Debug("State sync module inited")
-
-	once.Do(func() {
-		stateSyncCore, syncerErr = GetNewStateSync(p)
-		if syncerErr != nil {
-			logger.Error("Create new state syncer fail:", syncerErr)
-		}
-	})
-}
 
 type StateSync struct {
 	*pb.StreamStub
 	sync.RWMutex
 	curCorrrelation uint64
-	curTask         context.Context
+	curTask    context.Context
 }
 
 type ErrInProcess struct {
@@ -63,29 +65,6 @@ type ErrInProcess struct {
 
 type ErrHandlerFatal struct {
 	error
-}
-
-//main entry for statesync: it is synchronous and NOT re-entriable, but you can call IsBusy
-//at another thread and check its status
-func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt) error {
-
-	s.Lock()
-	if s.curTask != nil {
-		s.Unlock()
-		return &ErrInProcess{fmt.Errorf("Another task is running")}
-	}
-
-	s.curTask = ctx
-	s.curCorrrelation++
-	s.Unlock()
-
-	defer func() {
-		s.Lock()
-		s.curTask = nil
-		s.Unlock()
-	}()
-
-	return fmt.Errorf("Not implied")
 }
 
 //if busy, return current correlation Id, els return 0
@@ -102,41 +81,254 @@ func (s *StateSync) IsBusy() uint64 {
 }
 
 type stateSyncHandler struct {
-	peerId  *pb.PeerID
-	handler *fsm.FSM
+	remotePeerId  *pb.PeerID
+	fsmHandler *fsm.FSM
 	server  *stateServer
 	client  *syncer
-	stream  *pb.StreamHandler
-	sync.Once
 }
 
-func newStateSyncHandler(id *pb.PeerID) pb.StreamHandlerImpl {
-	logger.Debug("create handler for peer", id)
+func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
+	logger.Debug("create handler for peer", remoterId)
+
 	h := &stateSyncHandler{
-		peerId: id,
+		remotePeerId: remoterId,
 	}
 
-	h.handler = newHandler(h)
+	h.fsmHandler = newFsmHandler(h)
+
+	h.server = newStateServer(h)
+	h.client = newSyncer(nil, h)
+
 	return h
 }
 
-//this should be call with a stateSyncHandler whose HandleMessage is called at least once
-func pickStreamHandler(h *stateSyncHandler) *pb.StreamHandler {
 
-	if syncerErr != nil {
-		return nil
+func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
+
+	for {
+		select {
+		case event := <-notify :
+			logger.Infof("[%s]: handle SyncEvent: %+v", flogging.GoRDef, event)
+			err := s.SyncToState(event.Ctx, nil, nil, event.Peer)
+			cb := &peer.SyncEventCallback{err}
+
+			callback <- cb
+		}
+	}
+}
+
+func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
+
+	var err error
+	s.Lock()
+	if s.curTask != nil {
+		s.Unlock()
+		return &ErrInProcess{fmt.Errorf("Another task is running")}
 	}
 
-	streams := stateSyncCore.PickHandlers([]*pb.PeerID{h.peerId})
-	h.Do(func() {
-		if len(streams) > 0 {
-			h.stream = streams[0]
+	s.curTask = ctx
+	s.curCorrrelation++
+	s.Unlock()
+	handler := s.PickHandler(peer)
+
+	err = s.executeSync(handler, targetState)
+
+	if err != nil {
+		logger.Errorf("[%s]: Target peer <%v>, failed to execute sync: %s",
+			flogging.GoRDef, peer, err)
+	}
+
+	defer func() {
+		s.Lock()
+		s.curTask = nil
+		s.Unlock()
+	}()
+
+	return err
+}
+
+
+func (s *StateSync) executeSync(h *pb.StreamHandler, targetState []byte) error {
+
+	hh, ok := h.StreamHandlerImpl.(*stateSyncHandler)
+	if !ok {
+		panic("type error, not stateSyncHandler")
+	}
+
+	return hh.run(targetState)
+}
+
+func (syncHandler *stateSyncHandler) run(targetState []byte) error {
+
+	defer logger.Infof("[%s]: Exit. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
+	defer syncHandler.fini()
+
+	logger.Infof("[%s]: Enter. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
+	//---------------------------------------------------------------------------
+	// 1. query
+	//---------------------------------------------------------------------------
+	mostRecentIdenticalHistoryPosition, endBlockNumber, err := syncHandler.client.getSyncTargetBlockNumber()
+	if err != nil {
+		logger.Errorf("[%s]: getSyncTargetBlockNumber err: %s", flogging.GoRDef, err)
+		return err
+	}
+	logger.Infof("[%s]: query done. mostRecentIdenticalHistoryPosition:%d",
+		flogging.GoRDef, mostRecentIdenticalHistoryPosition)
+
+	startBlockNumber := mostRecentIdenticalHistoryPosition
+
+	//---------------------------------------------------------------------------
+	// 2. switch to the right checkpoint
+	//---------------------------------------------------------------------------
+	checkpointPosition, err := syncHandler.client.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
+	if err != nil {
+		logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
+
+		return err
+	}
+	startBlockNumber = checkpointPosition + 1
+	logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
+		flogging.GoRDef, startBlockNumber, endBlockNumber)
+
+	//---------------------------------------------------------------------------
+	// 3. sync detals & blocks
+	//---------------------------------------------------------------------------
+	// go to syncdelta state
+	syncHandler.fsmHandler.Event(enterGetDelta)
+	_, err = syncHandler.client.syncDeltas(startBlockNumber, endBlockNumber)
+
+	if err != nil {
+		logger.Errorf("[%s]: sync detals err: %s", flogging.GoRDef, err)
+		return err
+	}
+	logger.Infof("[%s]: sync detals done", flogging.GoRDef)
+
+	return err
+}
+
+func (syncHandler *stateSyncHandler) fini() {
+
+	err := syncHandler.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_END, nil)
+
+	if err != nil {
+		logger.Errorf("[%s]: sendSyncMsg SyncMsg_SYNC_SESSION_END err: %s", flogging.GoRDef, err)
+	}
+
+	//select {
+	//case <-syncHandler.client.positionResp:
+	//default:
+	//	logger.Debugf("close positionResp channel")
+	//	close(syncHandler.client.positionResp)
+	//}
+	//
+	//select {
+	//case <-syncHandler.client.deltaResp:
+	//default:
+	//	logger.Debugf("close deltaResp channel")
+	//	close(syncHandler.client.deltaResp)
+	//}
+
+	syncHandler.fsmHandler.Event(enterSyncFinish)
+}
+
+
+func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMsg_Type, payloadMsg proto.Message) error {
+
+	logger.Debugf("<%s> to <%s>", msgType.String(), syncHandler.remotePeerIdName())
+	var data = []byte(nil)
+
+	if payloadMsg != nil {
+		tmp, err := proto.Marshal(payloadMsg)
+		if err != nil {
+			lerr := fmt.Errorf("Error Marshalling payload message for <%s>: %s", msgType.String(), err)
+			logger.Info(lerr.Error())
+			if e != nil {
+				e.Cancel(&fsm.NoTransitionError{Err: lerr})
+			}
+			return lerr
 		}
+		data = tmp
+	}
 
-	})
+	stream, err := pickStreamHandler(syncHandler)
 
-	return h.stream
+	if err == nil {
+		err = stream.SendMessage(&pb.SyncMsg{
+			Type:    msgType,
+			Payload: data})
 
+		if err != nil {
+			logger.Errorf("Error sending %s : %s", msgType, err)
+		}
+	} else {
+		logger.Errorf("%s", err)
+	}
+	return err
+}
+
+
+func pickStreamHandler(h *stateSyncHandler) (*pb.StreamHandler, error) {
+
+	if syncerErr != nil {
+		return nil, syncerErr
+	}
+
+	var err error
+	var stream *pb.StreamHandler
+
+	streamHandlers := stateSyncCore.PickHandlers([]*pb.PeerID{&pb.PeerID{h.remotePeerIdName()}})
+	if len(streamHandlers) > 0 {
+		stream = streamHandlers[0]
+	} else {
+		err = fmt.Errorf("Failed to pick a stream handler <%s>.",
+			h.remotePeerIdName())
+	}
+
+	return stream, err
+}
+
+func (syncHandler *stateSyncHandler) onRecvSyncMsg(e *fsm.Event, payloadMsg proto.Message) *pb.SyncMsg {
+
+	logger.Debugf("from <%s>", syncHandler.remotePeerIdName())
+
+	if _, ok := e.Args[0].(*pb.SyncMsg); !ok {
+		e.Cancel(fmt.Errorf("Received unexpected sync message type"))
+		return nil
+	}
+	msg := e.Args[0].(*pb.SyncMsg)
+
+	if payloadMsg != nil {
+		err := proto.Unmarshal(msg.Payload, payloadMsg)
+		if err != nil {
+			e.Cancel(fmt.Errorf("Error unmarshalling %s: %s", msg.Type.String(), err))
+			return nil
+		}
+	}
+
+	logger.Debugf("<%s> from <%s>", msg.Type.String(), syncHandler.remotePeerIdName())
+	return msg
+}
+
+
+func (h *stateSyncHandler) leaveIdle(e *fsm.Event) {
+
+	stateUpdate := "leaveIdle"
+	h.dumpStateUpdate(stateUpdate)
+}
+
+func (h *stateSyncHandler) enterIdle(e *fsm.Event) {
+
+	stateUpdate := "enterIdle"
+	h.dumpStateUpdate(stateUpdate)
+}
+
+func (h *stateSyncHandler) dumpStateUpdate(stateUpdate string) {
+	logger.Debugf("StateSyncHandler Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
+		stateUpdate, 0, h.remotePeerIdName())
+}
+
+func (h *stateSyncHandler) remotePeerIdName() string {
+	return h.remotePeerId.GetName()
 }
 
 func (h *stateSyncHandler) Stop() { return }
@@ -151,23 +343,28 @@ func (h *stateSyncHandler) HandleMessage(m proto.Message) error {
 
 	wrapmsg := m.(*pb.SyncMsg)
 
-	err := h.handler.Event(wrapmsg.Type.String(), wrapmsg)
+	err := h.fsmHandler.Event(wrapmsg.Type.String(), wrapmsg)
 
 	//CAUTION: DO NOT return error in non-fatal case or you will end the stream
 	if err != nil {
 
-		if _, ok := err.(*ErrHandlerFatal); ok {
+		if _, ok := err.(ErrHandlerFatal); ok {
 			return err
 		}
-		logger.Errorf("Handle sync message fail: %s", err)
+		logger.Errorf("Handle sync message <%s> fail: %s", wrapmsg.Type.String(), err)
 	}
 
 	return nil
 }
 
 func (h *stateSyncHandler) BeforeSendMessage(proto.Message) error {
+
 	return nil
 }
+
 func (h *stateSyncHandler) OnWriteError(e error) {
 	logger.Error("Sync handler encounter writer error:", e)
 }
+
+
+

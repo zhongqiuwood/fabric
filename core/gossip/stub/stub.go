@@ -46,6 +46,7 @@ func (h *GossipHandlerImpl) OnWriteError(e error) {
 	logger.Error("Gossip handler encounter writer error:", e)
 }
 
+
 type GossipFactory func(*pb.PeerID, *pb.StreamStub) GossipHandler
 
 var DefaultFactory GossipFactory

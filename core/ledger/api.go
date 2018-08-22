@@ -41,5 +41,4 @@ type StateAccessor interface {
 // StateManager interface for manage history view and global states
 type StateManager interface {
 	AddGlobalState(parent []byte, state []byte) error
-	SwitchToCheckpointState(statehash []byte) error
 }

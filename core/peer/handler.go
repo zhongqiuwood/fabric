@@ -320,7 +320,7 @@ func (d *Handler) HandleMessage(msg *pb.Message) error {
 	}
 	err := d.FSM.Event(msg.Type.String(), msg)
 	if err != nil {
-		if _, ok := err.(*fsm.NoTransitionError); !ok {
+		if _, ok := err.(fsm.NoTransitionError); !ok {
 			// Only allow NoTransitionError's, all others are considered true error.
 			return fmt.Errorf("Peer FSM failed while handling message (%s): current state: %s, error: %s", msg.Type.String(), d.FSM.Current(), err)
 			//t.Error("expected only 'NoTransitionError'")

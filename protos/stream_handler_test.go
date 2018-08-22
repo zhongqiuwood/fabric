@@ -79,7 +79,7 @@ func toPeerId(name []string) (ret []*PeerID) {
 
 func Test_StreamHub_Base(t *testing.T) {
 
-	tstub := NewStreamStub(nil)
+	tstub := NewStreamStub(nil, &PeerID{"peer0"})
 
 	h1 := newStreamHandler(&dummyHandler{})
 
@@ -125,7 +125,7 @@ func Test_StreamHub_Base(t *testing.T) {
 
 func Test_StreamHub_OverHandler(t *testing.T) {
 
-	tstub := NewStreamStub(nil)
+	tstub := NewStreamStub(nil, &PeerID{"peer0"})
 
 	peerNames := []string{"peer1", "peer2", "peer3", "peer4", "peer5", "peer6", "peer7", "peer8"}
 
@@ -234,7 +234,7 @@ func ensureOneDummyWrite(ctx context.Context, h *StreamHandler) error {
 
 func Test_StreamHub_Broadcast(t *testing.T) {
 
-	tstub := NewStreamStub(nil)
+	tstub := NewStreamStub(nil, &PeerID{"peer0"})
 
 	peerNames := []string{"peer1", "peer2", "peer3", "peer4", "peer5", "peer6", "peer7", "peer8"}
 

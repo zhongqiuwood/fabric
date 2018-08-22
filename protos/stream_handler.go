@@ -107,7 +107,6 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 	}
 
 	return nil
-
 }
 
 func (h *StreamHandler) handleWrite(stream grpc.Stream) {
@@ -182,20 +181,24 @@ type shandlerMap struct {
 type StreamStub struct {
 	StreamHandlerFactory
 	handlerMap *shandlerMap
+	localID    *PeerID
 }
 
-func NewStreamStub(factory StreamHandlerFactory) *StreamStub {
+func NewStreamStub(factory StreamHandlerFactory, peerid *PeerID) *StreamStub {
+
 	return &StreamStub{
 		StreamHandlerFactory: factory,
 		handlerMap: &shandlerMap{
 			m: make(map[PeerID]*StreamHandler),
 		},
+		localID: peerid,
 	}
 }
 
 func (s *StreamStub) registerHandler(h *StreamHandler, peerid *PeerID) error {
 	s.handlerMap.Lock()
 	defer s.handlerMap.Unlock()
+
 	if _, ok := s.handlerMap.m[*peerid]; ok {
 		// Duplicate,
 		return fmt.Errorf("Duplicate handler for peer %s", peerid)
@@ -252,10 +255,9 @@ func (s *StreamStub) deliverHandlers(ctx context.Context, peerids []*PeerID, out
 			select {
 			case out <- &PickedStreamHandler{id, nil, h}:
 			case <-ctx.Done():
-				break
+				return
 			}
 		}
-
 	}
 
 	close(out)
@@ -366,7 +368,7 @@ func (s *StreamStub) Broadcast(ctx context.Context, m proto.Message) (err error,
 
 }
 
-func (s *StreamStub) HandleClient(conn *grpc.ClientConn, peerid *PeerID) error {
+func (s *StreamStub) HandleClient(conn *grpc.ClientConn, remotePeerid *PeerID) error {
 	clistrm, err := s.NewClientStream(conn)
 
 	if err != nil {
@@ -375,49 +377,54 @@ func (s *StreamStub) HandleClient(conn *grpc.ClientConn, peerid *PeerID) error {
 
 	defer clistrm.CloseSend()
 
-	err = clistrm.SendMsg(peerid)
+	// handshake: send my id to remote peer
+	err = clistrm.SendMsg(s.localID)
 	if err != nil {
 		return err
 	}
 
-	himpl, err := s.NewStreamHandlerImpl(peerid, s, true)
+	// himpl is stateSyncHandler or GossipHandlerImpl
+	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, true)
 
 	if err != nil {
 		return err
 	}
 
-	h := newStreamHandler(himpl)
+	streamHandler := newStreamHandler(himpl)
 
-	err = s.registerHandler(h, peerid)
+	err = s.registerHandler(streamHandler, remotePeerid)
 	if err != nil {
 		return err
 	}
 
-	defer s.unRegisterHandler(peerid)
-	return h.handleStream(clistrm)
+	defer s.unRegisterHandler(remotePeerid)
+	return streamHandler.handleStream(clistrm)
+
 }
 
 func (s *StreamStub) HandleServer(stream grpc.ServerStream) error {
 
-	id := new(PeerID)
-	err := stream.RecvMsg(id)
+	remotePeerid := new(PeerID)
+
+	// handshake: receive remote peer id
+	err := stream.RecvMsg(remotePeerid)
 	if err != nil {
 		return err
 	}
 
-	himpl, err := s.NewStreamHandlerImpl(id, s, false)
+	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, false)
 
 	if err != nil {
 		return err
 	}
 
-	h := newStreamHandler(himpl)
+	streamHandler := newStreamHandler(himpl)
 
-	err = s.registerHandler(h, id)
+	err = s.registerHandler(streamHandler, remotePeerid)
 	if err != nil {
 		return err
 	}
 
-	defer s.unRegisterHandler(id)
-	return h.handleStream(stream)
+	defer s.unRegisterHandler(remotePeerid)
+	return streamHandler.handleStream(stream)
 }

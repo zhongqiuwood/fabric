@@ -259,8 +259,8 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 	peer.pctx = pctx
 	peer.onEnd = endf
 
-	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory())
-	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory())
+	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory(), self.ID)
+	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory(), self.ID)
 
 	//mapping of all streamstubs above:
 	peer.streamStubs = map[string]*pb.StreamStub{
@@ -482,7 +482,7 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 	}
 	p.handlerMap.m[*key] = messageHandler
 	p.handlerMap.cachedPeerList = nil
-	peerLogger.Debugf("registered handler with key: %s", key)
+	peerLogger.Debugf("registered handler with key: %s, active: %t", key, initiated)
 
 	if !initiated {
 		return nil
@@ -500,16 +500,18 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 			//do filter first
 			ep, _ := messageHandler.To()
 			if filter, ok := p.streamFilters[name]; ok && !filter.QualitifiedPeer(&ep) {
+
+				peerLogger.Debugf("ignore streamhandler %s for remote peer %s", name, key.GetName())
 				continue
 			}
 
-			go func(conn *grpc.ClientConn, k *pb.PeerID) {
-				peerLogger.Debugf("start streamhandler %s for peer %s", name, key.GetName())
-				err := stub.HandleClient(conn, k)
+			go func(conn *grpc.ClientConn, stub *pb.StreamStub, name string) {
+				peerLogger.Debugf("start <%s> streamhandler for peer %s", name, key.GetName())
+				err := stub.HandleClient(conn, key)
 				if err != nil {
-					peerLogger.Errorf("streamhandler %s fail: %s", name, err)
+					peerLogger.Errorf("streamhandler <%s> fail: %s", name, err)
 				}
-			}(v.(*grpc.ClientConn), p.self.ID)
+			}(v.(*grpc.ClientConn), stub, name)
 		}
 	}
 

@@ -365,3 +365,12 @@ func (e *DBSnapshot) GetStateCFSnapshotIterator() *gorocksdb.Iterator {
 	}
 	return e.getSnapshotIterator(e.snapshot, e.StateCF)
 }
+
+func (e *DBSnapshot) GetFromStateDeltaCFSnapshot(key []byte) ([]byte, error) {
+
+	if e.snapshot == nil {
+		return nil, fmt.Errorf("Snapshot is not inited")
+	}
+	return e.getFromSnapshot(e.snapshot, e.StateDeltaCF, key)
+}
+

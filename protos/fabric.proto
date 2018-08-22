@@ -274,6 +274,7 @@ message GlobalState{
 message BlockState {
     Block block = 1;
     bytes stateDelta = 2;
+    uint64 Height = 3;
 }
 
 // SyncBlockRange is the payload of Message.SYNC_GET_BLOCKS, where
@@ -325,6 +326,11 @@ message SyncStateDeltas {
     repeated bytes deltas = 2;
 }
 
+message SyncBlockState {
+    SyncBlockRange range = 1;
+    repeated BlockState syncdata = 2;
+}
+
 // Like chat, stateSync wrap messages used in a syncing session
 message SyncMsg {
     enum Type {
@@ -345,6 +351,7 @@ message SyncMsg {
         SYNC_SESSION_SNAPSHOT = 15;
         SYNC_SESSION_GET_DELTAS = 16;
         SYNC_SESSION_DELTAS = 17;
+        SYNC_SESSION_START_ACK = 18;
     }
     Type type = 1;
     uint64 correlationId = 2;

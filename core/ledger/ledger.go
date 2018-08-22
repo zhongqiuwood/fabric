@@ -98,14 +98,14 @@ func GetLedger() (*Ledger, error) {
 		//check version before obtain ledger ...
 		ledgerError = UpgradeLedger(true)
 		if ledgerError == nil {
-			ledger, ledgerError = GetNewLedger()
+			ledger, ledgerError = GetNewLedger(db.GetDBHandle())
 		}
 	})
 	return ledger, ledgerError
 }
 
 // GetNewLedger - gives a reference to a new ledger TODO need better approach
-func GetNewLedger() (*Ledger, error) {
+func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 
 	blockchain, err := newBlockchain()
 	if err != nil {
@@ -117,7 +117,7 @@ func GetNewLedger() (*Ledger, error) {
 		return nil, err
 	}
 
-	state := state.NewState()
+	state := state.NewState(db)
 
 	err = sanityCheck()
 	if err != nil {

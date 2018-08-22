@@ -46,6 +46,7 @@ const (
 // This encapsulates a particular implementation for managing the state persistence
 // This is not thread safe
 type State struct {
+	*db.OpenchainDB
 	stateImpl             statemgmt.HashableState
 	stateDelta            *statemgmt.StateDelta
 	currentTxStateDelta   *statemgmt.StateDelta
@@ -56,16 +57,16 @@ type State struct {
 }
 
 // NewState constructs a new State. This Initializes encapsulated state implementation
-func NewState() *State {
+func NewState(db *db.OpenchainDB) *State {
 	initConfig()
 	logger.Infof("Initializing state implementation [%s]", stateImplName)
 	switch stateImplName {
 	case buckettreeType:
-		stateImpl = buckettree.NewStateImpl()
+		stateImpl = buckettree.NewStateImpl(db)
 	case trieType:
-		stateImpl = trie.NewStateImpl()
+		stateImpl = trie.NewStateImpl(db)
 	case rawType:
-		stateImpl = raw.NewStateImpl()
+		stateImpl = raw.NewStateImpl(db)
 	default:
 		panic("Should not reach here. Configs should have checked for the stateImplName being a valid names ")
 	}
@@ -73,7 +74,7 @@ func NewState() *State {
 	if err != nil {
 		panic(fmt.Errorf("Error during initialization of state implementation: %s", err))
 	}
-	return &State{stateImpl, statemgmt.NewStateDelta(), statemgmt.NewStateDelta(), "", make(map[string][]byte),
+	return &State{db, stateImpl, statemgmt.NewStateDelta(), statemgmt.NewStateDelta(), "", make(map[string][]byte),
 		false, uint64(deltaHistorySize)}
 }
 
@@ -274,7 +275,7 @@ func (state *State) GetSnapshot(blockNumber uint64, dbSnapshot *db.DBSnapshot) (
 
 // FetchStateDeltaFromDB fetches the StateDelta corrsponding to given blockNumber
 func (state *State) FetchStateDeltaFromDB(blockNumber uint64) (*statemgmt.StateDelta, error) {
-	stateDeltaBytes, err := db.GetDBHandle().GetValue(db.StateDeltaCF, encodeStateDeltaKey(blockNumber))
+	stateDeltaBytes, err := state.GetValue(db.StateDeltaCF, encodeStateDeltaKey(blockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -327,7 +328,7 @@ func (state *State) CommitStateDelta() error {
 		state.updateStateImpl = false
 	}
 
-	writeBatch := db.GetDBHandle().NewWriteBatch()
+	writeBatch := state.NewWriteBatch()
 	defer writeBatch.Destroy()
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 	return writeBatch.BatchCommit()
@@ -338,7 +339,7 @@ func (state *State) CommitStateDelta() error {
 // a snapshot.
 func (state *State) DeleteState() error {
 	state.ClearInMemoryChanges(false)
-	err := db.GetDBHandle().DeleteState()
+	err := state.OpenchainDB.DeleteState()
 	if err != nil {
 		logger.Errorf("Error deleting state: %s", err)
 	}

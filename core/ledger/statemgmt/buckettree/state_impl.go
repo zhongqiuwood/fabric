@@ -28,6 +28,7 @@ var logger = logging.MustGetLogger("buckettree")
 
 // StateImpl - implements the interface - 'statemgmt.HashableState'
 type StateImpl struct {
+	*db.OpenchainDB
 	dataNodesDelta         *dataNodesDelta
 	bucketTreeDelta        *bucketTreeDelta
 	persistedStateHash     []byte
@@ -37,14 +38,14 @@ type StateImpl struct {
 }
 
 // NewStateImpl constructs a new StateImpl
-func NewStateImpl() *StateImpl {
-	return &StateImpl{}
+func NewStateImpl(db *db.OpenchainDB) *StateImpl {
+	return &StateImpl{OpenchainDB: db}
 }
 
 // Initialize - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 	initConfig(configs)
-	rootBucketNode, err := fetchBucketNodeFromDB(constructRootBucketKey())
+	rootBucketNode, err := fetchBucketNodeFromDB(stateImpl.OpenchainDB, constructRootBucketKey())
 	if err != nil {
 		return err
 	}
@@ -57,7 +58,7 @@ func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 	if !ok {
 		bucketCacheMaxSize = defaultBucketCacheMaxSize
 	}
-	stateImpl.bucketCache = newBucketCache(bucketCacheMaxSize)
+	stateImpl.bucketCache = newBucketCache(bucketCacheMaxSize, stateImpl.OpenchainDB)
 	stateImpl.bucketCache.loadAllBucketNodesFromDB()
 	return nil
 }
@@ -65,7 +66,7 @@ func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 // Get - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) Get(chaincodeID string, key string) ([]byte, error) {
 	dataKey := newDataKey(chaincodeID, key)
-	dataNode, err := fetchDataNodeFromDB(dataKey)
+	dataNode, err := fetchDataNodeFromDB(stateImpl.OpenchainDB, dataKey)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +128,7 @@ func (stateImpl *StateImpl) processDataNodeDelta() error {
 	afftectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
 	for _, bucketKey := range afftectedBuckets {
 		updatedDataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(bucketKey)
-		existingDataNodes, err := fetchDataNodesFromDBFor(bucketKey)
+		existingDataNodes, err := fetchDataNodesFromDBFor(stateImpl.OpenchainDB, bucketKey)
 		if err != nil {
 			return err
 		}
@@ -298,5 +299,5 @@ func (stateImpl *StateImpl) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (s
 
 // GetRangeScanIterator - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey string, endKey string) (statemgmt.RangeScanIterator, error) {
-	return newRangeScanIterator(chaincodeID, startKey, endKey)
+	return newRangeScanIterator(stateImpl.OpenchainDB, chaincodeID, startKey, endKey)
 }

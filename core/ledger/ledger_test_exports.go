@@ -30,7 +30,7 @@ func InitTestLedger(t *testing.T) *Ledger {
 	testDBWrapper.CleanDB(t)
 	_, err := GetLedger()
 	testutil.AssertNoError(t, err, "Error while constructing ledger")
-	newLedger, err := GetNewLedger()
+	newLedger, err := GetNewLedger(testDBWrapper.GetDB())
 	testutil.AssertNoError(t, err, "Error while constructing ledger")
 	ledger = newLedger
 	return newLedger

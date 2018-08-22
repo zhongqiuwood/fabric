@@ -24,12 +24,13 @@ import (
 // StateImpl implements raw state management. This implementation does not support computation of crypto-hash of the state.
 // It simply stores the compositeKey and value in the db
 type StateImpl struct {
+	*db.OpenchainDB
 	stateDelta *statemgmt.StateDelta
 }
 
 // NewStateImpl constructs new instance of raw state
-func NewStateImpl() *StateImpl {
-	return &StateImpl{}
+func NewStateImpl(db *db.OpenchainDB) *StateImpl {
+	return &StateImpl{OpenchainDB: db}
 }
 
 // Initialize - method implementation for interface 'statemgmt.HashableState'
@@ -40,8 +41,7 @@ func (impl *StateImpl) Initialize(configs map[string]interface{}) error {
 // Get - method implementation for interface 'statemgmt.HashableState'
 func (impl *StateImpl) Get(chaincodeID string, key string) ([]byte, error) {
 	compositeKey := statemgmt.ConstructCompositeKey(chaincodeID, key)
-	openchainDB := db.GetDBHandle()
-	return openchainDB.GetValue(db.StateCF, compositeKey)
+	return impl.GetValue(db.StateCF, compositeKey)
 }
 
 // PrepareWorkingSet - method implementation for interface 'statemgmt.HashableState'

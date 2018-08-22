@@ -30,6 +30,7 @@ var logHashOfEveryNode = false
 // StateTrie defines the trie for the state, a merkle tree where keys
 // and values are stored for fast hash computation.
 type StateTrie struct {
+	*db.OpenchainDB
 	trieDelta              *trieDelta
 	persistedStateHash     []byte
 	lastComputedCryptoHash []byte
@@ -37,13 +38,13 @@ type StateTrie struct {
 }
 
 // NewStateImpl contructs a new empty StateTrie
-func NewStateImpl() *StateTrie {
-	return &StateTrie{}
+func NewStateImpl(db *db.OpenchainDB) *StateTrie {
+	return &StateTrie{OpenchainDB: db}
 }
 
 // Initialize the state trie with the root key
 func (stateTrie *StateTrie) Initialize(configs map[string]interface{}) error {
-	rootNode, err := fetchTrieNodeFromDB(rootTrieKey)
+	rootNode, err := fetchTrieNodeFromDB(stateTrie.OpenchainDB, rootTrieKey)
 	if err != nil {
 		panic(fmt.Errorf("Error in fetching root node from DB while initializing state trie: %s", err))
 	}
@@ -56,7 +57,7 @@ func (stateTrie *StateTrie) Initialize(configs map[string]interface{}) error {
 
 // Get the value for a given chaincode ID and key
 func (stateTrie *StateTrie) Get(chaincodeID string, key string) ([]byte, error) {
-	trieNode, err := fetchTrieNodeFromDB(newTrieKey(chaincodeID, key))
+	trieNode, err := fetchTrieNodeFromDB(stateTrie.OpenchainDB, newTrieKey(chaincodeID, key))
 	if err != nil {
 		return nil, err
 	}
@@ -116,7 +117,7 @@ func (stateTrie *StateTrie) ComputeCryptoHash() ([]byte, error) {
 
 func (stateTrie *StateTrie) processChangedNode(changedNode *trieNode) error {
 	stateTrieLogger.Debugf("Enter - processChangedNode() for node [%s]", changedNode)
-	dbNode, err := fetchTrieNodeFromDB(changedNode.trieKey)
+	dbNode, err := fetchTrieNodeFromDB(stateTrie.OpenchainDB, changedNode.trieKey)
 	if err != nil {
 		return err
 	}
@@ -186,5 +187,5 @@ func (stateTrie *StateTrie) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (s
 
 // GetRangeScanIterator returns an iterator for performing a range scan between the start and end keys
 func (stateTrie *StateTrie) GetRangeScanIterator(chaincodeID string, startKey string, endKey string) (statemgmt.RangeScanIterator, error) {
-	return newRangeScanIterator(chaincodeID, startKey, endKey)
+	return newRangeScanIterator(stateTrie.OpenchainDB, chaincodeID, startKey, endKey)
 }

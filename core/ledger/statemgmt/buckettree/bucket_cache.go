@@ -34,6 +34,7 @@ var defaultBucketCacheMaxSize = 100 // MBs
 // be controlled - by keeping seletive buckets in the cache (most likely first few levels of the bucket tree - because,
 // higher the level of the bucket, more are the chances that the bucket would be required for recomputation of hash)
 type bucketCache struct {
+	*db.OpenchainDB
 	isEnabled bool
 	c         map[bucketKey]*bucketNode
 	lock      sync.RWMutex
@@ -41,22 +42,21 @@ type bucketCache struct {
 	maxSize   uint64
 }
 
-func newBucketCache(maxSizeMBs int) *bucketCache {
+func newBucketCache(maxSizeMBs int, db *db.OpenchainDB) *bucketCache {
 	isEnabled := true
 	if maxSizeMBs <= 0 {
 		isEnabled = false
 	} else {
 		logger.Infof("Constructing bucket-cache with max bucket cache size = [%d] MBs", maxSizeMBs)
 	}
-	return &bucketCache{c: make(map[bucketKey]*bucketNode), maxSize: uint64(maxSizeMBs * 1024 * 1024), isEnabled: isEnabled}
+	return &bucketCache{OpenchainDB: db, c: make(map[bucketKey]*bucketNode), maxSize: uint64(maxSizeMBs * 1024 * 1024), isEnabled: isEnabled}
 }
 
 func (cache *bucketCache) loadAllBucketNodesFromDB() {
 	if !cache.isEnabled {
 		return
 	}
-	openchainDB := db.GetDBHandle()
-	itr := openchainDB.GetIterator(db.StateCF)
+	itr := cache.GetIterator(db.StateCF)
 	defer itr.Close()
 	itr.Seek([]byte{byte(0)})
 	count := 0
@@ -116,13 +116,13 @@ func (cache *bucketCache) putWithoutLock(key bucketKey, node *bucketNode) {
 func (cache *bucketCache) get(key bucketKey) (*bucketNode, error) {
 	defer perfstat.UpdateTimeStat("timeSpent", time.Now())
 	if !cache.isEnabled {
-		return fetchBucketNodeFromDB(&key)
+		return fetchBucketNodeFromDB(cache.OpenchainDB, &key)
 	}
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
 	bucketNode := cache.c[key]
 	if bucketNode == nil {
-		return fetchBucketNodeFromDB(&key)
+		return fetchBucketNodeFromDB(cache.OpenchainDB, &key)
 	}
 	return bucketNode, nil
 }

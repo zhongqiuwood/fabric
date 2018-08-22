@@ -21,9 +21,8 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 )
 
-func fetchDataNodeFromDB(dataKey *dataKey) (*dataNode, error) {
-	openchainDB := db.GetDBHandle()
-	nodeBytes, err := openchainDB.GetValue(db.StateCF, dataKey.getEncodedBytes())
+func fetchDataNodeFromDB(odb *db.OpenchainDB, dataKey *dataKey) (*dataNode, error) {
+	nodeBytes, err := odb.GetValue(db.StateCF, dataKey.getEncodedBytes())
 	if err != nil {
 		return nil, err
 	}
@@ -39,9 +38,8 @@ func fetchDataNodeFromDB(dataKey *dataKey) (*dataNode, error) {
 	return unmarshalDataNode(dataKey, nodeBytes), nil
 }
 
-func fetchBucketNodeFromDB(bucketKey *bucketKey) (*bucketNode, error) {
-	openchainDB := db.GetDBHandle()
-	nodeBytes, err := openchainDB.GetValue(db.StateCF, bucketKey.getEncodedBytes())
+func fetchBucketNodeFromDB(odb *db.OpenchainDB, bucketKey *bucketKey) (*bucketNode, error) {
+	nodeBytes, err := odb.GetValue(db.StateCF, bucketKey.getEncodedBytes())
 	if err != nil {
 		return nil, err
 	}
@@ -53,10 +51,9 @@ func fetchBucketNodeFromDB(bucketKey *bucketKey) (*bucketNode, error) {
 
 type rawKey []byte
 
-func fetchDataNodesFromDBFor(bucketKey *bucketKey) (dataNodes, error) {
+func fetchDataNodesFromDBFor(odb *db.OpenchainDB, bucketKey *bucketKey) (dataNodes, error) {
 	logger.Debugf("Fetching from DB data nodes for bucket [%s]", bucketKey)
-	openchainDB := db.GetDBHandle()
-	itr := openchainDB.GetIterator(db.StateCF)
+	itr := odb.GetIterator(db.StateCF)
 	defer itr.Close()
 	minimumDataKeyBytes := minimumPossibleDataKeyBytesFor(bucketKey)
 

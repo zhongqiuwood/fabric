@@ -172,7 +172,7 @@ type ledgerTestWrapper struct {
 
 func createFreshDBAndTestLedgerWrapper(tb testing.TB) *ledgerTestWrapper {
 	testDBWrapper.CleanDB(tb)
-	ledger, err := GetNewLedger()
+	ledger, err := GetNewLedger(testDBWrapper.GetDB())
 	testutil.AssertNoError(tb, err, "Error while constructing ledger")
 	gensisstate, err := ledger.GetCurrentStateHash()
 	testutil.AssertNoError(tb, err, "Error while get gensis state")

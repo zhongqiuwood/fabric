@@ -37,6 +37,10 @@ func NewTestDBWrapper() *TestDBWrapper {
 ///////////////////////////
 // Test db creation and cleanup functions
 
+func (testDB *TestDBWrapper) GetDB() *OpenchainDB {
+	return GetDBHandle()
+}
+
 // CleanDB This method closes existing db, remove the db dir.
 // Can be called before starting a test so that data from other tests does not interfere
 func (testDB *TestDBWrapper) CleanDB(t testing.TB) {

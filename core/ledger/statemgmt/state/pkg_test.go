@@ -44,7 +44,7 @@ type stateTestWrapper struct {
 }
 
 func newStateTestWrapper(t *testing.T) *stateTestWrapper {
-	return &stateTestWrapper{t, NewState()}
+	return &stateTestWrapper{t, NewState(testDBWrapper.GetDB())}
 }
 
 func (testWrapper *stateTestWrapper) get(chaincodeID string, key string, committed bool) []byte {

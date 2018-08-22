@@ -31,8 +31,8 @@ type RangeScanIterator struct {
 	done         bool
 }
 
-func newRangeScanIterator(chaincodeID string, startKey string, endKey string) (*RangeScanIterator, error) {
-	dbItr := db.GetDBHandle().GetIterator(db.StateCF)
+func newRangeScanIterator(odb *db.OpenchainDB, chaincodeID string, startKey string, endKey string) (*RangeScanIterator, error) {
+	dbItr := odb.GetIterator(db.StateCF)
 	encodedStartKey := newTrieKey(chaincodeID, startKey).getEncodedBytes()
 	dbItr.Seek(encodedStartKey)
 	return &RangeScanIterator{dbItr, chaincodeID, endKey, "", nil, false}, nil

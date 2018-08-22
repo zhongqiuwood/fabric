@@ -17,17 +17,16 @@ limitations under the License.
 package buckettree
 
 import (
-	"testing"
-
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/spf13/viper"
+	"testing"
 )
 
 func TestConfigInit(t *testing.T) {
 	configs := viper.GetStringMap("ledger.state.dataStructure.configs")
 	t.Logf("Configs loaded from yaml = %#v", configs)
 	testDBWrapper.CleanDB(t)
-	stateImpl := NewStateImpl()
+	stateImpl := NewStateImpl(testDBWrapper.GetDB())
 	stateImpl.Initialize(configs)
 	testutil.AssertEquals(t, conf.getNumBucketsAtLowestLevel(), configs[ConfigNumBuckets])
 	testutil.AssertEquals(t, conf.getMaxGroupingAtEachLevel(), configs[ConfigMaxGroupingAtEachLevel])

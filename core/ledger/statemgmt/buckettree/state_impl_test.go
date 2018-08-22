@@ -345,27 +345,27 @@ func TestStateImpl_DB_Changes(t *testing.T) {
 	testutil.AssertEquals(t, stateImplTestWrapper.get("chaincodeID2", "key1"), []byte("value3"))
 
 	// fetch datanode from DB
-	dataNodeFromDB, _ := fetchDataNodeFromDB(newDataKey("chaincodeID2", "key1"))
+	dataNodeFromDB, _ := fetchDataNodeFromDB(testDBWrapper.GetDB(), newDataKey("chaincodeID2", "key1"))
 	testutil.AssertEquals(t, dataNodeFromDB, newDataNode(newDataKey("chaincodeID2", "key1"), []byte("value3")))
 
 	//fetch non-existing data node from DB
-	dataNodeFromDB, _ = fetchDataNodeFromDB(newDataKey("chaincodeID10", "key10"))
+	dataNodeFromDB, _ = fetchDataNodeFromDB(testDBWrapper.GetDB(), newDataKey("chaincodeID10", "key10"))
 	t.Logf("isNIL...[%t]", dataNodeFromDB == nil)
 	testutil.AssertNil(t, dataNodeFromDB)
 
 	// fetch all data nodes from db that belong to bucket 1 at lowest level
-	dataNodesFromDB, _ := fetchDataNodesFromDBFor(newBucketKeyAtLowestLevel(1))
+	dataNodesFromDB, _ := fetchDataNodesFromDBFor(testDBWrapper.GetDB(), newBucketKeyAtLowestLevel(1))
 	testutil.AssertContainsAll(t, dataNodesFromDB,
 		dataNodes{newDataNode(newDataKey("chaincodeID1", "key1"), []byte("value1")),
 			newDataNode(newDataKey("chaincodeID1", "key2"), []byte("value2"))})
 
 	// fetch all data nodes from db that belong to bucket 2 at lowest level
-	dataNodesFromDB, _ = fetchDataNodesFromDBFor(newBucketKeyAtLowestLevel(2))
+	dataNodesFromDB, _ = fetchDataNodesFromDBFor(testDBWrapper.GetDB(), newBucketKeyAtLowestLevel(2))
 	testutil.AssertContainsAll(t, dataNodesFromDB,
 		dataNodes{newDataNode(newDataKey("chaincodeID2", "key1"), []byte("value3"))})
 
 	// fetch first bucket at second level
-	bucketNodeFromDB, _ := fetchBucketNodeFromDB(newBucketKey(2, 1))
+	bucketNodeFromDB, _ := fetchBucketNodeFromDB(testDBWrapper.GetDB(), newBucketKey(2, 1))
 	testutil.AssertEquals(t, bucketNodeFromDB.bucketKey, newBucketKey(2, 1))
 	//check childrenCryptoHash entries in the bucket node from DB
 	testutil.AssertEquals(t, bucketNodeFromDB.childrenCryptoHash[0],
@@ -377,7 +377,7 @@ func TestStateImpl_DB_Changes(t *testing.T) {
 	testutil.AssertNil(t, bucketNodeFromDB.childrenCryptoHash[2])
 
 	// third bucket at second level should be nil
-	bucketNodeFromDB, _ = fetchBucketNodeFromDB(newBucketKey(2, 3))
+	bucketNodeFromDB, _ = fetchBucketNodeFromDB(testDBWrapper.GetDB(), newBucketKey(2, 3))
 	testutil.AssertNil(t, bucketNodeFromDB)
 }
 

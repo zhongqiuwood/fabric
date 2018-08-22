@@ -69,7 +69,7 @@ type stateImplTestWrapper struct {
 
 func newStateImplTestWrapper(t testing.TB) *stateImplTestWrapper {
 	var configMap map[string]interface{}
-	stateImpl := NewStateImpl()
+	stateImpl := NewStateImpl(testDBWrapper.GetDB())
 	err := stateImpl.Initialize(configMap)
 	testutil.AssertNoError(t, err, "Error while constrcuting stateImpl")
 	return &stateImplTestWrapper{configMap, stateImpl, t}
@@ -77,7 +77,7 @@ func newStateImplTestWrapper(t testing.TB) *stateImplTestWrapper {
 
 func newStateImplTestWrapperWithCustomConfig(t testing.TB, numBuckets int, maxGroupingAtEachLevel int) *stateImplTestWrapper {
 	configMap := map[string]interface{}{ConfigNumBuckets: numBuckets, ConfigMaxGroupingAtEachLevel: maxGroupingAtEachLevel}
-	stateImpl := NewStateImpl()
+	stateImpl := NewStateImpl(testDBWrapper.GetDB())
 	err := stateImpl.Initialize(configMap)
 	testutil.AssertNoError(t, err, "Error while constrcuting stateImpl")
 	return &stateImplTestWrapper{configMap, stateImpl, t}
@@ -92,7 +92,7 @@ func createFreshDBAndInitTestStateImplWithCustomHasher(t testing.TB, numBuckets 
 	}
 
 	testDBWrapper.CleanDB(t)
-	stateImpl := NewStateImpl()
+	stateImpl := NewStateImpl(testDBWrapper.GetDB())
 	stateImpl.Initialize(configMap)
 	stateImplTestWrapper := &stateImplTestWrapper{configMap, stateImpl, t}
 	stateDelta := statemgmt.NewStateDelta()
@@ -100,7 +100,7 @@ func createFreshDBAndInitTestStateImplWithCustomHasher(t testing.TB, numBuckets 
 }
 
 func (testWrapper *stateImplTestWrapper) constructNewStateImpl() {
-	stateImpl := NewStateImpl()
+	stateImpl := NewStateImpl(testDBWrapper.GetDB())
 	err := stateImpl.Initialize(testWrapper.configMap)
 	testutil.AssertNoError(testWrapper.t, err, "Error while constructing new state tree")
 	testWrapper.stateImpl = stateImpl

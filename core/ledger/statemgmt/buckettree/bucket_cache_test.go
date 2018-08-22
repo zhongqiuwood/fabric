@@ -17,11 +17,11 @@ limitations under the License.
 package buckettree
 
 import (
-	"testing"
-
+	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/op/go-logging"
+	"testing"
 )
 
 func TestBucketCache(t *testing.T) {
@@ -43,7 +43,7 @@ func testGetRootHashes(t *testing.T, enableBlockCache bool) ([]byte, []byte, []b
 	testHasher.populate("chaincodeID3", "key3", 26)
 
 	if !enableBlockCache {
-		stateImplTestWrapper.stateImpl.bucketCache = newBucketCache(0)
+		stateImplTestWrapper.stateImpl.bucketCache = newBucketCache(0, db.GetDBHandle())
 	}
 	stateDelta.Set("chaincodeID1", "key1", []byte("value1"), nil)
 	stateDelta.Set("chaincodeID2", "key2", []byte("value2"), nil)
@@ -62,7 +62,7 @@ func testGetRootHashes(t *testing.T, enableBlockCache bool) ([]byte, []byte, []b
 	stateImplTestWrapper.persistChangesAndResetInMemoryChanges()
 
 	if enableBlockCache {
-		stateImplTestWrapper.stateImpl.bucketCache = newBucketCache(20)
+		stateImplTestWrapper.stateImpl.bucketCache = newBucketCache(20, db.GetDBHandle())
 		stateImplTestWrapper.stateImpl.bucketCache.loadAllBucketNodesFromDB()
 	}
 	stateDelta = statemgmt.NewStateDelta()

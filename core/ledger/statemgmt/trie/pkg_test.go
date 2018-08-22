@@ -35,7 +35,7 @@ type stateTrieTestWrapper struct {
 }
 
 func newStateTrieTestWrapper(t *testing.T) *stateTrieTestWrapper {
-	return &stateTrieTestWrapper{NewStateImpl(), t}
+	return &stateTrieTestWrapper{NewStateImpl(testDBWrapper.GetDB()), t}
 }
 
 func (stateTrieTestWrapper *stateTrieTestWrapper) Get(chaincodeID string, key string) []byte {

@@ -5,6 +5,7 @@ import (
 	_ "github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/statesync/stub"
+	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
 	"github.com/looplab/fsm"
@@ -12,7 +13,6 @@ import (
 	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"sync"
-	"github.com/abchain/fabric/flogging"
 )
 
 var logger = logging.MustGetLogger("statesync")
@@ -24,7 +24,6 @@ func init() {
 var stateSyncCore *StateSync
 var syncerErr error
 var once sync.Once
-
 
 func NewStateSync(p peer.Peer) {
 
@@ -51,12 +50,11 @@ func GetStateSync() (*StateSync, error) {
 	return stateSyncCore, syncerErr
 }
 
-
 type StateSync struct {
 	*pb.StreamStub
 	sync.RWMutex
 	curCorrrelation uint64
-	curTask    context.Context
+	curTask         context.Context
 }
 
 type ErrInProcess struct {
@@ -81,10 +79,10 @@ func (s *StateSync) IsBusy() uint64 {
 }
 
 type stateSyncHandler struct {
-	remotePeerId  *pb.PeerID
-	fsmHandler *fsm.FSM
-	server  *stateServer
-	client  *syncer
+	remotePeerId *pb.PeerID
+	fsmHandler   *fsm.FSM
+	server       *stateServer
+	client       *syncer
 }
 
 func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
@@ -102,20 +100,19 @@ func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 	return h
 }
 
+// func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
 
-func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
+// 	for {
+// 		select {
+// 		case event := <-notify :
+// 			logger.Infof("[%s]: handle SyncEvent: %+v", flogging.GoRDef, event)
+// 			err := s.SyncToState(event.Ctx, nil, nil, event.Peer)
+// 			cb := &peer.SyncEventCallback{err}
 
-	for {
-		select {
-		case event := <-notify :
-			logger.Infof("[%s]: handle SyncEvent: %+v", flogging.GoRDef, event)
-			err := s.SyncToState(event.Ctx, nil, nil, event.Peer)
-			cb := &peer.SyncEventCallback{err}
-
-			callback <- cb
-		}
-	}
-}
+// 			callback <- cb
+// 		}
+// 	}
+// }
 
 func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
 
@@ -146,7 +143,6 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 
 	return err
 }
-
 
 func (s *StateSync) executeSync(h *pb.StreamHandler, targetState []byte) error {
 
@@ -231,7 +227,6 @@ func (syncHandler *stateSyncHandler) fini() {
 	syncHandler.fsmHandler.Event(enterSyncFinish)
 }
 
-
 func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMsg_Type, payloadMsg proto.Message) error {
 
 	logger.Debugf("<%s> to <%s>", msgType.String(), syncHandler.remotePeerIdName())
@@ -265,7 +260,6 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 	}
 	return err
 }
-
 
 func pickStreamHandler(h *stateSyncHandler) (*pb.StreamHandler, error) {
 
@@ -308,7 +302,6 @@ func (syncHandler *stateSyncHandler) onRecvSyncMsg(e *fsm.Event, payloadMsg prot
 	logger.Debugf("<%s> from <%s>", msg.Type.String(), syncHandler.remotePeerIdName())
 	return msg
 }
-
 
 func (h *stateSyncHandler) leaveIdle(e *fsm.Event) {
 
@@ -365,6 +358,3 @@ func (h *stateSyncHandler) BeforeSendMessage(proto.Message) error {
 func (h *stateSyncHandler) OnWriteError(e error) {
 	logger.Error("Sync handler encounter writer error:", e)
 }
-
-
-

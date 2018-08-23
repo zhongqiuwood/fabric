@@ -542,12 +542,16 @@ func (ledger *Ledger) ApplyStateDelta(id interface{}, delta *statemgmt.StateDelt
 // CommitStateDelta will commit the state delta passed to ledger.ApplyStateDelta
 // to the DB
 func (ledger *Ledger) CommitStateDelta(id interface{}) error {
+	return ledger.CommitAndIndexStateDelta(id, 0)
+}
+
+func (ledger *Ledger) CommitAndIndexStateDelta(id interface{}, blockNumber uint64) error {
 	err := ledger.checkValidIDCommitORRollback(id)
 	if err != nil {
 		return err
 	}
 	defer ledger.resetForNextTxGroup(true)
-	return ledger.state.CommitStateDelta()
+	return ledger.state.CommitStateDelta(blockNumber)
 }
 
 // RollbackStateDelta will discard the state delta passed
@@ -649,39 +653,6 @@ func (ledger *Ledger) GetBlockNumberByTxid(txID string) (uint64, uint64, error) 
 // GetBlockchainSize returns number of blocks in blockchain
 func (ledger *Ledger) GetBlockchainSize() uint64 {
 	return ledger.blockchain.getSize()
-}
-
-func (ledger *Ledger) CommitBlockAndStateDelta(blockNum uint64, block *protos.Block, id interface{}) error {
-	err := ledger.checkValidIDCommitORRollback(id)
-	if err != nil {
-		return err
-	}
-	defer ledger.resetForNextTxGroup(true)
-
-	writeBatch := db.GetDBHandle().NewWriteBatch()
-	defer writeBatch.Destroy()
-	ledger.state.CommitStateDeltaByBlockNum(blockNum, writeBatch)
-
-	if block != nil {
-
-		if block.GetTransactions() != nil {
-			err = ledger.txpool.putTransaction(block.Transactions)
-		} else {
-			err = ledger.txpool.commitTransaction(block.GetTxids())
-		}
-
-		if err != nil {
-			return err
-		}
-
-		err = ledger.blockchain.commitRawBlock(block, blockNum, writeBatch)
-		if err != nil {
-			return err
-		}
-		sendProducerBlockEvent(block)
-	}
-
-	return writeBatch.BatchCommit()
 }
 
 // PutBlock put a raw block on the chain and also commit the corresponding transactions

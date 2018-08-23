@@ -1,25 +1,25 @@
 package statesync
 
 import (
+	"bytes"
 	"fmt"
+	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/looplab/fsm"
+	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"time"
-	"github.com/spf13/viper"
-	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/abchain/fabric/core/util"
-	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/flogging"
-	"bytes"
 )
 
 type syncer struct {
 	context.Context
-	parent *stateSyncHandler
-	ledger *ledger.Ledger
+	parent     *stateSyncHandler
+	ledger     *ledger.Ledger
 	blocksResp chan *pb.SyncBlocks
 
 	positionResp chan *pb.SyncStateResp
@@ -30,38 +30,37 @@ type syncer struct {
 	maxStateDeltas     int    // The maximum number of state deltas to attempt to retrieve before giving up and performing a full state snapshot retrieval
 	maxBlockRange      uint64 // The maximum number blocks to attempt to retrieve at once, to prevent from overflowing the peer's buffer
 	maxStateDeltaRange uint64 // The maximum number of state deltas to attempt to retrieve at once, to prevent from overflowing the peer's buffer
-	RecoverDamage        bool          // Whether state transfer should ever modify or delete existing blocks if they are determined to be corrupted
+	RecoverDamage      bool   // Whether state transfer should ever modify or delete existing blocks if they are determined to be corrupted
 
 	DiscoveryThrottleTime time.Duration // The amount of time to wait after discovering there are no connected peers
-	stateValid bool // Are we currently operating under the assumption that the state is valid?
-	inProgress bool // Set when state transfer is in progress so that the state may not be consistent
-	blockVerifyChunkSize uint64        // The max block length to attempt to sync at once, this prevents state transfer from being delayed while the blockchain is validated
+	stateValid            bool          // Are we currently operating under the assumption that the state is valid?
+	inProgress            bool          // Set when state transfer is in progress so that the state may not be consistent
+	blockVerifyChunkSize  uint64        // The max block length to attempt to sync at once, this prevents state transfer from being delayed while the blockchain is validated
 
 	BlockRequestTimeout         time.Duration // How long to wait for a peer to respond to a block request
 	StateDeltaRequestTimeout    time.Duration // How long to wait for a peer to respond to a state delta request
 	StateSnapshotRequestTimeout time.Duration // How long to wait for a peer to respond to a state snapshot request
-	branchNode2CheckpointMap map[string][][]byte
+	branchNode2CheckpointMap    map[string][][]byte
 }
 
 func newSyncer2() (sts *syncer) {
 	l, _ := ledger.GetLedger()
 
-	sts = &syncer { positionResp: make(chan *pb.SyncStateResp),
-		ledger:        l,
+	sts = &syncer{positionResp: make(chan *pb.SyncStateResp),
+		ledger: l,
 	}
 
 	return sts
 }
-
 
 func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 
 	l, _ := ledger.GetLedger()
 
 	sts = &syncer{positionResp: make(chan *pb.SyncStateResp),
-		ledger:        l,
-		Context:       ctx,
-		parent:        h,
+		ledger:  l,
+		Context: ctx,
+		parent:  h,
 	}
 
 	var err error
@@ -109,7 +108,6 @@ func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 
 	return
 }
-
 
 //---------------------------------------------------------------------------
 // 1. receive start confirmed
@@ -170,7 +168,6 @@ func (sts *syncer) afterSyncStateSnapshot(e *fsm.Event) {
 
 }
 
-
 func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
 	targetBlockNumber := uint64(0)
@@ -196,15 +193,15 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 		// if response.BlockHeight < targetHeight {
 		// 	targetHeight = response.BlockHeight
 		// }
-	//case <-sts.Done():
-	//	return 0, 0, fmt.Errorf("Timed out during getSyncTargetBlockNumber")
+		//case <-sts.Done():
+		//	return 0, 0, fmt.Errorf("Timed out during getSyncTargetBlockNumber")
 	}
 
 	var start uint64 = 0
 	end := endBlockNumber
 	for {
 
-		if targetBlockNumber == (start + end) / 2 {
+		if targetBlockNumber == (start+end)/2 {
 			break
 		}
 
@@ -234,20 +231,18 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
 			logger.Infof("start<%d>, end<%d>, targetBlockNumber<%d>, endBlockNumber<%d>",
 				start, end, targetBlockNumber, endBlockNumber)
-		//case <-sts.Done():
-		//	return 0, 0, fmt.Errorf("Timed out during get SyncTargetBlockNumber")
+			//case <-sts.Done():
+			//	return 0, 0, fmt.Errorf("Timed out during get SyncTargetBlockNumber")
 		}
 	}
-
 
 	logger.Infof("return: start<%d>, end<%d>, targetBlockNumber<%d>, endBlockNumber<%d>",
 		start, end, targetBlockNumber, endBlockNumber)
 	return targetBlockNumber, endBlockNumber, nil
 }
 
-
 func (sts *syncer) sanityCheckBlock(block *pb.Block, stateHash []byte,
-	deltaMessage *pb.SyncBlockState) ([]byte, error){
+	deltaMessage *pb.SyncBlockState) ([]byte, error) {
 
 	success := false
 	lastStateHash := stateHash
@@ -304,7 +299,7 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 	logger.Debugf("Requesting state delta range from %d to %d",
 		startBlockNumber, intermediateBlock)
 
-	syncBlockRange := &pb.SyncBlockRange {
+	syncBlockRange := &pb.SyncBlockRange{
 		sts.correlationId,
 		currentStateBlockNumber,
 		intermediateBlock,
@@ -313,7 +308,7 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 	err = sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_GET_DELTAS, payloadMsg)
 
 	if err != nil {
-		return startBlockNumber, fmt.Errorf("Received an error while trying to get " +
+		return startBlockNumber, fmt.Errorf("Received an error while trying to get "+
 			"the state deltas for blocks %d through %d from %s",
 			currentStateBlockNumber, intermediateBlock, sts.parent.remotePeerIdName())
 	}
@@ -331,7 +326,7 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 				deltaMessage.Range.End < deltaMessage.Range.Start ||
 				deltaMessage.Range.End > endBlockNumber {
 				err = fmt.Errorf(
-					"Received a state delta either in the wrong order (backwards) or " +
+					"Received a state delta either in the wrong order (backwards) or "+
 						"not next in sequence, aborting, start=%d, end=%d",
 					deltaMessage.Range.Start, deltaMessage.Range.End)
 				break
@@ -363,12 +358,17 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 				logger.Debugf("sts.ledger.CommitStateDelta: sts.currentStateBlockNumber<%d>",
 					currentStateBlockNumber)
 
-				if sts.ledger.CommitBlockAndStateDelta(currentStateBlockNumber, block, deltaMessage) != nil {
+				if err := sts.ledger.CommitAndIndexStateDelta(deltaMessage, currentStateBlockNumber); err != nil {
 					sts.stateValid = false
-					err = fmt.Errorf("Played state forward according to %s, " +
+					err = fmt.Errorf("Played state forward according to %s, "+
 						"hashes matched, but failed to commit, invalidated state", sts.parent.remotePeerIdName())
 					logger.Errorf("err <%s>", err)
 					break
+				}
+
+				//we can still forward even if we can't persist the block
+				if err := sts.ledger.PutBlock(currentStateBlockNumber, block); err != nil {
+					logger.Warningf("err <Put block fail: %s>", err)
 				}
 
 				logger.Debugf("Moved state to %d, endBlockNumber: %d", currentStateBlockNumber, endBlockNumber)
@@ -397,7 +397,6 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 	}
 	return currentStateBlockNumber, err
 }
-
 
 func (sts *syncer) syncBlocks(startBlock, endBlock uint64) error {
 
@@ -428,7 +427,7 @@ func (sts *syncer) syncBlocks(startBlock, endBlock uint64) error {
 			&pb.SyncBlockRange{
 				sts.correlationId,
 				blockCursor,
-				intermediateBlock,})
+				intermediateBlock})
 		if err != nil {
 			return err
 		}
@@ -459,7 +458,7 @@ func (sts *syncer) syncBlocks(startBlock, endBlock uint64) error {
 			for i, block = range syncBlockMessage.Blocks {
 				// It no longer correct to get duplication or out of range blocks, so we treat this as an error
 				if syncBlockMessage.Range.Start-uint64(i) != blockCursor {
-					return fmt.Errorf("Received a block out of order, indicating a buffer " +
+					return fmt.Errorf("Received a block out of order, indicating a buffer "+
 						"overflow or other corruption: start=%d, end=%d, wanted %d",
 						syncBlockMessage.Range.Start, syncBlockMessage.Range.End, blockCursor)
 				}
@@ -489,7 +488,6 @@ func (sts *syncer) syncBlocks(startBlock, endBlock uint64) error {
 
 	return err
 }
-
 
 func (sts *syncer) leaveSyncLocating(e *fsm.Event) {
 
@@ -545,18 +543,17 @@ func (sts *syncer) enterSyncStateDeltas(e *fsm.Event) {
 	stateUpdate := "enterSyncStateDeltas"
 	sts.dumpStateUpdate(stateUpdate)
 }
+
 //func (sts *syncer) enterIdle(e *fsm.Event) {
 //
 //	stateUpdate := "enterIdle"
 //	sts.dumpStateUpdate(stateUpdate)
 //}
 
-
 func (sts *syncer) dumpStateUpdate(stateUpdate string) {
 	logger.Debugf("Syncer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
 		stateUpdate, sts.correlationId, sts.parent.remotePeerIdName())
 }
-
 
 //------------------------------------------------------------------
 // The Global State Graph
@@ -584,9 +581,6 @@ func (sts *syncer) dumpStateUpdate(stateUpdate string) {
 //                V
 //               [ ]
 
-
-
-
 // Target: Switch to B2 from startBlockNumber
 // Prerequisite: go to the best checkpoint(preference: C3->C2->C1) from [startBlockNumber]:
 // 1. Go to [B] from [startBlockNumber]
@@ -595,7 +589,6 @@ func (sts *syncer) dumpStateUpdate(stateUpdate string) {
 // 4. GO to [A] if #3 fails
 // 5. Go and try to switch to [C1], then return if success
 // 6. Go and try to switch to [G] if #5 fails
-
 
 //
 //------------------------------------------------------------------
@@ -612,7 +605,6 @@ func (sts *syncer) switchToBestCheckpoint(startBlockNumber uint64) (uint64, erro
 	}
 
 	sts.branchNode2CheckpointMap = traverseGlobalStateGraph(genesis.StateHash, checkpointsMap, true)
-
 
 	var checkpointPosition uint64
 	var checkpointStatehash []byte
@@ -664,7 +656,6 @@ func (sts *syncer) switchToBestCheckpoint(startBlockNumber uint64) (uint64, erro
 	return checkpointPosition, err
 }
 
-
 func (sts *syncer) switchToCheckpointByBranchNode(branchNodeStateHash []byte) (uint64, []byte, error) {
 
 	if branchNodeStateHash == nil {
@@ -694,15 +685,14 @@ func (sts *syncer) switchToCheckpointByBranchNode(branchNodeStateHash []byte) (u
 	return checkpointPosition, checkpointStateHash, err
 }
 
-
 func traverseGlobalStateGraph(genesisStateHash []byte, checkpointsMap map[string]bool, hexEncoded bool) map[string][][]byte {
 
-	var stateHashList [][] byte
+	var stateHashList [][]byte
 	branchNode2CheckpointMap := make(map[string][][]byte)
 
 	stateHashList = append(stateHashList, genesisStateHash)
 
-	for i := 0; i < len(stateHashList) ; i++ {
+	for i := 0; i < len(stateHashList); i++ {
 
 		stateHash := stateHashList[i]
 		nextBranchNodeStateHash, checkpointList := traverseTillBranch(stateHash, checkpointsMap, hexEncoded)
@@ -730,8 +720,8 @@ func traverseGlobalStateGraph(genesisStateHash []byte, checkpointsMap map[string
 	return branchNode2CheckpointMap
 }
 
-func traverseTillBranch(startStateHash []byte, checkpointMap map[string]bool, hexEncoded bool) ([]byte, [][] byte) {
-	var checkpointList [][] byte
+func traverseTillBranch(startStateHash []byte, checkpointMap map[string]bool, hexEncoded bool) ([]byte, [][]byte) {
+	var checkpointList [][]byte
 	curcorStateHash := startStateHash
 
 	for {
@@ -767,7 +757,6 @@ func traverseTillBranch(startStateHash []byte, checkpointMap map[string]bool, he
 	return curcorStateHash, checkpointList
 }
 
-
 func (sts *syncer) GetStateHash(targetBlockNumber uint64) ([]byte, error) {
 
 	block, err := sts.ledger.GetBlockByNumber(targetBlockNumber)
@@ -777,7 +766,6 @@ func (sts *syncer) GetStateHash(targetBlockNumber uint64) ([]byte, error) {
 
 	return block.StateHash, nil
 }
-
 
 func (sts *syncer) stateSwitch(statehash []byte) (uint64, error) {
 
@@ -796,4 +784,3 @@ func (sts *syncer) stateSwitch(statehash []byte) (uint64, error) {
 
 	return gs.Count, nil
 }
-

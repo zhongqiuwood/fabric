@@ -296,6 +296,12 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.
 	}
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 
+	//we consider this indicate NOT index delta (we never index delta for gensis block)
+	if blockNumber == 0 {
+		logger.Debug("state.addChangesForPersistence()...finished")
+		return
+	}
+
 	serializedStateDelta := state.stateDelta.Marshal()
 	cf := writeBatch.GetDBHandle().StateDeltaCF
 	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
@@ -322,15 +328,11 @@ func (state *State) ApplyStateDelta(delta *statemgmt.StateDelta) {
 
 // CommitStateDelta commits the changes from state.ApplyStateDelta to the
 // DB.
-func (state *State) CommitStateDelta() error {
-	if state.updateStateImpl {
-		state.stateImpl.PrepareWorkingSet(state.stateDelta)
-		state.updateStateImpl = false
-	}
+func (state *State) CommitStateDelta(blockNumber uint64) error {
 
 	writeBatch := state.NewWriteBatch()
 	defer writeBatch.Destroy()
-	state.stateImpl.AddChangesForPersistence(writeBatch)
+	state.AddChangesForPersistence(blockNumber, writeBatch)
 	return writeBatch.BatchCommit()
 }
 

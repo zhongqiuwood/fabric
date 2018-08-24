@@ -326,6 +326,7 @@ func (state *State) ApplyStateDelta(delta *statemgmt.StateDelta) {
 	state.updateStateImpl = true
 }
 
+// ----- Deprecated ------
 // CommitStateDelta commits the changes from state.ApplyStateDelta to the
 // DB.
 func (state *State) CommitStateDelta(blockNumber uint64) error {

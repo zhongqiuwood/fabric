@@ -231,84 +231,85 @@ func (blockchain *blockchain) getBlockchainInfoForBlock(height uint64, block *pr
 func (blockchain *blockchain) buildBlock(block *protos.Block, stateHash []byte) *protos.Block {
 	block.SetPreviousBlockHash(blockchain.previousBlockHash)
 	block.StateHash = stateHash
-	return block
-}
-
-func (blockchain *blockchain) addPersistenceChangesForNewBlock(ctx context.Context,
-	block *protos.Block, stateHash []byte, writeBatch *db.DBWriteBatch) (uint64, error) {
-	block = blockchain.buildBlock(block, stateHash)
 	if block.NonHashData == nil {
 		block.NonHashData = &protos.NonHashData{LocalLedgerCommitTimestamp: util.CreateUtcTimestamp()}
 	} else {
 		block.NonHashData.LocalLedgerCommitTimestamp = util.CreateUtcTimestamp()
 	}
-	blockNumber := blockchain.size
+	return block
+}
+
+func (blockchain *blockchain) addPersistenceChangesForNewBlock(block *protos.Block, blockNumber uint64, writeBatch *db.DBWriteBatch) error {
+
 	blockHash, err := block.GetHash()
 	if err != nil {
-		return 0, err
+		return err
 	}
 
-	blockBytes, blockBytesErr := block.GetBlockBytes()
-	if blockBytesErr != nil {
-		return 0, blockBytesErr
-	}
-	cf := writeBatch.GetDBHandle().BlockchainCF
-	writeBatch.PutCF(cf, encodeBlockNumberDBKey(blockNumber), blockBytes)
-	writeBatch.PutCF(cf, blockCountKey, util.EncodeUint64(blockNumber+1))
-	if blockchain.indexer.isSynchronous() {
-		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
-	}
-	blockchain.lastProcessedBlock = &lastProcessedBlock{block, blockNumber, blockHash}
-	return blockNumber, nil
-}
-
-func (blockchain *blockchain) blockPersistenceStatus(success bool) {
-	if success {
-		blockchain.size++
-		blockchain.previousBlockHash = blockchain.lastProcessedBlock.blockHash
-		if !blockchain.indexer.isSynchronous() {
-			writeBatch := db.GetDBHandle().NewWriteBatch()
-			defer writeBatch.Destroy()
-			blockchain.indexer.createIndexes(blockchain.lastProcessedBlock.block,
-				blockchain.lastProcessedBlock.blockNumber, blockchain.lastProcessedBlock.blockHash, writeBatch)
-		}
-	}
-	blockchain.lastProcessedBlock = nil
-}
-
-func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
 	blockBytes, blockBytesErr := block.GetBlockBytes()
 	if blockBytesErr != nil {
 		return blockBytesErr
 	}
-	writeBatch := db.GetDBHandle().NewWriteBatch()
-	defer writeBatch.Destroy()
 	cf := writeBatch.GetDBHandle().BlockchainCF
 	writeBatch.PutCF(cf, encodeBlockNumberDBKey(blockNumber), blockBytes)
 
-	blockHash, err := block.GetHash()
-	if err != nil {
-		return err
-	}
-
 	// Need to check as we support out of order blocks in cases such as block/state synchronization. This is
 	// real blockchain height, not size.
-	if blockchain.getSize() < blockNumber+1 {
-		sizeBytes := util.EncodeUint64(blockNumber + 1)
-		writeBatch.PutCF(cf, blockCountKey, sizeBytes)
-		blockchain.size = blockNumber + 1
-		blockchain.previousBlockHash = blockHash
+	if blockchain.getSize() <= blockNumber {
+		writeBatch.PutCF(cf, blockCountKey, util.EncodeUint64(blockNumber+1))
 	}
 
-	if blockchain.indexer.isSynchronous() {
-		blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
-	}
+	//Notice: in original code (fabric 0.6) only Synchronous index work here
+	//but this seems to be extremely weired ...
+	//so we make index works after block is succefully persisted
+	//if blockchain.indexer.isSynchronous() {
+	// blockchain.indexer.createIndexes(block, blockNumber, blockHash, writeBatch)
+	//}
 
+	blockchain.lastProcessedBlock = &lastProcessedBlock{block, blockNumber, blockHash}
+	return nil
+}
+
+func (blockchain *blockchain) blockPersistenceStatus(success bool) error {
+	if success {
+
+		if blockchain.lastProcessedBlock == nil {
+			panic("No block is added before, code error")
+		}
+
+		if blockchain.getSize() <= blockchain.lastProcessedBlock.blockNumber {
+			blockchain.size = blockchain.lastProcessedBlock.blockNumber + 1
+		}
+
+		blockchain.previousBlockHash = blockchain.lastProcessedBlock.blockHash
+		// see Notice in addPersistenceChangesForNewBlock
+		// if !blockchain.indexer.isSynchronous() {
+		// 	writeBatch := db.GetDBHandle().NewWriteBatch()
+		// 	defer writeBatch.Destroy()
+		err := blockchain.indexer.createIndexes(blockchain.lastProcessedBlock.block,
+			blockchain.lastProcessedBlock.blockNumber, blockchain.lastProcessedBlock.blockHash)
+		if err != nil {
+			return err
+		}
+		// }
+	}
+	blockchain.lastProcessedBlock = nil
+	return nil
+}
+
+// --- Deprecated ----
+func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
+
+	writeBatch := db.GetDBHandle().NewWriteBatch()
+	defer writeBatch.Destroy()
+
+	blockchain.addPersistenceChangesForNewBlock(block, blockNumber, writeBatch)
 	err = writeBatch.BatchCommit()
 	if err != nil {
 		return err
 	}
-	return nil
+
+	return blockchain.blockPersistenceStatus(true)
 }
 
 //compatibleLegacy switch and following funcs is used for some case when we must

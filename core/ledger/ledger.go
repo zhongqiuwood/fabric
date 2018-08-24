@@ -351,20 +351,24 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 
 	//store chaincode events directly in NonHashData. This will likely change in New Consensus where we can move them to Transaction
 	block.NonHashData = &protos.NonHashData{ChaincodeEvents: ccEvents}
-	newBlockNumber, err := ledger.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
+	block = ledger.blockchain.buildBlock(block, stateHash)
+
+	newBlockNumber := ledger.blockchain.getSize() + 1
+	err := ledger.blockchain.addPersistenceChangesForNewBlock(block, stateHash, writeBatch)
 	if err != nil {
 		return err
 	}
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
 
-	dbErr := writeBatch.BatchCommit()
+	//all commit done, we can add global state
+	dbErr := ledger.AddGlobalState(ledger.currentStateHash, stateHash)
 
 	if dbErr != nil {
+		ledgerLogger.Error("CommitTx fail at add global state phase:", dbErr)
 		return dbErr
 	}
 
-	//all commit done, we can add global state
-	dbErr = ledger.AddGlobalState(ledger.currentStateHash, stateHash)
+	dbErr = writeBatch.BatchCommit()
 
 	if dbErr != nil {
 		return dbErr

@@ -453,7 +453,7 @@ func (ledger *Ledger) SetStateMultipleKeys(chaincodeID string, kvs map[string][]
 
 // create a snapshot wrapper for current db
 func (ledger *Ledger) CreateSnapshot() *LedgerSnapshot {
-	return &LedgerSnapshot{ledger.blockchain.GetSnapshot()}
+	return &LedgerSnapshot{ledger, ledger.blockchain.GetSnapshot()}
 }
 
 // GetStateDelta will return the state delta for the specified block if

@@ -11,6 +11,7 @@ import (
 
 // Ledger - the struct for openchain ledger
 type LedgerSnapshot struct {
+	l *Ledger
 	*db.DBSnapshot
 }
 
@@ -71,6 +72,17 @@ func (sledger *LedgerSnapshot) GetStateDelta(blockNumber uint64) (*statemgmt.Sta
 	stateDelta := statemgmt.NewStateDelta()
 	stateDelta.Unmarshal(stateDeltaBytes)
 	return stateDelta, nil
+}
+
+func (sledger *LedgerSnapshot) GetStateSnapshot() (*state.StateSnapshot, error) {
+	blockHeight, err := sledger.GetBlockchainSize()
+	if err != nil {
+		return nil, err
+	}
+	if 0 == blockHeight {
+		return nil, fmt.Errorf("Blockchain has no blocks, cannot determine block number")
+	}
+	return sledger.l.state.GetSnapshot(blockHeight-1, sledger.DBSnapshot)
 }
 
 // ----- will be deprecated -----

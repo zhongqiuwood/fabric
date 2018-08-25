@@ -12,7 +12,7 @@ import (
 
 const dbVersion = db.DBVersion
 
-func UpgradeLedger(checkonly bool) error {
+func UpgradeLedger(odb *db.OpenchainDB, checkonly bool) error {
 
 	v := db.GetGlobalDBHandle().GetDBVersion()
 	ledgerLogger.Info("Current DB Version is", v)
@@ -33,7 +33,7 @@ func UpgradeLedger(checkonly bool) error {
 	}
 
 	ledgerLogger.Infof("Backuping ...")
-	tag, err := db.Backup()
+	tag, err := db.Backup(odb)
 
 	if err != nil {
 		return fmt.Errorf("Backup current db fail: %s", err)
@@ -49,7 +49,7 @@ func UpgradeLedger(checkonly bool) error {
 
 	for ; v < dbVersion; v++ {
 		ledgerLogger.Infof("Upgrading db from ver.%d to ver.%d", v, v+1)
-		err = ledger_updater[v]()
+		err = ledger_updater[v](odb)
 		if err != nil {
 			ledgerLogger.Error("Upgrade fail", err)
 			return err
@@ -87,10 +87,10 @@ type reconstructInfo struct {
 	newhash [][]byte
 }
 
-func reconstructBlockChain() (err error, r *reconstructInfo) {
+func reconstructBlockChain(odb *db.OpenchainDB) (err error, r *reconstructInfo) {
 
 	var size uint64
-	size, err = fetchBlockchainSizeFromDB(db.GetDBHandle())
+	size, err = fetchBlockchainSizeFromDB(odb)
 	if err != nil {
 		return
 	}
@@ -118,13 +118,13 @@ func reconstructBlockChain() (err error, r *reconstructInfo) {
 				}
 				writeBatch.Destroy()
 			}
-			writeBatch = db.GetDBHandle().NewWriteBatch()
+			writeBatch = odb.NewWriteBatch()
 		}
 
 		blkk := encodeBlockNumberDBKey(i)
 
 		var blockBytes []byte
-		blockBytes, err = db.GetDBHandle().GetFromBlockchainCF(blkk)
+		blockBytes, err = odb.GetFromBlockchainCF(blkk)
 		if err != nil {
 			return
 		}
@@ -213,9 +213,9 @@ chkpt: the checkpoint it have known, which is just expressed by the blockchain i
 
 var rawLegacyPBFTPrefix = []byte("consensus.chkpt.")
 
-func updateLegacyPBFTChkp(itr *db.DBIterator, r *reconstructInfo) error {
+func updateLegacyPBFTChkp(odb *db.OpenchainDB, itr *db.DBIterator, r *reconstructInfo) error {
 
-	wb := db.GetDBHandle().NewWriteBatch()
+	wb := odb.NewWriteBatch()
 	cf := wb.GetDBHandle().PersistCF
 	defer wb.Destroy()
 
@@ -266,10 +266,10 @@ func updateLegacyPBFTChkp(itr *db.DBIterator, r *reconstructInfo) error {
 	return wb.BatchCommit()
 }
 
-func updateDBToV1() error {
+func updateDBToV1(odb *db.OpenchainDB) error {
 
 	//rewrite blockchainCF
-	err, reconstruct := reconstructBlockChain()
+	err, reconstruct := reconstructBlockChain(odb)
 	if err != nil {
 		return fmt.Errorf("Reconstruct blockchain fail: %s", err)
 	}
@@ -282,7 +282,7 @@ func updateDBToV1() error {
 	//copying keys in persistCF for required content
 	//currently it just the peer-persisted content in 0.6, which have no
 	//any prefix and we need to add PeerStoreKeyPrefix on it
-	itr := db.GetDBHandle().GetIterator(db.PersistCF)
+	itr := odb.GetIterator(db.PersistCF)
 	defer itr.Close()
 
 	wb := db.GetGlobalDBHandle().NewWriteBatch()
@@ -298,7 +298,7 @@ func updateDBToV1() error {
 		//if hash is update, the persisted checkpoint for PBFT must be also updated
 		if reconstruct != nil {
 			if bytes.HasPrefix(k, rawLegacyPBFTPrefix) {
-				err = updateLegacyPBFTChkp(itr, reconstruct)
+				err = updateLegacyPBFTChkp(odb, itr, reconstruct)
 				if err != nil {
 					return fmt.Errorf("Reconstruct PBFT consensus fail: %s", err)
 				}
@@ -339,4 +339,4 @@ func updateDBToV1() error {
 	return nil
 }
 
-var ledger_updater = []func() error{updateDBToV1}
+var ledger_updater = []func(odb *db.OpenchainDB) error{updateDBToV1}

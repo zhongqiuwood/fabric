@@ -95,7 +95,7 @@ var once sync.Once
 func GetLedger() (*Ledger, error) {
 	once.Do(func() {
 		//check version before obtain ledger ...
-		ledgerError = UpgradeLedger(true)
+		ledgerError = UpgradeLedger(db.GetDBHandle(), true)
 		if ledgerError == nil {
 			ledger, ledgerError = GetNewLedger(db.GetDBHandle())
 		}

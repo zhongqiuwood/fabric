@@ -158,7 +158,7 @@ func GetBackupPath(tag string) []string {
 	}
 }
 
-func Backup() (tag string, err error) {
+func Backup(odb *OpenchainDB) (tag string, err error) {
 
 	tag = util.GenerateUUID()
 	paths := GetBackupPath(tag)
@@ -172,7 +172,7 @@ func Backup() (tag string, err error) {
 		return
 	}
 
-	err = createCheckpoint(originalDB.db.DB, paths[1])
+	err = createCheckpoint(odb.db.DB, paths[1])
 	if err != nil {
 		return
 	}

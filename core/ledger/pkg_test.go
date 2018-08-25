@@ -24,7 +24,6 @@ import (
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
-	"golang.org/x/net/context"
 )
 
 var testParams []string
@@ -44,7 +43,7 @@ type blockchainTestWrapper struct {
 }
 
 func newTestBlockchainWrapper(t *testing.T) *blockchainTestWrapper {
-	blockchain, err := newBlockchain()
+	blockchain, err := newBlockchain(testDBWrapper.GetDB())
 	testutil.AssertNoError(t, err, "Error while getting handle to chain")
 	txpool, _ := newTxPool()
 	testutil.AssertNoError(t, err, "Error while getting handle to chain")
@@ -57,7 +56,9 @@ func (testWrapper *blockchainTestWrapper) addNewBlock(block *protos.Block, state
 	defer writeBatch.Destroy()
 	err := testWrapper.txpool.putTransaction(block.GetTransactions())
 	testutil.AssertNoError(testWrapper.t, err, "Error while adding txs from a new block")
-	newBlockNumber, err := testWrapper.blockchain.addPersistenceChangesForNewBlock(context.TODO(), block, stateHash, writeBatch)
+	newBlockNumber := testWrapper.blockchain.getSize()
+	block = testWrapper.blockchain.buildBlock(block, stateHash)
+	err = testWrapper.blockchain.addPersistenceChangesForNewBlock(block, newBlockNumber, writeBatch)
 	testutil.AssertNoError(testWrapper.t, err, "Error while adding a new block")
 	testDBWrapper.WriteToDB(testWrapper.t, writeBatch)
 	testWrapper.blockchain.blockPersistenceStatus(true)
@@ -65,7 +66,7 @@ func (testWrapper *blockchainTestWrapper) addNewBlock(block *protos.Block, state
 }
 
 func (testWrapper *blockchainTestWrapper) fetchBlockchainSizeFromDB() uint64 {
-	size, err := fetchBlockchainSizeFromDB()
+	size, err := fetchBlockchainSizeFromDB(testDBWrapper.GetDB())
 	testutil.AssertNoError(testWrapper.t, err, "Error while fetching blockchain size from db")
 	return size
 }

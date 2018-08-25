@@ -21,13 +21,13 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
-	"golang.org/x/net/context"
 	"strconv"
 )
 
 // Blockchain holds basic information in memory. Operations on Blockchain are not thread-safe
 // TODO synchronize access to in-memory variables
 type blockchain struct {
+	*db.OpenchainDB
 	size                   uint64
 	previousBlockHash      []byte
 	previousBlockStateHash []byte
@@ -43,15 +43,15 @@ type lastProcessedBlock struct {
 
 var indexBlockDataSynchronously = true
 
-func newBlockchain() (*blockchain, error) {
-	size, err := fetchBlockchainSizeFromDB()
+func newBlockchain(db *db.OpenchainDB) (*blockchain, error) {
+	size, err := fetchBlockchainSizeFromDB(db)
 	if err != nil {
 		return nil, err
 	}
-	blockchain := &blockchain{0, nil, nil, nil, nil}
+	blockchain := &blockchain{db, 0, nil, nil, nil, nil}
 	blockchain.size = size
 	if size > 0 {
-		previousBlock, err := fetchBlockFromDB(size - 1)
+		previousBlock, err := fetchBlockFromDB(db, size-1)
 		if err != nil {
 			return nil, err
 		}
@@ -103,13 +103,13 @@ func (blockchain *blockchain) getSize() uint64 {
 
 // getBlock get block at arbitrary height in block chain
 func (blockchain *blockchain) getBlock(blockNumber uint64) (*protos.Block, error) {
-	return fetchBlockFromDB(blockNumber)
+	return fetchBlockFromDB(blockchain.OpenchainDB, blockNumber)
 }
 
 // getBlock get block at arbitrary height in block chain but without transactions,
 // this can save many IO but gethash may return wrong value for legacy blocks
 func (blockchain *blockchain) getRawBlock(blockNumber uint64) (*protos.Block, error) {
-	return fetchRawBlockFromDB(blockNumber)
+	return fetchRawBlockFromDB(blockchain.OpenchainDB, blockNumber)
 }
 
 // getBlockByHash get block by block hash
@@ -300,11 +300,11 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) error {
 // --- Deprecated ----
 func (blockchain *blockchain) persistRawBlock(block *protos.Block, blockNumber uint64) error {
 
-	writeBatch := db.GetDBHandle().NewWriteBatch()
+	writeBatch := blockchain.NewWriteBatch()
 	defer writeBatch.Destroy()
 
 	blockchain.addPersistenceChangesForNewBlock(block, blockNumber, writeBatch)
-	err = writeBatch.BatchCommit()
+	err := writeBatch.BatchCommit()
 	if err != nil {
 		return err
 	}
@@ -330,9 +330,9 @@ func compatibleLegacyBlock(block *protos.Block) *protos.Block {
 	return block
 }
 
-func fetchRawBlockFromDB(blockNumber uint64) (*protos.Block, error) {
+func fetchRawBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (*protos.Block, error) {
 
-	blockBytes, err := db.GetDBHandle().GetFromBlockchainCF(encodeBlockNumberDBKey(blockNumber))
+	blockBytes, err := odb.GetFromBlockchainCF(encodeBlockNumberDBKey(blockNumber))
 	if err != nil {
 		return nil, err
 	}
@@ -352,9 +352,9 @@ func fetchRawBlockFromDB(blockNumber uint64) (*protos.Block, error) {
 	return blk, nil
 }
 
-func fetchBlockFromDB(blockNumber uint64) (blk *protos.Block, err error) {
+func fetchBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (blk *protos.Block, err error) {
 
-	blk, err = fetchRawBlockFromDB(blockNumber)
+	blk, err = fetchRawBlockFromDB(odb, blockNumber)
 	if err != nil {
 		return
 	}
@@ -376,8 +376,8 @@ func fetchBlockFromDB(blockNumber uint64) (blk *protos.Block, err error) {
 	return
 }
 
-func fetchBlockchainSizeFromDB() (uint64, error) {
-	bytes, err := db.GetDBHandle().GetFromBlockchainCF(blockCountKey)
+func fetchBlockchainSizeFromDB(odb *db.OpenchainDB) (uint64, error) {
+	bytes, err := odb.GetFromBlockchainCF(blockCountKey)
 	if err != nil {
 		return 0, err
 	}

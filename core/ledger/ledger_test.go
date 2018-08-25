@@ -200,13 +200,14 @@ func TestLedgerPutRawBlock(t *testing.T) {
 	ledger.SetState("chaincode1", "key1", []byte("value1"))
 	ledger.TxFinished("txUuid", true)
 	transaction, _ := buildTestTx(t)
-	ledger.CommitTxBatch(1, []*protos.Transaction{transaction}, nil, []byte("proof"))
+	err := ledger.CommitTxBatch(1, []*protos.Transaction{transaction}, nil, []byte("proof"))
+	testutil.AssertNoError(t, err, "commitTx")
 
 	previousHash, _ := block.GetHash()
 	newBlock := ledgerTestWrapper.GetBlockByNumber(5)
 
 	if !bytes.Equal(newBlock.PreviousBlockHash, previousHash) {
-		t.Fatalf("Expected new block to properly set its previous hash")
+		t.Fatalf("Expected new block to properly set its previous hash [%x] vs [%x]", newBlock, previousHash)
 	}
 
 	// Assert that a non-existent block is nil

@@ -98,7 +98,7 @@ func (indexer *blockchainIndexerAsync) start(blockchain *blockchain) error {
 	return nil
 }
 
-func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
+func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte) error {
 	indexer.blockChan <- blockWrapper{block, blockNumber, blockHash, false}
 	return nil
 }
@@ -106,7 +106,7 @@ func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockN
 // createIndexes adds entries into db for creating indexes on various attributes
 func (indexer *blockchainIndexerAsync) createIndexesInternal(block *protos.Block, blockNumber uint64, blockHash []byte) error {
 
-	writeBatch := db.GetDBHandle().NewWriteBatch()
+	writeBatch := indexer.blockchain.NewWriteBatch()
 	defer writeBatch.Destroy()
 	addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
 	writeBatch.PutCF(writeBatch.GetDBHandle().IndexesCF,
@@ -127,7 +127,7 @@ func (indexer *blockchainIndexerAsync) fetchBlockNumberByBlockHash(blockHash []b
 		return 0, err
 	}
 	indexer.indexerState.waitForLastCommittedBlock()
-	return fetchBlockNumberByBlockHashFromDB(blockHash)
+	return fetchBlockNumberByBlockHashFromDB(indexer.blockchain.OpenchainDB, blockHash)
 }
 
 func (indexer *blockchainIndexerAsync) fetchBlockNumberByStateHash(stateHash []byte) (uint64, error) {
@@ -137,7 +137,7 @@ func (indexer *blockchainIndexerAsync) fetchBlockNumberByStateHash(stateHash []b
 		return 0, err
 	}
 	indexer.indexerState.waitForLastCommittedBlock()
-	return fetchBlockNumberByStateHashFromDB(stateHash)
+	return fetchBlockNumberByStateHashFromDB(indexer.blockchain.OpenchainDB, stateHash)
 }
 
 func (indexer *blockchainIndexerAsync) fetchTransactionIndexByID(txID string) (uint64, uint64, error) {
@@ -146,7 +146,7 @@ func (indexer *blockchainIndexerAsync) fetchTransactionIndexByID(txID string) (u
 		return 0, 0, err
 	}
 	indexer.indexerState.waitForLastCommittedBlock()
-	return fetchTransactionIndexByIDFromDB(txID)
+	return fetchTransactionIndexByIDFromDB(indexer.blockchain.OpenchainDB, txID)
 }
 
 func (indexer *blockchainIndexerAsync) indexPendingBlocks() error {
@@ -233,7 +233,7 @@ type blockchainIndexerState struct {
 
 func newBlockchainIndexerState(indexer *blockchainIndexerAsync) (*blockchainIndexerState, error) {
 	var lock sync.RWMutex
-	zerothBlockIndexed, lastIndexedBlockNum, err := fetchLastIndexedBlockNumFromDB()
+	zerothBlockIndexed, lastIndexedBlockNum, err := fetchLastIndexedBlockNumFromDB(indexer.blockchain.OpenchainDB)
 	if err != nil {
 		return nil, err
 	}
@@ -322,8 +322,8 @@ func (indexerState *blockchainIndexerState) checkError() error {
 	return indexerState.err
 }
 
-func fetchLastIndexedBlockNumFromDB() (zerothBlockIndexed bool, lastIndexedBlockNum uint64, err error) {
-	lastIndexedBlockNumberBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, lastIndexedBlockKey)
+func fetchLastIndexedBlockNumFromDB(odb *db.OpenchainDB) (zerothBlockIndexed bool, lastIndexedBlockNum uint64, err error) {
+	lastIndexedBlockNumberBytes, err := odb.GetValue(db.IndexesCF, lastIndexedBlockKey)
 	if err != nil {
 		return
 	}

@@ -31,8 +31,6 @@ import (
 
 	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/protos"
-	_ "github.com/spf13/viper"
-	"golang.org/x/net/context"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
@@ -108,7 +106,7 @@ func GetLedger() (*Ledger, error) {
 // GetNewLedger - gives a reference to a new ledger TODO need better approach
 func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 
-	blockchain, err := newBlockchain()
+	blockchain, err := newBlockchain(db)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +119,7 @@ func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 	state := state.NewState(db)
 	snapshotMap := newSnapshotMap()
 
-	err = sanityCheck()
+	err = sanityCheck(db)
 	if err != nil {
 		return nil, err
 	}
@@ -130,9 +128,9 @@ func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 		nil, nil, snapshotMap}, nil
 }
 
-func sanityCheck() error {
+func sanityCheck(odb *db.OpenchainDB) error {
 
-	size, err := fetchBlockchainSizeFromDB()
+	size, err := fetchBlockchainSizeFromDB(odb)
 	if err != nil {
 		return fmt.Errorf("Fetch size fail: %s", err)
 	}
@@ -146,7 +144,7 @@ func sanityCheck() error {
 
 	for n := size - 1; n != 0; n-- {
 
-		block, err := fetchRawBlockFromDB(n)
+		block, err := fetchRawBlockFromDB(odb, n)
 		if err != nil {
 			return fmt.Errorf("Fetch block fail: %s", err)
 		}
@@ -170,7 +168,7 @@ func sanityCheck() error {
 	//so we have all blocks missed in global state (except for the gensis)
 	//so we just start from a new gensis state
 	if lastExisting == nil {
-		block, err := fetchRawBlockFromDB(0)
+		block, err := fetchRawBlockFromDB(odb, 0)
 		if err != nil {
 			return fmt.Errorf("Fetch gensis block fail: %s", err)
 		}
@@ -205,7 +203,7 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 			parent)
 
 		//sanityCheck should be thread safe
-		err := sanityCheck()
+		err := sanityCheck(ledger.blockchain.OpenchainDB)
 		if err != nil {
 			ledgerLogger.Errorf("Sanity check fail in add globalstate: %s", err)
 			return err
@@ -323,7 +321,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 		return err
 	}
 
-	writeBatch := db.GetDBHandle().NewWriteBatch()
+	writeBatch := ledger.blockchain.NewWriteBatch()
 	defer writeBatch.Destroy()
 	block := protos.NewBlock(transactions, metadata)
 
@@ -353,8 +351,8 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	block.NonHashData = &protos.NonHashData{ChaincodeEvents: ccEvents}
 	block = ledger.blockchain.buildBlock(block, stateHash)
 
-	newBlockNumber := ledger.blockchain.getSize() + 1
-	err := ledger.blockchain.addPersistenceChangesForNewBlock(block, stateHash, writeBatch)
+	newBlockNumber := ledger.blockchain.getSize()
+	err = ledger.blockchain.addPersistenceChangesForNewBlock(block, newBlockNumber, writeBatch)
 	if err != nil {
 		return err
 	}
@@ -489,7 +487,7 @@ func (ledger *Ledger) SetStateMultipleKeys(chaincodeID string, kvs map[string][]
 // should be used when transferring the state from one peer to another peer. You must call
 // stateSnapshot.Release() once you are done with the snapshot to free up resources.
 func (ledger *Ledger) GetStateSnapshot() (*state.StateSnapshot, error) {
-	dbSnapshot := db.GetDBHandle().GetSnapshot()
+	dbSnapshot := ledger.blockchain.GetSnapshot()
 	blockHeight, err := fetchBlockchainSizeFromSnapshot(dbSnapshot)
 	if err != nil {
 		dbSnapshot.Release()

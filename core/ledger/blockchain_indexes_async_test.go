@@ -22,7 +22,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/abchain/fabric/protos"
 )
@@ -155,7 +154,7 @@ func (noop *NoopIndexer) isSynchronous() bool {
 func (noop *NoopIndexer) start(blockchain *blockchain) error {
 	return nil
 }
-func (noop *NoopIndexer) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
+func (noop *NoopIndexer) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte) error {
 	return nil
 }
 func (noop *NoopIndexer) fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error) {

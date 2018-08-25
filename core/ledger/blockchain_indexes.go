@@ -34,7 +34,7 @@ var prefixStateHashKey = byte(4)
 type blockchainIndexer interface {
 	isSynchronous() bool
 	start(blockchain *blockchain) error
-	createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error
+	createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte) error
 	fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error)
 	fetchBlockNumberByStateHash(stateHash []byte) (uint64, error)
 	fetchTransactionIndexByID(txID string) (uint64, uint64, error)
@@ -43,6 +43,7 @@ type blockchainIndexer interface {
 
 // Implementation for sync indexer
 type blockchainIndexerSync struct {
+	*db.OpenchainDB
 }
 
 func newBlockchainIndexerSync() *blockchainIndexerSync {
@@ -54,27 +55,41 @@ func (indexer *blockchainIndexerSync) isSynchronous() bool {
 }
 
 func (indexer *blockchainIndexerSync) start(blockchain *blockchain) error {
+	indexer.OpenchainDB = blockchain.OpenchainDB
 	return nil
 }
 
 func (indexer *blockchainIndexerSync) createIndexes(
-	block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
-	return addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
+	block *protos.Block, blockNumber uint64, blockHash []byte) error {
+
+	writeBatch := indexer.NewWriteBatch()
+	defer writeBatch.Destroy()
+
+	if err := addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch); err != nil {
+		return err
+	}
+
+	if err := writeBatch.BatchCommit(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (indexer *blockchainIndexerSync) fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error) {
-	return fetchBlockNumberByBlockHashFromDB(blockHash)
+	return fetchBlockNumberByBlockHashFromDB(indexer.OpenchainDB, blockHash)
 }
 
 func (indexer *blockchainIndexerSync) fetchBlockNumberByStateHash(stateHash []byte) (uint64, error) {
-	return fetchBlockNumberByStateHashFromDB(stateHash)
+	return fetchBlockNumberByStateHashFromDB(indexer.OpenchainDB, stateHash)
 }
 
 func (indexer *blockchainIndexerSync) fetchTransactionIndexByID(txID string) (uint64, uint64, error) {
-	return fetchTransactionIndexByIDFromDB(txID)
+	return fetchTransactionIndexByIDFromDB(indexer.OpenchainDB, txID)
 }
 
 func (indexer *blockchainIndexerSync) stop() {
+	indexer.OpenchainDB = nil
 	return
 }
 
@@ -115,9 +130,9 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 	return nil
 }
 
-func fetchBlockNumberByBlockHashFromDB(blockHash []byte) (uint64, error) {
+func fetchBlockNumberByBlockHashFromDB(odb *db.OpenchainDB, blockHash []byte) (uint64, error) {
 	indexLogger.Debugf("fetchBlockNumberByBlockHashFromDB() for blockhash [%x]", blockHash)
-	blockNumberBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, encodeBlockHashKey(blockHash))
+	blockNumberBytes, err := odb.GetValue(db.IndexesCF, encodeBlockHashKey(blockHash))
 	if err != nil {
 		return 0, err
 	}
@@ -129,9 +144,9 @@ func fetchBlockNumberByBlockHashFromDB(blockHash []byte) (uint64, error) {
 	return blockNumber, nil
 }
 
-func fetchBlockNumberByStateHashFromDB(stateHash []byte) (uint64, error) {
+func fetchBlockNumberByStateHashFromDB(odb *db.OpenchainDB, stateHash []byte) (uint64, error) {
 	indexLogger.Debugf("fetchBlockNumberByStateHashFromDB() for statehash [%x]", stateHash)
-	blockNumberBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, encodeStateHashKey(stateHash))
+	blockNumberBytes, err := odb.GetValue(db.IndexesCF, encodeStateHashKey(stateHash))
 	if err != nil {
 		return 0, err
 	}
@@ -143,8 +158,8 @@ func fetchBlockNumberByStateHashFromDB(stateHash []byte) (uint64, error) {
 	return blockNumber, nil
 }
 
-func fetchTransactionIndexByIDFromDB(txID string) (uint64, uint64, error) {
-	blockNumTxIndexBytes, err := db.GetDBHandle().GetValue(db.IndexesCF, encodeTxIDKey(txID))
+func fetchTransactionIndexByIDFromDB(odb *db.OpenchainDB, txID string) (uint64, uint64, error) {
+	blockNumTxIndexBytes, err := odb.GetValue(db.IndexesCF, encodeTxIDKey(txID))
 	if err != nil {
 		return 0, 0, err
 	}

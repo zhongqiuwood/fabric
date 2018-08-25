@@ -90,7 +90,7 @@ type reconstructInfo struct {
 func reconstructBlockChain() (err error, r *reconstructInfo) {
 
 	var size uint64
-	size, err = fetchBlockchainSizeFromDB()
+	size, err = fetchBlockchainSizeFromDB(db.GetDBHandle())
 	if err != nil {
 		return
 	}

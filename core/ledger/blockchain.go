@@ -330,13 +330,27 @@ func compatibleLegacyBlock(block *protos.Block) *protos.Block {
 	return block
 }
 
-func fetchRawBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (*protos.Block, error) {
-
-	blockBytes, err := odb.GetFromBlockchainCF(encodeBlockNumberDBKey(blockNumber))
-	if err != nil {
-		return nil, err
+func finishFetchedBlock(blk *protos.Block) *protos.Block {
+	if blk == nil {
+		return nil
 	}
-	if blockBytes == nil {
+
+	if blk.Transactions == nil {
+		blk.Transactions = fetchTxsFromDB(blk.Txids)
+	} else if blk.Txids == nil {
+		//only for compatible with the legacy block bytes
+		blk.Txids = make([]string, len(blk.Transactions))
+		for i, tx := range blk.Transactions {
+			blk.Txids[i] = tx.Txid
+		}
+	}
+
+	return blk
+}
+
+func bytesToBlock(blockBytes []byte) (*protos.Block, error) {
+
+	if len(blockBytes) == 0 {
 		return nil, nil
 	}
 	blk, err := protos.UnmarshallBlock(blockBytes)
@@ -352,6 +366,16 @@ func fetchRawBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (*protos.Block
 	return blk, nil
 }
 
+func fetchRawBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (*protos.Block, error) {
+
+	blockBytes, err := odb.GetFromBlockchainCF(encodeBlockNumberDBKey(blockNumber))
+	if err != nil {
+		return nil, err
+	}
+
+	return bytesToBlock(blockBytes)
+}
+
 func fetchBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (blk *protos.Block, err error) {
 
 	blk, err = fetchRawBlockFromDB(odb, blockNumber)
@@ -359,21 +383,17 @@ func fetchBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (blk *protos.Bloc
 		return
 	}
 
-	if blk == nil {
-		return nil, nil
-	}
-
-	if blk.Transactions == nil {
-		blk.Transactions = fetchTxsFromDB(blk.Txids)
-	} else if blk.Txids == nil {
-		//only for compatible with the legacy block bytes
-		blk.Txids = make([]string, len(blk.Transactions))
-		for i, tx := range blk.Transactions {
-			blk.Txids[i] = tx.Txid
-		}
-	}
+	blk = finishFetchedBlock(blk)
 
 	return
+}
+
+func bytesToBlockNumber(bytes []byte) uint64 {
+
+	if len(bytes) == 0 {
+		return 0
+	}
+	return util.DecodeToUint64(bytes)
 }
 
 func fetchBlockchainSizeFromDB(odb *db.OpenchainDB) (uint64, error) {
@@ -381,22 +401,8 @@ func fetchBlockchainSizeFromDB(odb *db.OpenchainDB) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if bytes == nil {
-		return 0, nil
-	}
-	return util.DecodeToUint64(bytes), nil
-}
 
-func fetchBlockchainSizeFromSnapshot(snapshot *db.DBSnapshot) (uint64, error) {
-	blockNumberBytes, err := snapshot.GetFromBlockchainCFSnapshot(blockCountKey)
-	if err != nil {
-		return 0, err
-	}
-	var blockNumber uint64
-	if blockNumberBytes != nil {
-		blockNumber = util.DecodeToUint64(blockNumberBytes)
-	}
-	return blockNumber, nil
+	return bytesToBlockNumber(bytes), nil
 }
 
 var blockCountKey = []byte("blockCount")

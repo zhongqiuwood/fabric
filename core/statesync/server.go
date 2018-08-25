@@ -1,15 +1,15 @@
 package statesync
 
 import (
-	pb "github.com/abchain/fabric/protos"
 	"github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/looplab/fsm"
 )
 
 type stateServer struct {
-	parent *stateSyncHandler
-	ledger *ledger.Ledger
+	parent        *stateSyncHandler
+	ledger        *ledger.LedgerSnapshot
 	correlationId uint64
 }
 
@@ -18,10 +18,11 @@ func newStateServer(h *stateSyncHandler) (s *stateServer) {
 	s = &stateServer{
 		parent: h,
 	}
-	s.ledger, _ = ledger.GetLedger()
+	l, _ := ledger.GetLedger()
+	s.ledger = l.CreateSnapshot()
 	return
-}
 
+}
 
 //---------------------------------------------------------------------------
 // 1. acknowledge sync start request
@@ -31,14 +32,14 @@ func (server *stateServer) beforeSyncStart(e *fsm.Event) {
 	// todo ensure ReleaseSnapshot called finally
 	syncMsg := server.parent.onRecvSyncMsg(e, nil)
 
-	if syncMsg== nil {
+	if syncMsg == nil {
 		return
 	}
 
 	server.correlationId = syncMsg.CorrelationId
 
-	size, err := server.ledger.GetBlockchainSizeBySnapshot(server.parent.remotePeerIdName())
-	if err != nil{
+	size, err := server.ledger.GetBlockchainSize()
+	if err != nil {
 		e.Cancel(err)
 		return
 	}
@@ -48,7 +49,7 @@ func (server *stateServer) beforeSyncStart(e *fsm.Event) {
 
 	err = server.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_START_ACK, resp)
 	if err != nil {
-		server.ledger.ReleaseSnapshot(server.parent.remotePeerIdName())
+		server.ledger.Release()
 	}
 }
 
@@ -63,10 +64,9 @@ func (server *stateServer) beforeQuery(e *fsm.Event) {
 		return
 	}
 
-	block, err := server.ledger.GetBlockByNumberBySnapshot(server.parent.remotePeerIdName(),
-		payloadMsg.BlockHeight)
-	if err != nil{
-		server.ledger.ReleaseSnapshot(server.parent.remotePeerIdName())
+	block, err := server.ledger.GetBlockByNumber(payloadMsg.BlockHeight)
+	if err != nil {
+		server.ledger.Release()
 		e.Cancel(err)
 		return
 	}
@@ -77,7 +77,7 @@ func (server *stateServer) beforeQuery(e *fsm.Event) {
 
 	err = server.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_RESPONSE, resp)
 	if err != nil {
-		server.ledger.ReleaseSnapshot(server.parent.remotePeerIdName())
+		server.ledger.Release()
 	}
 }
 
@@ -107,8 +107,6 @@ func (server *stateServer) beforeGetDeltas(e *fsm.Event) {
 	go server.sendStateDeltas(e, payloadMsg)
 }
 
-
-
 func (server *stateServer) enterServe(e *fsm.Event) {
 	stateUpdate := "enterServe"
 	server.dumpStateUpdate(stateUpdate)
@@ -118,7 +116,6 @@ func (server *stateServer) leaveServe(e *fsm.Event) {
 	stateUpdate := "leaveServe"
 	server.dumpStateUpdate(stateUpdate)
 }
-
 
 func (sts *stateServer) dumpStateUpdate(stateUpdate string) {
 	logger.Debugf("StateServer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
@@ -134,7 +131,7 @@ func (server *stateServer) beforeSyncEnd(e *fsm.Event) {
 		return
 	}
 
-	server.ledger.ReleaseSnapshot(server.parent.remotePeerIdName())
+	server.ledger.Release()
 }
 
 // sendBlocks sends the blocks based upon the supplied SyncBlockRange over the stream.
@@ -157,7 +154,7 @@ func (d *stateServer) sendBlocks(e *fsm.Event, syncBlockRange *pb.SyncBlockRange
 
 	for _, currBlockNum := range blockNums {
 		// Get the Block from
-		block, err := d.ledger.GetBlockByNumberBySnapshot(d.parent.remotePeerIdName(), currBlockNum)
+		block, err := d.ledger.GetBlockByNumber(currBlockNum)
 		if err != nil {
 			logger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
 			break
@@ -170,7 +167,7 @@ func (d *stateServer) sendBlocks(e *fsm.Event, syncBlockRange *pb.SyncBlockRange
 
 		err = d.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_BLOCKS, syncBlocks)
 
-		if err != nil  {
+		if err != nil {
 			logger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
 			break
 		}
@@ -197,14 +194,14 @@ func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.S
 
 	for _, currBlockNum := range blockNums {
 
-		block, err := d.ledger.GetBlockByNumberBySnapshot(d.parent.remotePeerIdName(), currBlockNum)
+		block, err := d.ledger.GetBlockByNumber(currBlockNum)
 		if err != nil {
 			logger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
 			break
 		}
 
 		// Get the state deltas for Block from coordinator
-		stateDelta, err := d.ledger.GetStateDeltaBySnapshot(d.parent.remotePeerIdName(), currBlockNum)
+		stateDelta, err := d.ledger.GetStateDelta(currBlockNum)
 		if err != nil {
 			logger.Errorf("Error sending stateDelta for blockNum %d: %s", currBlockNum, err)
 			break
@@ -219,7 +216,7 @@ func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.S
 
 		blockState := &pb.BlockState{StateDelta: stateDeltaBytes, Block: block}
 		syncStateDeltas := &pb.SyncBlockState{
-			Range: &pb.SyncBlockRange{Start: currBlockNum, End: currBlockNum, CorrelationId: syncBlockRange.CorrelationId},
+			Range:    &pb.SyncBlockRange{Start: currBlockNum, End: currBlockNum, CorrelationId: syncBlockRange.CorrelationId},
 			Syncdata: []*pb.BlockState{blockState}}
 
 		if err := d.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_DELTAS, syncStateDeltas); err != nil {
@@ -229,4 +226,3 @@ func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.S
 		logger.Debugf("Successfully sent stateDeltas for blockNum %d", currBlockNum)
 	}
 }
-

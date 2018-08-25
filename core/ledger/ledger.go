@@ -29,12 +29,10 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
 
-	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/protos"
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
-var printGID = flogging.GoRDef
 
 //ErrorType represents the type of a ledger error
 type ErrorType string
@@ -84,7 +82,6 @@ type Ledger struct {
 	state            *state.State
 	currentID        interface{}
 	currentStateHash []byte
-	snapshotMap      *dbsnapshotMap
 }
 
 var ledger *Ledger
@@ -117,15 +114,13 @@ func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 	}
 
 	state := state.NewState(db)
-	snapshotMap := newSnapshotMap()
 
 	err = sanityCheck(db)
 	if err != nil {
 		return nil, err
 	}
 
-	return &Ledger{blockchain, txpool, state,
-		nil, nil, snapshotMap}, nil
+	return &Ledger{blockchain, txpool, state, nil, nil}, nil
 }
 
 func sanityCheck(odb *db.OpenchainDB) error {
@@ -225,33 +220,6 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 	ledgerLogger.Infof("Add globalstate [%x]", state)
 	ledgerLogger.Infof("      on parent [%x]", parent)
 	return nil
-}
-
-func (ledger *Ledger) GetBlockByNumberBySnapshot(syncid string, blockNumber uint64) (*protos.Block, error) {
-	return ledger.snapshotMap.GetBlockByNumber(syncid, blockNumber)
-}
-
-func (ledger *Ledger) GetBlockchainSizeBySnapshot(syncid string) (uint64, error) {
-	return ledger.snapshotMap.GetBlockchainSize(syncid)
-}
-
-func (ledger *Ledger) ReleaseSnapshot(syncid string) {
-	ledger.snapshotMap.ReleaseSnapshot(syncid)
-}
-
-func (ledger *Ledger) GetStateDeltaBySnapshot(syncid string, blockNumber uint64) (*statemgmt.StateDelta, error) {
-
-	size, err := ledger.snapshotMap.GetBlockchainSize(syncid)
-
-	if err != nil {
-		return nil, err
-	}
-
-	if blockNumber >= size {
-		return nil, ErrOutOfBounds
-	}
-
-	return ledger.snapshotMap.GetStateDelta(syncid, blockNumber)
 }
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
@@ -483,21 +451,9 @@ func (ledger *Ledger) SetStateMultipleKeys(chaincodeID string, kvs map[string][]
 	return ledger.state.SetMultipleKeys(chaincodeID, kvs)
 }
 
-// GetStateSnapshot returns a point-in-time view of the global state for the current block. This
-// should be used when transferring the state from one peer to another peer. You must call
-// stateSnapshot.Release() once you are done with the snapshot to free up resources.
-func (ledger *Ledger) GetStateSnapshot() (*state.StateSnapshot, error) {
-	dbSnapshot := ledger.blockchain.GetSnapshot()
-	blockHeight, err := fetchBlockchainSizeFromSnapshot(dbSnapshot)
-	if err != nil {
-		dbSnapshot.Release()
-		return nil, err
-	}
-	if 0 == blockHeight {
-		dbSnapshot.Release()
-		return nil, fmt.Errorf("Blockchain has no blocks, cannot determine block number")
-	}
-	return ledger.state.GetSnapshot(blockHeight-1, dbSnapshot)
+// create a snapshot wrapper for current db
+func (ledger *Ledger) CreateSnapshot() *LedgerSnapshot {
+	return &LedgerSnapshot{ledger.blockchain.GetSnapshot()}
 }
 
 // GetStateDelta will return the state delta for the specified block if
@@ -541,12 +497,15 @@ func (ledger *Ledger) ApplyStateDelta(id interface{}, delta *statemgmt.StateDelt
 	return nil
 }
 
+// ----- Will be deprecated ----
 // CommitStateDelta will commit the state delta passed to ledger.ApplyStateDelta
 // to the DB
 func (ledger *Ledger) CommitStateDelta(id interface{}) error {
 	return ledger.CommitAndIndexStateDelta(id, 0)
 }
 
+// CommitStateDelta will commit the state delta passed to ledger.ApplyStateDelta
+// to the DB and persist it will the specified index (blockNumber)
 func (ledger *Ledger) CommitAndIndexStateDelta(id interface{}, blockNumber uint64) error {
 	err := ledger.checkValidIDCommitORRollback(id)
 	if err != nil {

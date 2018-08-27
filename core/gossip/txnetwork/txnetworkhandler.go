@@ -119,7 +119,7 @@ func (t *txNetworkHandlerImpl) updateEpoch() {
 	}
 }
 
-func (t *txNetworkHandlerImpl) HandleTxs(txs []PendingTransaction) error {
+func (t *txNetworkHandlerImpl) HandleTxs(txs []*PendingTransaction) {
 
 	outtxs := new(pb.HotTransactionBlock)
 
@@ -158,7 +158,6 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []PendingTransaction) error {
 		t.updateEpoch()
 	}
 
-	return nil
 }
 
 func (t *txNetworkHandlerImpl) Release() {

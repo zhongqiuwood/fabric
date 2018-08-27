@@ -39,8 +39,6 @@ import (
 	"github.com/abchain/fabric/core/discovery"
 	gossipstub "github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/ledger"
-	_ "github.com/abchain/fabric/core/ledger/statemgmt"
-	_ "github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/peer/acl"
 	syncstub "github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/core/util"

@@ -9,18 +9,16 @@ import (
 	"sync"
 )
 
-type entryGlobal struct {
-	sync.Mutex
-	entries map[*gossip.GossipStub]*txNetworkEntry
+type entryItem struct {
+	Entry *txNetworkEntry
+	Stub  *gossip.GossipStub
 }
 
-var entryglobal entryGlobal
+var entryglobal map[*pb.StreamStub]*entryItem
 
-func GetNetworkEntry(stub *gossip.GossipStub) *txNetworkEntry {
-	entryglobal.Lock()
-	defer entryglobal.Unlock()
+func GetNetworkEntry(stub *pb.StreamStub) *entryItem {
 
-	return entryglobal.entries[stub]
+	return entryglobal[stub]
 }
 
 func init() {
@@ -30,15 +28,20 @@ func init() {
 
 func initTxnetworkEntrance(stub *gossip.GossipStub) {
 
-	entryglobal.Lock()
-	defer entryglobal.Unlock()
-
-	entryglobal.entries[stub] = NewTxNetworkEntry(stub.GetStubContext())
+	entryglobal[stub.GetSStub()] = &entryItem{
+		NewTxNetworkEntry(stub.GetStubContext()),
+		stub,
+	}
 }
 
 type TxNetworkHandler interface {
 	HandleTxs(tx []*PendingTransaction)
 	Release()
+}
+
+type TxNetwork interface {
+	BroadCastTransaction(*pb.Transaction, string, ...string) error
+	BroadCastTransactionDefault(*pb.Transaction, ...string) error
 }
 
 type txNetworkEntry struct {
@@ -161,6 +164,10 @@ type PendingTransaction struct {
 	*pb.Transaction
 	endorser string
 	attrs    []string
+}
+
+func (e *txNetworkEntry) BroadCastTransactionDefault(tx *pb.Transaction, attrs ...string) error {
+	return e.BroadCastTransaction(tx, "", attrs...)
 }
 
 func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string, attrs ...string) error {

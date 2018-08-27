@@ -132,6 +132,12 @@ peer:
     gomaxprocs: -1
     workers: 2
 
+    # Use the new gossip txnetwork to broadcast Transactions (disable will use the 
+    # legacy implement in fabric 0.6)
+    # this is a temporary option and will be deprecated after YA-fabric 1.0
+    txnetwork:
+        enable: true
+
     # Sync related configuration
     sync:
         blocks:
@@ -449,6 +455,8 @@ security:
     # and maintain a valid set of certificates in order to communicate with
     # other peers
     enabled: false
+    # Specify a ID which will endorse all transactions for a peer
+    endorseID: client    
     # To enroll NVP or VP with membersrvc. These parameters are for 1 time use.
     # They will not be valid on subsequent times without un-enroll first.
     # The values come from off-line registration with obc-ca. For testing, make

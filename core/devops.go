@@ -34,6 +34,7 @@ import (
 	"github.com/abchain/fabric/core/container"
 	crypto "github.com/abchain/fabric/core/crypto"
 	ecc "github.com/abchain/fabric/core/embedded_chaincode/api"
+	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
@@ -46,8 +47,43 @@ var devopsLogger = logging.MustGetLogger("devops")
 func NewDevopsServer(peer peer.Peer) *Devops {
 	d := new(Devops)
 	d.peer = peer
+
 	d.isSecurityEnabled = viper.GetBool("security.enabled")
 	d.bindingMap = &bindingMap{m: make(map[string]crypto.TransactionHandler)}
+
+	if !viper.GetBool("peer.txnetwork.enable") {
+		devopsLogger.Info("Not use txnetwork, legacy method instead")
+		return d
+	}
+
+	devopsLogger.Info("Devops use txnetwork")
+
+	entryItem := txnetwork.GetNetworkEntry(peer.GetStreamStub("gossip"))
+	if entryItem == nil {
+		panic("No txnetwork inited, code is malformed")
+	}
+
+	d.txnet = entryItem.Entry
+
+	//start txnetwork handler route
+	if d.isSecurityEnabled {
+		endorser := viper.GetString("security.endorseID")
+		if endorser == "" {
+			devopsLogger.Warning("No default endorser is used, some transaction may not be endorsed")
+		} else if h, err := txnetwork.NewTxNetworkHandler(entryItem.Stub, endorser); err != nil {
+			devopsLogger.Warning("Can not create default endorser, some transaction may not be endorsed:", err)
+		} else {
+			entryItem.Entry.Start(h)
+			return d
+		}
+	}
+
+	if h, err := txnetwork.NewTxNetworkHandlerNoSec(entryItem.Stub); err != nil {
+		devopsLogger.Fatal("Can not create txnetwork", err)
+	} else {
+		entryItem.Entry.Start(h)
+	}
+
 	return d
 }
 
@@ -60,6 +96,7 @@ type bindingMap struct {
 // Devops implementation of Devops services
 type Devops struct {
 	peer              peer.Peer
+	txnet             txnetwork.TxNetwork
 	isSecurityEnabled bool
 	bindingMap        *bindingMap
 }

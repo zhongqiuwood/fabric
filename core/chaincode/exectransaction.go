@@ -80,21 +80,8 @@ func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) (
 			return nil, nil, fmt.Errorf("Failed to retrieve chaincode spec(%s)", err)
 		}
 
-		var ccMsg *pb.ChaincodeMessage
-		if t.Type == pb.Transaction_CHAINCODE_INVOKE {
-			ccMsg, err = createTransactionMessage(t.Txid, cMsg)
-			if err != nil {
-				return nil, nil, fmt.Errorf("Failed to transaction message(%s)", err)
-			}
-		} else {
-			ccMsg, err = createQueryMessage(t.Txid, cMsg)
-			if err != nil {
-				return nil, nil, fmt.Errorf("Failed to query message(%s)", err)
-			}
-		}
-
 		markTxBegin(ledger, t)
-		resp, err := chain.Execute(ctxt, chaincode, ccMsg, t)
+		resp, err := chain.Execute(ctxt, chaincode, cMsg, t)
 		if err != nil {
 			// Rollback transaction
 			markTxFinish(ledger, t, false)

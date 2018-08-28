@@ -103,6 +103,25 @@ func shorttxid(txid string) string {
 	return txid[0:8]
 }
 
+// createTransactionMessage creates a transaction message.
+func createTransactionMessage(tx *pb.Transaction, cMsg *pb.ChaincodeInput) (*pb.ChaincodeMessage, error) {
+	payload, err := proto.Marshal(cMsg)
+	if err != nil {
+		return nil, err
+	}
+
+	msgType := pb.ChaincodeMessage_QUERY
+	switch tx.GetType() {
+	case pb.Transaction_CHAINCODE_INVOKE:
+		msgType = pb.ChaincodeMessage_TRANSACTION
+	case pb.Transaction_CHAINCODE_DEPLOY:
+		msgType = pb.ChaincodeMessage_INIT
+	default:
+	}
+
+	return &pb.ChaincodeMessage{Type: msgType, Payload: payload, Txid: tx.GetTxid()}, nil
+}
+
 func (handler *Handler) serialSend(msg *pb.ChaincodeMessage) error {
 	handler.serialLock.Lock()
 	defer handler.serialLock.Unlock()
@@ -113,7 +132,8 @@ func (handler *Handler) serialSend(msg *pb.ChaincodeMessage) error {
 	return nil
 }
 
-func (handler *Handler) createTxContext(txid string, tx *pb.Transaction) (*transactionContext, error) {
+func (handler *Handler) createTxContext(tx *pb.Transaction) (*transactionContext, error) {
+	txid := tx.GetTxid()
 	if handler.txCtxs == nil {
 		return nil, fmt.Errorf("cannot create notifier for txid:%s", txid)
 	}
@@ -1074,11 +1094,9 @@ func (handler *Handler) enterBusyState(e *fsm.Event, state string) {
 				return
 			}
 
-			ccMsg, _ := createTransactionMessage(transaction.Txid, chaincodeInput)
-
 			// Execute the chaincode
 			//NOTE: when confidential C-call-C is understood, transaction should have the correct sec context for enc/dec
-			response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, ccMsg, transaction)
+			response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, chaincodeInput, transaction)
 
 			//payload is marshalled and send to the calling chaincode's shim which unmarshals and
 			//sends it to chaincode
@@ -1253,26 +1271,24 @@ func (handler *Handler) setChaincodeSecurityContext(tx *pb.Transaction, msg *pb.
 
 //if initArgs is set (should be for "deploy" only) move to Init
 //else move to ready
-func (handler *Handler) initOrReady(txid string, initArgs [][]byte, tx *pb.Transaction, depTx *pb.Transaction) (chan *pb.ChaincodeMessage, error) {
+func (handler *Handler) initOrReady(initArgs [][]byte, tx *pb.Transaction, depTx *pb.Transaction) (chan *pb.ChaincodeMessage, error) {
 	var ccMsg *pb.ChaincodeMessage
 	var send bool
 
-	txctx, funcErr := handler.createTxContext(txid, tx)
+	txctx, funcErr := handler.createTxContext(tx)
 	if funcErr != nil {
 		return nil, funcErr
 	}
 
+	txid := tx.GetTxid()
 	notfy := txctx.responseNotifier
 
 	if initArgs != nil {
 		chaincodeLogger.Debug("sending INIT")
-		funcArgsMsg := &pb.ChaincodeInput{Args: initArgs}
-		var payload []byte
-		if payload, funcErr = proto.Marshal(funcArgsMsg); funcErr != nil {
-			handler.deleteTxContext(txid)
+		ccMsg, funcErr := createTransactionMessage(tx, &pb.ChaincodeInput{Args: initArgs})
+		if funcErr != nil {
 			return nil, fmt.Errorf("Failed to marshall %s : %s\n", ccMsg.Type.String(), funcErr)
 		}
-		ccMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_INIT, Payload: payload, Txid: txid}
 		send = false
 	} else {
 		chaincodeLogger.Debug("sending READY")
@@ -1281,7 +1297,6 @@ func (handler *Handler) initOrReady(txid string, initArgs [][]byte, tx *pb.Trans
 	}
 
 	if err := handler.initializeSecContext(tx, depTx); err != nil {
-		handler.deleteTxContext(txid)
 		return nil, err
 	}
 
@@ -1343,11 +1358,9 @@ func (handler *Handler) handleQueryChaincode(msg *pb.ChaincodeMessage) {
 			return
 		}
 
-		ccMsg, _ := createQueryMessage(transaction.Txid, chaincodeInput)
-
 		// Query the chaincode
 		//NOTE: when confidential C-call-C is understood, transaction should have the correct sec context for enc/dec
-		response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, ccMsg, transaction)
+		response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, chaincodeInput, transaction)
 
 		if execErr != nil {
 			// Send error msg back to chaincode and trigger event
@@ -1401,7 +1414,7 @@ func (handler *Handler) HandleMessage(msg *pb.ChaincodeMessage) error {
 	}
 	if handler.FSM.Cannot(msg.Type.String()) {
 		// Check if this is a request from validator in query context
-		if msg.Type.String() == pb.ChaincodeMessage_PUT_STATE.String() || msg.Type.String() == pb.ChaincodeMessage_DEL_STATE.String() || msg.Type.String() == pb.ChaincodeMessage_INVOKE_CHAINCODE.String() {
+		if msg.Type == pb.ChaincodeMessage_PUT_STATE || msg.Type == pb.ChaincodeMessage_DEL_STATE || msg.Type == pb.ChaincodeMessage_INVOKE_CHAINCODE {
 			// Check if this TXID is a transaction
 			if !handler.getIsTransaction(msg.Txid) {
 				payload := []byte(fmt.Sprintf("[%s]Cannot handle %s in query context", msg.Txid, msg.Type.String()))
@@ -1445,19 +1458,22 @@ func filterError(errFromFSMEvent error) error {
 	return nil
 }
 
-func (handler *Handler) sendExecuteMessage(msg *pb.ChaincodeMessage, tx *pb.Transaction) (chan *pb.ChaincodeMessage, error) {
-	txctx, err := handler.createTxContext(msg.Txid, tx)
+func (handler *Handler) sendExecuteMessage(cMsg *pb.ChaincodeInput, tx *pb.Transaction) (chan *pb.ChaincodeMessage, error) {
+	txctx, err := handler.createTxContext(tx)
 	if err != nil {
 		return nil, err
 	}
 
+	msg, err := createTransactionMessage(tx, cMsg)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to transaction message(%s)", err)
+	}
+
+	isTransaction := tx.GetType() == pb.Transaction_CHAINCODE_INVOKE
+
 	// Mark TXID as either transaction or query
 	chaincodeLogger.Debugf("[%s]Inside sendExecuteMessage. Message %s", shorttxid(msg.Txid), msg.Type.String())
-	if msg.Type.String() == pb.ChaincodeMessage_QUERY.String() {
-		handler.markIsTransaction(msg.Txid, false)
-	} else {
-		handler.markIsTransaction(msg.Txid, true)
-	}
+	handler.markIsTransaction(msg.Txid, isTransaction)
 
 	//if security is disabled the context elements will just be nil
 	if err := handler.setChaincodeSecurityContext(tx, msg); err != nil {
@@ -1465,14 +1481,13 @@ func (handler *Handler) sendExecuteMessage(msg *pb.ChaincodeMessage, tx *pb.Tran
 	}
 
 	// Trigger FSM event if it is a transaction
-	if msg.Type.String() == pb.ChaincodeMessage_TRANSACTION.String() {
+	if isTransaction {
 		chaincodeLogger.Debugf("[%s]sendExecuteMsg trigger event %s", shorttxid(msg.Txid), msg.Type)
 		handler.triggerNextState(msg, true)
 	} else {
 		// Send the message to shim
 		chaincodeLogger.Debugf("[%s]sending query", shorttxid(msg.Txid))
 		if err = handler.serialSend(msg); err != nil {
-			handler.deleteTxContext(msg.Txid)
 			return nil, fmt.Errorf("[%s]SendMessage error sending (%s)", shorttxid(msg.Txid), err)
 		}
 	}

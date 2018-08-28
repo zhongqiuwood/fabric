@@ -42,6 +42,7 @@ type TxNetworkHandler interface {
 type TxNetwork interface {
 	BroadCastTransaction(*pb.Transaction, string, ...string) error
 	BroadCastTransactionDefault(*pb.Transaction, ...string) error
+	ExecuteTransaction(*pb.Transaction, string, ...string) *pb.Response
 }
 
 type txNetworkEntry struct {
@@ -164,19 +165,15 @@ type PendingTransaction struct {
 	*pb.Transaction
 	endorser string
 	attrs    []string
+	resp     chan *pb.Response
 }
 
-func (e *txNetworkEntry) BroadCastTransactionDefault(tx *pb.Transaction, attrs ...string) error {
-	return e.BroadCastTransaction(tx, "", attrs...)
-}
-
-func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string, attrs ...string) error {
-
+func (e *txNetworkEntry) broadcast(ptx *PendingTransaction) error {
 	if e == nil {
 		return fmt.Errorf("txNetwork not init yet")
 	}
 
-	err := e.topic.Write(&PendingTransaction{tx, client, attrs})
+	err := e.topic.Write(ptx)
 	if err != nil {
 		logger.Error("Write tx fail", err)
 		return err
@@ -184,4 +181,24 @@ func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string,
 
 	e.newTxCond.Broadcast()
 	return nil
+}
+
+func (e *txNetworkEntry) BroadCastTransactionDefault(tx *pb.Transaction, attrs ...string) error {
+	return e.BroadCastTransaction(tx, "", attrs...)
+}
+
+func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string, attrs ...string) error {
+	return e.broadcast(&PendingTransaction{tx, client, attrs, nil})
+}
+
+func (e *txNetworkEntry) ExecuteTransaction(tx *pb.Transaction, client string, attrs ...string) *pb.Response {
+
+	resp := make(chan *pb.Response)
+	ret := e.broadcast(&PendingTransaction{tx, client, attrs, resp})
+
+	if ret == nil {
+		return <-resp
+	} else {
+		return &pb.Response{pb.Response_FAILURE, []byte(fmt.Sprintf("Exec transaction fail: %s", ret))}
+	}
 }

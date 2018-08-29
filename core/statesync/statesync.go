@@ -96,19 +96,19 @@ func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 	return h
 }
 
-func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
-
-	for {
-		select {
-		case event := <-notify :
-			logger.Infof("[%s]: handle SyncEvent: %+v", flogging.GoRDef, event)
-			err := s.SyncToState(event.Ctx, nil, nil, event.Peer)
-			cb := &peer.SyncEventCallback{err}
-
-			callback <- cb
-		}
-	}
-}
+//func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
+//
+//	for {
+//		select {
+//		case event := <-notify :
+//			logger.Infof("[%s]: handle SyncEvent: %+v", flogging.GoRDef, event)
+//			err := s.SyncToState(event.Ctx, nil, nil, event.Peer)
+//			cb := &peer.SyncEventCallback{err}
+//
+//			callback <- cb
+//		}
+//	}
+//}
 
 func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
 
@@ -174,15 +174,15 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 	//---------------------------------------------------------------------------
 	// 2. switch to the right checkpoint
 	//---------------------------------------------------------------------------
-	//checkpointPosition, err := syncHandler.client.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
-	//if err != nil {
-	//	logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
-	//
-	//	return err
-	//}
-	//startBlockNumber = checkpointPosition + 1
-	//logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
-	//	flogging.GoRDef, startBlockNumber, endBlockNumber)
+	checkpointPosition, err := syncHandler.client.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
+	if err != nil {
+		logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
+
+		return err
+	}
+	startBlockNumber = checkpointPosition + 1
+	logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
+		flogging.GoRDef, startBlockNumber, endBlockNumber)
 
 	//---------------------------------------------------------------------------
 	// 3. sync detals & blocks

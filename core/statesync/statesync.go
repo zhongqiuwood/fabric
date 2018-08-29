@@ -93,26 +93,22 @@ func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 	}
 
 	h.fsmHandler = newFsmHandler(h)
-
-	h.server = newStateServer(h)
-	h.client = newSyncer(nil, h)
-
 	return h
 }
 
-// func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
+func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
 
-// 	for {
-// 		select {
-// 		case event := <-notify :
-// 			logger.Infof("[%s]: handle SyncEvent: %+v", flogging.GoRDef, event)
-// 			err := s.SyncToState(event.Ctx, nil, nil, event.Peer)
-// 			cb := &peer.SyncEventCallback{err}
+	for {
+		select {
+		case event := <-notify :
+			logger.Infof("[%s]: handle SyncEvent: %+v", flogging.GoRDef, event)
+			err := s.SyncToState(event.Ctx, nil, nil, event.Peer)
+			cb := &peer.SyncEventCallback{err}
 
-// 			callback <- cb
-// 		}
-// 	}
-// }
+			callback <- cb
+		}
+	}
+}
 
 func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
 
@@ -128,7 +124,7 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 	s.Unlock()
 	handler := s.PickHandler(peer)
 
-	err = s.executeSync(handler, targetState)
+	err = s.executeSync(ctx, handler, targetState)
 
 	if err != nil {
 		logger.Errorf("[%s]: Target peer <%v>, failed to execute sync: %s",
@@ -144,17 +140,19 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 	return err
 }
 
-func (s *StateSync) executeSync(h *pb.StreamHandler, targetState []byte) error {
+func (s *StateSync) executeSync(ctx context.Context, h *pb.StreamHandler, targetState []byte) error {
 
 	hh, ok := h.StreamHandlerImpl.(*stateSyncHandler)
 	if !ok {
 		panic("type error, not stateSyncHandler")
 	}
 
-	return hh.run(targetState)
+	return hh.run(ctx, targetState)
 }
 
-func (syncHandler *stateSyncHandler) run(targetState []byte) error {
+func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte) error {
+
+	syncHandler.client = newSyncer(ctx, syncHandler)
 
 	defer logger.Infof("[%s]: Exit. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
 	defer syncHandler.fini()
@@ -176,15 +174,15 @@ func (syncHandler *stateSyncHandler) run(targetState []byte) error {
 	//---------------------------------------------------------------------------
 	// 2. switch to the right checkpoint
 	//---------------------------------------------------------------------------
-	checkpointPosition, err := syncHandler.client.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
-	if err != nil {
-		logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
-
-		return err
-	}
-	startBlockNumber = checkpointPosition + 1
-	logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
-		flogging.GoRDef, startBlockNumber, endBlockNumber)
+	//checkpointPosition, err := syncHandler.client.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
+	//if err != nil {
+	//	logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
+	//
+	//	return err
+	//}
+	//startBlockNumber = checkpointPosition + 1
+	//logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
+	//	flogging.GoRDef, startBlockNumber, endBlockNumber)
 
 	//---------------------------------------------------------------------------
 	// 3. sync detals & blocks
@@ -202,6 +200,38 @@ func (syncHandler *stateSyncHandler) run(targetState []byte) error {
 	return err
 }
 
+//---------------------------------------------------------------------------
+// 1. acknowledge sync start request
+//---------------------------------------------------------------------------
+func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
+
+	syncMsg := syncHandler.onRecvSyncMsg(e, nil)
+
+	if syncMsg == nil {
+		return
+	}
+
+	syncHandler.server = newStateServer(syncHandler)
+
+	syncHandler.server.correlationId = syncMsg.CorrelationId
+
+	size, err := syncHandler.server.ledger.GetBlockchainSize()
+	if err != nil {
+		e.Cancel(err)
+		return
+	}
+
+	resp := &pb.SyncStateResp{}
+	resp.BlockHeight = size
+
+	err = syncHandler.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_START_ACK, resp)
+	if err != nil {
+		syncHandler.server.ledger.Release()
+	}
+}
+
+
+
 func (syncHandler *stateSyncHandler) fini() {
 
 	err := syncHandler.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_END, nil)
@@ -209,20 +239,6 @@ func (syncHandler *stateSyncHandler) fini() {
 	if err != nil {
 		logger.Errorf("[%s]: sendSyncMsg SyncMsg_SYNC_SESSION_END err: %s", flogging.GoRDef, err)
 	}
-
-	//select {
-	//case <-syncHandler.client.positionResp:
-	//default:
-	//	logger.Debugf("close positionResp channel")
-	//	close(syncHandler.client.positionResp)
-	//}
-	//
-	//select {
-	//case <-syncHandler.client.deltaResp:
-	//default:
-	//	logger.Debugf("close deltaResp channel")
-	//	close(syncHandler.client.deltaResp)
-	//}
 
 	syncHandler.fsmHandler.Event(enterSyncFinish)
 }
@@ -313,6 +329,11 @@ func (h *stateSyncHandler) enterIdle(e *fsm.Event) {
 
 	stateUpdate := "enterIdle"
 	h.dumpStateUpdate(stateUpdate)
+
+	if h.client != nil {
+		h.client.fini()
+	}
+
 }
 
 func (h *stateSyncHandler) dumpStateUpdate(stateUpdate string) {

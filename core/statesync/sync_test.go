@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"github.com/abchain/fabric/core/util"
 	"encoding/hex"
+	"github.com/abchain/fabric/core/ledger"
 )
 
 var populatedTxCnt = 32
@@ -57,6 +58,16 @@ func setupTestConfig() {
 }
 
 
+func newTestSyncer() (sts *syncer) {
+	l, _ := ledger.GetLedger()
+
+	sts = &syncer{positionResp: make(chan *pb.SyncStateResp),
+		ledger: l,
+	}
+
+	return sts
+}
+
 func TestSwitchCheckpoint(t *testing.T) {
 	return
 	viper.Set("peer.fileSystemPath", "/Users/oak/__var_hy/forked")
@@ -64,10 +75,9 @@ func TestSwitchCheckpoint(t *testing.T) {
 	db.Start()
 	defer db.Stop()
 
-	syncer := newSyncer2()
+	syncer := newTestSyncer()
 
 	syncer.switchToBestCheckpoint(12)
-
 }
 
 func TestTraverseGS(t *testing.T) {

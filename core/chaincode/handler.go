@@ -47,6 +47,9 @@ const (
 
 )
 
+var CCHandlingErr_RCMain = fmt.Errorf("Chaincode handling have a racing condiction")
+var CCHandlingErr_RCWrite = fmt.Errorf("Chaincode handling have a racing condiction in writting states")
+
 var chaincodeLogger = logging.MustGetLogger("chaincode")
 
 // MessageHandler interface for handling chaincode messages (common between Peer chaincode support and chaincode)
@@ -56,6 +59,7 @@ type MessageHandler interface {
 }
 
 type transactionContext struct {
+	isTransaction         bool
 	transactionSecContext *pb.Transaction
 	responseNotifier      chan *pb.ChaincodeMessage
 
@@ -81,16 +85,14 @@ type Handler struct {
 	deployTXSecContext *pb.Transaction
 
 	chaincodeSupport *ChaincodeSupport
-	registered       bool
-	readyNotify      chan bool
 	// Map of tx txid to either invoke or query tx (decrypted). Each tx will be
 	// added prior to execute and remove when done execute
 	txCtxs map[string]*transactionContext
 
-	txidMap map[string]bool
-
-	// Track which TXIDs are queries; Although the shim maintains this, it cannot be trusted.
-	isTransaction map[string]bool
+	// ---- YA-fabric 0.9 ----
+	// We put a handler-wide locking flag here, instead of the error-prone FSM (which also allow only one tx is running currently)
+	// This will be elimated after the paralle tx handling is implied
+	transactionLock bool
 
 	// used to do Send after making sure the state transition is complete
 	nextState chan *nextStateInfo
@@ -142,7 +144,9 @@ func (handler *Handler) createTxContext(tx *pb.Transaction) (*transactionContext
 	if handler.txCtxs[txid] != nil {
 		return nil, fmt.Errorf("txid:%s exists", txid)
 	}
-	txctx := &transactionContext{transactionSecContext: tx, responseNotifier: make(chan *pb.ChaincodeMessage, 1),
+	txctx := &transactionContext{transactionSecContext: tx,
+		responseNotifier:      make(chan *pb.ChaincodeMessage, 1),
+		isTransaction:         tx.GetType() != pb.Transaction_CHAINCODE_QUERY,
 		rangeQueryIteratorMap: make(map[string]statemgmt.RangeScanIterator)}
 	handler.txCtxs[txid] = txctx
 	return txctx, nil
@@ -273,11 +277,16 @@ func (handler *Handler) getSecurityBinding(tx *pb.Transaction) ([]byte, error) {
 	return secHelper.GetTransactionBinding(tx)
 }
 
-func (handler *Handler) deregister() error {
-	if handler.registered {
-		handler.chaincodeSupport.deregisterHandler(handler)
+func (handler *Handler) deregister() {
+
+	// clean up rangeQueryIteratorMap
+	for _, context := range handler.txCtxs {
+		for _, v := range context.rangeQueryIteratorMap {
+			v.Close()
+		}
 	}
-	return nil
+
+	handler.chaincodeSupport.deregisterHandler(handler)
 }
 
 func (handler *Handler) triggerNextState(msg *pb.ChaincodeMessage, send bool) {
@@ -385,18 +394,11 @@ func (handler *Handler) processStream() error {
 	}
 }
 
-// HandleChaincodeStream Main loop for handling the associated Chaincode stream
-func HandleChaincodeStream(chaincodeSupport *ChaincodeSupport, ctxt context.Context, stream ccintf.ChaincodeStream) error {
-	deadline, ok := ctxt.Deadline()
-	chaincodeLogger.Debugf("Current context deadline = %s, ok = %v", deadline, ok)
-	handler := newChaincodeSupportHandler(chaincodeSupport, stream)
-	return handler.processStream()
-}
-
 func newChaincodeSupportHandler(chaincodeSupport *ChaincodeSupport, peerChatStream ccintf.ChaincodeStream) *Handler {
 	v := &Handler{
 		ChatStream: peerChatStream,
 	}
+	v.txCtxs = make(map[string]*transactionContext)
 	v.chaincodeSupport = chaincodeSupport
 	//we want this to block
 	v.nextState = make(chan *nextStateInfo)
@@ -409,6 +411,7 @@ func newChaincodeSupportHandler(chaincodeSupport *ChaincodeSupport, peerChatStre
 			{Name: pb.ChaincodeMessage_INIT.String(), Src: []string{establishedstate}, Dst: initstate},
 			{Name: pb.ChaincodeMessage_READY.String(), Src: []string{establishedstate}, Dst: readystate},
 			{Name: pb.ChaincodeMessage_TRANSACTION.String(), Src: []string{readystate}, Dst: transactionstate},
+			{Name: pb.ChaincodeMessage_QUERY.String(), Src: []string{readystate}, Dst: readystate},
 			{Name: pb.ChaincodeMessage_PUT_STATE.String(), Src: []string{transactionstate}, Dst: busyxactstate},
 			{Name: pb.ChaincodeMessage_DEL_STATE.String(), Src: []string{transactionstate}, Dst: busyxactstate},
 			{Name: pb.ChaincodeMessage_INVOKE_CHAINCODE.String(), Src: []string{transactionstate}, Dst: busyxactstate},
@@ -501,12 +504,12 @@ func (handler *Handler) markIsTransaction(txid string, isTrans bool) bool {
 }
 
 func (handler *Handler) getIsTransaction(txid string) bool {
-	handler.RLock()
-	defer handler.RUnlock()
-	if handler.isTransaction == nil {
-		return false
+	tctx := handler.getTxContext(txid)
+	if tctx != nil {
+		return tctx.isTransaction
 	}
-	return handler.isTransaction[txid]
+
+	return false
 }
 
 func (handler *Handler) deleteIsTransaction(txid string) {
@@ -732,7 +735,8 @@ func (handler *Handler) handleRangeQueryState(msg *pb.ChaincodeMessage) {
 
 		chaincodeID := handler.ChaincodeID.Name
 
-		readCommittedState := !handler.getIsTransaction(msg.Txid)
+		txContext := handler.getTxContext(msg.Txid)
+		readCommittedState := !txContext.isTransaction
 		rangeIter, err := ledger.GetStateRangeScanIterator(chaincodeID, rangeQueryState.StartKey, rangeQueryState.EndKey, readCommittedState)
 		if err != nil {
 			// Send error msg back to chaincode. GetState will not trigger event
@@ -743,7 +747,6 @@ func (handler *Handler) handleRangeQueryState(msg *pb.ChaincodeMessage) {
 		}
 
 		iterID := util.GenerateUUID()
-		txContext := handler.getTxContext(msg.Txid)
 		handler.putRangeQueryIterator(txContext, iterID, rangeIter)
 
 		hasNext = rangeIter.Next()
@@ -1167,7 +1170,6 @@ func (handler *Handler) enterReadyState(e *fsm.Event, state string) {
 }
 
 func (handler *Handler) enterEndState(e *fsm.Event, state string) {
-	defer handler.deregister()
 	// Now notify
 	msg, ok := e.Args[0].(*pb.ChaincodeMessage)
 	handler.deleteIsTransaction(msg.Txid)

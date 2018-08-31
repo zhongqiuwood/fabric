@@ -42,9 +42,25 @@ const (
 	readystate       = "ready"       //in:ESTABLISHED,TRANSACTION, rcv:COMPLETED
 	transactionstate = "transaction" //in:READY, rcv: xact from consensus, send: TRANSACTION
 	busyinitstate    = "busyinit"    //in:INIT, rcv: PUT_STATE, DEL_STATE, INVOKE_CHAINCODE
-	busyxactstate    = "busyxact"    //in:TRANSACION, rcv: PUT_STATE, DEL_STATE, INVOKE_CHAINCODE
+	busystate        = "busy"        //in:QUERY, rcv: GET_STATE
+	busyxactstate    = "busyxact"    //in:TRANSACION, rcv: GET_STATE, PUT_STATE, DEL_STATE, INVOKE_CHAINCODE
 	endstate         = "end"         //in:INIT,ESTABLISHED, rcv: error, terminate container
 
+	//custom event
+	cc_op_init           = "opccinit"
+	cc_transaction_done  = "txccdone"
+	cc_transaction_fail  = "txccdone"
+	cc_stream_join       = "ssccjoin"
+	cc_stream_fail       = "ssccfail"
+	cc_message_read      = "rccrd"
+	cc_message_readmore  = "rccrdmore"
+	cc_message_readend   = "rccrdend"
+	cc_message_write     = "rccwri"
+	cc_message_keepalive = "rcckpalive"
+	cc_message_finish    = "rccdone"
+
+	//the maxium of streams a handler can hold
+	maxStreamCount = 16
 )
 
 var CCHandlingErr_RCMain = fmt.Errorf("Chaincode handling have a racing condiction")
@@ -67,6 +83,13 @@ type transactionContext struct {
 	rangeQueryIteratorMap map[string]statemgmt.RangeScanIterator
 }
 
+type workingStream struct {
+	ccintf.ChaincodeStream
+	FSM        *fsm.FSM
+	resp       chan *pb.ChaincodeMessage
+	Incomining chan *transactionContext
+}
+
 type nextStateInfo struct {
 	msg      *pb.ChaincodeMessage
 	sendToCC bool
@@ -75,27 +98,15 @@ type nextStateInfo struct {
 // Handler responsbile for management of Peer's side of chaincode stream
 type Handler struct {
 	sync.RWMutex
-	//peer to shim grpc serializer. User only in serialSend
-	serialLock  sync.Mutex
-	ChatStream  ccintf.ChaincodeStream
-	FSM         *fsm.FSM
-	ChaincodeID *pb.ChaincodeID
+	ChatStream          ccintf.ChaincodeStream
+	availableChatStream chan *workingStream
+	FSM                 *fsm.FSM
+	ChaincodeID         *pb.ChaincodeID
 
 	// A copy of decrypted deploy tx this handler manages, no code
 	deployTXSecContext *pb.Transaction
 
 	chaincodeSupport *ChaincodeSupport
-	// Map of tx txid to either invoke or query tx (decrypted). Each tx will be
-	// added prior to execute and remove when done execute
-	txCtxs map[string]*transactionContext
-
-	// ---- YA-fabric 0.9 ----
-	// We put a handler-wide locking flag here, instead of the error-prone FSM (which also allow only one tx is running currently)
-	// This will be elimated after the paralle tx handling is implied
-	transactionLock bool
-
-	// used to do Send after making sure the state transition is complete
-	nextState chan *nextStateInfo
 }
 
 func shorttxid(txid string) string {
@@ -303,35 +314,29 @@ func (handler *Handler) waitForKeepaliveTimer() <-chan time.Time {
 	return c
 }
 
-func (handler *Handler) processStream() error {
-	defer handler.deregister()
+func (ws *workingStream) processStream(handler *Handler) (err error) {
+	defer handler.FSM.Event(cc_stream_leave, ws)
 	msgAvail := make(chan *pb.ChaincodeMessage)
-	var nsInfo *nextStateInfo
-	var in *pb.ChaincodeMessage
-	var err error
+	var ioerr error
+	var tctx *transactionContext
 
-	//recv is used to spin Recv routine after previous received msg
-	//has been processed
-	recv := true
-	for {
-		in = nil
-		err = nil
-		nsInfo = nil
-		if recv {
-			recv = false
-			go func() {
-				var in2 *pb.ChaincodeMessage
-				in2, err = handler.ChatStream.Recv()
-				msgAvail <- in2
-			}()
+	recvF := func() {
+		in, err := ws.Recv()
+		if err != nil {
+			ioerr = err
 		}
+		msgAvail <- in
+	}
+	go recvF()
+
+	for {
 		select {
-		case in = <-msgAvail:
+		case in := <-msgAvail:
 			// Defer the deregistering of the this handler.
-			if err == io.EOF {
+			if ioerr == io.EOF {
 				chaincodeLogger.Debugf("Received EOF, ending chaincode support stream, %s", err)
 				return err
-			} else if err != nil {
+			} else if ioerr != nil {
 				chaincodeLogger.Errorf("Error handling chaincode support stream: %s", err)
 				return err
 			} else if in == nil {
@@ -344,23 +349,53 @@ func (handler *Handler) processStream() error {
 				chaincodeLogger.Errorf("Got error: %s", string(in.Payload))
 			}
 
-			// we can spin off another Recv again
-			recv = true
-
 			if in.Type == pb.ChaincodeMessage_KEEPALIVE {
 				chaincodeLogger.Debug("Received KEEPALIVE Response")
 				// Received a keep alive message, we don't do anything with it for now
 				// and it does not touch the state machine
 				continue
 			}
-		case nsInfo = <-handler.nextState:
-			in = nsInfo.msg
-			if in == nil {
-				err = fmt.Errorf("Next state nil message, ending chaincode support stream")
-				chaincodeLogger.Debug("Next state nil message, ending chaincode support stream")
-				return err
+
+			err = ws.FSM.Event(getStreamMsgType(in), in)
+			if err != nil {
+				//consider it was a malformed request and just drop it
+				chaincodeLogger.Error("Received malformed message which lead to FSM error:", err)
 			}
-			chaincodeLogger.Debugf("[%s]Move state message %s", shorttxid(in.Txid), in.Type.String())
+
+			// we can spin off another Recv again
+			go recvF()
+		case out := <-ws.resp:
+			if tctx == nil {
+				//message should not be sent without a handling tx context (except keepalive)
+				//so we just omit it
+				chaincodeLogger.Error("Try to send a message [%s] without tx context", out)
+				continue
+			}
+			err = ws.FSM.Event(out.Type.String())
+			if err != nil {
+				//or if we sent the message under a wrong conditional? the stream may ruin
+				//and should be dropped
+				err = fmt.Errorf("stream on tx[%s] send message in wrong FSM state: %s",
+					shorttxid(tctx.transactionSecContext.GetTxid()), err)
+				return
+			}
+			err = ws.Send(out)
+			if err != nil {
+				err = fmt.Errorf("stream on tx[%s] sending and received error: %s",
+					shorttxid(tctx.transactionSecContext.GetTxid()), err)
+				return
+			}
+		case tctxin := <-ws.Incomining:
+			if tctx != nil {
+				//duplicate, fail!(maybe we should panic?)
+				chaincodeLogger.Error("Get duplicated request for tx [%s] when we are handling [%s]",
+					tctxin.transactionSecContext.GetTxid(), tctx.transactionSecContext.GetTxid())
+				continue
+			}
+
+			tctx = tctxin
+			//generate message and send ...
+
 		case <-handler.waitForKeepaliveTimer():
 			if handler.chaincodeSupport.keepalive <= 0 {
 				chaincodeLogger.Errorf("Invalid select: keepalive not on (keepalive=%d)", handler.chaincodeSupport.keepalive)
@@ -378,7 +413,7 @@ func (handler *Handler) processStream() error {
 			continue
 		}
 
-		err = handler.HandleMessage(in)
+		err = ws.FSM.HandleMessage(in)
 		if err != nil {
 			chaincodeLogger.Errorf("[%s]Error handling message, ending stream: %s", shorttxid(in.Txid), err)
 			return fmt.Errorf("Error handling message, ending stream: %s", err)
@@ -394,6 +429,57 @@ func (handler *Handler) processStream() error {
 	}
 }
 
+func newWorkingStream(handler *Handler, peerChatStream ccintf.ChaincodeStream) *workingStream {
+
+	w := &workingStream{ChaincodeStream: peerChatStream}
+
+	w.FSM = fsm.NewFSM(
+		readystate,
+		fsm.Events{
+			{Name: pb.ChaincodeMessage_INIT.String(), Src: []string{readystate}, Dst: transactionstate},
+			{Name: pb.ChaincodeMessage_TRANSACTION.String(), Src: []string{readystate}, Dst: transactionstate},
+			{Name: pb.ChaincodeMessage_QUERY.String(), Src: []string{readystate}, Dst: transactionstate},
+			//so in fact we have two different routine
+			{Name: pb.ChaincodeMessage_ERROR.String(), Src: []string{busyxactstate}, Dst: busyxactstate},
+			{Name: pb.ChaincodeMessage_ERROR.String(), Src: []string{busystate}, Dst: transactionstate},
+			{Name: pb.ChaincodeMessage_RESPONSE.String(), Src: []string{busyxactstate}, Dst: busyxactstate},
+			{Name: pb.ChaincodeMessage_RESPONSE.String(), Src: []string{busystate}, Dst: transactionstate},
+			{Name: cc_message_read, Src: []string{transactionstate}, Dst: busystate},
+			{Name: cc_message_readmore, Src: []string{transactionstate, busystate}, Dst: busyxactstate},
+			{Name: cc_message_readend, Src: []string{busyxactstate}, Dst: busystate},
+			{Name: cc_message_write, Src: []string{transactionstate}, Dst: busystate},
+			{Name: cc_message_finish, Src: []string{transactionstate, busyxactstate, busystate}, Dst: readystate},
+			// now we just filter the keepalive messsage out
+			// {Name: cc_message_keepalive, Src: []string{transactionstate}, Dst: transactionstate},
+			// {Name: cc_message_keepalive, Src: []string{readystate}, Dst: readystate},
+			// {Name: cc_message_keepalive, Src: []string{busyxactstate}, Dst: busyxactstate},
+			// {Name: cc_message_keepalive, Src: []string{busystate}, Dst: busystate},
+		},
+		fsm.Callbacks{
+			"after_" + cc_message_read:     func(e *fsm.Event) { handler.beforeCompletedEvent(e, v.FSM.Current()) },
+			"after_" + cc_message_readmore: func(e *fsm.Event) { handler.beforeCompletedEvent(e, v.FSM.Current()) },
+			"before_" + cc_message_write:   func(e *fsm.Event) { handler.beforeCompletedEvent(e, v.FSM.Current()) },
+			"after_" + cc_message_write:    func(e *fsm.Event) { handler.beforeCompletedEvent(e, v.FSM.Current()) },
+			"leave_" + readystate:          func(e *fsm.Event) { handler.beforeRegisterEvent(e, v.FSM.Current()) },
+			"enter_" + readystate:          func(e *fsm.Event) { handler.beforeRegisterEvent(e, v.FSM.Current()) },
+		},
+	)
+}
+
+func getStreamMsgType(ccMsg *pb.ChaincodeMessage) (customType string) {
+
+	switch ccMsg.Type {
+	case pb.ChaincodeMessage_QUERY_COMPLETED,
+		pb.ChaincodeMessage_QUERY_ERROR,
+		pb.ChaincodeMessage_COMPLETED:
+		customType = cc_message_finish
+	default:
+		customType = cc_message_busy
+	}
+
+	return
+}
+
 func newChaincodeSupportHandler(chaincodeSupport *ChaincodeSupport, peerChatStream ccintf.ChaincodeStream) *Handler {
 	v := &Handler{
 		ChatStream: peerChatStream,
@@ -404,120 +490,46 @@ func newChaincodeSupportHandler(chaincodeSupport *ChaincodeSupport, peerChatStre
 	v.nextState = make(chan *nextStateInfo)
 
 	v.FSM = fsm.NewFSM(
-		createdstate,
+		establishedstate,
 		fsm.Events{
 			//Send REGISTERED, then, if deploy { trigger INIT(via INIT) } else { trigger READY(via COMPLETED) }
-			{Name: pb.ChaincodeMessage_REGISTER.String(), Src: []string{createdstate}, Dst: establishedstate},
-			{Name: pb.ChaincodeMessage_INIT.String(), Src: []string{establishedstate}, Dst: initstate},
-			{Name: pb.ChaincodeMessage_READY.String(), Src: []string{establishedstate}, Dst: readystate},
-			{Name: pb.ChaincodeMessage_TRANSACTION.String(), Src: []string{readystate}, Dst: transactionstate},
-			{Name: pb.ChaincodeMessage_QUERY.String(), Src: []string{readystate}, Dst: readystate},
-			{Name: pb.ChaincodeMessage_PUT_STATE.String(), Src: []string{transactionstate}, Dst: busyxactstate},
-			{Name: pb.ChaincodeMessage_DEL_STATE.String(), Src: []string{transactionstate}, Dst: busyxactstate},
-			{Name: pb.ChaincodeMessage_INVOKE_CHAINCODE.String(), Src: []string{transactionstate}, Dst: busyxactstate},
-			{Name: pb.ChaincodeMessage_PUT_STATE.String(), Src: []string{initstate}, Dst: busyinitstate},
-			{Name: pb.ChaincodeMessage_DEL_STATE.String(), Src: []string{initstate}, Dst: busyinitstate},
-			{Name: pb.ChaincodeMessage_INVOKE_CHAINCODE.String(), Src: []string{initstate}, Dst: busyinitstate},
-			{Name: pb.ChaincodeMessage_COMPLETED.String(), Src: []string{initstate, readystate, transactionstate}, Dst: readystate},
-			{Name: pb.ChaincodeMessage_GET_STATE.String(), Src: []string{readystate}, Dst: readystate},
-			{Name: pb.ChaincodeMessage_GET_STATE.String(), Src: []string{initstate}, Dst: initstate},
-			{Name: pb.ChaincodeMessage_GET_STATE.String(), Src: []string{busyinitstate}, Dst: busyinitstate},
-			{Name: pb.ChaincodeMessage_GET_STATE.String(), Src: []string{transactionstate}, Dst: transactionstate},
-			{Name: pb.ChaincodeMessage_GET_STATE.String(), Src: []string{busyxactstate}, Dst: busyxactstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE.String(), Src: []string{readystate}, Dst: readystate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE.String(), Src: []string{initstate}, Dst: initstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE.String(), Src: []string{busyinitstate}, Dst: busyinitstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE.String(), Src: []string{transactionstate}, Dst: transactionstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE.String(), Src: []string{busyxactstate}, Dst: busyxactstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_NEXT.String(), Src: []string{readystate}, Dst: readystate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_NEXT.String(), Src: []string{initstate}, Dst: initstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_NEXT.String(), Src: []string{busyinitstate}, Dst: busyinitstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_NEXT.String(), Src: []string{transactionstate}, Dst: transactionstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_NEXT.String(), Src: []string{busyxactstate}, Dst: busyxactstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_CLOSE.String(), Src: []string{readystate}, Dst: readystate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_CLOSE.String(), Src: []string{initstate}, Dst: initstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_CLOSE.String(), Src: []string{busyinitstate}, Dst: busyinitstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_CLOSE.String(), Src: []string{transactionstate}, Dst: transactionstate},
-			{Name: pb.ChaincodeMessage_RANGE_QUERY_STATE_CLOSE.String(), Src: []string{busyxactstate}, Dst: busyxactstate},
-			{Name: pb.ChaincodeMessage_ERROR.String(), Src: []string{initstate}, Dst: endstate},
-			{Name: pb.ChaincodeMessage_ERROR.String(), Src: []string{transactionstate}, Dst: readystate},
-			{Name: pb.ChaincodeMessage_ERROR.String(), Src: []string{busyinitstate}, Dst: initstate},
-			{Name: pb.ChaincodeMessage_ERROR.String(), Src: []string{busyxactstate}, Dst: transactionstate},
-			{Name: pb.ChaincodeMessage_RESPONSE.String(), Src: []string{busyinitstate}, Dst: initstate},
-			{Name: pb.ChaincodeMessage_RESPONSE.String(), Src: []string{busyxactstate}, Dst: transactionstate},
+			{Name: cc_op_init, Src: []string{establishedstate}, Dst: initstate},
+			{Name: cc_transaction_done, Src: []string{initstate, readystate}, Dst: readystate},
+			{Name: cc_transaction_fail, Src: []string{initstate}, Dst: endstate},
+			{Name: cc_transaction_fail, Src: []string{readystate}, Dst: readystate},
+			{Name: cc_stream_join, Src: []string{readystate}, Dst: readystate},
+			{Name: cc_stream_leave, Src: []string{readystate}, Dst: readystate},
 		},
 		fsm.Callbacks{
-			"before_" + pb.ChaincodeMessage_REGISTER.String():               func(e *fsm.Event) { v.beforeRegisterEvent(e, v.FSM.Current()) },
-			"before_" + pb.ChaincodeMessage_COMPLETED.String():              func(e *fsm.Event) { v.beforeCompletedEvent(e, v.FSM.Current()) },
-			"before_" + pb.ChaincodeMessage_INIT.String():                   func(e *fsm.Event) { v.beforeInitState(e, v.FSM.Current()) },
-			"after_" + pb.ChaincodeMessage_GET_STATE.String():               func(e *fsm.Event) { v.afterGetState(e, v.FSM.Current()) },
-			"after_" + pb.ChaincodeMessage_RANGE_QUERY_STATE.String():       func(e *fsm.Event) { v.afterRangeQueryState(e, v.FSM.Current()) },
-			"after_" + pb.ChaincodeMessage_RANGE_QUERY_STATE_NEXT.String():  func(e *fsm.Event) { v.afterRangeQueryStateNext(e, v.FSM.Current()) },
-			"after_" + pb.ChaincodeMessage_RANGE_QUERY_STATE_CLOSE.String(): func(e *fsm.Event) { v.afterRangeQueryStateClose(e, v.FSM.Current()) },
-			"after_" + pb.ChaincodeMessage_PUT_STATE.String():               func(e *fsm.Event) { v.afterPutState(e, v.FSM.Current()) },
-			"after_" + pb.ChaincodeMessage_DEL_STATE.String():               func(e *fsm.Event) { v.afterDelState(e, v.FSM.Current()) },
-			"after_" + pb.ChaincodeMessage_INVOKE_CHAINCODE.String():        func(e *fsm.Event) { v.afterInvokeChaincode(e, v.FSM.Current()) },
-			"enter_" + establishedstate:                                     func(e *fsm.Event) { v.enterEstablishedState(e, v.FSM.Current()) },
-			"enter_" + initstate:                                            func(e *fsm.Event) { v.enterInitState(e, v.FSM.Current()) },
-			"enter_" + readystate:                                           func(e *fsm.Event) { v.enterReadyState(e, v.FSM.Current()) },
-			"enter_" + busyinitstate:                                        func(e *fsm.Event) { v.enterBusyState(e, v.FSM.Current()) },
-			"enter_" + busyxactstate:                                        func(e *fsm.Event) { v.enterBusyState(e, v.FSM.Current()) },
-			"enter_" + endstate:                                             func(e *fsm.Event) { v.enterEndState(e, v.FSM.Current()) },
+		// "before_" + pb.ChaincodeMessage_REGISTER.String():               func(e *fsm.Event) { v.beforeRegisterEvent(e, v.FSM.Current()) },
+		// "before_" + pb.ChaincodeMessage_COMPLETED.String():              func(e *fsm.Event) { v.beforeCompletedEvent(e, v.FSM.Current()) },
+		// "before_" + pb.ChaincodeMessage_INIT.String():                   func(e *fsm.Event) { v.beforeInitState(e, v.FSM.Current()) },
+		// "after_" + pb.ChaincodeMessage_GET_STATE.String():               func(e *fsm.Event) { v.afterGetState(e, v.FSM.Current()) },
+		// "after_" + pb.ChaincodeMessage_RANGE_QUERY_STATE.String():       func(e *fsm.Event) { v.afterRangeQueryState(e, v.FSM.Current()) },
+		// "after_" + pb.ChaincodeMessage_RANGE_QUERY_STATE_NEXT.String():  func(e *fsm.Event) { v.afterRangeQueryStateNext(e, v.FSM.Current()) },
+		// "after_" + pb.ChaincodeMessage_RANGE_QUERY_STATE_CLOSE.String(): func(e *fsm.Event) { v.afterRangeQueryStateClose(e, v.FSM.Current()) },
+		// "after_" + pb.ChaincodeMessage_PUT_STATE.String():               func(e *fsm.Event) { v.afterPutState(e, v.FSM.Current()) },
+		// "after_" + pb.ChaincodeMessage_DEL_STATE.String():               func(e *fsm.Event) { v.afterDelState(e, v.FSM.Current()) },
+		// "after_" + pb.ChaincodeMessage_INVOKE_CHAINCODE.String():        func(e *fsm.Event) { v.afterInvokeChaincode(e, v.FSM.Current()) },
+		// "enter_" + establishedstate:                                     func(e *fsm.Event) { v.enterEstablishedState(e, v.FSM.Current()) },
+		// "enter_" + initstate:                                            func(e *fsm.Event) { v.enterInitState(e, v.FSM.Current()) },
+		// "enter_" + readystate:                                           func(e *fsm.Event) { v.enterReadyState(e, v.FSM.Current()) },
+		// "enter_" + busyinitstate:                                        func(e *fsm.Event) { v.enterBusyState(e, v.FSM.Current()) },
+		// "enter_" + busyxactstate:                                        func(e *fsm.Event) { v.enterBusyState(e, v.FSM.Current()) },
+		// "enter_" + endstate:                                             func(e *fsm.Event) { v.enterEndState(e, v.FSM.Current()) },
 		},
 	)
 
 	return v
 }
 
-func (handler *Handler) createTXIDEntry(txid string) bool {
-	if handler.txidMap == nil {
-		return false
-	}
-	handler.Lock()
-	defer handler.Unlock()
-	if handler.txidMap[txid] {
-		return false
-	}
-	handler.txidMap[txid] = true
-	return handler.txidMap[txid]
+func (handler *Handler) onWorkStreamJoin(e *fsm.Event) error {
+
 }
 
-func (handler *Handler) deleteTXIDEntry(txid string) {
-	handler.Lock()
-	defer handler.Unlock()
-	if handler.txidMap != nil {
-		delete(handler.txidMap, txid)
-	} else {
-		chaincodeLogger.Warningf("TXID %s not found!", txid)
-	}
-}
+func (handler *Handler) onWorkStreamLeave(e *fsm.Event) {
 
-// markIsTransaction marks a TXID as a transaction or a query; true = transaction, false = query
-func (handler *Handler) markIsTransaction(txid string, isTrans bool) bool {
-	handler.Lock()
-	defer handler.Unlock()
-	if handler.isTransaction == nil {
-		return false
-	}
-	handler.isTransaction[txid] = isTrans
-	return true
-}
-
-func (handler *Handler) getIsTransaction(txid string) bool {
-	tctx := handler.getTxContext(txid)
-	if tctx != nil {
-		return tctx.isTransaction
-	}
-
-	return false
-}
-
-func (handler *Handler) deleteIsTransaction(txid string) {
-	handler.Lock()
-	defer handler.Unlock()
-	if handler.isTransaction != nil {
-		delete(handler.isTransaction, txid)
-	}
+	//	ws := e.Args[0].(*workingStream)
 }
 
 func (handler *Handler) notifyDuringStartup(val bool) {

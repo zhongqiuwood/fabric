@@ -76,11 +76,21 @@ type MessageHandler interface {
 
 type transactionContext struct {
 	isTransaction         bool
+	isBusy                bool
+	inputMsg              *pb.ChaincodeInput
 	transactionSecContext *pb.Transaction
 	responseNotifier      chan *pb.ChaincodeMessage
 
 	// tracks open iterators used for range queries
 	rangeQueryIteratorMap map[string]statemgmt.RangeScanIterator
+}
+
+func (tctx *transactionContext) failTx(err error) {
+
+	tctx.responseNotifier <- &pb.ChaincodeMessage{
+		Type:    pb.ChaincodeMessage_ERROR,
+		Payload: []byte(err.Error()),
+		Txid:    tctx.transactionSecContext.GetTxid()}
 }
 
 type workingStream struct {
@@ -90,9 +100,64 @@ type workingStream struct {
 	Incomining chan *transactionContext
 }
 
-type nextStateInfo struct {
-	msg      *pb.ChaincodeMessage
-	sendToCC bool
+//handles a GET_STATE request from the chaincode.
+func (ws *workingStream) handleReadState(msg *pb.ChaincodeMessage, tctx *transactionContext, handler *Handler) {
+
+	chaincodeLogger.Debugf("[%s]Received %s, invoking get state from ledger", shorttxid(msg.Txid), pb.ChaincodeMessage_GET_STATE)
+
+	if tctx.isBusy {
+		chaincodeLogger.Errorf("Another state request pending for this Txid [%s]. Cannot process.", msg.Txid)
+		return
+	}
+
+	//context will be reset after the corresponding message is sent
+	tctx.isBusy = true
+
+	// Query ledger for state, triggering a go routine dance so we have better paralleling
+	// in query phase
+	go func(msg *pb.ChaincodeMessage) {
+
+		var serialSendMsg *pb.ChaincodeMessage
+		key := string(msg.Payload)
+		ledgerObj, ledgerErr := ledger.GetLedger()
+		if ledgerErr != nil {
+			// Send error msg back to chaincode. GetState will not trigger event
+			payload := []byte(ledgerErr.Error())
+			chaincodeLogger.Errorf("Failed to get chaincode state(%s). Sending %s", ledgerErr, pb.ChaincodeMessage_ERROR)
+			// Remove txid from current set
+			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+			return
+		}
+
+		// Invoke ledger to get state
+		chaincodeID := handler.ChaincodeID.Name
+		readCommittedState := !tctx.isTransaction
+		res, err := ledgerObj.GetState(chaincodeID, key, !tctx.isTransaction)
+		if err != nil {
+			// Send error msg back to chaincode. GetState will not trigger event
+			payload := []byte(err.Error())
+			chaincodeLogger.Errorf("[%s]Failed to get chaincode state(%s). Sending %s", shorttxid(msg.Txid), err, pb.ChaincodeMessage_ERROR)
+			ws.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+		} else if res == nil {
+			//The state object being requested does not exist, so don't attempt to decrypt it
+			chaincodeLogger.Debugf("[%s]No state associated with key: %s. Sending %s with an empty payload", shorttxid(msg.Txid), key, pb.ChaincodeMessage_RESPONSE)
+			ws.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid}
+		} else {
+			// Decrypt the data if the confidential is enabled
+			if res, err = handler.decrypt(msg.Txid, res); err == nil {
+				// Send response msg back to chaincode. GetState will not trigger event
+				chaincodeLogger.Debugf("[%s]Got state. Sending %s", shorttxid(msg.Txid), pb.ChaincodeMessage_RESPONSE)
+				ws.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid}
+			} else {
+				// Send err msg back to chaincode.
+				chaincodeLogger.Errorf("[%s]Got error (%s) while decrypting. Sending %s", shorttxid(msg.Txid), err, pb.ChaincodeMessage_ERROR)
+				errBytes := []byte(err.Error())
+				ws.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: errBytes, Txid: msg.Txid}
+			}
+
+		}
+
+	}(msg)
 }
 
 // Handler responsbile for management of Peer's side of chaincode stream
@@ -390,11 +455,24 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 				//duplicate, fail!(maybe we should panic?)
 				chaincodeLogger.Error("Get duplicated request for tx [%s] when we are handling [%s]",
 					tctxin.transactionSecContext.GetTxid(), tctx.transactionSecContext.GetTxid())
+				tctxin.failTx(fmt.Errorf("Duplicated transaction"))
 				continue
 			}
 
-			tctx = tctxin
 			//generate message and send ...
+			var msg *pb.ChaincodeMessage
+			msg, err = createTransactionMessage(tctxin.transactionSecContext, tctxin.inputMsg)
+			if err == nil {
+				err = handler.setChaincodeSecurityContext(tctxin.transactionSecContext, msg)
+			}
+
+			if err == nil {
+				tctx = tctxin
+				chaincodeLogger.Debug("Accept new transaction handling [%s]", tctx.transactionSecContext.GetTxid())
+				ws.resp <- msg
+			} else {
+				tctxin.failTx(err)
+			}
 
 		case <-handler.waitForKeepaliveTimer():
 			if handler.chaincodeSupport.keepalive <= 0 {
@@ -403,27 +481,12 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 			}
 
 			//TODO we could use this to hook into container lifecycle (kill the chaincode if not in use, etc)
-			kaerr := handler.serialSend(&pb.ChaincodeMessage{Type: pb.ChaincodeMessage_KEEPALIVE})
-			if kaerr != nil {
-				chaincodeLogger.Errorf("Error sending keepalive, err=%s", kaerr)
+			err = ws.Send(&pb.ChaincodeMessage{Type: pb.ChaincodeMessage_KEEPALIVE})
+			if err != nil {
+				err = fmt.Errorf("Error sending keepalive, err=%s", err)
+				return
 			} else {
 				chaincodeLogger.Debug("Sent KEEPALIVE request")
-			}
-			//keepalive message kicked in. just continue
-			continue
-		}
-
-		err = ws.FSM.HandleMessage(in)
-		if err != nil {
-			chaincodeLogger.Errorf("[%s]Error handling message, ending stream: %s", shorttxid(in.Txid), err)
-			return fmt.Errorf("Error handling message, ending stream: %s", err)
-		}
-
-		if nsInfo != nil && nsInfo.sendToCC {
-			chaincodeLogger.Debugf("[%s]sending state message %s", shorttxid(in.Txid), in.Type.String())
-			if err = handler.serialSend(in); err != nil {
-				chaincodeLogger.Debugf("[%s]serial sending received error %s", shorttxid(in.Txid), err)
-				return fmt.Errorf("[%s]serial sending received error %s", shorttxid(in.Txid), err)
 			}
 		}
 	}
@@ -456,10 +519,10 @@ func newWorkingStream(handler *Handler, peerChatStream ccintf.ChaincodeStream) *
 			// {Name: cc_message_keepalive, Src: []string{busystate}, Dst: busystate},
 		},
 		fsm.Callbacks{
-			"after_" + cc_message_read:     func(e *fsm.Event) { handler.beforeCompletedEvent(e, v.FSM.Current()) },
-			"after_" + cc_message_readmore: func(e *fsm.Event) { handler.beforeCompletedEvent(e, v.FSM.Current()) },
+			"after_" + cc_message_read:     func(e *fsm.Event) { handler.afterGetState(e, w) },
+			"after_" + cc_message_readmore: func(e *fsm.Event) { handler.afterRangeQueryState(e, w) },
 			"before_" + cc_message_write:   func(e *fsm.Event) { handler.beforeCompletedEvent(e, v.FSM.Current()) },
-			"after_" + cc_message_write:    func(e *fsm.Event) { handler.beforeCompletedEvent(e, v.FSM.Current()) },
+			"after_" + cc_message_write:    func(e *fsm.Event) { handler.afterPutState(e, w) },
 			"leave_" + readystate:          func(e *fsm.Event) { handler.beforeRegisterEvent(e, v.FSM.Current()) },
 			"enter_" + readystate:          func(e *fsm.Event) { handler.beforeRegisterEvent(e, v.FSM.Current()) },
 		},
@@ -607,84 +670,6 @@ func (handler *Handler) beforeCompletedEvent(e *fsm.Event, state string) {
 func (handler *Handler) beforeInitState(e *fsm.Event, state string) {
 	chaincodeLogger.Debugf("Before state %s.. notifying waiter that we are up", state)
 	handler.notifyDuringStartup(true)
-}
-
-// afterGetState handles a GET_STATE request from the chaincode.
-func (handler *Handler) afterGetState(e *fsm.Event, state string) {
-	msg, ok := e.Args[0].(*pb.ChaincodeMessage)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-	chaincodeLogger.Debugf("[%s]Received %s, invoking get state from ledger", shorttxid(msg.Txid), pb.ChaincodeMessage_GET_STATE)
-
-	// Query ledger for state
-	handler.handleGetState(msg)
-}
-
-// Handles query to ledger to get state
-func (handler *Handler) handleGetState(msg *pb.ChaincodeMessage) {
-	// The defer followed by triggering a go routine dance is needed to ensure that the previous state transition
-	// is completed before the next one is triggered. The previous state transition is deemed complete only when
-	// the afterGetState function is exited. Interesting bug fix!!
-	go func() {
-		// Check if this is the unique state request from this chaincode txid
-		uniqueReq := handler.createTXIDEntry(msg.Txid)
-		if !uniqueReq {
-			// Drop this request
-			chaincodeLogger.Error("Another state request pending for this Txid. Cannot process.")
-			return
-		}
-
-		var serialSendMsg *pb.ChaincodeMessage
-
-		defer func() {
-			handler.deleteTXIDEntry(msg.Txid)
-			chaincodeLogger.Debugf("[%s]handleGetState serial send %s", shorttxid(serialSendMsg.Txid), serialSendMsg.Type)
-			handler.serialSend(serialSendMsg)
-		}()
-
-		key := string(msg.Payload)
-		ledgerObj, ledgerErr := ledger.GetLedger()
-		if ledgerErr != nil {
-			// Send error msg back to chaincode. GetState will not trigger event
-			payload := []byte(ledgerErr.Error())
-			chaincodeLogger.Errorf("Failed to get chaincode state(%s). Sending %s", ledgerErr, pb.ChaincodeMessage_ERROR)
-			// Remove txid from current set
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-			return
-		}
-
-		// Invoke ledger to get state
-		chaincodeID := handler.ChaincodeID.Name
-
-		readCommittedState := !handler.getIsTransaction(msg.Txid)
-		res, err := ledgerObj.GetState(chaincodeID, key, readCommittedState)
-		if err != nil {
-			// Send error msg back to chaincode. GetState will not trigger event
-			payload := []byte(err.Error())
-			chaincodeLogger.Errorf("[%s]Failed to get chaincode state(%s). Sending %s", shorttxid(msg.Txid), err, pb.ChaincodeMessage_ERROR)
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-		} else if res == nil {
-			//The state object being requested does not exist, so don't attempt to decrypt it
-			chaincodeLogger.Debugf("[%s]No state associated with key: %s. Sending %s with an empty payload", shorttxid(msg.Txid), key, pb.ChaincodeMessage_RESPONSE)
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid}
-		} else {
-			// Decrypt the data if the confidential is enabled
-			if res, err = handler.decrypt(msg.Txid, res); err == nil {
-				// Send response msg back to chaincode. GetState will not trigger event
-				chaincodeLogger.Debugf("[%s]Got state. Sending %s", shorttxid(msg.Txid), pb.ChaincodeMessage_RESPONSE)
-				serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid}
-			} else {
-				// Send err msg back to chaincode.
-				chaincodeLogger.Errorf("[%s]Got error (%s) while decrypting. Sending %s", shorttxid(msg.Txid), err, pb.ChaincodeMessage_ERROR)
-				errBytes := []byte(err.Error())
-				serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: errBytes, Txid: msg.Txid}
-			}
-
-		}
-
-	}()
 }
 
 const maxRangeQueryStateLimit = 100

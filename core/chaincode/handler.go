@@ -115,49 +115,7 @@ func (ws *workingStream) handleReadState(msg *pb.ChaincodeMessage, tctx *transac
 
 	// Query ledger for state, triggering a go routine dance so we have better paralleling
 	// in query phase
-	go func(msg *pb.ChaincodeMessage) {
-
-		var serialSendMsg *pb.ChaincodeMessage
-		key := string(msg.Payload)
-		ledgerObj, ledgerErr := ledger.GetLedger()
-		if ledgerErr != nil {
-			// Send error msg back to chaincode. GetState will not trigger event
-			payload := []byte(ledgerErr.Error())
-			chaincodeLogger.Errorf("Failed to get chaincode state(%s). Sending %s", ledgerErr, pb.ChaincodeMessage_ERROR)
-			// Remove txid from current set
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-			return
-		}
-
-		// Invoke ledger to get state
-		chaincodeID := handler.ChaincodeID.Name
-		readCommittedState := !tctx.isTransaction
-		res, err := ledgerObj.GetState(chaincodeID, key, !tctx.isTransaction)
-		if err != nil {
-			// Send error msg back to chaincode. GetState will not trigger event
-			payload := []byte(err.Error())
-			chaincodeLogger.Errorf("[%s]Failed to get chaincode state(%s). Sending %s", shorttxid(msg.Txid), err, pb.ChaincodeMessage_ERROR)
-			ws.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-		} else if res == nil {
-			//The state object being requested does not exist, so don't attempt to decrypt it
-			chaincodeLogger.Debugf("[%s]No state associated with key: %s. Sending %s with an empty payload", shorttxid(msg.Txid), key, pb.ChaincodeMessage_RESPONSE)
-			ws.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid}
-		} else {
-			// Decrypt the data if the confidential is enabled
-			if res, err = handler.decrypt(msg.Txid, res); err == nil {
-				// Send response msg back to chaincode. GetState will not trigger event
-				chaincodeLogger.Debugf("[%s]Got state. Sending %s", shorttxid(msg.Txid), pb.ChaincodeMessage_RESPONSE)
-				ws.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid}
-			} else {
-				// Send err msg back to chaincode.
-				chaincodeLogger.Errorf("[%s]Got error (%s) while decrypting. Sending %s", shorttxid(msg.Txid), err, pb.ChaincodeMessage_ERROR)
-				errBytes := []byte(err.Error())
-				ws.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: errBytes, Txid: msg.Txid}
-			}
-
-		}
-
-	}(msg)
+	go handler.handleGetState(msg, tctx, ws.resp)
 }
 
 // Handler responsbile for management of Peer's side of chaincode stream
@@ -672,6 +630,50 @@ func (handler *Handler) beforeInitState(e *fsm.Event, state string) {
 	handler.notifyDuringStartup(true)
 }
 
+func (handler *Handler) handleGetState(msg *pb.ChaincodeMessage, tctx *transactionContext, output chan *pb.ChaincodeMessage) {
+
+	var serialSendMsg *pb.ChaincodeMessage
+	key := string(msg.Payload)
+	ledgerObj, ledgerErr := ledger.GetLedger()
+	if ledgerErr != nil {
+		// Send error msg back to chaincode. GetState will not trigger event
+		payload := []byte(ledgerErr.Error())
+		chaincodeLogger.Errorf("Failed to get chaincode state(%s). Sending %s", ledgerErr, pb.ChaincodeMessage_ERROR)
+		// Remove txid from current set
+		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+		return
+	}
+
+	// Invoke ledger to get state
+	chaincodeID := handler.ChaincodeID.Name
+	readCommittedState := !tctx.isTransaction
+	res, err := ledgerObj.GetState(chaincodeID, key, readCommittedState)
+	if err != nil {
+		// Send error msg back to chaincode. GetState will not trigger event
+		payload := []byte(err.Error())
+		chaincodeLogger.Errorf("[%s]Failed to get chaincode state(%s). Sending %s", shorttxid(msg.Txid), err, pb.ChaincodeMessage_ERROR)
+		output <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+	} else if res == nil {
+		//The state object being requested does not exist, so don't attempt to decrypt it
+		chaincodeLogger.Debugf("[%s]No state associated with key: %s. Sending %s with an empty payload", shorttxid(msg.Txid), key, pb.ChaincodeMessage_RESPONSE)
+		output <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid}
+	} else {
+		// Decrypt the data if the confidential is enabled
+		if res, err = handler.decrypt(msg.Txid, res); err == nil {
+			// Send response msg back to chaincode. GetState will not trigger event
+			chaincodeLogger.Debugf("[%s]Got state. Sending %s", shorttxid(msg.Txid), pb.ChaincodeMessage_RESPONSE)
+			output <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: res, Txid: msg.Txid}
+		} else {
+			// Send err msg back to chaincode.
+			chaincodeLogger.Errorf("[%s]Got error (%s) while decrypting. Sending %s", shorttxid(msg.Txid), err, pb.ChaincodeMessage_ERROR)
+			errBytes := []byte(err.Error())
+			output <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: errBytes, Txid: msg.Txid}
+		}
+
+	}
+
+}
+
 const maxRangeQueryStateLimit = 100
 
 // afterRangeQueryState handles a RANGE_QUERY_STATE request from the chaincode.
@@ -688,212 +690,191 @@ func (handler *Handler) afterRangeQueryState(e *fsm.Event, state string) {
 	chaincodeLogger.Debug("Exiting GET_STATE")
 }
 
-// Handles query to ledger to rage query state
-func (handler *Handler) handleRangeQueryState(msg *pb.ChaincodeMessage) {
-	// The defer followed by triggering a go routine dance is needed to ensure that the previous state transition
-	// is completed before the next one is triggered. The previous state transition is deemed complete only when
-	// the afterRangeQueryState function is exited. Interesting bug fix!!
-	go func() {
-		// Check if this is the unique state request from this chaincode txid
-		uniqueReq := handler.createTXIDEntry(msg.Txid)
-		if !uniqueReq {
-			// Drop this request
-			chaincodeLogger.Error("Another state request pending for this Txid. Cannot process.")
-			return
+// Handles query to ledger to rage query state next
+func (handler *Handler) handleRangeQuery(rangeIter statemgmt.RangeScanIterator, string iterID, tctx *transactionContext) (*pb.ChaincodeMessage, bool) {
+
+	var keysAndValues []*pb.RangeQueryStateKeyValue
+	var i = uint32(0)
+	hasNext := true
+	txid := tctx.transactionSecContext.GetTxid()
+	for ; hasNext && i < maxRangeQueryStateLimit; i++ {
+		key, value := rangeIter.GetKeyValue()
+		// Decrypt the data if the confidential is enabled
+		decryptedValue, decryptErr := handler.decrypt(tctx, value)
+		if decryptErr != nil {
+			payload := []byte(decryptErr.Error())
+			chaincodeLogger.Errorf("Failed decrypt value. Sending %s", pb.ChaincodeMessage_ERROR)
+
+			return &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: txid}, false
 		}
-
-		var serialSendMsg *pb.ChaincodeMessage
-
-		defer func() {
-			handler.deleteTXIDEntry(msg.Txid)
-			chaincodeLogger.Debugf("[%s]handleRangeQueryState serial send %s", shorttxid(serialSendMsg.Txid), serialSendMsg.Type)
-			handler.serialSend(serialSendMsg)
-		}()
-
-		rangeQueryState := &pb.RangeQueryState{}
-		unmarshalErr := proto.Unmarshal(msg.Payload, rangeQueryState)
-		if unmarshalErr != nil {
-			payload := []byte(unmarshalErr.Error())
-			chaincodeLogger.Errorf("Failed to unmarshall range query request. Sending %s", pb.ChaincodeMessage_ERROR)
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-			return
-		}
-
-		hasNext := true
-
-		ledger, ledgerErr := ledger.GetLedger()
-		if ledgerErr != nil {
-			// Send error msg back to chaincode. GetState will not trigger event
-			payload := []byte(ledgerErr.Error())
-			chaincodeLogger.Errorf("Failed to get ledger. Sending %s", pb.ChaincodeMessage_ERROR)
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-			return
-		}
-
-		chaincodeID := handler.ChaincodeID.Name
-
-		txContext := handler.getTxContext(msg.Txid)
-		readCommittedState := !txContext.isTransaction
-		rangeIter, err := ledger.GetStateRangeScanIterator(chaincodeID, rangeQueryState.StartKey, rangeQueryState.EndKey, readCommittedState)
-		if err != nil {
-			// Send error msg back to chaincode. GetState will not trigger event
-			payload := []byte(err.Error())
-			chaincodeLogger.Errorf("Failed to get ledger scan iterator. Sending %s", pb.ChaincodeMessage_ERROR)
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-			return
-		}
-
-		iterID := util.GenerateUUID()
-		handler.putRangeQueryIterator(txContext, iterID, rangeIter)
+		keyAndValue := pb.RangeQueryStateKeyValue{Key: key, Value: decryptedValue}
+		keysAndValues = append(keysAndValues, &keyAndValue)
 
 		hasNext = rangeIter.Next()
+	}
 
-		var keysAndValues []*pb.RangeQueryStateKeyValue
-		var i = uint32(0)
-		for ; hasNext && i < maxRangeQueryStateLimit; i++ {
-			key, value := rangeIter.GetKeyValue()
-			// Decrypt the data if the confidential is enabled
-			decryptedValue, decryptErr := handler.decrypt(msg.Txid, value)
-			if decryptErr != nil {
-				payload := []byte(decryptErr.Error())
-				chaincodeLogger.Errorf("Failed decrypt value. Sending %s", pb.ChaincodeMessage_ERROR)
-				serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+	payload := &pb.RangeQueryStateResponse{KeysAndValues: keysAndValues, HasMore: hasNext, ID: iterID}
+	payloadBytes, err := proto.Marshal(payload)
+	if err != nil {
 
-				rangeIter.Close()
-				handler.deleteRangeQueryIterator(txContext, iterID)
+		// Send error msg back to chaincode. GetState will not trigger event
+		payload := []byte(err.Error())
+		chaincodeLogger.Errorf("Failed marshall resopnse. Sending %s", pb.ChaincodeMessage_ERROR)
+		serialSendMsg = 
+		return &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: txid}, false
+	}
 
-				return
-			}
-			keyAndValue := pb.RangeQueryStateKeyValue{Key: key, Value: decryptedValue}
-			keysAndValues = append(keysAndValues, &keyAndValue)
-
-			hasNext = rangeIter.Next()
-		}
-
-		if !hasNext {
-			rangeIter.Close()
-			handler.deleteRangeQueryIterator(txContext, iterID)
-		}
-
-		payload := &pb.RangeQueryStateResponse{KeysAndValues: keysAndValues, HasMore: hasNext, ID: iterID}
-		payloadBytes, err := proto.Marshal(payload)
-		if err != nil {
-			rangeIter.Close()
-			handler.deleteRangeQueryIterator(txContext, iterID)
-
-			// Send error msg back to chaincode. GetState will not trigger event
-			payload := []byte(err.Error())
-			chaincodeLogger.Errorf("Failed marshall resopnse. Sending %s", pb.ChaincodeMessage_ERROR)
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-			return
-		}
-
-		chaincodeLogger.Debugf("Got keys and values. Sending %s", pb.ChaincodeMessage_RESPONSE)
-		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: payloadBytes, Txid: msg.Txid}
-
-	}()
+	chaincodeLogger.Debugf("Got keys and values. Sending %s", pb.ChaincodeMessage_RESPONSE)
+	return &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: payloadBytes, Txid: txid}, hasNext
 }
 
-// afterRangeQueryState handles a RANGE_QUERY_STATE_NEXT request from the chaincode.
-func (handler *Handler) afterRangeQueryStateNext(e *fsm.Event, state string) {
-	msg, ok := e.Args[0].(*pb.ChaincodeMessage)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
+// Handles query to ledger to rage query state
+func (handler *Handler) handleRangeQueryState(msg *pb.ChaincodeMessage, tctx *transactionContext, output chan *pb.ChaincodeMessage) {
+
+	rangeQueryState := &pb.RangeQueryState{}
+	unmarshalErr := proto.Unmarshal(msg.Payload, rangeQueryState)
+	if unmarshalErr != nil {
+		payload := []byte(unmarshalErr.Error())
+		chaincodeLogger.Errorf("Failed to unmarshall range query request. Sending %s", pb.ChaincodeMessage_ERROR)
+		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
 		return
 	}
-	chaincodeLogger.Debugf("Received %s, invoking get state from ledger", pb.ChaincodeMessage_RANGE_QUERY_STATE)
 
-	// Query ledger for state
-	handler.handleRangeQueryStateNext(msg)
-	chaincodeLogger.Debug("Exiting RANGE_QUERY_STATE_NEXT")
+	hasNext := true
+
+	ledger, ledgerErr := ledger.GetLedger()
+	if ledgerErr != nil {
+		// Send error msg back to chaincode. GetState will not trigger event
+		payload := []byte(ledgerErr.Error())
+		chaincodeLogger.Errorf("Failed to get ledger. Sending %s", pb.ChaincodeMessage_ERROR)
+		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+		return
+	}
+
+	chaincodeID := handler.ChaincodeID.Name
+
+	readCommittedState := !tctx.isTransaction
+	rangeIter, err := ledger.GetStateRangeScanIterator(chaincodeID, rangeQueryState.StartKey, rangeQueryState.EndKey, readCommittedState)
+	if err != nil {
+		// Send error msg back to chaincode. GetState will not trigger event
+		payload := []byte(err.Error())
+		chaincodeLogger.Errorf("Failed to get ledger scan iterator. Sending %s", pb.ChaincodeMessage_ERROR)
+		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+		return
+	}
+
+	iterID := util.GenerateUUID()
+	handler.putRangeQueryIterator(tctx, iterID, rangeIter)
+
+	hasNext = rangeIter.Next()
+
+	var keysAndValues []*pb.RangeQueryStateKeyValue
+	var i = uint32(0)
+	for ; hasNext && i < maxRangeQueryStateLimit; i++ {
+		key, value := rangeIter.GetKeyValue()
+		// Decrypt the data if the confidential is enabled
+		decryptedValue, decryptErr := handler.decrypt(msg.Txid, value)
+		if decryptErr != nil {
+			payload := []byte(decryptErr.Error())
+			chaincodeLogger.Errorf("Failed decrypt value. Sending %s", pb.ChaincodeMessage_ERROR)
+			output <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+
+			return
+		}
+		keyAndValue := pb.RangeQueryStateKeyValue{Key: key, Value: decryptedValue}
+		keysAndValues = append(keysAndValues, &keyAndValue)
+
+		hasNext = rangeIter.Next()
+	}
+
+	payload := &pb.RangeQueryStateResponse{KeysAndValues: keysAndValues, HasMore: hasNext, ID: iterID}
+	payloadBytes, err := proto.Marshal(payload)
+	if err != nil {
+
+		// Send error msg back to chaincode. GetState will not trigger event
+		payload := []byte(err.Error())
+		chaincodeLogger.Errorf("Failed marshall resopnse. Sending %s", pb.ChaincodeMessage_ERROR)
+		output <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+		return
+	}
+
+	//we do not care about not cleaning iterator in error return: we just cleaning all entries when the
+	//context is dropped
+	if !hasNext {
+		rangeIter.Close()
+		handler.deleteRangeQueryIterator(txContext, rangeQueryStateNext.ID)
+	}
+
+	chaincodeLogger.Debugf("Got keys and values. Sending %s", pb.ChaincodeMessage_RESPONSE)
+	output <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: payloadBytes, Txid: msg.Txid}
+
 }
 
 // Handles query to ledger to rage query state next
-func (handler *Handler) handleRangeQueryStateNext(msg *pb.ChaincodeMessage) {
-	// The defer followed by triggering a go routine dance is needed to ensure that the previous state transition
-	// is completed before the next one is triggered. The previous state transition is deemed complete only when
-	// the afterRangeQueryState function is exited. Interesting bug fix!!
-	go func() {
-		// Check if this is the unique state request from this chaincode txid
-		uniqueReq := handler.createTXIDEntry(msg.Txid)
-		if !uniqueReq {
-			// Drop this request
-			chaincodeLogger.Debug("Another state request pending for this Txid. Cannot process.")
-			return
-		}
+func (handler *Handler) handleRangeQueryStateNext(msg *pb.ChaincodeMessage, tctx *transactionContext, output chan *pb.ChaincodeMessage) {
 
-		var serialSendMsg *pb.ChaincodeMessage
+	rangeQueryStateNext := &pb.RangeQueryStateNext{}
+	unmarshalErr := proto.Unmarshal(msg.Payload, rangeQueryStateNext)
+	if unmarshalErr != nil {
+		payload := []byte(unmarshalErr.Error())
+		chaincodeLogger.Errorf("Failed to unmarshall state range next query request. Sending %s", pb.ChaincodeMessage_ERROR)
+		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+		return
+	}
 
-		defer func() {
-			handler.deleteTXIDEntry(msg.Txid)
-			chaincodeLogger.Debugf("[%s]handleRangeQueryState serial send %s", shorttxid(serialSendMsg.Txid), serialSendMsg.Type)
-			handler.serialSend(serialSendMsg)
-		}()
+	rangeIter := handler.getRangeQueryIterator(txContext, rangeQueryStateNext.ID)
 
-		rangeQueryStateNext := &pb.RangeQueryStateNext{}
-		unmarshalErr := proto.Unmarshal(msg.Payload, rangeQueryStateNext)
-		if unmarshalErr != nil {
-			payload := []byte(unmarshalErr.Error())
-			chaincodeLogger.Errorf("Failed to unmarshall state range next query request. Sending %s", pb.ChaincodeMessage_ERROR)
+	if rangeIter == nil {
+		payload := []byte("Range query iterator not found")
+		chaincodeLogger.Errorf("Range query iterator not found. Sending %s", pb.ChaincodeMessage_ERROR)
+		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+		return
+	}
+
+	var keysAndValues []*pb.RangeQueryStateKeyValue
+	var i = uint32(0)
+	hasNext := true
+	for ; hasNext && i < maxRangeQueryStateLimit; i++ {
+		key, value := rangeIter.GetKeyValue()
+		// Decrypt the data if the confidential is enabled
+		decryptedValue, decryptErr := handler.decrypt(msg.Txid, value)
+		if decryptErr != nil {
+			payload := []byte(decryptErr.Error())
+			chaincodeLogger.Errorf("Failed decrypt value. Sending %s", pb.ChaincodeMessage_ERROR)
 			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-			return
-		}
 
-		txContext := handler.getTxContext(msg.Txid)
-		rangeIter := handler.getRangeQueryIterator(txContext, rangeQueryStateNext.ID)
-
-		if rangeIter == nil {
-			payload := []byte("Range query iterator not found")
-			chaincodeLogger.Errorf("Range query iterator not found. Sending %s", pb.ChaincodeMessage_ERROR)
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-			return
-		}
-
-		var keysAndValues []*pb.RangeQueryStateKeyValue
-		var i = uint32(0)
-		hasNext := true
-		for ; hasNext && i < maxRangeQueryStateLimit; i++ {
-			key, value := rangeIter.GetKeyValue()
-			// Decrypt the data if the confidential is enabled
-			decryptedValue, decryptErr := handler.decrypt(msg.Txid, value)
-			if decryptErr != nil {
-				payload := []byte(decryptErr.Error())
-				chaincodeLogger.Errorf("Failed decrypt value. Sending %s", pb.ChaincodeMessage_ERROR)
-				serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-
-				rangeIter.Close()
-				handler.deleteRangeQueryIterator(txContext, rangeQueryStateNext.ID)
-
-				return
-			}
-			keyAndValue := pb.RangeQueryStateKeyValue{Key: key, Value: decryptedValue}
-			keysAndValues = append(keysAndValues, &keyAndValue)
-
-			hasNext = rangeIter.Next()
-		}
-
-		if !hasNext {
-			rangeIter.Close()
-			handler.deleteRangeQueryIterator(txContext, rangeQueryStateNext.ID)
-		}
-
-		payload := &pb.RangeQueryStateResponse{KeysAndValues: keysAndValues, HasMore: hasNext, ID: rangeQueryStateNext.ID}
-		payloadBytes, err := proto.Marshal(payload)
-		if err != nil {
 			rangeIter.Close()
 			handler.deleteRangeQueryIterator(txContext, rangeQueryStateNext.ID)
 
-			// Send error msg back to chaincode. GetState will not trigger event
-			payload := []byte(err.Error())
-			chaincodeLogger.Errorf("Failed marshall resopnse. Sending %s", pb.ChaincodeMessage_ERROR)
-			serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
 			return
 		}
+		keyAndValue := pb.RangeQueryStateKeyValue{Key: key, Value: decryptedValue}
+		keysAndValues = append(keysAndValues, &keyAndValue)
 
-		chaincodeLogger.Debugf("Got keys and values. Sending %s", pb.ChaincodeMessage_RESPONSE)
-		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: payloadBytes, Txid: msg.Txid}
+		hasNext = rangeIter.Next()
+	}
 
-	}()
+	if !hasNext {
+		rangeIter.Close()
+		handler.deleteRangeQueryIterator(txContext, rangeQueryStateNext.ID)
+	}
+
+	payload := &pb.RangeQueryStateResponse{KeysAndValues: keysAndValues, HasMore: hasNext, ID: rangeQueryStateNext.ID}
+	payloadBytes, err := proto.Marshal(payload)
+	if err != nil {
+		rangeIter.Close()
+		handler.deleteRangeQueryIterator(txContext, rangeQueryStateNext.ID)
+
+		// Send error msg back to chaincode. GetState will not trigger event
+		payload := []byte(err.Error())
+		chaincodeLogger.Errorf("Failed marshall resopnse. Sending %s", pb.ChaincodeMessage_ERROR)
+		serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
+		return
+	}
+
+	chaincodeLogger.Debugf("Got keys and values. Sending %s", pb.ChaincodeMessage_RESPONSE)
+	serialSendMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_RESPONSE, Payload: payloadBytes, Txid: msg.Txid}
+
 }
 
 // afterRangeQueryState handles a RANGE_QUERY_STATE_CLOSE request from the chaincode.

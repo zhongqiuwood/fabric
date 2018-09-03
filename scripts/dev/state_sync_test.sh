@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# PEER_NUM-1 is the number of concurrent sync
+# PEER_NUM - 1 is the number of concurrent sync
 PEER_NUM=4
 
 function sleep_and_invoke {
@@ -21,15 +21,59 @@ function start_peers_and_sync {
     ./runyafabric.sh -f $1 -c n -s vp0
 }
 
-start_peers ${PEER_NUM} clearall
-sleep_and_invoke di
 
-start_peers 1 none
-sleep_and_invoke i
-sleep_and_invoke i
-sleep_and_invoke i
+function sync_test {
 
-start_peers_and_sync ${PEER_NUM}
+    echo '=============================================='
+    echo '============= sync_test started =============='
 
-sleep 20
-./cmpscandb.sh
+    start_peers ${PEER_NUM} clearall
+    sleep_and_invoke di
+
+    start_peers 1 none
+    sleep_and_invoke i
+    sleep_and_invoke i
+    sleep_and_invoke i
+
+    start_peers_and_sync ${PEER_NUM}
+
+    sleep 20
+
+    echo '=========================================================================='
+    echo '============= sync_test: dump vp0 and vp1 db compare result =============='
+    ./cmpscandb.sh
+
+
+    echo '============= sync_test finished =============='
+    echo '==============================================='
+
+}
+
+
+function sync_from_genesis_test {
+
+    echo '==========================================================='
+    echo '============= sync_from_genesis_test started =============='
+    start_peers 1 clearall
+    sleep_and_invoke di
+    sleep_and_invoke i
+    sleep_and_invoke i
+    sleep_and_invoke i
+
+    start_peers_and_sync ${PEER_NUM}
+
+    sleep 20
+
+    echo '======================================================================================='
+    echo '============= sync_from_genesis_test: dump vp0 and vp1 db compare result =============='
+    ./cmpscandb.sh
+
+
+    echo '============= sync_from_genesis_test finished =============='
+    echo '============================================================'
+}
+
+
+sync_from_genesis_test
+
+sync_test

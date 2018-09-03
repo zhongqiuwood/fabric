@@ -208,12 +208,9 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 				start = targetBlockNumber
 			} else {
 				end = targetBlockNumber
-				if targetBlockNumber == 1 {
-					return 0, 0, fmt.Errorf("Has no identical state hash")
-				}
 			}
 
-			logger.Infof("start<%d>, end<%d>, targetBlockNumber<%d>, endBlockNumber<%d>",
+			logger.Debugf("start<%d>, end<%d>, targetBlockNumber<%d>, endBlockNumber<%d>",
 				start, end, targetBlockNumber, endBlockNumber)
 
 			// todo: handle timed out

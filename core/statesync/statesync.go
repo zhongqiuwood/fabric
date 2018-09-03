@@ -168,13 +168,11 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 	logger.Infof("[%s]: query done. mostRecentIdenticalHistoryPosition:%d",
 		flogging.GoRDef, mostRecentIdenticalHistoryPosition)
 
-	startBlockNumber := mostRecentIdenticalHistoryPosition
+	startBlockNumber := mostRecentIdenticalHistoryPosition + 1
 
 	//---------------------------------------------------------------------------
 	// 2. switch to the right checkpoint
 	//---------------------------------------------------------------------------
-
-
 	enableStatesyncTest := viper.GetBool("peer.enableStatesyncTest")
 	if !enableStatesyncTest {
 

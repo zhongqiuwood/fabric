@@ -248,7 +248,7 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 				go ws.handleMessage(in, tctx, handler, recvF)
 			} else {
 				//omit this message, but we must reply error
-				chaincodeLogger.Error("Received message from unknown tx:", in.Txid)
+				chaincodeLogger.Error("Received message from unknown/deleted tx:", in.Txid)
 				//simply replay and not care error
 				ws.Send(&pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: []byte("Unknown tx"), Txid: in.Txid})
 				go recvF()
@@ -271,7 +271,9 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 		case tctxin := <-ws.Incomining:
 			txid := tctxin.transactionSecContext.GetTxid()
 			if tctx, ok := tctxs[txid]; ok {
-				//remove existed tcx
+				//caller request remove existed tcx
+				tctx.clean()
+				delete()
 				chaincodeLogger.Error("Get duplicated request for tx [%s] when we are handling [%s]",
 					tctxin.transactionSecContext.GetTxid(), tctx.transactionSecContext.GetTxid())
 				tctxin.failTx(fmt.Errorf("Duplicated transaction"))

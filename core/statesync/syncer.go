@@ -531,7 +531,7 @@ func (sts *syncer) enterSyncStateDeltas(e *fsm.Event) {
 }
 
 func (sts *syncer) dumpStateUpdate(stateUpdate string) {
-	logger.Debugf("Syncer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
+	logger.Debugf("%s: Syncer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>", flogging.GoRDef,
 		stateUpdate, sts.correlationId, sts.parent.remotePeerIdName())
 }
 

@@ -5,6 +5,7 @@ import (
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/looplab/fsm"
+	"github.com/abchain/fabric/flogging"
 )
 
 type stateServer struct {
@@ -89,7 +90,7 @@ func (server *stateServer) leaveServe(e *fsm.Event) {
 }
 
 func (sts *stateServer) dumpStateUpdate(stateUpdate string) {
-	logger.Debugf("StateServer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
+	logger.Debugf("%s: StateServer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>", flogging.GoRDef,
 		stateUpdate, sts.correlationId, sts.parent.remotePeerIdName())
 }
 
@@ -118,7 +119,7 @@ func (d *stateServer) sendBlocks(e *fsm.Event, syncBlockRange *pb.SyncBlockRange
 		}
 	} else {
 		for i := syncBlockRange.Start; i <= syncBlockRange.End; i++ {
-			logger.Infof("Appending to blockNums: %d", i)
+			logger.Debugf("%s: Appending to blockNums: %d", flogging.GoRDef, i)
 			blockNums = append(blockNums, i)
 		}
 	}
@@ -158,7 +159,7 @@ func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.S
 	} else {
 		//
 		for i := syncBlockRange.Start; i <= syncBlockRange.End; i++ {
-			logger.Debugf("Appending to blockNums: %d", i)
+			logger.Debugf("%s: Appending to blockNums: %d", flogging.GoRDef, i)
 			blockNums = append(blockNums, i)
 		}
 	}

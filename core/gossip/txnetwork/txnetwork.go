@@ -33,6 +33,8 @@ func initTxnetworkEntrance(stub *gossip.GossipStub) {
 	entryglobal.Lock()
 	defer entryglobal.Unlock()
 
+	entryglobal.entries = make(map[*gossip.GossipStub]*txNetworkEntry)
+
 	entryglobal.entries[stub] = NewTxNetworkEntry(stub.GetStubContext())
 }
 

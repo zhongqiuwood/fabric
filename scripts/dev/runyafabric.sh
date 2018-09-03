@@ -1,7 +1,12 @@
 #!/bin/bash
+source fabric.profile
 
-while getopts "i:k:c:f:r:" opt; do
+while getopts "i:k:c:f:r:b:s:" opt; do
   case $opt in
+    b)
+      echo "BUILD_VERSION = $OPTARG"
+      BUILD_VERSION=$OPTARG
+      ;;
     i)
       echo "TARGET_PEER_ID = $OPTARG"
       TARGET_PEER_ID=$OPTARG
@@ -9,7 +14,6 @@ while getopts "i:k:c:f:r:" opt; do
     k)
       echo "TARGET_STOPPED_PEER_ID = $OPTARG"
       TARGET_STOPPED_PEER_ID=$OPTARG
-      NUM_F=$OPTARG
       ;;
     c)
       echo "CONSENSUS_INPUT = $OPTARG"
@@ -23,47 +27,47 @@ while getopts "i:k:c:f:r:" opt; do
       echo "NUM_F = $OPTARG"
       NUM_F=$OPTARG
       ;;
+    s)
+      echo "SYNC_TARGET = $OPTARG"
+      SYNC_TARGET=$OPTARG
+      ;;
     \?)
       echo "Invalid option: -$OPTARG"
       ;;
   esac
 done
 
-
-DB_VERSION=0
-
-#CONSENSUS_INPUT=$1
-#NUM_F=$2
-#DB_VERSION=$3
-#TAG_CLEAR=$4
-
-FABRIC_TOP=${GOPATH}/src/github.com/abchain/fabric
-BUILD_BIN=${FABRIC_TOP}/build/bin
-#PEER_BINARY=peer
-PEER_BINARY=embedded
-CONSENSUS=pbft
-
-if [ "$NUM_F" = "" ]; then
-    echo "runyafabric.sh  -c <p|n> -f NUM_F -r -i TARGET_PEER_ID"
-    exit
-fi
+echo 'FABRIC_PATH = '${FABRIC_PATH}
+echo "FABRIC_TOP = $FABRIC_TOP"
 
 
-let NUM_N=$NUM_F*3+1
-if [ "$CONSENSUS_INPUT" = "n" ];then
-    CONSENSUS=noops
-    let NUM_N=$NUM_F
-fi
+function init {
+
+    DB_VERSION=0
+    CONSENSUS=pbft
+
+    if [ "$NUM_F" = "" ]; then
+        echo "runyafabric.sh  -c <p|n> -f NUM_F -r -i TARGET_PEER_ID"
+        exit
+    fi
+
+    let NUM_N=$NUM_F*3+1
+    if [ "$CONSENSUS_INPUT" = "n" ];then
+        CONSENSUS=noops
+        let NUM_N=$NUM_F
+    fi
+
+    FABRIC_DB_PATH=/var/hyperledger/production
+
+}
 
 function clearLog {
-    echo 'a' > err_nohup_peer0.json
-    echo 'a' > err_nohup_peer1.json
-    echo 'a' > err_nohup_peer2.json
-    echo 'a' > err_nohup_peer3.json
-    echo 'a' > peer0.json
-    echo 'a' > peer1.json
-    echo 'a' > peer2.json
-    echo 'a' > peer3.json
+    rm peer*.json
+    rm err_nohup_peer*.json
+}
+
+function clearBin {
+    rm -rf $FABRIC_TOP/build/bin/*
 }
 
 function runpeers {
@@ -82,27 +86,26 @@ function runpeers {
 
     if [ "$ACTION_CLEAR" = "clearall" ];then
         clearLog
-        rm -rf /var/hyperledger/production*
+        clearBin
+        rm -rf ${FABRIC_DB_PATH}*
     fi
 
 
     if [ "$ACTION_CLEAR" = "clearlog" ];then
+        clearBin
         clearLog
     fi
 
+    
     if [ "$ACTION_CLEAR" = "cleardb" ];then
-        rm -rf /var/hyperledger/production*
-    fi
-
-    #buildpeer
-    buildpeerex
-
-    if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
-        echo 'No such a file: '${BUILD_BIN}'/${PEER_BINARY}'
-        exit -1
+        clearBin
+        rm -rf ${FABRIC_DB_PATH}*
     fi
 
     killbyname peer_fabric_
+
+    build_peer_process ${BUILD_PEER_SCRIPT}
+
 
     index=0
     let allpeer=$NUM_VP
@@ -128,31 +131,21 @@ function runpeers {
 }
 
 
-function buildpeer {
-
-    if [ ! -d ${BUILD_BIN} ]; then
-        mkdir -p ${BUILD_BIN}
-    fi
-
-    if [ -f ${BUILD_BIN}/${PEER_BINARY} ]; then
-        rm ${BUILD_BIN}/${PEER_BINARY}
-    fi
-
+function build_peer {
     CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/github.com/abchain/fabric/build/bin go install github.com/abchain/fabric/peer
-
-    if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
-        echo 'Failed to build '${BUILD_BIN}/${PEER_BINARY}
-        exit -1
-    fi
-
-    if [ ! -L ${BUILD_BIN}/peerex ]; then
-        cd ${BUILD_BIN}
-        ln -s ${PEER_BINARY} peerex
-    fi
+        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/peer
 }
 
-function buildpeerex {
+function build_embedded {
+    CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
+        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/examples/chaincode/go/embedded
+}
+
+
+
+function build_peer_process {
+
+    clearBin
 
     if [ ! -d ${BUILD_BIN} ]; then
         mkdir -p ${BUILD_BIN}
@@ -162,17 +155,20 @@ function buildpeerex {
         rm ${BUILD_BIN}/${PEER_BINARY}
     fi
 
-    CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/github.com/abchain/fabric/build/bin go install github.com/abchain/fabric/examples/chaincode/go/embedded
+    if [ -L ${BUILD_BIN}/peerex ]; then
+        rm ${BUILD_BIN}/peerex
+    fi
+
+    $1
 
     if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
         echo 'Failed to build '${BUILD_BIN}/${PEER_BINARY}
-        exit -1
+        exit
     fi
 
     if [ ! -L ${BUILD_BIN}/peerex ]; then
         cd ${BUILD_BIN}
-        ln -s ${PEER_BINARY} peerex
+        ln -fnsv ${PEER_BINARY} peerex
     fi
 }
 
@@ -211,9 +207,6 @@ function startpeer {
 
     FULL_PEER_ID=${PEER_MODE}${PEER_ID}
 
-    if [ "$PEER_MODE" = "$TAG_LVP" ];then
-        FULL_PEER_ID=${PEER_MODE}${PEER_ID}
-    fi
 
     if [ $PEER_ID -gt 0 ];then
         export CORE_PEER_DISCOVERY_ROOTNODE=127.0.0.1:${PORT_PREFIX}055
@@ -225,14 +218,21 @@ function startpeer {
     if [ "$CONSENSUS" = "$TAG_PBFT" ];then
         export CORE_PBFT_GENERAL_N=$NUM_N
         export CORE_PBFT_GENERAL_F=$NUM_F
-        #echo "CORE_PBFT_GENERAL_N=$CORE_PBFT_GENERAL_N, CORE_PBFT_GENERAL_F=$CORE_PBFT_GENERAL_F"
     fi
     echo "======================================================"
+
+
+    if [ ! "${FULL_PEER_ID}" = "${SYNC_TARGET}" ];then
+        export CORE_PEER_SYNCTARGET=${SYNC_TARGET}
+        export CORE_PEER_MYID=${FULL_PEER_ID}
+        export CORE_PEER_ENABLESTATESYNCTEST=true
+    fi
+
     export CORE_PEER_DB_VERSION=${DB_VERSION}
     export CORE_PEER_VALIDATOR_CONSENSUS_PLUGIN=$CONSENSUS
 
     export CORE_LOGGING_OUTPUT_FILE=peer${PEER_ID}.json
-    export CORE_LOGGING_OUTPUTFILE=peer${PEER_ID}.json
+    export CORE_PEER_LOGPATH=${FABRIC_DEV_SCRIPT_TOP}
 
     export CORE_CLI_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}52
     export CORE_REST_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}50
@@ -255,7 +255,16 @@ function startpeer {
     export CORE_PEER_PKI_TLSCA_PADDR=localhost:${PORT_PREFIX}${PEER_ID}54
     export CORE_PEER_PROFILE_LISTENADDRESS=0.0.0.0:${PORT_PREFIX}${PEER_ID}60
 
-    export CORE_PEER_FILESYSTEMPATH=/var/hyperledger/production${PEER_ID}
+    export CORE_PEER_FILESYSTEMPATH=${FABRIC_DB_PATH}${PEER_ID}
+
+    export LOG_STDOUT_FILE=$CORE_PEER_LOGPATH/_stdout_$CORE_LOGGING_OUTPUT_FILE
+
+    export CORE_PEER_FILESYSTEMPATH=${FABRIC_DB_PATH}${PEER_ID}
+
+#    export CORE_LOGGING_NODE=info:ledger=debug:db=debug:consensus/noops=debug:consensus/executor=debug:buckettree2=debug:statemgmt=debug
+#    export CORE_LOGGING_NODE=info:statesync=debug:ledger=debug:nodeCmd=debug:peer=debug
+    export CORE_LOGGING_NODE=info:statesync=debug:ledger=debug
+
 
     if [ ! -f ${BUILD_BIN}/peer_fabric_${PEER_ID} ]; then
         cd ${BUILD_BIN}
@@ -263,22 +272,39 @@ function startpeer {
         cd ../..
     fi
 
-    if [ ! -d ${FABRIC_TOP}/stderrdir ]; then
-        mkdir ${FABRIC_TOP}/stderrdir
+#    if [ ! -d ${FABRIC_TOP}/stderrdir ]; then
+#        mkdir ${FABRIC_TOP}/stderrdir
+#    fi
+
+    if [ "$ACTION_CLEAR" = "clearall" ] || [ "$ACTION_CLEAR" = "clearlog" ] || [ "$ACTION_CLEAR" = "cleardb" ];then
+        echo '' > ${LOG_STDOUT_FILE}
     fi
 
-    # build/bin/peer_fabric_${PEER_ID} node start
     #nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start > /dev/null 2>${FABRIC_TOP}/stderrdir/err_nohup_peer${PEER_ID}.json &
     #nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start > ${FABRIC_TOP}/nohup_peer${PEER_ID}.log 2>&1 &
 
-    nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start > /dev/null 2>err_nohup_peer${PEER_ID}.json &
+    nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start >> ${LOG_STDOUT_FILE} 2>>${LOG_STDOUT_FILE} &
+#    ${BUILD_BIN}/peer_fabric_${PEER_ID} node start
 }
 
 function main {
+
+     if [ "${BUILD_VERSION}" = "6" ]; then
+          build_peer_process build_peer
+          exit
+     fi
+
+     if [ "${BUILD_VERSION}" = "8" ]; then
+          build_peer_process build_embedded
+          exit
+     fi
+
      if [ "$TARGET_STOPPED_PEER_ID" != "" ];then
         killbyname peer_fabric_$TARGET_STOPPED_PEER_ID
         exit
      fi
+
+     init
 
      if [ "$TARGET_PEER_ID" = "" ];then
         runpeers $NUM_N 0 0 $CONSENSUS $NUM_F $TAG_CLEAR

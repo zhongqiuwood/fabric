@@ -49,6 +49,7 @@ import (
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"
+	"time"
 )
 
 var chaincodeDevMode bool
@@ -273,6 +274,20 @@ func StartNode(postrun func() error) error {
 		}
 	}
 
+
+	enableStatesyncTest := viper.GetBool("peer.enableStatesyncTest")
+
+	syncTarget := viper.GetString("peer.syncTarget")
+
+	if enableStatesyncTest && len(syncTarget) > 0 {
+		logger.Infof("Start state sync test. Sync target: %s", syncTarget)
+
+		go func() {
+			time.Sleep(10 * time.Second)
+			sync, _ := statesync.GetStateSync()
+			sync.SyncToState(nil, nil, nil, &pb.PeerID{syncTarget})
+		}()
+	}
 	// Block until grpc server exits
 	if err == nil {
 		err = <-serve

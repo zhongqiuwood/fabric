@@ -1,20 +1,15 @@
 #!/bin/bash
 
-EXECUTION=dev
 
-BUILD_BIN=${FABRIC_TOP}/build/bin
+export FABRIC_PATH=github.com/abchain/fabric
+export FABRIC_TOP=${GOPATH}/src/${FABRIC_PATH}
 
-#EXECUTION=${BUILD_BIN}/dbupgrade
+EXECUTION=$FABRIC_TOP/tools/dbutility/dbscan/dbscan
 
 ./killbyname.sh peer_fabric
+rm ${EXECUTION}
 
-
-rm ./${EXECUTION}
-
+cd $FABRIC_TOP/tools/dbutility/dbscan
 go build
+${EXECUTION} $@
 
-#GOBIN=${GOPATH}/src/github.com/abchain/fabric/build/bin go install github.com/abchain/fabric/tools/dbupgrade
-
-./${EXECUTION} -dbpath /var/hyperledger/production$1 -mode q
-
-ls -l /var/hyperledger/production$1/checkpoint/db

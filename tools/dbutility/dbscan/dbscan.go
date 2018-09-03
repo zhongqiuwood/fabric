@@ -39,24 +39,18 @@ func main() {
 	flagSetName := os.Args[0]
 	flagSet := flag.NewFlagSet(flagSetName, flag.ExitOnError)
 	dbDirPtr := flagSet.String("dbpath", "", "path to db dump")
-	statehashPtr := flagSet.String("statehash", "", "path to db dump")
-	switchPtr := flagSet.String("switch", "", "path to db dump")
-	dumpPtr := flagSet.String("dump", "", "path to db dump")
+	switchPtr := flagSet.String("switch", "", "statehash for db to switch")
+	dumpPtr := flagSet.String("dump", "", "dump db")
 	flagSet.Parse(os.Args[1:])
 
 	dbDir := *dbDirPtr
-	statehash := *statehashPtr
 	switchTarget := *switchPtr
 
 	fmt.Printf("dbDir = [%s]\n", dbDir)
 	fmt.Printf("switch to = [%s]\n", switchTarget)
 
-	blockNum, _ := strconv.Atoi(statehash)
 	switchTargetNum, _ := strconv.Atoi(switchTarget)
 
-	//statehashByte, _ := hex.DecodeString(statehash)
-	//fmt.Printf("statehash = [%x]\n", getBlockStateHash(uint64(blockNum)))
-	//return
 
 	flogging.LoggingInit("client")
 
@@ -83,10 +77,6 @@ func main() {
 
 	orgdb := db.GetDBHandle()
 
-	if blockNum > 0 {
-		fmt.Printf("statehash = [%x]\n", getBlockStateHash(uint64(blockNum)))
-	}
-
 	if switchTarget != "" {
 		swtch(uint64(switchTargetNum), orgdb)
 	}
@@ -96,31 +86,18 @@ func main() {
 
 	if len(*dumpPtr) > 0 {
 
-		//scan(orgdb.GetIterator(db.IndexesCF).Iterator, db.IndexesCF, nil)
+		scan(orgdb.GetIterator(db.IndexesCF).Iterator, db.IndexesCF, nil)
 		scan(orgdb.GetIterator(db.BlockchainCF).Iterator, db.BlockchainCF, blockDetailPrinter)
 		scan(orgdb.GetIterator(db.StateCF).Iterator, db.StateCF, nil)
 		scan(orgdb.GetIterator(db.StateDeltaCF).Iterator, db.StateDeltaCF, nil)
 		scan(orgdb.GetIterator(db.PersistCF).Iterator, db.PersistCF, nil)
 
-		//scan(txdb.GetIterator(db.TxCF), db.TxCF, txDetailPrinter)
+		scan(txdb.GetIterator(db.TxCF), db.TxCF, txDetailPrinter)
 		scan(txdb.GetIterator(db.GlobalCF), db.GlobalCF, gsDetailPrinter)
 		scan(txdb.GetIterator(db.PersistCF), db.PersistCF, nil)
 	}
 }
 
-
-
-//func persistCFDetailPrinter(valueBytes []byte) {
-//
-//	v, err := protos.UnmarshallTransaction(valueBytes)
-//
-//	if err != nil {
-//		return
-//	}
-//
-//	fmt.Printf("	Txid = [%s]\n", v.Txid)
-//	fmt.Printf("	Payload = [%x]\n", v.Payload)
-//}
 
 func swtch(target uint64, orgdb *db.OpenchainDB) error {
 

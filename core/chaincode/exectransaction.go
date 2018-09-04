@@ -29,6 +29,12 @@ import (
 	pb "github.com/abchain/fabric/protos"
 )
 
+//Execute2 - like legacy execute, but not relay the global ledger object and supposed the transaction has
+//be make pre-exec
+func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSupport, t *pb.Transaction) ([]byte, *pb.ChaincodeEvent, error) {
+	cID, cMsg, cds, err := chain.Preapre(t)
+}
+
 //Execute - execute transaction or a query
 func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) ([]byte, *pb.ChaincodeEvent, error) {
 	var err error

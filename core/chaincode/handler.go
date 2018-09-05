@@ -33,6 +33,7 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/abchain/fabric/core/ledger"
+	"math/rand"
 )
 
 const (
@@ -251,13 +252,13 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 		select {
 		case in := <-msgAvail:
 			if ioerr == io.EOF {
-				chaincodeLogger.Debugf("Received EOF, ending chaincode support stream, %s", err)
+				chaincodeLogger.Debugf("Received EOF, ending chaincode support stream [%d]", ws.serialId)
 				return ioerr
 			} else if ioerr != nil {
-				chaincodeLogger.Errorf("Error handling chaincode support stream: %s", err)
+				chaincodeLogger.Errorf("Error handling chaincode support stream [%d]: %s", ws.serialId, ioerr)
 				return ioerr
 			} else if in == nil {
-				return fmt.Errorf("Received nil message, ending chaincode support stream")
+				return fmt.Errorf("Received nil message, ending chaincode support stream [%d]", ws.serialId)
 			}
 			chaincodeLogger.Debugf("[%s]Received message %s from shim", shorttxid(in.Txid), in.Type.String())
 			if in.Type.String() == pb.ChaincodeMessage_ERROR.String() {
@@ -291,6 +292,7 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 			}
 
 		case out := <-ws.resp:
+			chaincodeLogger.Debugf("[%s]Sending message %s to shim", shorttxid(out.Txid), out.Type.String())
 			if err := ws.Send(out); err != nil {
 				chaincodeLogger.Errorf("stream on tx[%s] sending and received error: %s",
 					shorttxid(out.Txid), err)
@@ -320,6 +322,7 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 					return err
 				}
 
+				chaincodeLogger.Debugf("[%s]Sending new tx %s to shim", shorttxid(msg.Txid), msg.Type.String())
 				ws.tctxs[txid] = tctxin
 				if tctxin.isTransaction {
 					ws.invokingTctx = tctxin
@@ -537,6 +540,7 @@ func (handler *Handler) addNewStream(stream ccintf.ChaincodeStream) (*workingStr
 	handler.workingStream = append(handler.workingStream, ws)
 	handler.availableInvokeStream <- ws
 
+	chaincodeLogger.Debugf("stream [%d] is added into handler [%s]", ws.serialId, handler.ChaincodeID.Name)
 	return ws, nil
 }
 
@@ -566,7 +570,7 @@ func (handler *Handler) streamLeave(ws *workingStream) {
 
 }
 
-func (handler *Handler) waitAvailableStream(ctx context.Context) *workingStream {
+func (handler *Handler) invokeToStream(ctx context.Context, tctx *transactionContext) {
 
 	wctx, _ := context.WithCancel(ctx)
 
@@ -580,13 +584,29 @@ func (handler *Handler) waitAvailableStream(ctx context.Context) *workingStream 
 			if ws.serialId < len(handler.workingStream) && ws == handler.workingStream[ws.serialId] {
 				//was valid stream
 				handler.RUnlock()
-				return ws
+				ws.Incoming <- tctx
+				return
 			}
 			handler.RUnlock()
 		case <-wctx.Done():
-			return nil
+			chaincodeLogger.Error("Can't not deliver tx [%s] for invoking", tctx.transactionSecContext.GetTxid())
+			return
 		}
 	}
+}
+
+func (handler *Handler) queryToStream(tctx *transactionContext) error {
+	handler.RLock()
+	if len(handler.workingStream) == 0 {
+		handler.RUnlock()
+		return fmt.Errorf("No availiable workstream")
+	}
+
+	ws := handler.workingStream[rand.Intn(len(handler.workingStream))]
+	handler.RUnlock()
+
+	ws.Incoming <- tctx
+	return nil
 }
 
 func (handler *Handler) handleGetState(ledgerObj *ledger.Ledger, msg *pb.ChaincodeMessage, tctx *transactionContext) (*pb.ChaincodeMessage, error) {
@@ -796,9 +816,6 @@ func (handler *Handler) handleInvokeChaincode(ledgerObj *ledger.Ledger, msg *pb.
 		return nil, unmarshalErr
 	}
 
-	// Get the chaincodeID to invoke
-	newChaincodeID := chaincodeSpec.ChaincodeID.Name
-
 	// Create the transaction object
 	chaincodeInvocationSpec := &pb.ChaincodeInvocationSpec{ChaincodeSpec: chaincodeSpec}
 	var txtype pb.Transaction_Type
@@ -813,7 +830,7 @@ func (handler *Handler) handleInvokeChaincode(ledgerObj *ledger.Ledger, msg *pb.
 	transaction, _ := pb.NewChaincodeExecute(chaincodeInvocationSpec, msg.Txid, txtype)
 
 	// Launch the new chaincode if not already running
-	_, chaincodeInput, launchErr := handler.chaincodeSupport.Launch(context.Background(), transaction)
+	launchErr, chrte := handler.chaincodeSupport.Launch(context.Background(), ledgerObj, chaincodeSpec.ChaincodeID, nil, transaction)
 	if launchErr != nil {
 		chaincodeLogger.Debugf("[%s]Failed to launch invoked chaincode. Sending %s", shorttxid(msg.Txid), pb.ChaincodeMessage_ERROR)
 		//triggerNextStateMsg = &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
@@ -822,7 +839,7 @@ func (handler *Handler) handleInvokeChaincode(ledgerObj *ledger.Ledger, msg *pb.
 
 	// Execute the chaincode
 	//NOTE: when confidential C-call-C is understood, transaction should have the correct sec context for enc/dec
-	response, execErr := handler.chaincodeSupport.Execute(context.Background(), newChaincodeID, chaincodeInput, transaction)
+	response, execErr := handler.chaincodeSupport.Execute(context.Background(), chrte, chaincodeSpec.CtorMsg, transaction)
 
 	//payload is marshalled and send to the calling chaincode's shim which unmarshals and
 	//sends it to chaincode
@@ -990,11 +1007,14 @@ func (handler *Handler) sendExecuteMessage(ctx context.Context, cMsg *pb.Chainco
 	if isTransaction {
 		chaincodeLogger.Debugf("[%s]sendExecuteMsg trigger event %s", shorttxid(msg.Txid), msg.Type)
 		//must wait and use a availiable stream for invoking, we dance a routine
+		go handler.invokeToStream(ctx, txctx)
 
 	} else {
 		//can deliver to any streams
 		chaincodeLogger.Debugf("[%s]sending query", shorttxid(msg.Txid))
-
+		if err := handler.queryToStream(txctx); err != nil {
+			return nil, err
+		}
 	}
 
 	var resp *pb.ChaincodeMessage

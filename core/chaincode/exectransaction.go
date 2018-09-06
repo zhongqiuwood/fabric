@@ -25,7 +25,6 @@ import (
 	"golang.org/x/net/context"
 
 	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/events/producer"
 	pb "github.com/abchain/fabric/protos"
 )
 
@@ -76,6 +75,7 @@ func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSuppo
 	if resp.Type == pb.ChaincodeMessage_COMPLETED || resp.Type == pb.ChaincodeMessage_QUERY_COMPLETED {
 		// Success
 		txSuccess = true
+		//		chaincodeLogger.Debugf("tx %s exec done: %x, %v", shorttxid(t.Txid), resp.Payload, resp.ChaincodeEvent)
 		return resp.Payload, resp.ChaincodeEvent, nil
 	} else if resp.Type == pb.ChaincodeMessage_ERROR || resp.Type == pb.ChaincodeMessage_QUERY_ERROR {
 		// Rollback transaction
@@ -124,8 +124,6 @@ func ExecuteTransactions(ctxt context.Context, cname ChainName, xacts []*pb.Tran
 		_, ccevents[i], txerrs[i] = Execute(ctxt, chain, t)
 		if txerrs[i] == nil {
 			succeededTxs = append(succeededTxs, t)
-		} else {
-			sendTxRejectedEvent(xacts[i], txerrs[i].Error())
 		}
 	}
 
@@ -186,8 +184,4 @@ func markTxFinish(ledger *ledger.Ledger, t *pb.Transaction, successful bool) {
 		return
 	}
 	ledger.TxFinished(t.Txid, successful)
-}
-
-func sendTxRejectedEvent(tx *pb.Transaction, errorMsg string) {
-	producer.Send(producer.CreateRejectionEvent(tx, errorMsg))
 }

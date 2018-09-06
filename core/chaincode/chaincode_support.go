@@ -682,5 +682,5 @@ func (chaincodeSupport *ChaincodeSupport) Register(stream pb.ChaincodeSupport_Re
 func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *chaincodeRTEnv, cMsg *pb.ChaincodeInput, tx *pb.Transaction) (*pb.ChaincodeMessage, error) {
 
 	wctx, _ := context.WithTimeout(ctxt, chaincodeSupport.ccExecTimeout)
-	return chrte.handler.sendExecuteMessage(wctx, cMsg, tx)
+	return chrte.handler.executeMessage(wctx, cMsg, tx)
 }

@@ -25,35 +25,6 @@ func newStateServer(h *stateSyncHandler) (s *stateServer) {
 }
 
 //---------------------------------------------------------------------------
-// 1. acknowledge sync start request
-//---------------------------------------------------------------------------
-func (server *stateServer) beforeSyncStart(e *fsm.Event) {
-
-	// todo ensure ReleaseSnapshot called finally
-	syncMsg := server.parent.onRecvSyncMsg(e, nil)
-
-	if syncMsg == nil {
-		return
-	}
-
-	server.correlationId = syncMsg.CorrelationId
-
-	size, err := server.ledger.GetBlockchainSize()
-	if err != nil {
-		e.Cancel(err)
-		return
-	}
-
-	resp := &pb.SyncStateResp{}
-	resp.BlockHeight = size
-
-	err = server.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_START_ACK, resp)
-	if err != nil {
-		server.ledger.Release()
-	}
-}
-
-//---------------------------------------------------------------------------
 // 2. acknowledge query request
 //---------------------------------------------------------------------------
 func (server *stateServer) beforeQuery(e *fsm.Event) {

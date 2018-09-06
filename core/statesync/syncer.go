@@ -43,15 +43,6 @@ type syncer struct {
 	branchNode2CheckpointMap    map[string][][]byte
 }
 
-func newSyncer2() (sts *syncer) {
-	l, _ := ledger.GetLedger()
-
-	sts = &syncer{positionResp: make(chan *pb.SyncStateResp),
-		ledger: l,
-	}
-
-	return sts
-}
 
 func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 
@@ -161,20 +152,12 @@ func (sts *syncer) afterSyncStateDeltas(e *fsm.Event) {
 	sts.deltaResp <- payloadMsg
 }
 
-//---------------------------------------------------------------------------
-// 5. receive snapshot response
-//---------------------------------------------------------------------------
-func (sts *syncer) afterSyncStateSnapshot(e *fsm.Event) {
-
-}
-
 func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
 	targetBlockNumber := uint64(0)
 	endBlockNumber := uint64(0)
 
 	sts.parent.fsmHandler.Event(enterSyncBegin)
-	// todo create a fake fsm.Event
 	err := sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_START, nil)
 
 	if err != nil {
@@ -190,6 +173,7 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
 		endBlockNumber = response.BlockHeight - 1
 
+		// todo: handle timed out
 		// if response.BlockHeight < targetHeight {
 		// 	targetHeight = response.BlockHeight
 		// }
@@ -231,6 +215,8 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
 			logger.Infof("start<%d>, end<%d>, targetBlockNumber<%d>, endBlockNumber<%d>",
 				start, end, targetBlockNumber, endBlockNumber)
+
+			// todo: handle timed out
 			//case <-sts.Done():
 			//	return 0, 0, fmt.Errorf("Timed out during get SyncTargetBlockNumber")
 		}
@@ -544,12 +530,6 @@ func (sts *syncer) enterSyncStateDeltas(e *fsm.Event) {
 	sts.dumpStateUpdate(stateUpdate)
 }
 
-//func (sts *syncer) enterIdle(e *fsm.Event) {
-//
-//	stateUpdate := "enterIdle"
-//	sts.dumpStateUpdate(stateUpdate)
-//}
-
 func (sts *syncer) dumpStateUpdate(stateUpdate string) {
 	logger.Debugf("Syncer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
 		stateUpdate, sts.correlationId, sts.parent.remotePeerIdName())
@@ -783,4 +763,22 @@ func (sts *syncer) stateSwitch(statehash []byte) (uint64, error) {
 	}
 
 	return gs.Count, nil
+}
+
+
+func (sts *syncer) fini() {
+
+	select {
+	case <-sts.positionResp:
+	default:
+		logger.Debugf("close positionResp channel")
+		close(sts.positionResp)
+	}
+
+	select {
+	case <-sts.deltaResp:
+	default:
+		logger.Debugf("close deltaResp channel")
+		close(sts.deltaResp)
+	}
 }

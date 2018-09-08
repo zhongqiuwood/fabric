@@ -554,6 +554,15 @@ func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, erro
 }
 
 func (ledger *Ledger) GetCommitedTransaction(txID string) (*protos.Transaction, error) {
+	//we need to check if this tx is really come into block by query it in blockchain-index
+	bln, _, err := ledger.blockchain.indexer.fetchTransactionIndexByID(txID)
+	if err != nil {
+		return nil, err
+	} else if bln == 0 {
+		//not indexed tx is considered as not commited (even it was in db)
+		return nil, nil
+	}
+
 	return fetchTxFromDB(txID)
 }
 

@@ -14,7 +14,7 @@ type entryItem struct {
 	Stub  *gossip.GossipStub
 }
 
-var entryglobal map[*pb.StreamStub]*entryItem
+var entryglobal = map[*pb.StreamStub]*entryItem{}
 
 func GetNetworkEntry(stub *pb.StreamStub) *entryItem {
 

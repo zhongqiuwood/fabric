@@ -244,7 +244,7 @@ func CreateTxNetworkGlobal() *txNetworkGlobal {
 	self := &peerStatusItem{
 		"",
 		&pb.PeerTxState{
-			Digest: util.GenerateBytesUUID(),
+			Digest: util.InitCryptoChainedBytes(),
 			//TODO: we must endorse it
 			Endorsement: []byte{1},
 		},

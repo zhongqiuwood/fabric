@@ -94,6 +94,8 @@ func TestIndexesAsync_IndexingErrorScenario(t *testing.T) {
 	t.Log("Setting an error artificially so as to client query gets an error")
 	asyncIndexer.indexerState.setError(errors.New("Error created for testing"))
 
+	err = asyncIndexer.indexerState.checkError()
+
 	// populate more data after error
 	_, _, err = testBlockchainWrapper.populateBlockChainWithSampleData()
 	if err != nil {
@@ -118,7 +120,11 @@ func TestIndexesAsync_ClientWaitScenario(t *testing.T) {
 
 	testDBWrapper.CleanDB(t)
 	testBlockchainWrapper := newTestBlockchainWrapper(t)
-	defer func() { testBlockchainWrapper.blockchain.indexer.stop() }()
+	endNotify := make(chan bool)
+	defer func() {
+		testBlockchainWrapper.blockchain.indexer.stop()
+		<-endNotify
+	}()
 
 	chain := testBlockchainWrapper.blockchain
 	blocks, _, err := testBlockchainWrapper.populateBlockChainWithSampleData()
@@ -129,6 +135,9 @@ func TestIndexesAsync_ClientWaitScenario(t *testing.T) {
 	t.Log("Increasing size of blockchain by one artificially so as to make client wait")
 	chain.size = chain.size + 1
 	t.Log("Resetting size of blockchain to original and adding one block in a separate go routine so as to wake up the client")
+	//------- YA-fabric 0.9 -------
+	//This test is error prone: stop a async indexer could never halt the program
+	//and its passing in old code is just a combination of serveral error behaviours
 	go func() {
 		time.Sleep(2 * time.Second)
 		chain.size = chain.size - 1
@@ -138,8 +147,11 @@ func TestIndexesAsync_ClientWaitScenario(t *testing.T) {
 			t.Fail()
 		}
 		testBlockchainWrapper.addNewBlock(blk, []byte("stateHash"))
+		endNotify <- true
 	}()
-	t.Log("Executing client query. The client would wait and will be woken up")
+	//so this claim is wrong: indexer never halt query (even in the old code) too
+	//long
+	//t.Log("Executing client query. The client would wait and will be woken up")
 	blockHash, _ := blocks[0].GetHash()
 	block := testBlockchainWrapper.getBlockByHash(blockHash)
 	testutil.AssertEquals(t, block, blocks[0])

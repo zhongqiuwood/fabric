@@ -30,6 +30,7 @@ var prefixBlockHashKey = byte(1)
 var prefixTxIDKey = byte(2)
 var prefixAddressBlockNumCompositeKey = byte(3)
 var prefixStateHashKey = byte(4)
+var lastIndexedBlockKey = []byte{byte(0)}
 
 type blockchainIndexer interface {
 	isSynchronous() bool
@@ -107,26 +108,35 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 	//	addressToTxIndexesMap := make(map[string][]uint64)
 	//	addressToChaincodeIDsMap := make(map[string][]*protos.ChaincodeID)
 
-	transactions := block.GetTransactions()
-	for txIndex, tx := range transactions {
-		// add TxID -> (blockNumber,indexWithinBlock)
-		writeBatch.PutCF(cf, encodeTxIDKey(tx.Txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)))
+	// so we compatible with new format of raw block (without contents for transaction)
+	if txids := block.GetTxids(); txids != nil {
+		for txIndex, txid := range txids {
+			// add TxID -> (blockNumber,indexWithinBlock)
+			writeBatch.PutCF(cf, encodeTxIDKey(txid), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)))
+		}
+	} else if transactions := block.GetTransactions(); transactions != nil {
+		for txIndex, tx := range transactions {
+			// add TxID -> (blockNumber,indexWithinBlock)
+			writeBatch.PutCF(cf, encodeTxIDKey(tx.GetTxid()), encodeBlockNumTxIndex(blockNumber, uint64(txIndex)))
 
-		// txExecutingAddress := getTxExecutingAddress(tx)
-		// addressToTxIndexesMap[txExecutingAddress] = append(addressToTxIndexesMap[txExecutingAddress], uint64(txIndex))
+			// txExecutingAddress := getTxExecutingAddress(tx)
+			// addressToTxIndexesMap[txExecutingAddress] = append(addressToTxIndexesMap[txExecutingAddress], uint64(txIndex))
 
-		// switch tx.Type {
-		// case protos.Transaction_CHAINCODE_DEPLOY, protos.Transaction_CHAINCODE_INVOKE:
-		// 	authroizedAddresses, chaincodeID := getAuthorisedAddresses(tx)
-		// 	for _, authroizedAddress := range authroizedAddresses {
-		// 		addressToChaincodeIDsMap[authroizedAddress] = append(addressToChaincodeIDsMap[authroizedAddress], chaincodeID)
-		// 	}
-		// }
+			// switch tx.Type {
+			// case protos.Transaction_CHAINCODE_DEPLOY, protos.Transaction_CHAINCODE_INVOKE:
+			// 	authroizedAddresses, chaincodeID := getAuthorisedAddresses(tx)
+			// 	for _, authroizedAddress := range authroizedAddresses {
+			// 		addressToChaincodeIDsMap[authroizedAddress] = append(addressToChaincodeIDsMap[authroizedAddress], chaincodeID)
+			// 	}
+			// }
+		}
 	}
 	// for address, txsIndexes := range addressToTxIndexesMap {
 	// 	writeBatch.PutCF(cf, encodeAddressBlockNumCompositeKey(address, blockNumber),
 	// 		encodeListTxIndexes(txsIndexes))
 	// }
+
+	writeBatch.PutCF(cf, lastIndexedBlockKey, encodeBlockNumber(blockNumber))
 	return nil
 }
 

@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package core
+package service
 
 import (
 	"errors"
@@ -41,7 +41,7 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-var devopsLogger = logging.MustGetLogger("devops")
+var clisrvLogger = logging.MustGetLogger("server")
 
 // NewDevopsServer creates and returns a new Devops server instance.
 func NewDevopsServer(peer peer.Peer) *Devops {
@@ -52,11 +52,11 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 	d.bindingMap = &bindingMap{m: make(map[string]crypto.TransactionHandler)}
 
 	if !viper.GetBool("peer.txnetwork.enable") {
-		devopsLogger.Info("Not use txnetwork, legacy method instead")
+		clisrvLogger.Info("Not use txnetwork, legacy method instead")
 		return d
 	}
 
-	devopsLogger.Info("Devops use txnetwork")
+	clisrvLogger.Info("Devops use txnetwork")
 
 	entryItem := txnetwork.GetNetworkEntry(peer.GetStreamStub("gossip"))
 	if entryItem == nil {
@@ -69,9 +69,9 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 	if d.isSecurityEnabled {
 		endorser := viper.GetString("security.endorseID")
 		if endorser == "" {
-			devopsLogger.Warning("No default endorser is used, some transaction may not be endorsed")
+			clisrvLogger.Warning("No default endorser is used, some transaction may not be endorsed")
 		} else if h, err := txnetwork.NewTxNetworkHandler(entryItem.Stub, endorser); err != nil {
-			devopsLogger.Warning("Can not create default endorser, some transaction may not be endorsed:", err)
+			clisrvLogger.Warning("Can not create default endorser, some transaction may not be endorsed:", err)
 		} else {
 			entryItem.Entry.Start(h)
 			return d
@@ -79,7 +79,7 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 	}
 
 	if h, err := txnetwork.NewTxNetworkHandlerNoSec(entryItem.Stub); err != nil {
-		devopsLogger.Fatal("Can not create txnetwork", err)
+		clisrvLogger.Fatal("Can not create txnetwork", err)
 	} else {
 		entryItem.Entry.Start(h)
 	}
@@ -139,7 +139,7 @@ func (d *Devops) Build(context context.Context, spec *pb.ChaincodeSpec) (*pb.Cha
 
 	chaincodeDeploymentSpec, err := d.getChaincodeBytes(context, spec)
 	if err != nil {
-		devopsLogger.Error(fmt.Sprintf("Error build chaincode spec: %v\n\n error: %s", spec, err))
+		clisrvLogger.Error(fmt.Sprintf("Error build chaincode spec: %v\n\n error: %s", spec, err))
 		return nil, err
 	}
 
@@ -156,7 +156,7 @@ func (d *Devops) Build(context context.Context, spec *pb.ChaincodeSpec) (*pb.Cha
 
 	err = vm.BuildChaincodeContainer(spec, codePackageBytes)
 	if err != nil {
-		devopsLogger.Error(fmt.Sprintf("%s", err))
+		clisrvLogger.Error(fmt.Sprintf("%s", err))
 		return nil, err
 	}
 
@@ -180,7 +180,7 @@ func (*Devops) getChaincodeBytes(context context.Context, spec *pb.ChaincodeSpec
 
 	var codePackageBytes []byte
 	if !chain.UserRunsCC() {
-		devopsLogger.Debugf("Received build request for chaincode spec: %v", spec)
+		clisrvLogger.Debugf("Received build request for chaincode spec: %v", spec)
 		var err error
 		if err = CheckSpec(spec); err != nil {
 			return nil, err
@@ -189,7 +189,7 @@ func (*Devops) getChaincodeBytes(context context.Context, spec *pb.ChaincodeSpec
 		codePackageBytes, err = container.GetChaincodePackageBytes(spec)
 		if err != nil {
 			err = fmt.Errorf("Error getting chaincode package bytes: %s", err)
-			devopsLogger.Error(fmt.Sprintf("%s", err))
+			clisrvLogger.Error(fmt.Sprintf("%s", err))
 			return nil, err
 		}
 	}
@@ -203,7 +203,7 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 	chaincodeDeploymentSpec, err := d.getChaincodeBytes(ctx, spec)
 
 	if err != nil {
-		devopsLogger.Error(fmt.Sprintf("Error deploying chaincode spec: %v\n\n error: %s", spec, err))
+		clisrvLogger.Error(fmt.Sprintf("Error deploying chaincode spec: %v\n\n error: %s", spec, err))
 		return nil, err
 	}
 
@@ -215,8 +215,8 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 	var sec crypto.Client
 
 	if peer.SecurityEnabled() {
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debugf("Initializing secure devops using context %s", spec.SecureContext)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debugf("Initializing secure devops using context %s", spec.SecureContext)
 		}
 		sec, err = crypto.InitClient(spec.SecureContext, nil)
 		defer crypto.CloseClient(sec)
@@ -228,16 +228,16 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 			return nil, err
 		}
 
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debugf("Creating secure transaction %s", transID)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debugf("Creating secure transaction %s", transID)
 		}
 		tx, err = sec.NewChaincodeDeployTransaction(chaincodeDeploymentSpec, transID, spec.Attributes...)
 		if nil != err {
 			return nil, err
 		}
 	} else {
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debugf("Creating deployment transaction (%s)", transID)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debugf("Creating deployment transaction (%s)", transID)
 		}
 		tx, err = pb.NewChaincodeDeployTransaction(chaincodeDeploymentSpec, transID)
 		if err != nil {
@@ -245,8 +245,8 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 		}
 	}
 
-	if devopsLogger.IsEnabledFor(logging.DEBUG) {
-		devopsLogger.Debugf("Sending deploy transaction (%s) to validator", tx.Txid)
+	if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+		clisrvLogger.Debugf("Sending deploy transaction (%s) to validator", tx.Txid)
 	}
 	resp := d.peer.ExecuteTransaction(tx)
 	if resp.Status == pb.Response_FAILURE {
@@ -271,13 +271,13 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	// We generate a temporary id for used in work process and update it with
 	// the tx's content
 	id := util.GenerateUUID()
-	devopsLogger.Infof("Transaction ID: %v", id)
+	clisrvLogger.Infof("Transaction ID: %v", id)
 	var transaction *pb.Transaction
 	var err error
 	var sec crypto.Client
 	if peer.SecurityEnabled() {
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debugf("Initializing secure devops using context %s", chaincodeInvocationSpec.ChaincodeSpec.SecureContext)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debugf("Initializing secure devops using context %s", chaincodeInvocationSpec.ChaincodeSpec.SecureContext)
 		}
 		sec, err = crypto.InitClient(chaincodeInvocationSpec.ChaincodeSpec.SecureContext, nil)
 		defer crypto.CloseClient(sec)
@@ -314,11 +314,11 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 		}
 
 		transaction.Txid = util.GenerateIDfromDigest(digest)
-		devopsLogger.Debugf("Invocation transaction id updated to (%s) from (%s)", transaction.Txid, id)
+		clisrvLogger.Debugf("Invocation transaction id updated to (%s) from (%s)", transaction.Txid, id)
 	}
 
-	if devopsLogger.IsEnabledFor(logging.DEBUG) {
-		devopsLogger.Debugf("Sending invocation transaction (%s) to validator", transaction.Txid)
+	if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+		clisrvLogger.Debugf("Sending invocation transaction (%s) to validator", transaction.Txid)
 	}
 	resp := d.peer.ExecuteTransaction(transaction)
 	if resp.Status == pb.Response_FAILURE {
@@ -326,7 +326,7 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	} else {
 		if !invoke && nil != sec && viper.GetBool("security.privacy") {
 			if resp.Msg, err = sec.DecryptQueryResult(transaction, resp.Msg); nil != err {
-				devopsLogger.Errorf("Failed decrypting query transaction result %s", string(resp.Msg[:]))
+				clisrvLogger.Errorf("Failed decrypting query transaction result %s", string(resp.Msg[:]))
 				//resp = &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(err.Error())}
 			}
 		}
@@ -340,8 +340,8 @@ func (d *Devops) createExecTx(spec *pb.ChaincodeInvocationSpec, attributes []str
 
 	//TODO What should we do with the attributes
 	if nil != sec {
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debugf("Creating secure invocation transaction %s", uuid)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debugf("Creating secure invocation transaction %s", uuid)
 		}
 		if invokeTx {
 			tx, err = sec.NewChaincodeExecute(spec, uuid, attributes...)
@@ -352,8 +352,8 @@ func (d *Devops) createExecTx(spec *pb.ChaincodeInvocationSpec, attributes []str
 			return nil, err
 		}
 	} else {
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debugf("Creating invocation transaction (%s)", uuid)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debugf("Creating invocation transaction (%s)", uuid)
 		}
 		var t pb.Transaction_Type
 		if invokeTx {
@@ -400,8 +400,8 @@ func (d *Devops) EXP_GetApplicationTCert(ctx context.Context, secret *pb.Secret)
 	var err error
 
 	if d.isSecurityEnabled {
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debug("Initializing secure devops using context %s", secret.EnrollId)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debug("Initializing secure devops using context %s", secret.EnrollId)
 		}
 		sec, err = crypto.InitClient(secret.EnrollId, nil)
 		defer crypto.CloseClient(sec)
@@ -410,7 +410,7 @@ func (d *Devops) EXP_GetApplicationTCert(ctx context.Context, secret *pb.Secret)
 			return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(err.Error())}, nil
 		}
 
-		devopsLogger.Debug("Getting TCert for id: %s", secret.EnrollId)
+		clisrvLogger.Debug("Getting TCert for id: %s", secret.EnrollId)
 		tcertHandler, err := sec.GetTCertificateHandlerNext()
 		if nil != err {
 			return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(err.Error())}, nil
@@ -418,7 +418,7 @@ func (d *Devops) EXP_GetApplicationTCert(ctx context.Context, secret *pb.Secret)
 		certDER := tcertHandler.GetCertificate()
 		return &pb.Response{Status: pb.Response_SUCCESS, Msg: certDER}, nil
 	}
-	devopsLogger.Warning("Security NOT enabled")
+	clisrvLogger.Warning("Security NOT enabled")
 	return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("Security NOT enabled")}, nil
 	// TODO: Handle timeout and expiration
 }
@@ -431,8 +431,8 @@ func (d *Devops) EXP_PrepareForTx(ctx context.Context, secret *pb.Secret) (*pb.R
 	var binding []byte
 
 	if d.isSecurityEnabled {
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debug("Initializing secure devops using context %s", secret.EnrollId)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debug("Initializing secure devops using context %s", secret.EnrollId)
 		}
 		sec, err = crypto.InitClient(secret.EnrollId, nil)
 		defer crypto.CloseClient(sec)
@@ -441,7 +441,7 @@ func (d *Devops) EXP_PrepareForTx(ctx context.Context, secret *pb.Secret) (*pb.R
 			return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(err.Error())}, nil
 		}
 
-		devopsLogger.Debug("Getting TXHandler for id: %s", secret.EnrollId)
+		clisrvLogger.Debug("Getting TXHandler for id: %s", secret.EnrollId)
 		tcertHandler, err := sec.GetTCertificateHandlerNext()
 		if nil != err {
 			return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(err.Error())}, nil
@@ -455,7 +455,7 @@ func (d *Devops) EXP_PrepareForTx(ctx context.Context, secret *pb.Secret) (*pb.R
 		d.bindingMap.addBinding(binding, txHandler)
 		return &pb.Response{Status: pb.Response_SUCCESS, Msg: binding}, nil
 	}
-	devopsLogger.Warning("Security NOT enabled")
+	clisrvLogger.Warning("Security NOT enabled")
 	return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("Security NOT enabled")}, nil
 	// TODO: Handle timeout and expiration
 }
@@ -473,8 +473,8 @@ func (d *Devops) EXP_ProduceSigma(ctx context.Context, sigmaInput *pb.SigmaInput
 	}
 
 	if d.isSecurityEnabled {
-		if devopsLogger.IsEnabledFor(logging.DEBUG) {
-			devopsLogger.Debug("Initializing secure devops using context %s", secret.EnrollId)
+		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
+			clisrvLogger.Debug("Initializing secure devops using context %s", secret.EnrollId)
 		}
 		sec, err = crypto.InitClient(secret.EnrollId, nil)
 		defer crypto.CloseClient(sec)
@@ -483,7 +483,7 @@ func (d *Devops) EXP_ProduceSigma(ctx context.Context, sigmaInput *pb.SigmaInput
 			return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte(err.Error())}, nil
 		}
 
-		devopsLogger.Debug("Getting TCertHandler for id: %s, from DER = %s", secret.EnrollId, sigmaInput.AppTCert)
+		clisrvLogger.Debug("Getting TCertHandler for id: %s, from DER = %s", secret.EnrollId, sigmaInput.AppTCert)
 		tcertHandler, err := sec.GetTCertificateHandlerFromDER(sigmaInput.AppTCert)
 		//tcertHandler, err := sec.GetTCertificateHandlerNext()
 		if nil != err {
@@ -506,7 +506,7 @@ func (d *Devops) EXP_ProduceSigma(ctx context.Context, sigmaInput *pb.SigmaInput
 		}
 		return &pb.Response{Status: pb.Response_SUCCESS, Msg: sigmaOutputBytes}, nil
 	}
-	devopsLogger.Warning("Security NOT enabled")
+	clisrvLogger.Warning("Security NOT enabled")
 	return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("Security NOT enabled")}, nil
 
 }
@@ -515,7 +515,7 @@ func (d *Devops) EXP_ProduceSigma(ctx context.Context, sigmaInput *pb.SigmaInput
 func (d *Devops) EXP_ExecuteWithBinding(ctx context.Context, executeWithBinding *pb.ExecuteWithBinding) (*pb.Response, error) {
 
 	if d.isSecurityEnabled {
-		devopsLogger.Debug("Getting TxHandler for binding")
+		clisrvLogger.Debug("Getting TxHandler for binding")
 
 		txHandler, err := d.bindingMap.getTxHandlerForBinding(executeWithBinding.Binding)
 
@@ -542,6 +542,6 @@ func (d *Devops) EXP_ExecuteWithBinding(ctx context.Context, executeWithBinding 
 
 		//return &pb.Response{Status: pb.Response_SUCCESS, Msg: sigmaOutputBytes}, nil
 	}
-	devopsLogger.Warning("Security NOT enabled")
+	clisrvLogger.Warning("Security NOT enabled")
 	return &pb.Response{Status: pb.Response_FAILURE, Msg: []byte("Security NOT enabled")}, nil
 }

@@ -14,22 +14,18 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package core
+package service
 
 import (
+	"github.com/spf13/viper"
+	"golang.org/x/net/context"
 	"os"
 	"runtime"
 
-	"github.com/op/go-logging"
-	"github.com/spf13/viper"
-	"golang.org/x/net/context"
-
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/ptypes/empty"
 )
-
-var log = logging.MustGetLogger("server")
 
 // NewAdminServer creates and returns a Admin service instance.
 func NewAdminServer() *ServerAdmin {
@@ -45,10 +41,10 @@ func worker(id int, die chan struct{}) {
 	for {
 		select {
 		case <-die:
-			log.Debugf("worker %d terminating", id)
+			clisrvLogger.Debugf("worker %d terminating", id)
 			return
 		default:
-			log.Debugf("%d is working...", id)
+			clisrvLogger.Debugf("%d is working...", id)
 			runtime.Gosched()
 		}
 	}
@@ -57,24 +53,24 @@ func worker(id int, die chan struct{}) {
 // GetStatus reports the status of the server
 func (*ServerAdmin) GetStatus(context.Context, *empty.Empty) (*pb.ServerStatus, error) {
 	status := &pb.ServerStatus{Status: pb.ServerStatus_STARTED}
-	log.Debugf("returning status: %s", status)
+	clisrvLogger.Debugf("returning status: %s", status)
 	return status, nil
 }
 
 // StartServer starts the server
 func (*ServerAdmin) StartServer(context.Context, *empty.Empty) (*pb.ServerStatus, error) {
 	status := &pb.ServerStatus{Status: pb.ServerStatus_STARTED}
-	log.Debugf("returning status: %s", status)
+	clisrvLogger.Debugf("returning status: %s", status)
 	return status, nil
 }
 
 // StopServer stops the server
 func (*ServerAdmin) StopServer(context.Context, *empty.Empty) (*pb.ServerStatus, error) {
 	status := &pb.ServerStatus{Status: pb.ServerStatus_STOPPED}
-	log.Debugf("returning status: %s", status)
+	clisrvLogger.Debugf("returning status: %s", status)
 
 	pidFile := util.CanonicalizePath(viper.GetString("peer.fileSystemPath")) + "peer.pid"
-	log.Debugf("Remove pid file  %s", pidFile)
+	clisrvLogger.Debugf("Remove pid file  %s", pidFile)
 	os.Remove(pidFile)
 	defer os.Exit(0)
 	return status, nil

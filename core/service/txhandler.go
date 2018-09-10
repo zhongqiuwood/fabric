@@ -1,4 +1,4 @@
-package txnetwork
+package service
 
 import (
 	"fmt"

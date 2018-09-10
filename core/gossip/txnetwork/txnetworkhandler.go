@@ -119,7 +119,7 @@ func (t *txNetworkHandlerImpl) updateEpoch() {
 	}
 }
 
-func (t *txNetworkHandlerImpl) HandleTxs(txs []PendingTransaction) error {
+func (t *txNetworkHandlerImpl) HandleTxs(txs []*PendingTransaction) {
 
 	outtxs := new(pb.HotTransactionBlock)
 
@@ -150,6 +150,11 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []PendingTransaction) error {
 		lastSeries = lastSeries + 1
 
 		outtxs.Transactions = append(outtxs.Transactions, tx.Transaction)
+
+		//also we handle notify here for any tx being broadcasted
+		if tx.resp != nil {
+			tx.resp <- &pb.Response{pb.Response_SUCCESS, []byte(tx.GetTxid())}
+		}
 	}
 
 	t.updateHotTx(outtxs, lastDigest, lastSeries)
@@ -158,7 +163,6 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []PendingTransaction) error {
 		t.updateEpoch()
 	}
 
-	return nil
 }
 
 func (t *txNetworkHandlerImpl) Release() {

@@ -347,10 +347,10 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	sendProducerBlockEvent(block)
 
 	//send chaincode events from transaction results
-	sendChaincodeEvents(transactionResults)
+	errTxs := sendChaincodeEvents(transactionResults)
 
-	if len(transactionResults) != 0 {
-		ledgerLogger.Debug("There were some erroneous transactions. We need to send a 'TX rejected' message here.")
+	if errTxs != 0 {
+		ledgerLogger.Debugf("Handling %d Txs, %d is error", len(transactions), errTxs)
 	}
 
 	ledgerLogger.Debugf("Committed: last block number: %d, blockchain size(heigth): %d",
@@ -554,6 +554,15 @@ func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, erro
 }
 
 func (ledger *Ledger) GetCommitedTransaction(txID string) (*protos.Transaction, error) {
+	//we need to check if this tx is really come into block by query it in blockchain-index
+	bln, _, err := ledger.blockchain.indexer.fetchTransactionIndexByID(txID)
+	if err != nil {
+		return nil, err
+	} else if bln == 0 {
+		//not indexed tx is considered as not commited (even it was in db)
+		return nil, nil
+	}
+
 	return fetchTxFromDB(txID)
 }
 
@@ -748,15 +757,22 @@ func sendProducerBlockEvent(block *protos.Block) {
 	producer.Send(producer.CreateBlockEvent(block))
 }
 
-//send chaincode events created by transactions
-func sendChaincodeEvents(trs []*protos.TransactionResult) {
+//send chaincode events created by transactions, and stastic the error count
+func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
+
 	if trs != nil {
 		for _, tr := range trs {
 			//we store empty chaincode events in the protobuf repeated array to make protobuf happy.
 			//when we replay off a block ignore empty events
+			if tr.ErrorCode != 0 {
+				errcnt++
+				producer.Send(producer.CreateRejectionEvent2(tr.GetTxid(), tr.GetError()))
+			}
 			if tr.ChaincodeEvent != nil && tr.ChaincodeEvent.ChaincodeID != "" {
 				producer.Send(producer.CreateChaincodeEvent(tr.ChaincodeEvent))
 			}
 		}
 	}
+
+	return
 }

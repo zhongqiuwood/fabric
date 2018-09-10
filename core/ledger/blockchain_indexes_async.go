@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/protos"
+	"golang.org/x/net/context"
 )
 
 const maxPendingBlocksForIndexed = 3
@@ -91,11 +92,14 @@ func (c *pendingBlockCache) cacheBlock(block *protos.Block, blockNumber uint64, 
 
 	idx := &blockIndex{block.GetStateHash(), blockHash, make(map[string]int)}
 
-	if txids := block.GetTxids(); txids == nil {
-		return fmt.Errorf("No txid array found in block, we have deprecated code?")
-	} else {
+	if txids := block.GetTxids(); txids != nil {
 		for i, txid := range txids {
 			idx.txindex[txid] = i
+		}
+	} else if txs := block.GetTransactions(); txs != nil {
+		indexLogger.Debugf("No txid array found in block, we have deprecated code?")
+		for i, tx := range txs {
+			idx.txindex[tx.GetTxid()] = i
 		}
 	}
 
@@ -122,6 +126,7 @@ type blockchainIndexerAsync struct {
 	blockChan    chan blockWrapper
 	indexerState *blockchainIndexerState
 	cache        *pendingBlockCache
+	stopf        context.CancelFunc
 }
 
 func newBlockchainIndexerAsync() *blockchainIndexerAsync {
@@ -151,37 +156,39 @@ func (indexer *blockchainIndexerAsync) start(blockchain *blockchain) error {
 	indexLogger.Debugf("staring indexer, lastIndexedBlockNum = [%d] after processing pending blocks",
 		indexer.indexerState.getLastIndexedBlockNumber())
 	indexer.blockChan = make(chan blockWrapper, maxPendingBlocksForIndexed)
+	var ctx context.Context
+	ctx, indexer.stopf = context.WithCancel(context.TODO())
 
 	go func() {
 		defer indexer.indexerState.setError(fmt.Errorf("User stop"))
 		for {
 			indexLogger.Debug("Going to wait on channel for next block to index")
-			blockWrapper, more := <-indexer.blockChan
+			select {
+			case blockWrapper := <-indexer.blockChan:
+				indexLogger.Debugf("Blockwrapper received on channel: block number = [%d]", blockWrapper.blockNumber)
 
-			if !more {
+				if indexer.indexerState.hasError() {
+					indexLogger.Debugf("Not indexing block number [%d]. Because of previous error: %s.",
+						blockWrapper.blockNumber, indexer.indexerState.getError())
+					continue
+				}
+
+				err := indexer.createIndexesInternal(blockWrapper.block, blockWrapper.blockNumber, blockWrapper.blockHash)
+				if err != nil {
+					indexer.indexerState.setError(err)
+					indexLogger.Errorf(
+						"Error occured while indexing block number [%d]. Error: %s. Further blocks will not be indexed",
+						blockWrapper.blockNumber, err)
+
+				} else {
+					indexer.indexerState.blockIndexed(blockWrapper.blockNumber)
+					indexLogger.Debugf("Finished indexing block number [%d]", blockWrapper.blockNumber)
+				}
+			case <-ctx.Done():
 				indexLogger.Debug("channel is closed, stop")
 				return
 			}
 
-			indexLogger.Debugf("Blockwrapper received on channel: block number = [%d]", blockWrapper.blockNumber)
-
-			if indexer.indexerState.hasError() {
-				indexLogger.Debugf("Not indexing block number [%d]. Because of previous error: %s.",
-					blockWrapper.blockNumber, indexer.indexerState.getError())
-				continue
-			}
-
-			err := indexer.createIndexesInternal(blockWrapper.block, blockWrapper.blockNumber, blockWrapper.blockHash)
-			if err != nil {
-				indexer.indexerState.setError(err)
-				indexLogger.Errorf(
-					"Error occured while indexing block number [%d]. Error: %s. Further blocks will not be indexed",
-					blockWrapper.blockNumber, err)
-
-			} else {
-				indexer.indexerState.blockIndexed(blockWrapper.blockNumber)
-				indexLogger.Debugf("Finished indexing block number [%d]", blockWrapper.blockNumber)
-			}
 		}
 	}()
 	return nil
@@ -197,9 +204,21 @@ func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockN
 
 	if err != nil {
 		indexLogger.Warning("Can't cache block, we still forward but query may ruin:", err)
+		//TODO: maybe we should return all of the error?
+		//return err
 	}
-	indexer.blockChan <- blockWrapper{block, blockNumber, blockHash, false}
-	return nil
+
+	for {
+		select {
+		case indexer.blockChan <- blockWrapper{block, blockNumber, blockHash, false}:
+			return nil
+		default:
+			if err = indexer.indexerState.waitForLastCommittedBlock(); err != nil {
+				return err
+			}
+		}
+	}
+
 }
 
 // createIndexes adds entries into db for creating indexes on various attributes
@@ -323,9 +342,12 @@ func (indexer *blockchainIndexerAsync) fetchBlockFromDBAndCreateIndexes(blockNum
 }
 
 func (indexer *blockchainIndexerAsync) stop() {
-	close(indexer.blockChan)
+	if indexer.stopf == nil {
+		indexLogger.Warning("stop is called before start")
+		return
+	}
+	indexer.stopf()
 	indexer.indexerState.waitForLastCommittedBlock()
-
 	indexLogger.Debugf("async indexer stopped: %s", indexer.indexerState.checkError())
 }
 
@@ -386,36 +408,22 @@ func (indexerState *blockchainIndexerState) waitForLastCommittedBlock() error {
 		return indexerState.err
 	}
 
-	if chain.getSize() == 0 {
-		return nil
-	}
-
 	lastBlockCommitted := chain.getSize() - 1
+	indexLogger.Debugf(
+		"Waiting for index to catch up with block chain. lastBlockCommitted=[%d] and lastBlockIndexed=[%d]",
+		lastBlockCommitted, indexerState.lastBlockIndexed)
+	indexerState.newBlockIndexed.Wait()
 
-	if !indexerState.zerothBlockIndexed {
-		indexLogger.Debugf(
-			"Waiting for zeroth block to be indexed. lastBlockCommitted=[%d] and lastBlockIndexed=[%d]",
-			lastBlockCommitted, indexerState.lastBlockIndexed)
-		indexerState.newBlockIndexed.Wait()
-	}
-
-	for indexerState.lastBlockIndexed < lastBlockCommitted && indexerState.err == nil {
-		indexLogger.Debugf(
-			"Waiting for index to catch up with block chain. lastBlockCommitted=[%d] and lastBlockIndexed=[%d]",
-			lastBlockCommitted, indexerState.lastBlockIndexed)
-		indexerState.newBlockIndexed.Wait()
-	}
 	return indexerState.err
 }
 
 func (indexerState *blockchainIndexerState) setError(err error) {
 	indexerState.lock.Lock()
 	defer indexerState.lock.Unlock()
-	if indexerState.err != nil {
-		return
+	if indexerState.err == nil {
+		indexerState.err = err
+		indexLogger.Debugf("setError() indexerState.err = %#v", indexerState.err)
 	}
-	indexerState.err = err
-	indexLogger.Debugf("setError() indexerState.err = %#v", indexerState.err)
 	indexerState.newBlockIndexed.Broadcast()
 }
 

@@ -25,11 +25,11 @@ import (
 	"strings"
 	"time"
 
+	"encoding/binary"
 	"github.com/golang/protobuf/ptypes/timestamp"
 	"golang.org/x/crypto/sha3"
 	"hash"
 	"os"
-	"encoding/binary"
 )
 
 type alg struct {
@@ -42,6 +42,7 @@ const defaultAlg = "sha3"
 
 var availableIDgenAlgs = map[string]alg{
 	defaultAlg: alg{GenerateIDfromTxSHAHash},
+	"sha256":   alg{GenerateIDfromTxSHA256Hash},
 }
 
 var availableHashAlgs = map[string]algFactory{
@@ -117,6 +118,10 @@ func GenerateHashFromSignature(path string, args []byte) []byte {
 
 // Deprecated: GenerateIDfromTxSHAHash generates SHA256 hash using Tx payload
 func GenerateIDfromTxSHAHash(payload []byte) string {
+	return fmt.Sprintf("%x", sha3.Sum256(payload))
+}
+
+func GenerateIDfromTxSHA256Hash(payload []byte) string {
 	return fmt.Sprintf("%x", sha256.Sum256(payload))
 }
 

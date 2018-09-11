@@ -168,6 +168,28 @@ type PendingTransaction struct {
 	resp     chan *pb.Response
 }
 
+func (t *PendingTransaction) GetEndorser() string {
+	if t == nil {
+		return ""
+	}
+
+	return t.endorser
+}
+
+func (t *PendingTransaction) GetAttrs() []string {
+	if t == nil {
+		return nil
+	}
+
+	return t.attrs
+}
+
+func (t *PendingTransaction) Respond(resp *pb.Response) {
+	if t != nil {
+		t.resp <- resp
+	}
+}
+
 func (e *txNetworkEntry) broadcast(ptx *PendingTransaction) error {
 	if e == nil {
 		return fmt.Errorf("txNetwork not init yet")

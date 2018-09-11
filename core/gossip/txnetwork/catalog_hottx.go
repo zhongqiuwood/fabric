@@ -1,6 +1,7 @@
 package txnetwork
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
@@ -39,20 +40,37 @@ type peerTxs struct {
 	last *txMemPoolItem
 }
 
+const (
+	TxDigestVerifyLen = 16
+	failDig           = "__FAILTXDIGEST__"
+)
+
 func getTxDigest(tx *pb.Transaction) []byte {
-	return []byte("not imply")
+	dig, err := tx.Digest()
+	if err != nil {
+		dig = []byte(failDig)
+	}
+
+	if len(dig) < TxDigestVerifyLen {
+		panic("Wrong code generate digest less than 16 bytes [128bit]")
+	}
+
+	return dig[:TxDigestVerifyLen]
 }
 
 //return whether tx is match to the digest
 func txIsMatch(digest []byte, tx *pb.Transaction) bool {
-	//TODO: check tx2's nonce and tx1's txid
-	return true
+
+	return bytes.Compare(digest, getTxDigest(tx)) == 0
 }
 
 //return whether tx2 is precede of the digest
 func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
-	//TODO: check tx2's nonce and tx1's txid
-	return true
+	n := tx2.GetNonce()
+	if len(n) < TxDigestVerifyLen {
+		return false
+	}
+	return bytes.Compare(digest, n[:TxDigestVerifyLen]) == 0
 }
 
 func (p *peerTxs) lastSeries() uint64 {
@@ -721,4 +739,22 @@ func (c *hotTxCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Mes
 	}
 
 	return u, nil
+}
+
+func UpdateLocalHotTx(stub *gossip.GossipStub, txs *pb.HotTransactionBlock) error {
+	hotcat := stub.GetCatalogHandler(hotTxCatName)
+	if hotcat == nil {
+		return fmt.Errorf("Can't not found corresponding hottx catalogHandler")
+	}
+
+	selfUpdate := model.NewscuttlebuttUpdate(nil)
+	selfUpdate.UpdateLocal(txPeerUpdate{txs})
+
+	if err := hotcat.Model().Update(selfUpdate); err != nil {
+		return err
+	} else {
+		//notify our peer is updated
+		hotcat.SelfUpdate()
+		return nil
+	}
 }

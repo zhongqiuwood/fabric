@@ -233,18 +233,24 @@ func (g *networkIndexs) GetNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
 }
 
 func CreateTxNetworkGlobal() *txNetworkGlobal {
+
+	sid := util.GenerateBytesUUID()
+	if len(sid) < TxDigestVerifyLen {
+		panic("Wrong code generate uuid less than 16 bytes [128bit]")
+	}
+
 	ret := &txNetworkGlobal{
 		maxPeers: def_maxPeer,
 		lruQueue: list.New(),
 		lruIndex: make(map[string]*list.Element),
-		selfId:   util.GenerateUUID(),
+		selfId:   fmt.Sprintf("%x", sid),
 	}
 
 	//also create self peer
 	self := &peerStatusItem{
 		"",
 		&pb.PeerTxState{
-			Digest: util.InitCryptoChainedBytes(),
+			Digest: sid[:TxDigestVerifyLen],
 			//TODO: we must endorse it
 			Endorsement: []byte{1},
 		},
@@ -358,4 +364,28 @@ func (c *globalCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Me
 	}
 
 	return u, nil
+}
+
+func UpdateLocalEpoch(stub *gossip.GossipStub, series uint64, digest []byte) error {
+	globalcat := stub.GetCatalogHandler(globalCatName)
+	if globalcat == nil {
+		return fmt.Errorf("Can't not found corresponding global catalogHandler")
+	}
+
+	newstate := &pb.PeerTxState{Digest: digest, Num: series}
+	//TODO: make signature
+
+	selfUpdate := model.NewscuttlebuttUpdate(nil)
+	selfUpdate.UpdateLocal(peerStatus{newstate})
+
+	if err := globalcat.Model().Update(selfUpdate); err != nil {
+		return err
+	} else {
+		globalcat.SelfUpdate()
+		return nil
+	}
+}
+
+func UpdateLocalPeer(stub *gossip.GossipStub, txs *pb.HotTransactionBlock) error {
+	return fmt.Errorf("Not implied")
 }

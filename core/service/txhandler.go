@@ -4,7 +4,7 @@ import (
 	"fmt"
 	crypto "github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/gossip"
-	model "github.com/abchain/fabric/core/gossip/model"
+	"github.com/abchain/fabric/core/gossip/txnetwork"
 	_ "github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
@@ -12,6 +12,7 @@ import (
 
 var (
 	epochInterval = uint64(512)
+	logger        = clisrvLogger
 )
 
 type txNetworkHandlerImpl struct {
@@ -23,9 +24,19 @@ type txNetworkHandlerImpl struct {
 	epochSeries     uint64
 }
 
+func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
+
+	if len(digest) < txnetwork.TxDigestVerifyLen {
+		panic("Wrong length of digest")
+	}
+
+	tx.Nonce = digest
+	return tx
+}
+
 func NewTxNetworkHandlerNoSec(stub *gossip.GossipStub) (*txNetworkHandlerImpl, error) {
 
-	self := global.GetNetwork(stub)
+	self := txnetwork.GetNetworkStatus().GetNetwork(stub)
 	if self == nil {
 		return nil, fmt.Errorf("No global network created yet")
 	}
@@ -61,30 +72,13 @@ func NewTxNetworkHandler(stub *gossip.GossipStub, clientName string) (*txNetwork
 
 }
 
-func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
-	//TODO: now we just put something in the nonce ...
-	tx.Nonce = []byte{2, 3, 3}
-	return tx
-}
-
 func (t *txNetworkHandlerImpl) updateHotTx(txs *pb.HotTransactionBlock, lastDigest []byte, lastSeries uint64) {
 
-	hotcat := t.GossipStub.GetCatalogHandler(hotTxCatName)
-	if hotcat == nil {
-		panic("Can't not found corresponding catalogHandler")
-	}
-
-	selfUpdate := model.NewscuttlebuttUpdate(nil)
-	selfUpdate.UpdateLocal(txPeerUpdate{txs})
-
-	if err := hotcat.Model().Update(selfUpdate); err != nil {
-		logger.Errorf("Update hot transaction to self fail!")
+	if err := txnetwork.UpdateLocalHotTx(t.GossipStub, txs); err != nil {
+		logger.Error("Update hot transaction fail", err)
 	} else {
 		t.lastDigest = lastDigest
 		t.lastSeries = lastSeries
-
-		//notify our peer is updated
-		hotcat.SelfUpdate()
 	}
 }
 
@@ -97,29 +91,15 @@ func (t *txNetworkHandlerImpl) updateEpoch() {
 		return
 	}
 
-	globalcat := t.GossipStub.GetCatalogHandler(globalCatName)
-	if globalcat == nil {
-		panic("Can't not found corresponding catalogHandler")
-	}
-
-	newstate := &pb.PeerTxState{Digest: t.epochDigest, Num: t.epochSeries}
-	//TODO: make signature
-
-	selfUpdate := model.NewscuttlebuttUpdate(nil)
-	selfUpdate.UpdateLocal(peerStatus{newstate})
-
-	if err := globalcat.Model().Update(selfUpdate); err != nil {
-		logger.Errorf("Update hot transaction to self fail!")
+	if err := txnetwork.UpdateLocalEpoch(t.GossipStub, t.epochSeries, t.epochDigest); err != nil {
+		logger.Error("Update global fail", err)
 	} else {
 		t.epochDigest = t.lastDigest
 		t.epochSeries = t.lastSeries
-
-		//notify our peer is updated
-		globalcat.SelfUpdate()
 	}
 }
 
-func (t *txNetworkHandlerImpl) HandleTxs(txs []*PendingTransaction) {
+func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
 
 	outtxs := new(pb.HotTransactionBlock)
 
@@ -133,28 +113,33 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*PendingTransaction) {
 
 		//allow non-sec usage
 		if t.defaultEndorser != nil {
-			if tx.endorser != "" {
-				if sec, err := crypto.InitClient(tx.endorser, nil); err == nil {
-					sec.EndorseExecuteTransaction(tx.Transaction, tx.attrs...)
+			if tx.GetEndorser() != "" {
+				if sec, err := crypto.InitClient(tx.GetEndorser(), nil); err == nil {
+					sec.EndorseExecuteTransaction(tx.Transaction, tx.GetAttrs()...)
 					defer crypto.CloseClient(sec)
 				} else {
-					logger.Errorf("create new crypto client for %d fail: %s", tx.endorser, err)
+					logger.Errorf("create new crypto client for %d fail: %s", tx.GetEndorser(), err)
 					continue
 				}
 			} else {
-				t.defaultEndorser.EndorseExecuteTransaction(tx.Transaction, tx.attrs...)
+				t.defaultEndorser.EndorseExecuteTransaction(tx.Transaction, tx.GetAttrs()...)
 			}
 		}
 
-		lastDigest = getTxDigest(tx.Transaction)
+		txdig, err := tx.Digest()
+		if err != nil {
+			logger.Errorf("Can not get digest for tx %v: %s", tx, err)
+			continue
+		} else if len(txdig) < txnetwork.TxDigestVerifyLen {
+			panic("Wrong code generate tx digest less than 16 bytes")
+		}
+
+		lastDigest = txdig[:txnetwork.TxDigestVerifyLen]
 		lastSeries = lastSeries + 1
 
 		outtxs.Transactions = append(outtxs.Transactions, tx.Transaction)
+		tx.Respond(&pb.Response{pb.Response_SUCCESS, []byte(tx.GetTxid())})
 
-		//also we handle notify here for any tx being broadcasted
-		if tx.resp != nil {
-			tx.resp <- &pb.Response{pb.Response_SUCCESS, []byte(tx.GetTxid())}
-		}
 	}
 
 	t.updateHotTx(outtxs, lastDigest, lastSeries)

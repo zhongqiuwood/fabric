@@ -4,6 +4,7 @@ import (
 	"bytes"
 	model "github.com/abchain/fabric/core/gossip/model"
 	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 	"testing"
 )
@@ -16,36 +17,36 @@ func newHotTxModel(l *ledger.Ledger) *model.Model {
 	return model.NewGossipModel(model.NewScuttlebuttStatus(txglobal))
 }
 
-var genesisDigest = []byte("hottx")
+var genesisDigest = util.GenerateBytesUUID()
+
+func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
+
+	if len(digest) < TxDigestVerifyLen {
+		digest = append(digest, failDig[len(digest):]...)
+	}
+
+	tx.Nonce = digest
+	return tx
+}
 
 func TestTxChain(t *testing.T) {
 	tx1, _ := buildTestTx(t)
 	tx2, _ := buildTestTx(t)
 	oldNonce := tx2.GetNonce()
-	oldDigest, err := tx2.Digest()
-	if err != nil {
-		t.Fatal("digest old tx2 fail", err)
-	}
+	oldDigest := getTxDigest(tx2)
 
 	tx1 = buildPrecededTx(genesisDigest, tx1)
-
-	dg1, err := tx1.Digest()
-	if err != nil {
-		t.Fatal("digest tx1 fail", err)
-	}
+	dg1 := getTxDigest(tx1)
 
 	tx2 = buildPrecededTx(dg1, tx2)
 
 	if !txIsPrecede(dg1, tx2) {
-		t.Fatal("tx2 is not precede of tx1")
+		t.Fatalf("tx2 is not precede of tx1: %x vs %x", dg1, tx2.GetNonce())
 	}
 
 	tx2.Nonce = oldNonce
 
-	nowDigest, err := tx2.Digest()
-	if err != nil {
-		t.Fatal("digest fail", err)
-	}
+	nowDigest := getTxDigest(tx2)
 
 	if bytes.Compare(nowDigest, oldDigest) != 0 {
 		t.Fatalf("digest not equal: %x vs %x", nowDigest, oldDigest)
@@ -61,10 +62,7 @@ func prolongItemChain(t *testing.T, head *txMemPoolItem, n int) *peerTxs {
 		tx, _ := buildTestTx(t)
 		tx = buildPrecededTx(cur.digest, tx)
 
-		dg, err := tx.Digest()
-		if err != nil {
-			t.Fatalf("fail digest at %d, %s", n, err)
-		}
+		dg := getTxDigest(tx)
 
 		t.Logf("create tx with digest %x", dg)
 

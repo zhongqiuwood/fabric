@@ -22,7 +22,6 @@ func GetNetworkEntry(stub *pb.StreamStub) *entryItem {
 }
 
 func init() {
-
 	gossip.RegisterCat = append(gossip.RegisterCat, initTxnetworkEntrance)
 }
 

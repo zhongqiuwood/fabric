@@ -13,8 +13,9 @@ import (
 type txMemPoolItem struct {
 	digest       []byte
 	digestSeries uint64
-	tx           *pb.Transaction //cache of the tx (may just the txid)
-	committedH   uint64          //0 means not commited
+	txid         string
+	//	tx           *pb.Transaction //cache of the tx (may just the txid)
+	//	committedH   uint64          //0 means not commited
 
 	//so we have a simple list structure
 	next *txMemPoolItem
@@ -168,8 +169,8 @@ type txPoolCommited struct {
 func (*txPoolCommited) Gossip_IsUpdateIn() bool { return true }
 
 type txPoolGlobal struct {
-	ind        map[string]*txMemPoolItem
-	ledger     *ledger.Ledger
+	*transactionPool
+	//	ind        map[string]*txMemPoolItem
 	network    *txNetworkGlobal
 	currentCpo gossip.CatalogPeerPolicies
 }
@@ -215,11 +216,11 @@ func (g *txPoolGlobal) Update(u_in model.Update) error {
 	case txPoolGlobalUpdate:
 		g.currentCpo = u.CatalogPeerPolicies
 	case *txPoolCommited:
-		for _, txid := range u.txs {
-			if i, ok := g.ind[txid]; ok {
-				i.committedH = u.commitedH
-			}
-		}
+		// for _, txid := range u.txs {
+		// 	if i, ok := g.ind[txid]; ok {
+		// 		i.committedH = u.commitedH
+		// 	}
+		// }
 	default:
 		return fmt.Errorf("Type error, not expected update type")
 	}

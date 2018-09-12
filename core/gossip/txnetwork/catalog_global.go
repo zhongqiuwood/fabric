@@ -104,6 +104,8 @@ type txNetworkGlobal struct {
 	lruQueue  *list.List
 	lruIndex  map[string]*list.Element
 	onevicted []func([]string)
+	//shared txpool with hottx
+	txpool *transactionPool
 }
 
 func (*txNetworkGlobal) GenDigest() model.Digest                                { return nil }
@@ -216,22 +218,6 @@ func (g *txNetworkGlobal) RegNotify(f func([]string)) {
 	g.onevicted = append(g.onevicted, f)
 }
 
-type networkIndexs struct {
-	sync.Mutex
-	ind map[*gossip.GossipStub]*txNetworkGlobal
-}
-
-func (g *networkIndexs) GetNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
-	g.Lock()
-	defer g.Unlock()
-
-	if n, ok := g.ind[stub]; ok {
-		return n
-	} else {
-		return nil
-	}
-}
-
 func CreateTxNetworkGlobal() *txNetworkGlobal {
 
 	sid := util.GenerateBytesUUID()
@@ -264,30 +250,11 @@ func CreateTxNetworkGlobal() *txNetworkGlobal {
 	return ret
 }
 
-func (g *networkIndexs) CreateNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
-	g.Lock()
-	defer g.Unlock()
-
-	if n, ok := g.ind[stub]; ok {
-		return n
-	}
-
-	ret := CreateTxNetworkGlobal()
-	g.ind[stub] = ret
-	return ret
-}
-
-var global networkIndexs
-
-func GetNetworkStatus() *networkIndexs { return &global }
-
 type globalCat struct {
 	policy gossip.CatalogPolicies
 }
 
 func init() {
-
-	global.ind = make(map[*gossip.GossipStub]*txNetworkGlobal)
 	gossip.RegisterCat = append(gossip.RegisterCat, initNetworkStatus)
 }
 

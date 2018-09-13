@@ -104,35 +104,31 @@ func (p *peerTxs) concat(s *peerTxs) error {
 		return fmt.Errorf("Wrong next series: %d", s.head.digestSeries)
 	}
 
-	if !txIsPrecede(p.last.digest, s.head.tx) {
-		return fmt.Errorf("Wrong next section for digest %x", p.last.digest)
-	}
-
 	p.last.next = s.head
 	p.last = s.last
 	return nil
 }
 
 //have extra cost and we should avoid using it
-func (p *peerTxs) merge(s *peerTxs) error {
+func (p *peerTxs) merge(s *peerTxs) (*txMemPoolItem, error) {
 
 	if p.head == nil {
-		return p.concat(s)
+		return s.head, p.concat(s)
 	}
 
 	if !s.inRange(p.last.digestSeries + 1) {
 		//nothing to merge, give up
-		return nil
+		return nil, nil
 	}
 
 	//scan txs ...
 	for beg := s.head; beg != nil; beg = beg.next {
 		if beg.digestSeries > p.last.digestSeries {
-			return p.concat(&peerTxs{beg, s.last})
+			return beg, p.concat(&peerTxs{beg, s.last})
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (p *peerTxs) fetch(d uint64, beg *txMemPoolItem) *peerTxs {
@@ -151,7 +147,10 @@ func (p *peerTxs) fetch(d uint64, beg *txMemPoolItem) *peerTxs {
 
 }
 
-type txPoolGlobalUpdateOut uint64
+type txPoolGlobalUpdateOut struct {
+	*txPoolGlobal
+	epoch uint64
+}
 
 func (txPoolGlobalUpdateOut) Gossip_IsUpdateIn() bool { return false }
 
@@ -203,7 +202,7 @@ func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
 		epochH = 0
 	}
 
-	return txPoolGlobalUpdateOut(epochH)
+	return txPoolGlobalUpdateOut{g, epochH}
 }
 
 func (g *txPoolGlobal) Update(u_in model.Update) error {
@@ -249,27 +248,14 @@ func (g *txPoolGlobal) RemovePeer(id string, s_in model.ScuttlebuttPeerStatus) {
 	if s_in == nil {
 		return
 	}
-	s, ok := s_in.(*peerTxMemPool)
+	_, ok := s_in.(*peerTxMemPool)
 	if !ok {
 		panic("Type error, not peerTxMemPool")
 	}
 
-	delCount := 0
-	//purge index ...
-	for beg := s.head; beg != nil; beg = beg.next {
-		delete(g.ind, beg.tx.GetTxid())
-		delCount++
-	}
+	g.RemoveCache(id)
 
-	logger.Infof("Peer %s is removed, clean %d indexs", id, delCount)
-}
-
-func (g *txPoolGlobal) index(i *txMemPoolItem) {
-	g.ind[i.tx.GetTxid()] = i
-}
-
-func (g *txPoolGlobal) query(txid string) *txMemPoolItem {
-	return g.ind[txid]
+	logger.Infof("Peer %s is removed", id)
 }
 
 func txToDigestState(tx *pb.Transaction) []byte {
@@ -297,7 +283,7 @@ func isLiteTx(tx *pb.Transaction) bool {
 	return tx.GetNonce() == nil
 }
 
-func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64) {
+func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64, cache *peerCache) {
 
 	if s == nil {
 		return
@@ -306,19 +292,102 @@ func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64) {
 	u.BeginSeries = s.head.digestSeries
 
 	for beg := s.head; beg != nil; beg = beg.next {
-		if beg.committedH != 0 && beg.committedH <= epochH {
-			u.Transactions = append(u.Transactions, getLiteTx(beg.tx))
+		tx, commitedH := cache.GetTx(beg.txid)
+		if tx == nil {
+			//we have something wrong and have to end here ...
+			logger.Errorf("Can not find Tx %s in peer cache", beg.txid)
+			return
+		}
+		if commitedH != 0 && commitedH <= epochH {
+			u.Transactions = append(u.Transactions, getLiteTx(tx))
 		} else {
-			u.Transactions = append(u.Transactions, beg.tx)
+			u.Transactions = append(u.Transactions, tx)
 		}
 	}
 }
 
-//only use for local updating
-func (u txPeerUpdate) toTxsFast() *peerTxs {
+// //only use for local updating
+// func (u txPeerUpdate) toTxsFast() *peerTxs {
+
+// 	if len(u.Transactions) == 0 {
+// 		return nil
+// 	}
+
+// 	head := &txMemPoolItem{
+// 		//		tx:           txs.Transactions[0],
+// 		//		digest:       txToDigestState(txs.Transactions[0]),
+// 		digestSeries: u.BeginSeries,
+// 	}
+
+// 	current := head
+// 	var last *txMemPoolItem
+
+// 	for _, tx := range u.Transactions {
+// 		last = current
+// 		current.tx = tx
+// 		current.digest = getTxDigest(tx)
+
+// 		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
+// 		last.next = current
+// 	}
+
+// 	last.next = nil //seal the tail
+// 	return &peerTxs{head, last}
+// }
+
+func (u txPeerUpdate) getRef(refSeries uint64) txPeerUpdate {
+
+	if u.BeginSeries < refSeries {
+		//possible panic if headpos exceed len of u.Transactions ?
+		//scuttlebutt scheme will check To() first and avoid this case
+		return txPeerUpdate{&pb.HotTransactionBlock{u.Transactions[int(refSeries-u.BeginSeries):], refSeries}}
+	} else {
+		//start from head
+		return u
+	}
+}
+
+func (u txPeerUpdate) cacheLocalUpdate(tp *transactionPool, id string) {
+
+	cache := tp.AcquireCache(id)
+
+	for _, tx := range u.Transactions {
+		tp.simplePoolTx(tx)
+		cache.c[tx.GetTxid()] = cachedTx{tx, 0}
+	}
+}
+
+func (u txPeerUpdate) cacheUpdate(tp *transactionPool, id string) error {
+
+	cache := tp.AcquireCache(id)
+	var err error
+	var commitedH uint64
+
+	for _, tx := range u.Transactions {
+		if isLiteTx(tx) {
+			tx, err = tp.ledger.GetTransactionByID(tx.GetTxid())
+			if err != nil {
+				// this is not consider as error of update
+				return fmt.Errorf("Checking tx from db fail: %s", err)
+			} else if tx == nil {
+				return fmt.Errorf("update give uncommited transactions")
+			}
+		}
+
+		commitedH, err = tp.PoolTx(tx)
+		if err != nil {
+			return fmt.Errorf("Pool tx fail: %s", err)
+		}
+
+		cache.c[tx.GetTxid()] = cachedTx{tx, commitedH}
+	}
+	return nil
+}
+
+func (u txPeerUpdate) toTxs(last *txMemPoolItem) (*peerTxs, error) {
 
 	if len(u.Transactions) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	head := &txMemPoolItem{
@@ -328,83 +397,17 @@ func (u txPeerUpdate) toTxsFast() *peerTxs {
 	}
 
 	current := head
-	var last *txMemPoolItem
-
-	for _, tx := range u.Transactions {
-		last = current
-		current.tx = tx
-		current.digest = getTxDigest(tx)
-
-		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
-		last.next = current
-	}
-
-	last.next = nil //seal the tail
-	return &peerTxs{head, last}
-}
-
-func (u txPeerUpdate) toTxs(ledger *ledger.Ledger, refSeries uint64) (*peerTxs, error) {
-
-	if len(u.Transactions) == 0 {
-		return nil, nil
-	}
-
-	var headpos int
-	if u.BeginSeries < refSeries {
-		//possible panic if headpos exceed len of u.Transactions ?
-		//scuttlebutt scheme will check To() first and avoid this case
-		headpos = int(refSeries - u.BeginSeries)
-	} else {
-		//start from head, headpos is 0
-		refSeries = u.BeginSeries
-	}
-
-	head := &txMemPoolItem{
-		//		tx:           txs.Transactions[0],
-		//		digest:       txToDigestState(txs.Transactions[0]),
-		digestSeries: refSeries,
-	}
-
-	current := head
-	var last *txMemPoolItem
-	var err error
 
 	//construct a peerTxMemPool from txs, and do verification
-	for _, tx := range u.Transactions[headpos:] {
-
-		if isLiteTx(tx) {
-			tx, err = ledger.GetCommitedTransaction(tx.GetTxid())
-			if err != nil {
-				// this is not consider as error of update
-				logger.Error("Checking tx from db fail", err)
-				return nil, nil
-			} else if tx == nil {
-				return nil, fmt.Errorf("update give uncommited transactions")
-			}
-		}
+	for _, tx := range u.Transactions {
 
 		if last != nil && !txIsPrecede(last.digest, tx) {
 			return nil, fmt.Errorf("update have invalid transactions chain for tx at %d", last.digestSeries+1)
 		}
 
-		if txcommon.secHelper != nil {
-			tx, err = txcommon.secHelper.TransactionPreValidation(tx)
-			if err != nil {
-				return nil, fmt.Errorf("update have invalid transactions: %s", err)
-			}
-		}
-
 		last = current
-		current.tx = tx
+		current.txid = tx.GetTxid()
 		current.digest = getTxDigest(tx)
-
-		//** we always check the commiting status
-		//first we must check the commited status
-		if h, _, err := ledger.GetBlockNumberByTxid(tx.GetTxid()); err == nil && h > 0 {
-			current.committedH = h
-			logger.Debugf("Tx %s in [%d] has been commited into block %d",
-				tx.GetTxid(), current.digestSeries, h)
-		}
 
 		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
 		last.next = current
@@ -448,7 +451,7 @@ func (p *peerTxMemPool) To() model.VClock {
 	return standardVClock(p.lastSeries())
 }
 
-func (p *peerTxMemPool) PickFrom(d_in model.VClock, gu_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
+func (p *peerTxMemPool) PickFrom(id string, d_in model.VClock, gu_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 
 	d, ok := d_in.(standardVClock)
 	if !ok {
@@ -464,19 +467,21 @@ func (p *peerTxMemPool) PickFrom(d_in model.VClock, gu_in model.Update) (model.S
 	ret := txPeerUpdate{new(pb.HotTransactionBlock)}
 	//logger.Debugf("pick peer %s at height %d with global height %d", p.peerId, expectedH, uint64(gu))
 
+	peerCache := gu.AcquireCache(id)
+
 	if !p.inRange(expectedH) {
 		//we have a too up-to-date range, so we return a single record to
 		//remind far-end they are late
 		nh := p.head.clone()
-		ret.fromTxs(&peerTxs{nh, nh}, uint64(gu))
+		ret.fromTxs(&peerTxs{nh, nh}, gu.epoch, peerCache)
 	} else {
-		ret.fromTxs(p.fetch(expectedH, p.jlindex[uint64(d)/jumplistInterval]), uint64(gu))
+		ret.fromTxs(p.fetch(expectedH, p.jlindex[uint64(d)/jumplistInterval]), uint64(gu.epoch), peerCache)
 	}
 
 	return ret, gu_in
 }
 
-func (p *peerTxMemPool) purge(purgeto uint64, g *txPoolGlobal) {
+func (p *peerTxMemPool) purge(id string, purgeto uint64, g *txPoolGlobal) {
 
 	//never purge at begin
 	if p.head == nil || purgeto <= p.head.digestSeries {
@@ -491,9 +496,11 @@ func (p *peerTxMemPool) purge(purgeto uint64, g *txPoolGlobal) {
 		return
 	}
 
+	cache := g.AcquireCache(id)
+
 	//purge global index first
 	for beg := p.head; beg.digestSeries < preserved.head.digestSeries; beg = beg.next {
-		delete(g.ind, beg.tx.GetTxid())
+		delete(cache.c, beg.txid)
 	}
 
 	//also the jumping index must be purged
@@ -540,28 +547,21 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 		return nil
 	}
 
-	isReset := false
-	updatePos := p.lastSeries() + 1
+	// --------- YA-fabric 0.9 consider not imply purging ......
 	//purge on each update first
 	//our data is outdate, all cache is clear .... ...
-	if peerStatus.GetNum() > updatePos {
-		logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
-			id, p.last.digest, p.last.digestSeries)
-		isReset = true
-		updatePos = peerStatus.GetNum()
-	} else {
-		p.purge(peerStatus.GetNum(), g)
-	}
+	// if peerStatus.GetNum() > updatePos {
+	// 	logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
+	// 		id, p.last.digest, p.last.digestSeries)
+	// 	isReset = true
+	//	p.reset(createPeerTxItem(peerStatus))
+	// 	updatePos = peerStatus.GetNum()
+	// } else {
+	// 	p.purge(id, peerStatus.GetNum(), g)
+	// }
 
-	var inTxs *peerTxs
-	var err error
-
-	if id == "" {
-		//we have fast entrance for localupdate
-		inTxs = u.toTxsFast()
-	} else {
-		inTxs, err = u.toTxs(g.ledger, updatePos)
-	}
+	u = u.getRef(p.lastSeries() + 1)
+	inTxs, err := u.toTxs(p.last)
 
 	if err != nil {
 		return err
@@ -569,40 +569,31 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 		return nil
 	}
 
-	if isReset {
-
-		if !txIsMatch(peerStatus.GetDigest(), inTxs.head.tx) {
-			logger.Errorf("We may obtain branched data from peer %s: %s", id, err)
-			return nil
-		}
-		//we build jupming index after binding incoming txs, so we can't reset the whole
-		//txs here, but just change the head
-		p.head = inTxs.head
-
+	if id == "" {
+		u.cacheLocalUpdate(g.transactionPool, id)
 	} else {
-		err = p.concat(inTxs)
-		if err != nil {
-			//there is many possible for a far-end provided nonsense update for you
-			//(caused by itself or the original peer) so we just simply omit it
-			logger.Errorf("We may obtain branched data from peer %s: %s", id, err)
-			return nil
-		}
+		err = u.cacheUpdate(g.transactionPool, id)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	//sanity check
+	err = p.concat(inTxs)
+	if err != nil {
+		panic("toTxs method should has verified everything, wrong code")
 	}
 
 	var mergeCnt int
 	//we need to construct the index ...
 	for beg := inTxs.head; beg != nil; beg = beg.next {
 
-		g.index(beg)
 		if beg.digestSeries == (beg.digestSeries/jumplistInterval)*jumplistInterval {
 			p.jlindex[beg.digestSeries/jumplistInterval] = beg
 		}
 		mergeCnt++
 
-		//we also pool the transaction (if it was checked not commited yet)
-		if beg.committedH == 0 {
-			g.ledger.PoolTransaction(beg.tx)
-		}
 	}
 
 	// var mergeW uint
@@ -634,9 +625,10 @@ func initHotTx(stub *gossip.GossipStub) {
 	}
 
 	txglobal := new(txPoolGlobal)
-	txglobal.ind = make(map[string]*txMemPoolItem)
-	txglobal.ledger = l
+	//	txglobal.ind = make(map[string]*txMemPoolItem)
 	txglobal.network = global.CreateNetwork(stub)
+	txglobal.transactionPool = newTransactionPool(l)
+	txglobal.network.txpool = txglobal.transactionPool
 
 	hotTx := new(hotTxCat)
 	hotTx.policy = gossip.NewCatalogPolicyDefault()

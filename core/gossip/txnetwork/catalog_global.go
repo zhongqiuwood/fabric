@@ -20,7 +20,7 @@ func (s peerStatus) To() model.VClock {
 	return standardVClock(s.GetNum())
 }
 
-func (s peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
+func (s peerStatus) PickFrom(id string, d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 	d, ok := d_in.(standardVClock)
 	if !ok {
 		panic("Type error, not standardVClock")

@@ -182,6 +182,7 @@ func TestPeerUpdate(t *testing.T) {
 
 	initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
+	txpool := newTransactionPool(ledger)
 
 	txchain := populatePoolItems(t, 10)
 

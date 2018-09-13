@@ -2,10 +2,48 @@ package txnetwork
 
 import (
 	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	pb "github.com/abchain/fabric/protos"
 	"sync"
 )
+
+type networkIndexs struct {
+	sync.Mutex
+	ind map[*gossip.GossipStub]*txNetworkGlobal
+}
+
+var global networkIndexs
+
+func init() {
+	global.ind = make(map[*gossip.GossipStub]*txNetworkGlobal)
+}
+
+func (g *networkIndexs) GetNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
+	g.Lock()
+	defer g.Unlock()
+
+	if n, ok := g.ind[stub]; ok {
+		return n
+	} else {
+		return nil
+	}
+}
+
+func (g *networkIndexs) CreateNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
+	g.Lock()
+	defer g.Unlock()
+
+	if n, ok := g.ind[stub]; ok {
+		return n
+	}
+
+	ret := CreateTxNetworkGlobal()
+	g.ind[stub] = ret
+	return ret
+}
+
+//func GetNetworkStatus() *networkIndexs { return &global }
 
 type txcommonImpl struct {
 	secHelper crypto.Peer

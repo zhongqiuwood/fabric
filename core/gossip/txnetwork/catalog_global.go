@@ -20,7 +20,7 @@ func (s peerStatus) To() model.VClock {
 	return standardVClock(s.GetNum())
 }
 
-func (s peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
+func (s peerStatus) PickFrom(id string, d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 	d, ok := d_in.(standardVClock)
 	if !ok {
 		panic("Type error, not standardVClock")
@@ -104,6 +104,8 @@ type txNetworkGlobal struct {
 	lruQueue  *list.List
 	lruIndex  map[string]*list.Element
 	onevicted []func([]string)
+	//shared txpool with hottx
+	txpool *transactionPool
 }
 
 func (*txNetworkGlobal) GenDigest() model.Digest                                { return nil }
@@ -216,35 +218,25 @@ func (g *txNetworkGlobal) RegNotify(f func([]string)) {
 	g.onevicted = append(g.onevicted, f)
 }
 
-type networkIndexs struct {
-	sync.Mutex
-	ind map[*gossip.GossipStub]*txNetworkGlobal
-}
-
-func (g *networkIndexs) GetNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
-	g.Lock()
-	defer g.Unlock()
-
-	if n, ok := g.ind[stub]; ok {
-		return n
-	} else {
-		return nil
-	}
-}
-
 func CreateTxNetworkGlobal() *txNetworkGlobal {
+
+	sid := util.GenerateBytesUUID()
+	if len(sid) < TxDigestVerifyLen {
+		panic("Wrong code generate uuid less than 16 bytes [128bit]")
+	}
+
 	ret := &txNetworkGlobal{
 		maxPeers: def_maxPeer,
 		lruQueue: list.New(),
 		lruIndex: make(map[string]*list.Element),
-		selfId:   util.GenerateUUID(),
+		selfId:   fmt.Sprintf("%x", sid),
 	}
 
 	//also create self peer
 	self := &peerStatusItem{
 		"",
 		&pb.PeerTxState{
-			Digest: util.InitCryptoChainedBytes(),
+			Digest: sid[:TxDigestVerifyLen],
 			//TODO: we must endorse it
 			Endorsement: []byte{1},
 		},
@@ -258,30 +250,11 @@ func CreateTxNetworkGlobal() *txNetworkGlobal {
 	return ret
 }
 
-func (g *networkIndexs) CreateNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
-	g.Lock()
-	defer g.Unlock()
-
-	if n, ok := g.ind[stub]; ok {
-		return n
-	}
-
-	ret := CreateTxNetworkGlobal()
-	g.ind[stub] = ret
-	return ret
-}
-
-var global networkIndexs
-
-func GetNetworkStatus() *networkIndexs { return &global }
-
 type globalCat struct {
 	policy gossip.CatalogPolicies
 }
 
 func init() {
-
-	global.ind = make(map[*gossip.GossipStub]*txNetworkGlobal)
 	gossip.RegisterCat = append(gossip.RegisterCat, initNetworkStatus)
 }
 
@@ -358,4 +331,28 @@ func (c *globalCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Me
 	}
 
 	return u, nil
+}
+
+func UpdateLocalEpoch(stub *gossip.GossipStub, series uint64, digest []byte) error {
+	globalcat := stub.GetCatalogHandler(globalCatName)
+	if globalcat == nil {
+		return fmt.Errorf("Can't not found corresponding global catalogHandler")
+	}
+
+	newstate := &pb.PeerTxState{Digest: digest, Num: series}
+	//TODO: make signature
+
+	selfUpdate := model.NewscuttlebuttUpdate(nil)
+	selfUpdate.UpdateLocal(peerStatus{newstate})
+
+	if err := globalcat.Model().Update(selfUpdate); err != nil {
+		return err
+	} else {
+		globalcat.SelfUpdate()
+		return nil
+	}
+}
+
+func UpdateLocalPeer(stub *gossip.GossipStub, txs *pb.HotTransactionBlock) error {
+	return fmt.Errorf("Not implied")
 }

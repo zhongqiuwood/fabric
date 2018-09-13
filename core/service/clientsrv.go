@@ -70,7 +70,7 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 		endorser := viper.GetString("security.endorseID")
 		if endorser == "" {
 			clisrvLogger.Warning("No default endorser is used, some transaction may not be endorsed")
-		} else if h, err := txnetwork.NewTxNetworkHandler(entryItem.Stub, endorser); err != nil {
+		} else if h, err := NewTxNetworkHandler(entryItem.Stub, endorser); err != nil {
 			clisrvLogger.Warning("Can not create default endorser, some transaction may not be endorsed:", err)
 		} else {
 			entryItem.Entry.Start(h)
@@ -78,7 +78,7 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 		}
 	}
 
-	if h, err := txnetwork.NewTxNetworkHandlerNoSec(entryItem.Stub); err != nil {
+	if h, err := NewTxNetworkHandlerNoSec(entryItem.Stub); err != nil {
 		clisrvLogger.Fatal("Can not create txnetwork", err)
 	} else {
 		entryItem.Entry.Start(h)

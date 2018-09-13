@@ -12,7 +12,7 @@ type ScuttlebuttPeerUpdate interface {
 
 type ScuttlebuttPeerStatus interface {
 	To() VClock
-	PickFrom(VClock, Update) (ScuttlebuttPeerUpdate, Update)
+	PickFrom(string, VClock, Update) (ScuttlebuttPeerUpdate, Update)
 	Update(string, ScuttlebuttPeerUpdate, ScuttlebuttStatus) error
 }
 
@@ -95,7 +95,8 @@ type ScuttlebuttStatus interface {
 
 type scuttlebuttStatus struct {
 	ScuttlebuttStatus
-	Peers map[string]ScuttlebuttPeerStatus
+	Peers  map[string]ScuttlebuttPeerStatus
+	SelfID string
 }
 
 // type noPeerStatusError string
@@ -118,13 +119,17 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 	}
 
 	for id, ss := range u.PeerUpdate() {
-		//remove request (notice you can't remove selfpeer)
-		if ss == nil && s.Peers[id] != s.Peers[""] {
-			s.RemovePeer(id, s.Peers[id])
+
+		pss, ok := s.Peers[id]
+		if pss == nil {
+			continue
+		}
+		//remove request
+		if ss == nil {
+			s.RemovePeer(id, pss)
 			delete(s.Peers, id)
 		} else {
 
-			pss, ok := s.Peers[id]
 			if ok {
 				if pss.To().Less(ss.To()) {
 					err = pss.Update(id, ss, s.ScuttlebuttStatus)
@@ -151,11 +156,14 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 func (s *scuttlebuttStatus) GenDigest() Digest {
 	r := NewscuttlebuttDigest(s.ScuttlebuttStatus.GenDigest())
 	for id, ss := range s.Peers {
-		r.SetPeerDigest(id, ss.To())
+		if id == "" {
+			r.SetPeerDigest(s.SelfID, ss.To())
+		} else {
+			r.SetPeerDigest(id, ss.To())
+		}
+
 	}
 
-	//We NEVER allow the default self peer name ("") is visible to outer
-	delete(r.d, "")
 	return r
 }
 
@@ -171,7 +179,8 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 		u:      make(map[string]ScuttlebuttPeerUpdate),
 	}
 
-	for id, dd := range dig.PeerDigest() {
+	digs := dig.PeerDigest()
+	for id, dd := range digs {
 		ss, ok := s.Peers[id]
 		if !ok {
 			ss = s.NewPeer(id)
@@ -179,8 +188,20 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 				s.Peers[id] = ss
 			}
 		} else if dd.Less(ss.To()) {
-			if ssu, ssgu := ss.PickFrom(dd, r.Update); ssu != nil {
+			if ssu, ssgu := ss.PickFrom(id, dd, r.Update); ssu != nil {
 				r.u[id] = ssu
+				if ssgu != nil {
+					r.Update = ssgu
+				}
+			}
+		}
+	}
+
+	//special handle self id
+	if dd, ok := digs[s.SelfID]; ok {
+		if ss, ok := s.Peers[""]; ok && dd.Less(ss.To()) {
+			if ssu, ssgu := ss.PickFrom("", dd, r.Update); ssu != nil {
+				r.u[s.SelfID] = ssu
 				if ssgu != nil {
 					r.Update = ssgu
 				}
@@ -193,12 +214,15 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 }
 
 func (s *scuttlebuttStatus) SetSelfPeer(selfid string,
-	self ScuttlebuttPeerStatus) {
+	self ScuttlebuttPeerStatus) (oldself string) {
 
-	//we add "self peer" on both selfid and default value(""),
-	//so an localupdate need not to know the self peer id
+	defer func(id string) {
+		oldself = id
+	}(s.SelfID)
+
+	s.SelfID = selfid
 	s.Peers[""] = self
-	s.Peers[selfid] = self
+	return
 }
 
 func NewScuttlebuttStatus(gs ScuttlebuttStatus) *scuttlebuttStatus {

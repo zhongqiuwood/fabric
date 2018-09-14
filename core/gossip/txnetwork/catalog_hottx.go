@@ -347,41 +347,33 @@ func (u txPeerUpdate) getRef(refSeries uint64) txPeerUpdate {
 	}
 }
 
-func (u txPeerUpdate) cacheLocalUpdate(tp *transactionPool, id string) {
-
-	cache := tp.AcquireCache(id)
-
-	for _, tx := range u.Transactions {
-		tp.simplePoolTx(tx)
-		cache.c[tx.GetTxid()] = cachedTx{tx, 0}
+func (u txPeerUpdate) completeTxs(l *ledger.Ledger, h TxPreHandler) (ret txPeerUpdate, err error) {
+	ret.HotTransactionBlock = &pb.HotTransactionBlock{
+		Transactions: make([]*pb.Transaction, len(u.Transactions)),
+		BeginSeries:  u.BeginSeries,
 	}
-}
 
-func (u txPeerUpdate) cacheUpdate(tp *transactionPool, id string) error {
-
-	cache := tp.AcquireCache(id)
-	var err error
-	var commitedH uint64
-
-	for _, tx := range u.Transactions {
+	for i, tx := range u.Transactions {
 		if isLiteTx(tx) {
-			tx, err = tp.ledger.GetTransactionByID(tx.GetTxid())
+			tx, err = l.GetTransactionByID(tx.GetTxid())
 			if err != nil {
-				// this is not consider as error of update
-				return fmt.Errorf("Checking tx from db fail: %s", err)
+				err = fmt.Errorf("Checking tx from db fail: %s", err)
+				return
 			} else if tx == nil {
-				return fmt.Errorf("update give uncommited transactions")
+				err = fmt.Errorf("update give uncommited transactions")
+				return
+			}
+		} else if h != nil {
+			tx, err = h.TransactionPreValidation(tx)
+			if err != nil {
+				err = fmt.Errorf("Verify tx fail: %s", err)
+				return
 			}
 		}
-
-		commitedH, err = tp.PoolTx(tx)
-		if err != nil {
-			return fmt.Errorf("Pool tx fail: %s", err)
-		}
-
-		cache.c[tx.GetTxid()] = cachedTx{tx, commitedH}
+		ret.Transactions[i] = tx
 	}
-	return nil
+
+	return
 }
 
 func (u txPeerUpdate) toTxs(last *txMemPoolItem) (*peerTxs, error) {
@@ -560,24 +552,20 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 	// 	p.purge(id, peerStatus.GetNum(), g)
 	// }
 
-	u = u.getRef(p.lastSeries() + 1)
-	inTxs, err := u.toTxs(p.last)
+	var err error
+	u, err = u.getRef(p.lastSeries()+1).completeTxs(g.ledger, g.preH)
+	if err != nil {
+		return err
+	}
 
+	inTxs, err := u.toTxs(p.last)
 	if err != nil {
 		return err
 	} else if inTxs == nil {
 		return nil
 	}
 
-	if id == "" {
-		u.cacheLocalUpdate(g.transactionPool, id)
-	} else {
-		err = u.cacheUpdate(g.transactionPool, id)
-	}
-
-	if err != nil {
-		return err
-	}
+	g.AcquireCache(id).AddTxs(u.Transactions, id == "")
 
 	//sanity check
 	err = p.concat(inTxs)

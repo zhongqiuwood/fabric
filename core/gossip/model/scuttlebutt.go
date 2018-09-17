@@ -121,7 +121,7 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 	for id, ss := range u.PeerUpdate() {
 
 		pss, ok := s.Peers[id]
-		if pss == nil {
+		if !ok {
 			continue
 		}
 		//remove request
@@ -130,12 +130,10 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 			delete(s.Peers, id)
 		} else {
 
-			if ok {
-				if pss.To().Less(ss.To()) {
-					err = pss.Update(id, ss, s.ScuttlebuttStatus)
-				} else {
-					err = s.MissedUpdate(id, ss)
-				}
+			if pss.To().Less(ss.To()) {
+				err = pss.Update(id, ss, s.ScuttlebuttStatus)
+			} else {
+				err = s.MissedUpdate(id, ss)
 			}
 			// no peer status CAN NOT be consider as an error
 			// because far-end may return a update including removed peer
@@ -180,6 +178,21 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 	}
 
 	digs := dig.PeerDigest()
+
+	//special handle self id
+	if dd, ok := digs[s.SelfID]; ok {
+		if ss, ok := s.Peers[""]; ok && dd.Less(ss.To()) {
+			if ssu, ssgu := ss.PickFrom("", dd, r.Update); ssu != nil {
+				r.u[s.SelfID] = ssu
+				if ssgu != nil {
+					r.Update = ssgu
+				}
+			}
+		}
+		delete(digs, s.SelfID)
+		defer func(v VClock) { digs[s.SelfID] = v }(dd)
+	}
+
 	for id, dd := range digs {
 		ss, ok := s.Peers[id]
 		if !ok {
@@ -190,18 +203,6 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 		} else if dd.Less(ss.To()) {
 			if ssu, ssgu := ss.PickFrom(id, dd, r.Update); ssu != nil {
 				r.u[id] = ssu
-				if ssgu != nil {
-					r.Update = ssgu
-				}
-			}
-		}
-	}
-
-	//special handle self id
-	if dd, ok := digs[s.SelfID]; ok {
-		if ss, ok := s.Peers[""]; ok && dd.Less(ss.To()) {
-			if ssu, ssgu := ss.PickFrom("", dd, r.Update); ssu != nil {
-				r.u[s.SelfID] = ssu
 				if ssgu != nil {
 					r.Update = ssgu
 				}

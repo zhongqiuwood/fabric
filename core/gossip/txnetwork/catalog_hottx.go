@@ -283,7 +283,7 @@ func isLiteTx(tx *pb.Transaction) bool {
 	return tx.GetNonce() == nil
 }
 
-func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64, cache *peerCache) {
+func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64, cache txCache) {
 
 	if s == nil {
 		return

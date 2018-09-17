@@ -30,6 +30,10 @@ func newTransactionPool(ledger *ledger.Ledger) *transactionPool {
 	return ret
 }
 
+type txCache interface {
+	GetTx(string) (*pb.Transaction, uint64)
+}
+
 //the cache is supposed to be handled only by single goroutine
 type peerCache struct {
 	c      map[string]cachedTx

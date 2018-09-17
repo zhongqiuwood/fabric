@@ -353,6 +353,6 @@ func UpdateLocalEpoch(stub *gossip.GossipStub, series uint64, digest []byte) err
 	}
 }
 
-func UpdateLocalPeer(stub *gossip.GossipStub, txs *pb.HotTransactionBlock) error {
-	return fmt.Errorf("Not implied")
+func UpdateLocalPeer(stub *gossip.GossipStub) (*pb.PeerTxState, error) {
+	return nil, fmt.Errorf("Not implied")
 }

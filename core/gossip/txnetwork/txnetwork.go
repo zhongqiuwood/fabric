@@ -9,16 +9,44 @@ import (
 	"sync"
 )
 
-type entryItem struct {
-	Entry *txNetworkEntry
-	Stub  *gossip.GossipStub
+type entryIndexs struct {
+	sync.Mutex
+	ind map[*pb.StreamStub]TxNetworkEntry
 }
 
-var entryglobal = map[*pb.StreamStub]*entryItem{}
+type TxNetworkEntry struct {
+	*txNetworkEntry
+	stub *gossip.GossipStub
+}
 
-func GetNetworkEntry(stub *pb.StreamStub) *entryItem {
+func (e TxNetworkEntry) GetNetwork() *txNetworkGlobal {
+	return global.GetNetwork(e.stub)
+}
 
-	return entryglobal[stub]
+func (e TxNetworkEntry) GetEntry() TxNetwork {
+	return e.txNetworkEntry
+}
+
+func (e TxNetworkEntry) UpdateLocalEpoch(series uint64, digest []byte) error {
+	return UpdateLocalEpoch(e.stub, series, digest)
+}
+
+func (e TxNetworkEntry) UpdateLocalPeer() (*pb.PeerTxState, error) {
+	return UpdateLocalPeer(e.stub)
+}
+
+func (e TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
+	return UpdateLocalHotTx(e.stub, txs)
+}
+
+var entryglobal = entryIndexs{ind: make(map[*pb.StreamStub]TxNetworkEntry)}
+
+func GetNetworkEntry(sstub *pb.StreamStub) (TxNetworkEntry, bool) {
+
+	entryglobal.Lock()
+	defer entryglobal.Unlock()
+	e, ok := entryglobal.ind[sstub]
+	return e, ok
 }
 
 func init() {
@@ -27,7 +55,10 @@ func init() {
 
 func initTxnetworkEntrance(stub *gossip.GossipStub) {
 
-	entryglobal[stub.GetSStub()] = &entryItem{
+	entryglobal.Lock()
+	defer entryglobal.Unlock()
+
+	entryglobal.ind[stub.GetSStub()] = TxNetworkEntry{
 		NewTxNetworkEntry(stub.GetStubContext()),
 		stub,
 	}
@@ -42,6 +73,12 @@ type TxNetwork interface {
 	BroadCastTransaction(*pb.Transaction, string, ...string) error
 	BroadCastTransactionDefault(*pb.Transaction, ...string) error
 	ExecuteTransaction(*pb.Transaction, string, ...string) *pb.Response
+}
+
+type TxNetworkUpdate interface {
+	UpdateLocalEpoch(series uint64, digest []byte) error
+	UpdateLocalPeer() (*pb.PeerTxState, error)
+	UpdateLocalHotTx(*pb.HotTransactionBlock) error
 }
 
 type txNetworkEntry struct {

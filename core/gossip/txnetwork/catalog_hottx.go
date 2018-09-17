@@ -616,7 +616,10 @@ func initHotTx(stub *gossip.GossipStub) {
 	//	txglobal.ind = make(map[string]*txMemPoolItem)
 	txglobal.network = global.CreateNetwork(stub)
 	txglobal.transactionPool = newTransactionPool(l)
-	txglobal.network.txpool = txglobal.transactionPool
+	txglobal.preH = stub.GetSecurity().GetSecHelper()
+	if txglobal.preH == nil {
+		logger.Warning("Create txnetwork without security handler")
+	}
 
 	hotTx := new(hotTxCat)
 	hotTx.policy = gossip.NewCatalogPolicyDefault()

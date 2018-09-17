@@ -104,8 +104,6 @@ type txNetworkGlobal struct {
 	lruQueue  *list.List
 	lruIndex  map[string]*list.Element
 	onevicted []func([]string)
-	//shared txpool with hottx
-	txpool *transactionPool
 }
 
 func (*txNetworkGlobal) GenDigest() model.Digest                                { return nil }

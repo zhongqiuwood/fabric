@@ -36,6 +36,7 @@ func getGlobalSeq() uint64 {
 type GossipStub struct {
 	self            *pb.PeerID
 	disc            peer.Discoverer
+	sec             peer.SecurityAccessor
 	catalogHandlers map[string]CatalogHandler
 
 	*pb.StreamStub
@@ -74,6 +75,10 @@ func (g *GossipStub) GetStubContext() context.Context {
 	return g.globalCtx
 }
 
+func (g *GossipStub) GetSecurity() peer.SecurityAccessor {
+	return g.sec
+}
+
 func (g *GossipStub) GetCatalogHandler(cat string) CatalogHandler {
 	return g.catalogHandlers[cat]
 }
@@ -105,6 +110,7 @@ func NewGossipWithPeer(p peer.Peer) *GossipStub {
 		self:            self.ID,
 		catalogHandlers: make(map[string]CatalogHandler),
 		StreamStub:      p.GetStreamStub("gossip"),
+		sec:             p,
 		globalCtx:       gctx,
 	}
 

@@ -141,6 +141,7 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
 		} else if len(txdig) < txnetwork.TxDigestVerifyLen {
 			panic("Wrong code generate tx digest less than 16 bytes")
 		}
+		tx.Txid = pb.TxidFromDigest(txdig)
 
 		lastDigest = txdig[:txnetwork.TxDigestVerifyLen]
 		lastSeries = lastSeries + 1

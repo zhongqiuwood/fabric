@@ -243,9 +243,11 @@ func (h *sessionHandler) CanPull() model.PullerHandler {
 		pos.init(h, func(p *model.Puller) {
 
 			if p != nil {
-				pctx, _ := context.WithTimeout(h.hctx,
+				pctx, pctxend := context.WithTimeout(h.hctx,
 					time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+
 				err := p.Process(pctx)
+				pctxend()
 
 				//when we succefully accept an update, we also schedule a new push process
 				if err == nil {
@@ -365,8 +367,9 @@ func (h *catalogHandler) executePush(excluded map[string]bool) error {
 				break
 			}
 
-			pctx, _ := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+			pctx, pctxend := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
 			err := pos.Puller.Process(pctx)
+			pctxend()
 
 			logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
 

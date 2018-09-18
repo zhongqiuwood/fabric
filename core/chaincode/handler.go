@@ -597,8 +597,6 @@ func (handler *Handler) streamLeave(ws *workingStream) {
 
 func (handler *Handler) invokeToStream(ctx context.Context, tctx *transactionContext) (*workingStream, error) {
 
-	wctx, _ := context.WithCancel(ctx)
-
 	for {
 
 		select {
@@ -613,9 +611,9 @@ func (handler *Handler) invokeToStream(ctx context.Context, tctx *transactionCon
 				return ws, nil
 			}
 			handler.RUnlock()
-		case <-wctx.Done():
+		case <-ctx.Done():
 			chaincodeLogger.Errorf("Can't not deliver tx [%s] for invoking", tctx.transactionSecContext.GetTxid())
-			return nil, wctx.Err()
+			return nil, ctx.Err()
 		}
 	}
 }

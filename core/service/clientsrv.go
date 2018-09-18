@@ -208,6 +208,18 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 	}
 
 	// Now create the Transactions message and send to Peer.
+	if d.txnet != nil {
+		tx, err := pb.NewChaincodeDeployTransaction(chaincodeDeploymentSpec, "")
+		if err != nil {
+			return nil, fmt.Errorf("Error deploying chaincode: %s ", err)
+		}
+		clisrvLogger.Debugf("Sending deploy transaction with sec [%s, %v] to validator", spec.SecureContext, spec.Attributes)
+		resp := d.txnet.ExecuteTransaction(ctx, tx, spec.SecureContext, spec.Attributes...)
+		if resp.Status == pb.Response_FAILURE {
+			err = fmt.Errorf(string(resp.Msg))
+		}
+		return chaincodeDeploymentSpec, err
+	}
 
 	transID := chaincodeDeploymentSpec.ChaincodeSpec.ChaincodeID.Name
 
@@ -256,13 +268,34 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 	return chaincodeDeploymentSpec, err
 }
 
-// func (d *Devops) toTxNetwork(ctx context.Context, chaincodeInvocationSpec *pb.ChaincodeInvocationSpec, attributes []string) (*pb.Response, error) {
-// }
+func (d *Devops) deliverTx(ctx context.Context, tx *pb.Transaction, seccli string, attributes []string) (*pb.Response, error) {
+
+	if d.txnet == nil {
+		return nil, fmt.Errorf("No available txnetwork")
+	}
+
+	return d.txnet.ExecuteTransaction(ctx, tx, seccli, attributes...), nil
+}
 
 func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.ChaincodeInvocationSpec, attributes []string, invoke bool) (*pb.Response, error) {
 
 	if chaincodeInvocationSpec.ChaincodeSpec.ChaincodeID.Name == "" {
 		return nil, fmt.Errorf("name not given for invoke/query")
+	}
+
+	// Now create the Transactions message and send to Peer.
+	if invoke && d.txnet != nil {
+		tx, err := pb.NewChaincodeExecute(chaincodeInvocationSpec, "", pb.Transaction_CHAINCODE_INVOKE)
+		if nil != err {
+			return nil, fmt.Errorf("Error invoking chaincode: %s ", err)
+		}
+		spec := chaincodeInvocationSpec.ChaincodeSpec
+		clisrvLogger.Debugf("Sending invocation transaction with sec [%s %v] to txnetwork", spec.SecureContext, spec.Attributes)
+		resp := d.txnet.ExecuteTransaction(ctx, tx, spec.SecureContext, spec.Attributes...)
+		if resp.Status == pb.Response_FAILURE {
+			err = fmt.Errorf(string(resp.Msg))
+		}
+		return resp, err
 	}
 
 	// Now create the Transactions message and send to Peer.

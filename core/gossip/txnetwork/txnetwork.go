@@ -72,7 +72,7 @@ type TxNetworkHandler interface {
 type TxNetwork interface {
 	BroadCastTransaction(*pb.Transaction, string, ...string) error
 	BroadCastTransactionDefault(*pb.Transaction, ...string) error
-	ExecuteTransaction(*pb.Transaction, string, ...string) *pb.Response
+	ExecuteTransaction(context.Context, *pb.Transaction, string, ...string) *pb.Response
 }
 
 type TxNetworkUpdate interface {
@@ -192,9 +192,7 @@ func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 
 func (e *txNetworkEntry) Start(h TxNetworkHandler) {
 
-	ctx, _ := context.WithCancel(e)
-
-	go e.worker(ctx, h)
+	go e.worker(e, h)
 }
 
 type PendingTransaction struct {
@@ -249,13 +247,18 @@ func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string,
 	return e.broadcast(&PendingTransaction{tx, client, attrs, nil})
 }
 
-func (e *txNetworkEntry) ExecuteTransaction(tx *pb.Transaction, client string, attrs ...string) *pb.Response {
+func (e *txNetworkEntry) ExecuteTransaction(ctx context.Context, tx *pb.Transaction, client string, attrs ...string) *pb.Response {
 
 	resp := make(chan *pb.Response)
 	ret := e.broadcast(&PendingTransaction{tx, client, attrs, resp})
 
 	if ret == nil {
-		return <-resp
+		select {
+		case ret := <-resp:
+			return ret
+		case <-ctx.Done():
+			return &pb.Response{pb.Response_FAILURE, []byte(fmt.Sprintf("%s", ctx.Err()))}
+		}
 	} else {
 		return &pb.Response{pb.Response_FAILURE, []byte(fmt.Sprintf("Exec transaction fail: %s", ret))}
 	}

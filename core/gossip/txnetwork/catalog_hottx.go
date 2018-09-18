@@ -531,12 +531,17 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 	}
 
 	//checkout global status
-	peerStatus := g.network.QueryPeer(id)
-	if peerStatus == nil {
-		//boom ..., but it may be caused by an stale peer-removing so not
-		//consider as error
-		logger.Warningf("Unknown status in global for peer %s", id)
-		return nil
+	var peerStatus *pb.PeerTxState
+	if id == "" {
+		peerStatus = g.network.QuerySelf()
+	} else {
+		peerStatus = g.network.QueryPeer(id)
+		if peerStatus == nil {
+			//boom ..., but it may be caused by an stale peer-removing so not
+			//consider as error
+			logger.Warningf("Unknown status in global for peer %s", id)
+			return nil
+		}
 	}
 
 	// --------- YA-fabric 0.9 consider not imply purging ......

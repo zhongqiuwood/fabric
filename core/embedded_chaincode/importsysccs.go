@@ -20,10 +20,6 @@ import (
 	"github.com/abchain/fabric/core/embedded_chaincode/api"
 )
 
-//we devided embedded chaincode into system and embedded
-
-var systemChaincodes = []*api.SystemChaincode{}
-
 // {
 // 	Enabled:  true,
 // 	Name:     "noop",
@@ -35,7 +31,7 @@ var systemChaincodes = []*api.SystemChaincode{}
 //RegisterSysCCs is the hook for system chaincodes where system chaincodes are registered with the fabric
 //note the chaincode must still be deployed and launched like a user chaincode will be
 func RegisterSysCCs() {
-	for _, sysCC := range systemChaincodes {
+	for _, sysCC := range api.SystemChaincodes {
 		deploySysCC(sysCC)
 	}
 }

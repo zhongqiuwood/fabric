@@ -106,22 +106,31 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
 	lastSeries := t.lastSeries
 	outtxs.BeginSeries = t.lastSeries + 1
 
+	var err error
 	for _, tx := range txs {
 
 		tx.Transaction = buildPrecededTx(t.lastDigest, tx.Transaction)
 
-		//allow non-sec usage
-		if t.defaultEndorser != nil {
-			if tx.GetEndorser() != "" {
-				if sec, err := crypto.InitClient(tx.GetEndorser(), nil); err == nil {
-					sec.EndorseExecuteTransaction(tx.Transaction, tx.GetAttrs()...)
-					defer crypto.CloseClient(sec)
-				} else {
-					logger.Errorf("create new crypto client for %d fail: %s", tx.GetEndorser(), err)
-					continue
-				}
+		var endorser crypto.Client
+		if tx.GetEndorser() != "" {
+			if sec, err := crypto.InitClient(tx.GetEndorser(), nil); err == nil {
+				endorser = sec
+				//may stack a bunch of closeClient but should be ok (not more than txnetwork.maxOutputBatch)
+				defer crypto.CloseClient(sec)
 			} else {
-				t.defaultEndorser.EndorseExecuteTransaction(tx.Transaction, tx.GetAttrs()...)
+				logger.Errorf("create new crypto client for %d fail: %s, corresponding tx skipped", tx.GetEndorser(), err)
+				continue
+			}
+		} else {
+			endorser = t.defaultEndorser
+		}
+
+		//allow non-sec usage
+		if endorser != nil {
+			tx.Transaction, err = endorser.EndorseExecuteTransaction(tx.Transaction, tx.GetAttrs()...)
+			if err != nil {
+				logger.Errorf("endorse tx fail: %s, corresponding tx skipped", err)
+				continue
 			}
 		}
 

@@ -107,8 +107,7 @@ func (chaincodeSupport *ChaincodeSupport) FinalDeploy(ctx context.Context, txsuc
 
 	if err != nil {
 		chaincodeLogger.Infof("stopping due to error while final deploy tx: %s", err)
-		wctx, _ := context.WithCancel(ctx)
-		errIgnore := chaincodeSupport.Stop(wctx, cds)
+		errIgnore := chaincodeSupport.Stop(ctx, cds)
 		if errIgnore != nil {
 			chaincodeLogger.Debugf("error on stop %s(%s)", errIgnore, err)
 		}
@@ -530,7 +529,8 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 	}
 
 	//from here on : if we launch the container and get an error, we need to stop the container
-	wctx, _ := context.WithTimeout(ctx, chaincodeSupport.ccStartupTimeout)
+	wctx, wctxend := context.WithTimeout(ctx, chaincodeSupport.ccStartupTimeout)
+	defer wctxend()
 	cLang := cds.ChaincodeSpec.Type
 	//launch container if it is a System container or not in dev mode
 	if !chaincodeSupport.userRunsCC || cds.ExecEnv == pb.ChaincodeDeploymentSpec_SYSTEM {
@@ -544,8 +544,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 		defer func() {
 			if err != nil {
 				chaincodeLogger.Infof("stopping due to error while launching %s", err)
-				wctx, _ := context.WithCancel(ctx)
-				errIgnore := chaincodeSupport.Stop(wctx, cds)
+				errIgnore := chaincodeSupport.Stop(ctx, cds)
 				if errIgnore != nil {
 					chaincodeLogger.Debugf("error on stop %s(%s)", errIgnore, err)
 				}
@@ -658,6 +657,10 @@ func (chaincodeSupport *ChaincodeSupport) Deploy(context context.Context, cds *p
 // registerHandler implements ccintf.HandleChaincodeStream for all vms to call with appropriate stream
 // It call the main loop in handler for handling the associated Chaincode stream
 func (chaincodeSupport *ChaincodeSupport) Register(stream pb.ChaincodeSupport_RegisterServer) error {
+	return chaincodeSupport.HandleChaincodeStream(stream.Context(), stream)
+}
+
+func (chaincodeSupport *ChaincodeSupport) HandleChaincodeStream(ctx context.Context, stream ccintf.ChaincodeStream) error {
 	msg, err := stream.Recv()
 	if msg.Type != pb.ChaincodeMessage_REGISTER {
 		return fmt.Errorf("Recv unexpected message type [%s] at the beginning of ccstream", msg.ChaincodeEvent)
@@ -673,7 +676,7 @@ func (chaincodeSupport *ChaincodeSupport) Register(stream pb.ChaincodeSupport_Re
 		return fmt.Errorf("Register handler fail: %s", err)
 	}
 
-	deadline, ok := stream.Context().Deadline()
+	deadline, ok := ctx.Deadline()
 	chaincodeLogger.Debugf("Current context deadline = %s, ok = %v", deadline, ok)
 	return ws.processStream(handler)
 }
@@ -681,6 +684,7 @@ func (chaincodeSupport *ChaincodeSupport) Register(stream pb.ChaincodeSupport_Re
 // Execute executes a transaction and waits for it to complete until a timeout value.
 func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *chaincodeRTEnv, cMsg *pb.ChaincodeInput, tx *pb.Transaction) (*pb.ChaincodeMessage, error) {
 
-	wctx, _ := context.WithTimeout(ctxt, chaincodeSupport.ccExecTimeout)
+	wctx, cf := context.WithTimeout(ctxt, chaincodeSupport.ccExecTimeout)
+	defer cf()
 	return chrte.handler.executeMessage(wctx, cMsg, tx)
 }

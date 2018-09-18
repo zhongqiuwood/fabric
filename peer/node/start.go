@@ -139,10 +139,6 @@ func StartNode(postrun func() error) error {
 		return secHelper
 	}
 
-	srv_chaincode := func(server *grpc.Server) {
-		registerChaincodeSupport(chaincode.DefaultChain, server, secHelper)
-	}
-
 	var peerServer *peer.Impl
 
 	// Create the peerServer and ledger
@@ -172,6 +168,10 @@ func StartNode(postrun func() error) error {
 	// init services related to the peer, such as gossip
 	gossip.GetGossip(peerServer)
 	statesync.NewStateSync(peerServer)
+
+	srv_chaincode := func(server *grpc.Server) {
+		registerChaincodeSupport(chaincode.DefaultChain, server, secHelper)
+	}
 
 	// Register the Peer server
 	srv_peer := func(server *grpc.Server) {

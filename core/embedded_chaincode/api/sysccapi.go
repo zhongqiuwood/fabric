@@ -22,12 +22,15 @@ import (
 	"github.com/spf13/viper"
 )
 
+//we devided embedded chaincode into system and embedded
+var SystemChaincodes = []*SystemChaincode{}
+
 // SystemChaincode defines the metadata needed to initialize system chaincode
 // when the fabric comes up. SystemChaincodes are installed by adding an
 // entry in importsysccs.go
 type SystemChaincode struct {
 	// Enabled a convenient switch to enable/disable system chaincode without
-	// having to remove entry from importsysccs.go
+	// having to remove entry
 	Enabled bool
 
 	//Unique name of the system chaincode

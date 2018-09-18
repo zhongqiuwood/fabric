@@ -36,14 +36,15 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 
-	"github.com/golang/protobuf/ptypes/empty"
 	core "github.com/abchain/fabric/core"
 	"github.com/abchain/fabric/core/chaincode"
 	"github.com/abchain/fabric/core/comm"
 	"github.com/abchain/fabric/core/crypto"
-	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/core/crypto/primitives"
+	"github.com/abchain/fabric/core/service"
+	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/ptypes/empty"
 )
 
 var restLogger = logging.MustGetLogger("rest")
@@ -1746,7 +1747,7 @@ func buildOpenchainRESTRouter() *web.Router {
 
 // StartOpenchainRESTServer initializes the REST service and adds the required
 // middleware and routes.
-func StartOpenchainRESTServer(server *ServerOpenchain, devops *core.Devops) {
+func StartOpenchainRESTServer(server *ServerOpenchain, devops *service.Devops) {
 	// Initialize the REST service object
 	restLogger.Infof("Initializing the REST service on %s, TLS is %s.", viper.GetString("rest.address"), (map[bool]string{true: "enabled", false: "disabled"})[comm.TLSEnabled()])
 
@@ -1758,8 +1759,8 @@ func StartOpenchainRESTServer(server *ServerOpenchain, devops *core.Devops) {
 
 	// Start server, we consider it is an "internal" service
 	if comm.TLSEnabled() {
-		err := http.ListenAndServeTLS(viper.GetString("rest.address"), 
-			util.CanonicalizeFilePath(viper.GetString("peer.tls.cert.file")), 
+		err := http.ListenAndServeTLS(viper.GetString("rest.address"),
+			util.CanonicalizeFilePath(viper.GetString("peer.tls.cert.file")),
 			util.CanonicalizeFilePath(viper.GetString("peer.tls.key.file")), router)
 		if err != nil {
 			restLogger.Errorf("ListenAndServeTLS: %s", err)

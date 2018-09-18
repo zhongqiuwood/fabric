@@ -283,7 +283,7 @@ func isLiteTx(tx *pb.Transaction) bool {
 	return tx.GetNonce() == nil
 }
 
-func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64, cache *peerCache) {
+func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64, cache txCache) {
 
 	if s == nil {
 		return
@@ -531,12 +531,17 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 	}
 
 	//checkout global status
-	peerStatus := g.network.QueryPeer(id)
-	if peerStatus == nil {
-		//boom ..., but it may be caused by an stale peer-removing so not
-		//consider as error
-		logger.Warningf("Unknown status in global for peer %s", id)
-		return nil
+	var peerStatus *pb.PeerTxState
+	if id == "" {
+		peerStatus = g.network.QuerySelf()
+	} else {
+		peerStatus = g.network.QueryPeer(id)
+		if peerStatus == nil {
+			//boom ..., but it may be caused by an stale peer-removing so not
+			//consider as error
+			logger.Warningf("Unknown status in global for peer %s", id)
+			return nil
+		}
 	}
 
 	// --------- YA-fabric 0.9 consider not imply purging ......
@@ -616,7 +621,10 @@ func initHotTx(stub *gossip.GossipStub) {
 	//	txglobal.ind = make(map[string]*txMemPoolItem)
 	txglobal.network = global.CreateNetwork(stub)
 	txglobal.transactionPool = newTransactionPool(l)
-	txglobal.network.txpool = txglobal.transactionPool
+	txglobal.preH = stub.GetSecurity().GetSecHelper()
+	if txglobal.preH == nil {
+		logger.Warning("Create txnetwork without security handler")
+	}
 
 	hotTx := new(hotTxCat)
 	hotTx.policy = gossip.NewCatalogPolicyDefault()

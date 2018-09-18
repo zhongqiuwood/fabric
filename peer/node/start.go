@@ -34,7 +34,6 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/embedded_chaincode"
 	"github.com/abchain/fabric/core/gossip"
-	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/rest"
@@ -140,10 +139,6 @@ func StartNode(postrun func() error) error {
 		return secHelper
 	}
 
-	srv_chaincode := func(server *grpc.Server) {
-		registerChaincodeSupport(chaincode.DefaultChain, server, secHelper)
-	}
-
 	var peerServer *peer.Impl
 
 	// Create the peerServer and ledger
@@ -170,12 +165,13 @@ func StartNode(postrun func() error) error {
 
 	defer peerServer.EndPeer()
 
-	// init txnetwork and consensus framework
-	txnetwork.InitTxNetwork(secHelperFunc)
-
 	// init services related to the peer, such as gossip
 	gossip.GetGossip(peerServer)
 	statesync.NewStateSync(peerServer)
+
+	srv_chaincode := func(server *grpc.Server) {
+		registerChaincodeSupport(chaincode.DefaultChain, server, secHelper)
+	}
 
 	// Register the Peer server
 	srv_peer := func(server *grpc.Server) {
@@ -183,7 +179,7 @@ func StartNode(postrun func() error) error {
 	}
 
 	// Register Devops server
-	serverDevops := core.NewDevopsServer(peerServer)
+	serverDevops := service.NewDevopsServer(peerServer)
 	//pb.RegisterDevopsServer(grpcServer, serverDevops)
 
 	// Register the ServerOpenchain server
@@ -202,7 +198,7 @@ func StartNode(postrun func() error) error {
 	}
 
 	srv_admin := func(server *grpc.Server) {
-		pb.RegisterAdminServer(server, core.NewAdminServer())
+		pb.RegisterAdminServer(server, service.NewAdminServer())
 	}
 
 	// Create and register the REST service if configured
@@ -224,7 +220,7 @@ func StartNode(postrun func() error) error {
 	}()
 
 	fsrv := func(addr string, tls bool, serv ...func(*grpc.Server)) {
-		srverr := service.StartService(addr, tls, serv...)
+		srverr := core.StartService(addr, tls, serv...)
 		if srverr != nil {
 			srverr = fmt.Errorf("fabric service exited with error: %s", srverr)
 		} else {
@@ -279,7 +275,7 @@ func StartNode(postrun func() error) error {
 	}
 
 	// TODO: we still not clear other serverice like rest and ehub ...
-	service.StopServices()
+	core.StopServices()
 
 	return err
 }
@@ -319,7 +315,7 @@ func createEventHubServer() (net.Listener, *grpc.Server, error) {
 		var opts []grpc.ServerOption
 
 		if comm.TLSEnabled() {
-			creds, err := service.GetServiceTLSCred()
+			creds, err := core.GetServiceTLSCred()
 			if err != nil {
 				return nil, nil, fmt.Errorf("Failed to generate credentials %v", err)
 			}

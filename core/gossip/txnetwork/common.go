@@ -1,7 +1,6 @@
 package txnetwork
 
 import (
-	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	pb "github.com/abchain/fabric/protos"
@@ -41,21 +40,6 @@ func (g *networkIndexs) CreateNetwork(stub *gossip.GossipStub) *txNetworkGlobal 
 	ret := CreateTxNetworkGlobal()
 	g.ind[stub] = ret
 	return ret
-}
-
-//func GetNetworkStatus() *networkIndexs { return &global }
-
-type txcommonImpl struct {
-	secHelper crypto.Peer
-	sync.Once
-}
-
-var txcommon txcommonImpl
-
-func InitTxNetwork(secHelperFunc func() crypto.Peer) {
-	txcommon.Do(func() {
-		txcommon.secHelper = secHelperFunc()
-	})
 }
 
 //a standard vclock use the num field in protos

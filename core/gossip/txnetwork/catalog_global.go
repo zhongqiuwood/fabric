@@ -104,8 +104,6 @@ type txNetworkGlobal struct {
 	lruQueue  *list.List
 	lruIndex  map[string]*list.Element
 	onevicted []func([]string)
-	//shared txpool with hottx
-	txpool *transactionPool
 }
 
 func (*txNetworkGlobal) GenDigest() model.Digest                                { return nil }
@@ -353,6 +351,6 @@ func UpdateLocalEpoch(stub *gossip.GossipStub, series uint64, digest []byte) err
 	}
 }
 
-func UpdateLocalPeer(stub *gossip.GossipStub, txs *pb.HotTransactionBlock) error {
-	return fmt.Errorf("Not implied")
+func UpdateLocalPeer(stub *gossip.GossipStub) (*pb.PeerTxState, error) {
+	return nil, fmt.Errorf("Not implied")
 }

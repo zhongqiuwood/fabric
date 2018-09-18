@@ -3,7 +3,6 @@ package service
 import (
 	"fmt"
 	crypto "github.com/abchain/fabric/core/crypto"
-	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/gossip/txnetwork"
 	_ "github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/events/litekfk"
@@ -16,7 +15,7 @@ var (
 )
 
 type txNetworkHandlerImpl struct {
-	*gossip.GossipStub
+	txnetwork.TxNetworkUpdate
 	defaultEndorser crypto.Client
 	lastDigest      []byte
 	lastSeries      uint64
@@ -34,9 +33,9 @@ func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
 	return tx
 }
 
-func NewTxNetworkHandlerNoSec(stub *gossip.GossipStub) (*txNetworkHandlerImpl, error) {
+func NewTxNetworkHandlerNoSec(entry txnetwork.TxNetworkEntry) (*txNetworkHandlerImpl, error) {
 
-	self := txnetwork.GetNetworkStatus().GetNetwork(stub)
+	self := entry.GetNetwork()
 	if self == nil {
 		return nil, fmt.Errorf("No global network created yet")
 	}
@@ -45,7 +44,7 @@ func NewTxNetworkHandlerNoSec(stub *gossip.GossipStub) (*txNetworkHandlerImpl, e
 
 	ret := new(txNetworkHandlerImpl)
 
-	ret.GossipStub = stub
+	ret.TxNetworkUpdate = entry
 	ret.lastDigest = selfstatus.GetDigest()
 	ret.lastSeries = selfstatus.GetNum()
 
@@ -54,12 +53,12 @@ func NewTxNetworkHandlerNoSec(stub *gossip.GossipStub) (*txNetworkHandlerImpl, e
 	return ret, nil
 }
 
-func NewTxNetworkHandler(stub *gossip.GossipStub, clientName string) (*txNetworkHandlerImpl, error) {
+func NewTxNetworkHandler(entry txnetwork.TxNetworkEntry, clientName string) (*txNetworkHandlerImpl, error) {
 
 	if sec, err := crypto.InitClient(clientName, nil); err != nil {
 		return nil, err
 	} else {
-		ret, err := NewTxNetworkHandlerNoSec(stub)
+		ret, err := NewTxNetworkHandlerNoSec(entry)
 
 		if err != nil {
 			return nil, err
@@ -74,7 +73,7 @@ func NewTxNetworkHandler(stub *gossip.GossipStub, clientName string) (*txNetwork
 
 func (t *txNetworkHandlerImpl) updateHotTx(txs *pb.HotTransactionBlock, lastDigest []byte, lastSeries uint64) {
 
-	if err := txnetwork.UpdateLocalHotTx(t.GossipStub, txs); err != nil {
+	if err := t.UpdateLocalHotTx(txs); err != nil {
 		logger.Error("Update hot transaction fail", err)
 	} else {
 		t.lastDigest = lastDigest
@@ -91,7 +90,7 @@ func (t *txNetworkHandlerImpl) updateEpoch() {
 		return
 	}
 
-	if err := txnetwork.UpdateLocalEpoch(t.GossipStub, t.epochSeries, t.epochDigest); err != nil {
+	if err := t.UpdateLocalEpoch(t.epochSeries, t.epochDigest); err != nil {
 		logger.Error("Update global fail", err)
 	} else {
 		t.epochDigest = t.lastDigest
@@ -107,22 +106,31 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
 	lastSeries := t.lastSeries
 	outtxs.BeginSeries = t.lastSeries + 1
 
+	var err error
 	for _, tx := range txs {
 
 		tx.Transaction = buildPrecededTx(t.lastDigest, tx.Transaction)
 
-		//allow non-sec usage
-		if t.defaultEndorser != nil {
-			if tx.GetEndorser() != "" {
-				if sec, err := crypto.InitClient(tx.GetEndorser(), nil); err == nil {
-					sec.EndorseExecuteTransaction(tx.Transaction, tx.GetAttrs()...)
-					defer crypto.CloseClient(sec)
-				} else {
-					logger.Errorf("create new crypto client for %d fail: %s", tx.GetEndorser(), err)
-					continue
-				}
+		var endorser crypto.Client
+		if tx.GetEndorser() != "" {
+			if sec, err := crypto.InitClient(tx.GetEndorser(), nil); err == nil {
+				endorser = sec
+				//may stack a bunch of closeClient but should be ok (not more than txnetwork.maxOutputBatch)
+				defer crypto.CloseClient(sec)
 			} else {
-				t.defaultEndorser.EndorseExecuteTransaction(tx.Transaction, tx.GetAttrs()...)
+				logger.Errorf("create new crypto client for %d fail: %s, corresponding tx skipped", tx.GetEndorser(), err)
+				continue
+			}
+		} else {
+			endorser = t.defaultEndorser
+		}
+
+		//allow non-sec usage
+		if endorser != nil {
+			tx.Transaction, err = endorser.EndorseExecuteTransaction(tx.Transaction, tx.GetAttrs()...)
+			if err != nil {
+				logger.Errorf("endorse tx fail: %s, corresponding tx skipped", err)
+				continue
 			}
 		}
 

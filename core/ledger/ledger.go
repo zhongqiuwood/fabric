@@ -28,6 +28,7 @@ import (
 	"github.com/abchain/fabric/events/producer"
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
+	"golang.org/x/net/context"
 
 	"github.com/abchain/fabric/protos"
 )
@@ -543,6 +544,10 @@ func (ledger *Ledger) DeleteALLStateKeysAndValues() error {
 
 func (ledger *Ledger) PoolTransactions(txs []*protos.Transaction) {
 	ledger.txpool.poolTransaction(txs)
+}
+
+func (ledger *Ledger) IteratePooledTransactions(ctx context.Context) (chan *protos.Transaction, error) {
+	return ledger.txpool.iteratePooledTx(ctx)
 }
 
 func (ledger *Ledger) PutTransactions(txs []*protos.Transaction) error {

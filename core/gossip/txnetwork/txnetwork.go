@@ -9,16 +9,44 @@ import (
 	"sync"
 )
 
-type entryItem struct {
-	Entry *txNetworkEntry
-	Stub  *gossip.GossipStub
+type entryIndexs struct {
+	sync.Mutex
+	ind map[*pb.StreamStub]TxNetworkEntry
 }
 
-var entryglobal = map[*pb.StreamStub]*entryItem{}
+type TxNetworkEntry struct {
+	*txNetworkEntry
+	stub *gossip.GossipStub
+}
 
-func GetNetworkEntry(stub *pb.StreamStub) *entryItem {
+func (e TxNetworkEntry) GetNetwork() *txNetworkGlobal {
+	return global.GetNetwork(e.stub)
+}
 
-	return entryglobal[stub]
+func (e TxNetworkEntry) GetEntry() TxNetwork {
+	return e.txNetworkEntry
+}
+
+func (e TxNetworkEntry) UpdateLocalEpoch(series uint64, digest []byte) error {
+	return UpdateLocalEpoch(e.stub, series, digest)
+}
+
+func (e TxNetworkEntry) UpdateLocalPeer() (*pb.PeerTxState, error) {
+	return UpdateLocalPeer(e.stub)
+}
+
+func (e TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
+	return UpdateLocalHotTx(e.stub, txs)
+}
+
+var entryglobal = entryIndexs{ind: make(map[*pb.StreamStub]TxNetworkEntry)}
+
+func GetNetworkEntry(sstub *pb.StreamStub) (TxNetworkEntry, bool) {
+
+	entryglobal.Lock()
+	defer entryglobal.Unlock()
+	e, ok := entryglobal.ind[sstub]
+	return e, ok
 }
 
 func init() {
@@ -27,7 +55,10 @@ func init() {
 
 func initTxnetworkEntrance(stub *gossip.GossipStub) {
 
-	entryglobal[stub.GetSStub()] = &entryItem{
+	entryglobal.Lock()
+	defer entryglobal.Unlock()
+
+	entryglobal.ind[stub.GetSStub()] = TxNetworkEntry{
 		NewTxNetworkEntry(stub.GetStubContext()),
 		stub,
 	}
@@ -41,7 +72,13 @@ type TxNetworkHandler interface {
 type TxNetwork interface {
 	BroadCastTransaction(*pb.Transaction, string, ...string) error
 	BroadCastTransactionDefault(*pb.Transaction, ...string) error
-	ExecuteTransaction(*pb.Transaction, string, ...string) *pb.Response
+	ExecuteTransaction(context.Context, *pb.Transaction, string, ...string) *pb.Response
+}
+
+type TxNetworkUpdate interface {
+	UpdateLocalEpoch(series uint64, digest []byte) error
+	UpdateLocalPeer() (*pb.PeerTxState, error)
+	UpdateLocalHotTx(*pb.HotTransactionBlock) error
 }
 
 type txNetworkEntry struct {
@@ -155,9 +192,7 @@ func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 
 func (e *txNetworkEntry) Start(h TxNetworkHandler) {
 
-	ctx, _ := context.WithCancel(e)
-
-	go e.worker(ctx, h)
+	go e.worker(e, h)
 }
 
 type PendingTransaction struct {
@@ -212,13 +247,18 @@ func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string,
 	return e.broadcast(&PendingTransaction{tx, client, attrs, nil})
 }
 
-func (e *txNetworkEntry) ExecuteTransaction(tx *pb.Transaction, client string, attrs ...string) *pb.Response {
+func (e *txNetworkEntry) ExecuteTransaction(ctx context.Context, tx *pb.Transaction, client string, attrs ...string) *pb.Response {
 
 	resp := make(chan *pb.Response)
 	ret := e.broadcast(&PendingTransaction{tx, client, attrs, resp})
 
 	if ret == nil {
-		return <-resp
+		select {
+		case ret := <-resp:
+			return ret
+		case <-ctx.Done():
+			return &pb.Response{pb.Response_FAILURE, []byte(fmt.Sprintf("%s", ctx.Err()))}
+		}
 	} else {
 		return &pb.Response{pb.Response_FAILURE, []byte(fmt.Sprintf("Exec transaction fail: %s", ret))}
 	}

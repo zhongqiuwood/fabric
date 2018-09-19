@@ -141,6 +141,9 @@ func (p *peerPolicies) ScoringPeer(score int, weight uint) {
 }
 
 func (p *peerPolicies) ResetIntervals(inv int) {
+	p.Lock()
+	defer p.Unlock()
+
 	inv64 := int64(inv)
 
 	p.recvQuota.Interval = inv64

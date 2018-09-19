@@ -82,6 +82,7 @@ var EmptyDigest = errors.New("digest is null")
 var EmptyUpdate = errors.New("update is null")
 
 func (p *Puller) Start(ph PullerHelper, stream *pb.StreamHandler) error {
+	//TODO: we should allow empty digest in some case
 	dg := p.model.GenPullDigest()
 	if dg == nil {
 		return EmptyDigest

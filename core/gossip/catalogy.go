@@ -42,34 +42,19 @@ type CatalogHelper interface {
 	DecodeUpdate(CatalogPeerPolicies, proto.Message) (model.Update, error)
 }
 
-type puller struct {
-	*model.Puller
-	gotPush bool
-}
-
-func (p *puller) Handle(puller *model.Puller) {
-	p.Puller = puller
-	if p.hf == nil {
-		logger.Criticalf("Your code never call init method before providing it in the CanPull callback")
-	}
-
-	//we use a new thread for handing puller task
-	go p.hf(puller)
-}
-
 type pullWorks struct {
 	sync.Mutex
-	m map[CatalogPeerPolicies]*puller
+	m map[CatalogPeerPolicies]*model.Puller
 }
 
-func (h *pullWorks) queryPuller(cpo CatalogPeerPolicies) *puller {
+func (h *pullWorks) queryPuller(cpo CatalogPeerPolicies) *model.Puller {
 
 	h.Lock()
 	defer h.Unlock()
 	return h.m[cpo]
 }
 
-func (h *pullWorks) popPuller(cpo CatalogPeerPolicies) *puller {
+func (h *pullWorks) popPuller(cpo CatalogPeerPolicies) *model.Puller {
 
 	h.Lock()
 	defer h.Unlock()
@@ -80,35 +65,33 @@ func (h *pullWorks) popPuller(cpo CatalogPeerPolicies) *puller {
 
 //if we check-and-create puller under "responsed-pulling" condiction, no-op also indicate the existed
 //puller a pushing is processed
-func (h *pullWorks) newPuller(cpo CatalogPeerPolicies, m *model.Model, isResponsedPull bool) *model.Puller {
+func (h *pullWorks) newPuller(cpo CatalogPeerPolicies, m *model.Model) *model.Puller {
 	h.Lock()
 	defer h.Unlock()
 
-	if pl, ok := h.m[cpo]; ok {
-		if isResponsedPull {
-			pl.gotPush = true
-		}
+	if _, ok := h.m[cpo]; ok {
 		return nil
 	}
 
 	puller := model.NewPuller(m)
-	h.m[cpo] = &puller{puller, false}
+	h.m[cpo] = puller
 
 	return puller
 }
 
 type scheduleWorks struct {
-	cancelSchedules map[context.Context]context.CancelFunc
-	totalPushingCnt int64
-	plannedCnt      int64
-	sync.Mutex
+	cancelSchedules   map[context.Context]context.CancelFunc
+	totalPushingCnt   int64
+	plannedCnt        int64
+	maxConcurrentTask int
+	sync.RWMutex
 }
 
-func (s *scheduleWorks) reachPlan() bool {
+func (s *scheduleWorks) reachPlan(target int64) bool {
 	s.Lock()
 	defer s.Unlock()
 
-	return s.plannedCnt <= s.totalPushingCnt
+	return target <= s.totalPushingCnt
 }
 
 func (s *scheduleWorks) pushDone() {
@@ -140,28 +123,35 @@ func (s *scheduleWorks) endSchedule(ctx context.Context) {
 	}
 }
 
-//if there is no enough planned push count, prepare a context and return the actuall additional planned count
-func (s *scheduleWorks) newSchedule(ctx context.Context, wishCount int) (context.Context, int) {
+//schedule works as following:
+//1. each request will be passed (return a context) if current "pending" count (plannedcnt - totalpushing)
+//   is not larger than the wishCount
+//2. passed request obtained a "target" pushing number and should check if currently totalpushing has reached the
+//   target number
+//3. caller with passed request can do everything possible to make the totalpushing count increase (it can even
+//   do nothing and just wait there until there is enough incoming digests)
+func (s *scheduleWorks) newSchedule(ctx context.Context, wishCount int) (context.Context, int64) {
 
 	s.Lock()
 	defer s.Unlock()
 
-	curPlannedCnt := int(s.plannedCnt - s.totalPushingCnt)
+	curPlannedCnt := s.totalPushingCnt + int64(wishCount)
 
 	//no need to schedule more
-	if len(s.cancelSchedules) > 0 && curPlannedCnt >= wishCount {
+	if len(s.cancelSchedules) > s.maxConcurrentTask {
+		logger.Infof("A schedule is rejected because the concurrent task exceed limit: %d", s.maxConcurrentTask)
+		return nil, 0
+	} else if curPlannedCnt <= s.plannedCnt {
+		//no need to start new schedule
 		return nil, 0
 	}
 
-	if curPlannedCnt < wishCount {
-		wishCount = wishCount - curPlannedCnt
-	}
+	s.plannedCnt = curPlannedCnt
 
 	wctx, cancelF := context.WithCancel(ctx)
 	s.cancelSchedules[wctx] = cancelF
-	s.plannedCnt = s.plannedCnt + int64(wishCount)
 
-	return wctx, wishCount
+	return wctx, curPlannedCnt
 }
 
 type catalogHandler struct {
@@ -173,22 +163,21 @@ type catalogHandler struct {
 	sstub    *pb.StreamStub
 }
 
-func NewCatalogHandlerImpl(stub *pb.StreamStub, ctx context.Context, helper CatalogHelper, model *model.Model) (ret *catalogHandler) {
+func NewCatalogHandlerImpl(stub *pb.StreamStub, ctx context.Context, helper CatalogHelper, m *model.Model) (ret *catalogHandler) {
 
 	return &catalogHandler{
 		CatalogHelper: helper,
 		sstub:         stub,
 		hctx:          ctx,
-		model:         model,
-		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*puller)},
-		schedule:      scheduleWorks{cancelSchedules: make(map[context.Context]context.CancelFunc)},
+		model:         m,
+		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*model.Puller)},
+		schedule:      scheduleWorks{cancelSchedules: make(map[context.Context]context.CancelFunc), maxConcurrentTask: 5},
 	}
 }
 
 type sessionHandler struct {
 	*catalogHandler
-	cpo    CatalogPeerPolicies
-	isResp bool
+	cpo CatalogPeerPolicies
 }
 
 //implement of pushhelper and pullerhelper
@@ -238,7 +227,7 @@ func (h *sessionHandler) CanPull() *model.Puller {
 		return nil
 	}
 
-	return h.pulls.newPuller(h.cpo, h.Model(), true)
+	return h.pulls.newPuller(h.cpo, h.Model())
 }
 
 func (h *catalogHandler) Model() *model.Model {
@@ -280,7 +269,7 @@ func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPoli
 		pctx, pctxend := context.WithTimeout(h.hctx,
 			time.Duration(h.GetPolicies().PullTimeout())*time.Second)
 
-		err := puller.Process(pctx)
+		err = puller.Process(pctx)
 		pctxend()
 
 		//when we succefully accept an update, we also trigger a new push process
@@ -330,22 +319,22 @@ func (h *catalogHandler) HandleUpdate(msg *pb.Gossip_Update, cpo CatalogPeerPoli
 func (h *catalogHandler) executePush() error {
 
 	logger.Debug("try execute a pushing process")
-	wctx, pushCnt := h.schedule.newSchedule(h.hctx, h.GetPolicies().PushCount())
+	wctx, targetCnt := h.schedule.newSchedule(h.hctx, h.GetPolicies().PushCount())
 	if wctx == nil {
 		logger.Debug("Another pushing process is running or no plan any more")
 		return fmt.Errorf("Resource is occupied")
 	}
 	defer h.schedule.endSchedule(wctx)
-	var pushedCnt int
 
+	var pushCnt int
 	for strm := range h.sstub.OverAllHandlers(wctx) {
 
-		logger.Debugf("finish (%d/%d) pulls, try execute a pushing on stream to %s",
-			pushedCnt, pushCnt, strm.GetName())
-
-		if pushedCnt >= pushCnt || h.schedule.reachPlan() {
+		if h.schedule.reachPlan(targetCnt) {
 			break
 		}
+
+		logger.Debugf("finish (%d) pulls, try execute a pushing on stream to %s",
+			pushCnt, strm.GetName())
 
 		ph, ok := stub.ObtainHandler(strm.StreamHandler).(*handlerImpl)
 		if !ok {
@@ -353,11 +342,11 @@ func (h *catalogHandler) executePush() error {
 		}
 		cpo := ph.GetPeerPolicy()
 
-		if puller := h.pulls.newPuller(cpo, h.Model(), false); puller != nil {
-			fail := func(puller *model.Puller) bool {
+		if puller := h.pulls.newPuller(cpo, h.Model()); puller != nil {
+			fail := !func(puller *model.Puller) bool {
 				defer h.pulls.popPuller(cpo)
 				logger.Debugf("start pulling on stream to %s", cpo.GetId())
-				if err := puller.Start(h, strm.StreamHandler); err != nil {
+				if err := puller.Start(&sessionHandler{h, cpo}, strm.StreamHandler); err != nil {
 
 					logger.Infof("try start pulling to %s fail: %v", cpo.GetId(), err)
 
@@ -370,32 +359,28 @@ func (h *catalogHandler) executePush() error {
 				}
 
 				pctx, pctxend := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
-				err := pos.Puller.Process(pctx)
+				err := puller.Process(pctx)
 				pctxend()
 
 				logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
 
-				if err != nil {
-					if err != context.DeadlineExceeded {
-						cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
-					}
-
-				} else if pos.gotPush {
-					pushedCnt++
-					logger.Debugf("Scheduled pulling has pushed our status to peer [%s]", cpo.GetId())
+				if err != nil && err != context.DeadlineExceeded {
+					cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
 				}
+				return true
 			}(puller)
 
 			if fail {
 				break
 			}
+			pushCnt++
 
 		} else {
 			logger.Debugf("stream %s has a working puller, try next one", cpo.GetId())
 		}
 	}
 
-	logger.Infof("Finished a push process, plan %d and %d finished", pushCnt, pushedCnt)
+	logger.Infof("Finished a push process,  %d finished", pushCnt)
 
 	return nil
 }

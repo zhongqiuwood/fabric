@@ -138,6 +138,8 @@ func (p *testPeer) DumpPeers() (ret []string) {
 	for id, _ := range p.ss.Peers {
 		if id != "" {
 			ret = append(ret, id)
+		} else {
+			ret = append(ret, p.ss.SelfID)
 		}
 	}
 

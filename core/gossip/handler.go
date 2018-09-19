@@ -38,7 +38,7 @@ func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
 
 	global, ok := g.cores[msg.GetCatalog()]
 	if !ok {
-		logger.Errorf("Recv gossip message with catelog not recognized: ", msg.GetCatalog())
+		logger.Error("Recv gossip message with catelog not recognized: ", msg.GetCatalog())
 		return nil
 	}
 

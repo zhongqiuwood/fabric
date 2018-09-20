@@ -292,7 +292,7 @@ func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64, cache txCache) {
 	u.BeginSeries = s.head.digestSeries
 
 	for beg := s.head; beg != nil; beg = beg.next {
-		tx, commitedH := cache.GetTx(beg.txid)
+		tx, commitedH := cache.GetTx(beg.digestSeries, beg.txid)
 		if tx == nil {
 			//we have something wrong and have to end here ...
 			logger.Errorf("Can not find Tx %s in peer cache", beg.txid)

@@ -54,12 +54,10 @@ func dequeueLoc(pos uint64) (loc int, qpos int) {
 	qpos = int(pos & uint64(peerTxQueueMask))
 }
 
-func (c *peerTxCache) pick(pos uint64) (*pb.Transaction, uint64) {
+func (c *peerTxCache) pick(pos uint64) *cachedTx {
 
 	loc, qpos := dequeueLoc(pos)
-
-	ret := c.q[loc][qpos]
-	return ret.Transaction, ret.commitedH
+	return &c.q[loc][qpos]
 }
 
 //return a dequeue of append space (it maybe overlapped if the size is exceed
@@ -147,28 +145,41 @@ func getTxCommitHeight(l *ledger.Ledger, txid string) uint64 {
 
 func (c *peerCache) GetTx(series uint64, txid string) (*pb.Transaction, uint64) {
 
-	if i, ok := c.pick(series); ok {
+	if !c.checkRange(series) {
+		//can we declaim this?
+		logger.Fatalf("Accept outbound series: [%d], code is wrong", series)
+		return nil, 0
+	}
 
-		if i.commitedH == 0 {
-			//we must always double check the pooling status
-			i.commitedH = getTxCommitHeight(c.parent.ledger, txid)
+	pos := c.pick(series)
+	if pos.commitedH == 0 {
+		tx := c.parent.ledger.GetPooledTransaction(txid)
+		//tx is still pooled
+		if tx != nil {
+			return tx, 0
 		}
+	}
 
-		return i.Transaction, i.commitedH
-	} else {
+	if pos.Transaction == nil {
 
-		//cache is erased, we try to recover it
+		//cache is erased, we try to recover it first
 		tx, err := c.parent.ledger.GetTransactionByID(txid)
 		if tx == nil {
 			logger.Errorf("Can not find Tx %s from ledger again: [%s]", err)
 			return nil, 0
 		}
 
-		commitedH := getTxCommitHeight(c.parent.ledger, txid)
+		//why tx is missed? (because of block reversed, or just commited?) we check it
+		pos.commitedH = getTxCommitHeight(c.parent.ledger, txid)
+		if pos.commitedH != 0 {
+			//so tx has been commited, can cache again
+			pos.Transaction = tx
+		}
 
-		c.c[txid] = cachedTx{tx, commitedH}
-		return tx, commitedH
+		return tx, pos.commitedH
 	}
+
+	return pos.Transaction, pos.commitedH
 }
 
 func (c *peerCache) AddTxs(txs []*pb.Transaction, nocheck bool) {
@@ -185,10 +196,13 @@ func (c *peerCache) AddTxs(txs []*pb.Transaction, nocheck bool) {
 				commitedH, _, _ = c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
 			}
 
-			q[i] = cachedTx{tx, commitedH}
-
 			if commitedH == 0 {
 				pooltxs = append(pooltxs, tx)
+			} else {
+				//NOTICE: we only put "commited" tx into cache, so if the block is
+				//reversed, we can simply erase all cache and recheck every tx
+				//we touched later
+				q[i] = cachedTx{tx, commitedH}
 			}
 			txspos++
 		}

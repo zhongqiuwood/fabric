@@ -24,7 +24,7 @@ var peerTxQueueLenBit = uint(7) //2^7=128
 var peerTxQueueMask int
 
 func init() {
-	peerTxQueueMask = int(1<<(peerTxQueueLenBit-1)) - 1
+	peerTxQueueMask = int(1<<(peerTxQueueLenBit)) - 1
 }
 
 func PeerTxQueueLimit() int {
@@ -36,68 +36,56 @@ func SetPeerTxQueueLen(bits uint) {
 		panic("invalid bit count")
 	}
 	peerTxQueueLenBit = bits
-	peerTxQueueMask = int(1<<(bits-1)) - 1
+	peerTxQueueMask = int(1<<(bits)) - 1
 }
 
-type peerTxCache struct {
-	q    [peerTxQueues][]cachedTx
-	beg  uint64
-	last uint64
-}
-
-func (c *peerTxCache) checkRange(pos uint64) bool {
-	return pos >= c.beg && pos < c.last
-}
+type peerTxCache [peerTxQueues][]cachedTx
 
 func dequeueLoc(pos uint64) (loc int, qpos int) {
 	loc = int(uint(pos>>peerTxQueueLenBit) & peerTxMask)
 	qpos = int(pos & uint64(peerTxQueueMask))
+	return
 }
 
 func (c *peerTxCache) pick(pos uint64) *cachedTx {
 
 	loc, qpos := dequeueLoc(pos)
-	return &c.q[loc][qpos]
+	return &c[loc][qpos]
 }
 
 //return a dequeue of append space (it maybe overlapped if the size is exceed
 //the limit, that is, peerTxQueues * peerTxQueueLen)
-func (c *peerTxCache) append(size int) (ret [][]cachedTx) {
+func (c *peerTxCache) append(from uint64, size int) (ret [][]cachedTx) {
 
-	loc, qpos := dequeueLoc(c.last)
+	loc, qpos := dequeueLoc(from)
+	if c[loc] == nil {
+		c[loc] = make([]cachedTx, peerTxQueueMask+1)
+	}
 
 	for size > 0 {
 
 		if qpos+size > peerTxQueueMask+1 {
-			ret = append(ret, c.q[loc][qpos:peerTxQueueMask])
+			ret = append(ret, c[loc][qpos:peerTxQueueMask+1])
 			size = size - (peerTxQueueMask + 1 - qpos)
 			qpos = 0
-			loc++
-			c.q[loc] = make([]cachedTx, peerTxQueueMask+1)
+			loc = int(uint(loc+1) & peerTxMask)
+			c[loc] = make([]cachedTx, peerTxQueueMask+1)
 		} else {
-			ret = append(ret, c.q[loc][qpos:qpos+size-1])
+			ret = append(ret, c[loc][qpos:qpos+size])
 			size = 0
 		}
 	}
-	c.last = c.last + size
 	return
 }
 
-func (c *peerTxCache) prune(size int) {
+func (c *peerTxCache) prune(from uint64, to uint64) {
 
-	pruneTo := c.beg + size
-	if pruneTo > c.last {
-		pruneTo = c.last
-	}
-
-	locBeg := c.beg >> peerTxQueueLenBit
-	logTo := pruneTo >> peerTxQueueLenBit
+	locBeg := from >> peerTxQueueLenBit
+	logTo := to >> peerTxQueueLenBit
 	for i := locBeg; i < logTo; i++ {
 		//drop the whole array
-		c.q[int(uint(i)&peerTxMask)] = nil
+		c[int(uint(i)&peerTxMask)] = nil
 	}
-
-	c.beg = pruneTo
 
 }
 
@@ -110,7 +98,7 @@ type transactionPool struct {
 
 func newTransactionPool(ledger *ledger.Ledger) *transactionPool {
 	ret := new(transactionPool)
-	ret.peerCache = make(map[string]map[string]cachedTx)
+	ret.peerCache = make(map[string]*peerTxCache)
 	ret.ledger = ledger
 
 	return ret
@@ -123,6 +111,8 @@ type txCache interface {
 //the cache is supposed to be handled only by single goroutine
 type peerCache struct {
 	*peerTxCache
+	beg    uint64
+	last   uint64
 	parent *transactionPool
 }
 
@@ -145,7 +135,7 @@ func getTxCommitHeight(l *ledger.Ledger, txid string) uint64 {
 
 func (c *peerCache) GetTx(series uint64, txid string) (*pb.Transaction, uint64) {
 
-	if !c.checkRange(series) {
+	if series < c.beg || series >= c.last {
 		//can we declaim this?
 		logger.Fatalf("Accept outbound series: [%d], code is wrong", series)
 		return nil, 0
@@ -174,6 +164,11 @@ func (c *peerCache) GetTx(series uint64, txid string) (*pb.Transaction, uint64) 
 		if pos.commitedH != 0 {
 			//so tx has been commited, can cache again
 			pos.Transaction = tx
+		} else {
+			//tx can be re pooling here if it was lost before, but we should not encourage
+			//this behavoir
+			logger.Infof("Repool Tx %s [series %d] to ledger again", txid, series)
+			c.parent.ledger.PoolTransactions([]*pb.Transaction{tx})
 		}
 
 		return tx, pos.commitedH
@@ -185,7 +180,7 @@ func (c *peerCache) GetTx(series uint64, txid string) (*pb.Transaction, uint64) 
 func (c *peerCache) AddTxs(txs []*pb.Transaction, nocheck bool) {
 
 	pooltxs := make([]*pb.Transaction, 0, len(txs))
-	added := c.append(len(txs))
+	added := c.append(c.last, len(txs))
 	var txspos int
 
 	for _, q := range added {
@@ -216,11 +211,11 @@ func (c *peerCache) AddTxs(txs []*pb.Transaction, nocheck bool) {
 	c.parent.ledger.PoolTransactions(pooltxs)
 }
 
-func (tp *transactionPool) NewCache() {
-	tp.peerCache = make(map[string]map[string]cachedTx)
+func (c *peerCache) PurneCache(to uint64) {
+	c.prune(c.beg, to)
 }
 
-func (tp *transactionPool) AcquireCache(peer string) *peerCache {
+func (tp *transactionPool) AcquireCache(peer string, beg uint64, last uint64) *peerCache {
 
 	tp.RLock()
 
@@ -233,11 +228,11 @@ func (tp *transactionPool) AcquireCache(peer string) *peerCache {
 		tp.Lock()
 		defer tp.Unlock()
 		tp.peerCache[peer] = c
-		return &peerCache{c, tp}
+		return &peerCache{c, beg, last, tp}
 	}
 
 	tp.RUnlock()
-	return &peerCache{c, tp}
+	return &peerCache{c, beg, last, tp}
 }
 
 func (tp *transactionPool) RemoveCache(peer string) {

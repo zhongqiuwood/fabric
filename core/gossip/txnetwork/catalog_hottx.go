@@ -74,6 +74,14 @@ func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	return bytes.Compare(digest, n[:TxDigestVerifyLen]) == 0
 }
 
+func (p *peerTxs) firstSeries() uint64 {
+	if p == nil || p.head == nil {
+		return 0
+	} else {
+		return p.head.digestSeries
+	}
+}
+
 func (p *peerTxs) lastSeries() uint64 {
 	if p == nil || p.last == nil {
 		return 0
@@ -459,7 +467,7 @@ func (p *peerTxMemPool) PickFrom(id string, d_in model.VClock, gu_in model.Updat
 	ret := txPeerUpdate{new(pb.HotTransactionBlock)}
 	//logger.Debugf("pick peer %s at height %d with global height %d", p.peerId, expectedH, uint64(gu))
 
-	peerCache := gu.AcquireCache(id)
+	peerCache := gu.AcquireCache(id, p.firstSeries(), p.lastSeries()+1)
 
 	if !p.inRange(expectedH) {
 		//we have a too up-to-date range, so we return a single record to
@@ -488,12 +496,8 @@ func (p *peerTxMemPool) purge(id string, purgeto uint64, g *txPoolGlobal) {
 		return
 	}
 
-	cache := g.AcquireCache(id)
-
-	//purge global index first
-	for beg := p.head; beg.digestSeries < preserved.head.digestSeries; beg = beg.next {
-		delete(cache.c, beg.txid)
-	}
+	cache := g.AcquireCache(id, p.firstSeries(), p.lastSeries()+1)
+	cache.PurneCache(purgeto)
 
 	//also the jumping index must be purged
 	for i := p.head.digestSeries / jumplistInterval; i < purgeto/jumplistInterval; i++ {
@@ -570,7 +574,7 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 		return nil
 	}
 
-	g.AcquireCache(id).AddTxs(u.Transactions, id == "")
+	g.AcquireCache(id, p.firstSeries(), p.lastSeries()+1).AddTxs(u.Transactions, id == "")
 
 	//sanity check
 	err = p.concat(inTxs)

@@ -86,7 +86,7 @@ func populatePoolItems(t *testing.T, n int) (*peerTxs, []*pb.Transaction) {
 
 type dummyCache map[string]*pb.Transaction
 
-func (d dummyCache) GetTx(txid string) (*pb.Transaction, uint64) {
+func (d dummyCache) GetTx(_ uint64, txid string) (*pb.Transaction, uint64) {
 	return d[txid], 0
 }
 
@@ -178,7 +178,7 @@ func formTestData(ledger *ledger.Ledger, txchain *peerTxs, commitsetting [][]int
 
 	genTxs := func(ii []int) (out []*pb.Transaction) {
 		for _, i := range ii {
-			tx, _ := cache.GetTx(indexs[i].txid)
+			tx, _ := cache[indexs[i].txid]
 			out = append(out, tx)
 		}
 		return
@@ -234,12 +234,12 @@ func TestPeerUpdate(t *testing.T) {
 	}
 
 	txPool := newTransactionPool(ledger)
-	peerCache := txPool.AcquireCache("helperCache")
-	peerCache.AddTxs(txcache, true)
+	txPool.AcquireCache("helperCache", 0, 1).AddTxs(txcache, true)
+
 	formTestData(ledger, txchain, [][]int{nil, []int{2, 4, 7}, []int{3, 5}}, cache)
 
 	udt.HotTransactionBlock = new(pb.HotTransactionBlock)
-	udt.fromTxs(retTxs.fetch(1, nil), 2, peerCache)
+	udt.fromTxs(retTxs.fetch(1, nil), 2, txPool.AcquireCache("helperCache", 0, txchain.lastSeries()+1))
 
 	if udt.BeginSeries != 1 {
 		t.Fatalf("wrong begin series in udt2", udt.BeginSeries)
@@ -303,6 +303,12 @@ func TestPeerUpdate(t *testing.T) {
 
 func TestPeerTxPool(t *testing.T) {
 
+	defer func(bits uint) {
+		SetPeerTxQueueLen(bits)
+	}(peerTxQueueLenBit)
+
+	SetPeerTxQueueLen(3)
+
 	global := initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
 	txGlobal := &txPoolGlobal{
@@ -315,7 +321,6 @@ func TestPeerTxPool(t *testing.T) {
 	cache := newCache()
 	cache.Import(txcache)
 
-	txGlobal.AcquireCache(defaultPeer).AddTxs(txcache[5:], true)
 	indexs := formTestData(ledger, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}}, cache)
 
 	//we fill txpool from series 5, fill pool with a jumping index of 4 entries
@@ -341,7 +346,8 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("To vclock wrong value: %v", vi)
 	}
 
-	//test pickFrom method
+	//test pickFrom method, bind a cache with out tested pool
+	txGlobal.AcquireCache(defaultPeer, 0, pool.firstSeries()).AddTxs(txcache[5:], false)
 	ud_out, _ := pool.PickFrom(defaultPeer, standardVClock(14), txPoolGlobalUpdateOut{txGlobal, 2})
 
 	ud, ok := ud_out.(txPeerUpdate)
@@ -358,7 +364,7 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("unexpected full-tx <15>")
 	}
 
-	if _, h := txGlobal.AcquireCache(defaultPeer).GetTx(ud.GetTransactions()[0].Txid); h != 2 {
+	if _, h := txGlobal.AcquireCache(defaultPeer, pool.firstSeries(), pool.lastSeries()+1).GetTx(15, ud.GetTransactions()[0].Txid); h != 2 {
 		t.Fatal("unexpected commit h", h)
 	}
 
@@ -412,20 +418,13 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatal("update fail", err)
 	}
 
-	if len(txGlobal.AcquireCache("anotherTest").c) != 0 {
+	if txGlobal.AcquireCache("anotherTest", 0, 0).peerTxCache[0] != nil {
 		t.Fatal("update unknown peer")
 	}
-
-	//now peerid is right
-	cacheLenBefore := len(txGlobal.AcquireCache(defaultPeer).c)
 
 	err = pool.Update(defaultPeer, udt, txGlobal)
 	if err != nil {
 		t.Fatal("update actual fail", err)
-	}
-
-	if len(txGlobal.AcquireCache(defaultPeer).c) == cacheLenBefore {
-		t.Fatal("unexpected no update")
 	}
 
 	if pool.lastSeries() != 59 {
@@ -477,7 +476,9 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatal("unexpected last for update with old data", pool.lastSeries())
 	}
 
-	cacheLenBefore = len(txGlobal.AcquireCache(defaultPeer).c)
+	if c := txGlobal.AcquireCache(defaultPeer, 0, 0).peerTxCache; c[5] == nil {
+		t.Fatal("Wrong cache status", c)
+	}
 
 	//test purge
 	pool.purge("test", 50, txGlobal)
@@ -486,21 +487,16 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("wrong head series after purge", pool.head.digestSeries)
 	}
 
-	peerCache := txGlobal.AcquireCache(defaultPeer)
-	if len(peerCache.c) == cacheLenBefore {
-		t.Fatalf("wrong index after purge [%d]", len(peerCache.c))
-	}
-
-	if _, ok := peerCache.c[txcache[45].GetTxid()]; ok {
-		t.Fatalf("global still indexed tx which should be purged")
+	if c := txGlobal.AcquireCache(defaultPeer, 0, 0).peerTxCache; c[5] != nil {
+		t.Fatal("cache still have cache block which should be purged")
 	}
 
 	if len(pool.jlindex) != 1 {
-		t.Fatalf("wrong index after purge", len(peerCache.c))
+		t.Fatal("wrong index after purge", pool.jlindex)
 	}
 
 	if _, ok := pool.jlindex[6]; ok {
-		t.Fatalf("still have index in jumping list after purge")
+		t.Fatal("still have index in jumping list after purge")
 	}
 
 	//test pickfrom after purge
@@ -522,6 +518,12 @@ func TestPeerTxPool(t *testing.T) {
 }
 
 func TestCatalogyHandler(t *testing.T) {
+
+	defer func(bits uint) {
+		SetPeerTxQueueLen(bits)
+	}(peerTxQueueLenBit)
+
+	SetPeerTxQueueLen(3)
 
 	global := initGlobalStatus()
 	l := initTestLedgerWrapper(t)
@@ -576,7 +578,7 @@ func TestCatalogyHandler(t *testing.T) {
 	}
 
 	indexs := formTestData(l, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}}, cache)
-	defcache := txglobal.AcquireCache(testname)
+	defcache := txglobal.AcquireCache(testname, 0, txchainBase.lastSeries()+1)
 
 	//now you can get tx from ledger or ind of txGlobal
 	checkTx := func(pos int) {
@@ -586,16 +588,12 @@ func TestCatalogyHandler(t *testing.T) {
 			t.Fatal("unexpected empty txid")
 		}
 
-		txItem, _ := defcache.GetTx(txid)
+		txItem, _ := defcache.GetTx(uint64(pos), txid)
 		if txItem == nil {
 			t.Fatalf("get tx %d in index fail", txid)
 		}
 
 		assertTxIsIdentify(t, txcache[pos], txItem)
-	}
-
-	if len(defcache.c) == 0 {
-		t.Fatal("No update is make on status")
 	}
 
 	checkTx(10)
@@ -649,7 +647,7 @@ func TestCatalogyHandler(t *testing.T) {
 	}
 
 	checkTx(21)
-	if _, committedH := defcache.GetTx(indexs[21].txid); committedH != 5 {
+	if _, committedH := defcache.GetTx(21, indexs[21].txid); committedH != 5 {
 		t.Fatal("commit update fail:", committedH)
 	}
 
@@ -661,7 +659,7 @@ func TestCatalogyHandler(t *testing.T) {
 		t.Fatal("do update fail", err)
 	}
 
-	if len(txglobal.AcquireCache(testname).c) > 0 {
-		t.Fatal("status still have ghost index", txglobal.AcquireCache(testname))
+	if len(txglobal.AcquireCache(testname, 0, 0).peerTxCache[0]) > 0 {
+		t.Fatal("status still have ghost index")
 	}
 }

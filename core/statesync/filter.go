@@ -1,4 +1,4 @@
-package stub
+package statesync
 
 import (
 	pb "github.com/abchain/fabric/protos"
@@ -11,7 +11,7 @@ type StreamFilter struct {
 func (self StreamFilter) QualitifiedPeer(ep *pb.PeerEndpoint) bool {
 
 	//infact we should not need to check if endpoint is myself because it was impossible
-	if self.ID.Name == ep.ID.Name {
+	if self.PeerEndpoint != nil && self.ID.Name == ep.ID.Name {
 		return false
 	}
 

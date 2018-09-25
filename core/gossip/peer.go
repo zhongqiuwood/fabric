@@ -38,6 +38,7 @@ type GossipStub struct {
 	disc            peer.Discoverer
 	sec             peer.SecurityAccessor
 	catalogHandlers map[string]CatalogHandler
+	newPeerNotify   []CatalogHandlerEx
 
 	*pb.StreamStub
 	peerACL.AccessControl
@@ -94,6 +95,21 @@ func (g *GossipStub) AddCatalogHandler(cat string, h CatalogHandler) {
 	}
 }
 
+func (g *GossipStub) SubScribeNewPeerNotify(h CatalogHandler) {
+	ex, ok := h.(CatalogHandlerEx)
+	if !ok {
+		panic("handler did not imply ex interface, wrong code")
+	}
+
+	g.newPeerNotify = append(g.newPeerNotify, ex)
+}
+
+func (g *GossipStub) NotifyNewPeer(peerid *pb.PeerID) {
+	for _, h := range g.newPeerNotify {
+		h.OnConnectNewPeer(peerid)
+	}
+}
+
 //each call of NewGossipWithPeer will travel register collections to create the corresponding catalogy handlers
 var RegisterCat []func(*GossipStub)
 
@@ -124,6 +140,9 @@ func NewGossipWithPeer(p peer.Peer) *GossipStub {
 		gossipStub.disc, _ = nb.GetDiscoverer()
 		gossipStub.AccessControl, _ = nb.GetACL()
 	}
+
+	//setting posthandler for peer
+	p.SetStreamOption("gossip", gossipStub)
 
 	//reg all catalogs
 	for _, f := range RegisterCat {

@@ -32,6 +32,10 @@ func NewStateSync(p peer.Peer) {
 		if syncerErr != nil {
 			logger.Error("Create new state syncer fail:", syncerErr)
 		}
+
+		ep, _ := p.GetPeerEndpoint()
+		//also set options for this peer
+		p.SetStreamOption("sync", StreamFilter{ep})
 	})
 }
 
@@ -229,8 +233,6 @@ func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 		syncHandler.server.ledger.Release()
 	}
 }
-
-
 
 func (syncHandler *stateSyncHandler) fini() {
 

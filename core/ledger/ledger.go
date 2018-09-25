@@ -729,7 +729,7 @@ func (ledger *Ledger) checkValidIDBegin() error {
 
 func (ledger *Ledger) checkValidIDCommitORRollback(id interface{}) error {
 	if !reflect.DeepEqual(ledger.currentID, id) {
-		return fmt.Errorf("Another TxGroup [%s] already in-progress", ledger.currentID)
+		return fmt.Errorf("Another TxGroup [%v] already in-progress", ledger.currentID)
 	}
 	return nil
 }

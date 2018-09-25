@@ -20,6 +20,11 @@ type CatalogHandler interface {
 	HandleDigest(*pb.Gossip_Digest, CatalogPeerPolicies)
 }
 
+type CatalogHandlerEx interface {
+	CatalogHandler
+	OnConnectNewPeer(*pb.PeerID)
+}
+
 type CatalogPeerPolicies interface {
 	GetPeer() *pb.PeerID
 	GetId() string //equal to GetPeer().GetName()

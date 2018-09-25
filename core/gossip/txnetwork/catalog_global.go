@@ -252,6 +252,17 @@ type globalCat struct {
 	policy gossip.CatalogPolicies
 }
 
+type newPeerNotify struct {
+	gossip.CatalogHandler
+}
+
+//exhandler
+func (n newPeerNotify) OnConnectNewPeer(id *pb.PeerID) {
+	logger.Infof("Notify peer [%s] is connected", id.GetName())
+	//TODO: now we just trigger an global update ...
+	n.SelfUpdate()
+}
+
 func init() {
 	gossip.RegisterCat = append(gossip.RegisterCat, initNetworkStatus)
 }
@@ -267,9 +278,10 @@ func initNetworkStatus(stub *gossip.GossipStub) {
 	globalcat := new(globalCat)
 	globalcat.policy = gossip.NewCatalogPolicyDefault()
 
-	stub.AddCatalogHandler(globalCatName,
-		gossip.NewCatalogHandlerImpl(stub.GetSStub(),
-			stub.GetStubContext(), globalcat, m))
+	h := gossip.NewCatalogHandlerImpl(stub.GetSStub(),
+		stub.GetStubContext(), globalcat, m)
+	stub.AddCatalogHandler(globalCatName, h)
+	stub.SubScribeNewPeerNotify(newPeerNotify{h})
 
 }
 

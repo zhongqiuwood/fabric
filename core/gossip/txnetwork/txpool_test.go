@@ -167,6 +167,11 @@ func TestCache(t *testing.T) {
 
 	initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
+
+	//add gensis block
+	ledger.BeginTxBatch(0)
+	ledger.CommitTxBatch(0, nil, nil, nil)
+
 	txpool := newTransactionPool(ledger)
 
 	queueLen := peerTxQueueMask + 1
@@ -183,19 +188,64 @@ func TestCache(t *testing.T) {
 		txcollection[i], _ = buildTestTx(t)
 	}
 
-	//and commit part of it
-	// ledger.BeginTxBatch(1)
-	// ledger.TxBegin("txUuid")
-	// ledger.SetState("chaincode1", "keybase", []byte{byte(ib)})
-	// ledger.TxFinished("txUuid", true)
-	// ledger.CommitTxBatch(1, genTxs(commitsetting[ib]), nil, []byte("proof1"))
-
 	last := uint64(1)
 	txpool.AcquireCache("any", 0, last).AddTxs(txcollection[1:queueLenPart], true)
+	last = last + uint64(queueLenPart-1)
 
-	last = last + queueLenPart - 1
-	rcache := txpool.AcquireCache("any", 0, last)
-	if txcollection[3].Txid != rcache.GetTx(3, txcollection[3].Txid) {
-		t.Fatal("Wrong cache", cache)
+	//commit part of it
+	ledger.BeginTxBatch(1)
+	err := ledger.CommitTxBatch(1, []*pb.Transaction{txcollection[1], txcollection[2], txcollection[4], txcollection[5]}, nil, []byte("proof1"))
+	if err != nil {
+		t.Fatal("commit fail", err)
 	}
+
+	if cache[0][2].Transaction != nil || cache[0][3].Transaction != nil || cache[0][4].Transaction != nil {
+		t.Fatal("has ghost tx in cache", cache[0][:5])
+	}
+
+	rcache := txpool.AcquireCache("any", 0, last)
+	tx, ch := rcache.GetTx(3, txcollection[3].Txid)
+	if tx == nil || ch != 0 {
+		t.Fatal("get uncommit tx fail", tx, ch)
+	}
+	tx, ch = rcache.GetTx(2, txcollection[2].Txid)
+	if tx == nil || ch != 1 {
+		t.Fatal("get commited tx fail", tx, ch)
+	}
+	tx, ch = rcache.GetTx(4, txcollection[4].Txid)
+	if tx == nil || ch != 1 {
+		t.Fatal("get commited tx fail", tx, ch)
+	}
+	if cache[0][2].Transaction == nil || cache[0][3].Transaction != nil || cache[0][4].Transaction == nil {
+		t.Fatal("Wrong cache status ", cache[0][:5])
+	}
+
+	//pre commit another block
+	ledger.BeginTxBatch(1)
+	err = ledger.CommitTxBatch(1, []*pb.Transaction{txcollection[queueLen]}, nil, []byte("proof1"))
+	if err != nil {
+		t.Fatal("commit fail", err)
+	}
+
+	txpool.AcquireCache("any", 0, last).AddTxs(txcollection[queueLenPart:queueLen+2*queueLenPart], false)
+	last = last + uint64(queueLen+queueLenPart)
+
+	if cache[1][0].Transaction == nil || cache[1][0].commitedH != 2 {
+		t.Fatal("Wrong cache status ", cache[1][:5])
+	}
+
+	rcache = txpool.AcquireCache("any", 0, last)
+	tx, ch = rcache.GetTx(uint64(queueLen-1), txcollection[queueLen-1].Txid)
+	if tx == nil || ch != 0 {
+		t.Fatal("get uncommit tx fail", tx, ch)
+	}
+	tx, ch = rcache.GetTx(uint64(queueLen), txcollection[queueLen].Txid)
+	if tx == nil || ch != 2 {
+		t.Fatal("get uncommit tx fail", tx, ch)
+	}
+	tx, ch = rcache.GetTx(uint64(queueLen+1), txcollection[queueLen+1].Txid)
+	if tx == nil || ch != 0 {
+		t.Fatal("get uncommit tx fail", tx, ch)
+	}
+
 }

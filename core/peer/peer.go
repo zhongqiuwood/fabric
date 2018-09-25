@@ -52,13 +52,19 @@ type Peer interface {
 	ExecuteTransaction(transaction *pb.Transaction) *pb.Response
 	SecurityAccessor
 	GetNeighbour() (Neighbour, error)
-	//  currently the availiable streamstub is "gossip"
+	//  currently the availiable streamstub is "gossip" and "sync"
 	GetStreamStub(string) *pb.StreamStub
+	//  now we can set the StreamFilter or StreamPostHandler
+	SetStreamOption(string, interface{})
 	GetPeerCtx() context.Context
 }
 
 type StreamFilter interface {
 	QualitifiedPeer(*pb.PeerEndpoint) bool
+}
+
+type StreamPostHandler interface {
+	NotifyNewPeer(*pb.PeerID)
 }
 
 type Neighbour interface {
@@ -171,10 +177,11 @@ type Impl struct {
 	handlerMap *handlerMap
 	//	ledgerWrapper *ledgerWrapper
 	//  each stubs ...
-	streamStubs   map[string]*pb.StreamStub
-	streamFilters map[string]StreamFilter
-	gossipStub    *pb.StreamStub
-	syncStub      *pb.StreamStub
+	streamStubs        map[string]*pb.StreamStub
+	streamFilters      map[string]StreamFilter
+	streamPostHandlers map[string]StreamPostHandler
+	gossipStub         *pb.StreamStub
+	syncStub           *pb.StreamStub
 
 	random        *rand.Rand
 	secHelper     crypto.Peer
@@ -265,10 +272,8 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 		"gossip": peer.gossipStub,
 		"sync":   peer.syncStub,
 	}
-
-	peer.streamFilters = map[string]StreamFilter{
-		"sync": syncstub.StreamFilter{self},
-	}
+	peer.streamFilters = make(map[string]StreamFilter)
+	peer.streamPostHandlers = make(map[string]StreamPostHandler)
 
 	return peer
 }
@@ -454,6 +459,21 @@ func (p *Impl) GetStreamStub(name string) *pb.StreamStub {
 	return p.streamStubs[name]
 }
 
+func (p *Impl) SetStreamOption(name string, opt interface{}) {
+	if _, ok := p.streamStubs[name]; !ok {
+		fmt.Errorf("Can not set option for unexist streamstub: %s", name)
+	}
+
+	switch v := opt.(type) {
+	case StreamFilter:
+		p.streamFilters[name] = v
+	case StreamPostHandler:
+		p.streamPostHandlers[name] = v
+	default:
+		fmt.Errorf("Unrecognized option: %v", opt)
+	}
+}
+
 func (p *Impl) GetDiscoverer() (Discoverer, error) {
 	return p, nil
 }
@@ -493,6 +513,9 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 	if v == nil {
 		peerLogger.Errorf("No connection can be found in context")
 	} else {
+
+		clidone := make(chan error)
+
 		for name, stub := range p.streamStubs {
 
 			//do filter first
@@ -505,11 +528,17 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 
 			go func(conn *grpc.ClientConn, stub *pb.StreamStub, name string) {
 				peerLogger.Debugf("start <%s> streamhandler for peer %s", name, key.GetName())
-				err := stub.HandleClient(conn, key)
-				if err != nil {
-					peerLogger.Errorf("streamhandler <%s> fail: %s", name, err)
-				}
+				err, retf := stub.HandleClient(conn, key)
+				defer retf()
+				clidone <- err
 			}(v.(*grpc.ClientConn), stub, name)
+
+			err := <-clidone
+			if err != nil {
+				peerLogger.Errorf("running streamhandler <%s> fail: %s", name, err)
+			} else if posth, ok := p.streamPostHandlers[name]; ok {
+				posth.NotifyNewPeer(key)
+			}
 		}
 	}
 

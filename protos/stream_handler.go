@@ -368,37 +368,40 @@ func (s *StreamStub) Broadcast(ctx context.Context, m proto.Message) (err error,
 
 }
 
-func (s *StreamStub) HandleClient(conn *grpc.ClientConn, remotePeerid *PeerID) error {
+func (s *StreamStub) HandleClient(conn *grpc.ClientConn, remotePeerid *PeerID) (error, func()) {
 	clistrm, err := s.NewClientStream(conn)
 
 	if err != nil {
-		return err
+		return err, func() {}
 	}
 
-	defer clistrm.CloseSend()
+	errf := func() { clistrm.CloseSend() }
 
 	// handshake: send my id to remote peer
 	err = clistrm.SendMsg(s.localID)
 	if err != nil {
-		return err
+		return err, errf
 	}
 
 	// himpl is stateSyncHandler or GossipHandlerImpl
 	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, true)
 
 	if err != nil {
-		return err
+		return err, errf
 	}
 
 	streamHandler := newStreamHandler(himpl)
 
 	err = s.registerHandler(streamHandler, remotePeerid)
 	if err != nil {
-		return err
+		return err, errf
 	}
 
-	defer s.unRegisterHandler(remotePeerid)
-	return streamHandler.handleStream(clistrm)
+	return nil, func() {
+		defer clistrm.CloseSend()
+		defer s.unRegisterHandler(remotePeerid)
+		streamHandler.handleStream(clistrm)
+	}
 
 }
 

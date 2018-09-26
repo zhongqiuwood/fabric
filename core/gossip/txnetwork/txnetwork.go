@@ -3,7 +3,6 @@ package txnetwork
 import (
 	"fmt"
 	"github.com/abchain/fabric/core/gossip"
-	"github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"sync"
@@ -59,7 +58,7 @@ func initTxnetworkEntrance(stub *gossip.GossipStub) {
 	defer entryglobal.Unlock()
 
 	entryglobal.ind[stub.GetSStub()] = TxNetworkEntry{
-		NewTxNetworkEntry(stub.GetStubContext()),
+		NewTxNetworkEntry(),
 		stub,
 	}
 }
@@ -82,117 +81,64 @@ type TxNetworkUpdate interface {
 }
 
 type txNetworkEntry struct {
-	topic     litekfk.Topic
-	newTxCond *sync.Cond
-	context.Context
-	TxNetworkHandler
+	source chan *PendingTransaction
 }
 
 const (
 	maxOutputBatch = 16
 )
 
-func NewTxNetworkEntry(ctx context.Context) *txNetworkEntry {
-
-	conf := litekfk.NewDefaultConfig()
-	topic := litekfk.CreateTopic(conf)
+func NewTxNetworkEntry() *txNetworkEntry {
 
 	return &txNetworkEntry{
-		topic:     topic,
-		newTxCond: sync.NewCond(topic),
-		Context:   ctx,
+		source: make(chan *PendingTransaction, maxOutputBatch*3),
 	}
 }
 
-func (e *txNetworkEntry) waitForTx(ctx context.Context, cond func() bool) {
-
-	e.topic.Lock()
-	defer e.topic.Unlock()
-
-	select {
-	case <-ctx.Done():
-		logger.Info("Worker for txnetwork is quit")
-		return
-	default:
-	}
-
-	if cond() {
-		e.newTxCond.Wait()
-	}
-}
-
-func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
-	cli := e.topic.NewClient()
-	defer cli.UnReg()
-
-	watcher := e.topic.Watcher()
-
-	rd, rerr := cli.Read(litekfk.ReadPos_Default)
-	if rerr != nil {
-		panic(fmt.Errorf("Worker is failed when inited: %v", rerr))
-	}
-
-	rd.AutoReset(true)
-
-	gctx, endf := context.WithCancel(ctx)
-
-	//start the guard
-	go func() {
-		<-ctx.Done()
-		logger.Info("Guard will make worker for txnetwork quitting")
-
-		e.topic.Lock()
-		endf()
-		e.topic.Unlock()
-
-		e.newTxCond.Broadcast()
-
-	}()
+func (e *txNetworkEntry) worker(ictx context.Context, h TxNetworkHandler) {
 
 	var txBuffer [maxOutputBatch]*PendingTransaction
-
 	txs := txBuffer[:0]
-	waitCond := func() bool {
-		return rd.CurrentEnd().Equal(watcher.GetTail())
-	}
+	ctx, endf := context.WithCancel(ictx)
 
+	logger.Infof("Start a worker for txnetwork entry with handler %x", h)
+	defer func() {
+		h.Release()
+		logger.Infof("End the worker for txnetwork entry with handler %x", h)
+		endf()
+	}()
 	for {
 
-		if item, err := rd.ReadOne(); err == litekfk.ErrEOF {
-
-			if len(txs) > 0 {
-				h.HandleTxs(txs)
-				txs = txBuffer[:0]
-			} else {
-
-				e.waitForTx(gctx, waitCond)
+		if len(txs) == 0 {
+			//wait for an item
+			select {
+			case item := <-e.source:
+				txs = append(txs, item)
+			case <-ctx.Done():
+				return
 			}
-
-		} else if err != nil {
-			//we have autoreset so we won't be drop out
-			//if we still fail it should be a panic
-			panic(fmt.Errorf("Worker has unknown failure: %v", err))
+		} else if len(txs) >= maxOutputBatch {
+			h.HandleTxs(txs)
+			txs = txBuffer[:0]
 		} else {
-			txs = append(txs, item.(*PendingTransaction))
-			if len(txs) >= maxOutputBatch {
+			//wait more item or handle we have
+			select {
+			case item := <-e.source:
+				txs = append(txs, item)
+			case <-ctx.Done():
+				return
+			default:
 				h.HandleTxs(txs)
 				txs = txBuffer[:0]
 			}
-		}
-
-		select {
-		case <-gctx.Done():
-			logger.Info("Worker for txnetwork is quit")
-			return
-		default:
 		}
 
 	}
 }
 
-func (e *txNetworkEntry) Start(h TxNetworkHandler) {
+func (e *txNetworkEntry) Start(ctx context.Context, h TxNetworkHandler) {
 
-	go e.worker(e, h)
+	go e.worker(ctx, h)
 }
 
 type PendingTransaction struct {
@@ -229,14 +175,12 @@ func (e *txNetworkEntry) broadcast(ptx *PendingTransaction) error {
 		return fmt.Errorf("txNetwork not init yet")
 	}
 
-	err := e.topic.Write(ptx)
-	if err != nil {
-		logger.Error("Write tx fail", err)
-		return err
+	select {
+	case e.source <- ptx:
+		return nil
+	default:
+		return fmt.Errorf("Buffer full, can not write more")
 	}
-
-	e.newTxCond.Broadcast()
-	return nil
 }
 
 func (e *txNetworkEntry) BroadCastTransactionDefault(tx *pb.Transaction, attrs ...string) error {

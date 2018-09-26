@@ -4,14 +4,13 @@ import (
 	"fmt"
 	crypto "github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/gossip/txnetwork"
-	_ "github.com/abchain/fabric/core/ledger"
-	_ "github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/op/go-logging"
 )
 
 var (
 	epochInterval = uint64(512)
-	logger        = clisrvLogger
+	logger        = logging.MustGetLogger("txhandler")
 )
 
 type txNetworkHandlerImpl struct {
@@ -105,6 +104,8 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
 	lastDigest := t.lastDigest
 	lastSeries := t.lastSeries
 	outtxs.BeginSeries = t.lastSeries + 1
+
+	logger.Debugf("start handling %d txs", len(txs))
 
 	var err error
 	for _, tx := range txs {

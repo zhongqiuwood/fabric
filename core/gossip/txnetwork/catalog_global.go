@@ -17,7 +17,16 @@ type peerStatus struct {
 }
 
 func (s peerStatus) To() model.VClock {
-	return standardVClock(s.GetNum())
+	//we right-shift the clock by 1 so an "empty" status has
+	//the lowest clock, while any other status (even when num is 0)
+	//has clock larger than 1. But notice "endorsement" could not
+	//be use because when object is used as update
+	//endorsement field may be omitted.
+	//so we judge the empty status by digest
+	if len(s.GetDigest()) == 0 {
+		return standardVClock(0)
+	}
+	return standardVClock(s.GetNum() + 1)
 }
 
 func (s peerStatus) PickFrom(id string, d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
@@ -61,6 +70,7 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 		if len(u.GetEndorsement()) == 0 {
 			return fmt.Errorf("Update do not include endorsement for our pulling")
 		}
+		logger.Infof("We have establish new gossip peer [%s]:[%d:%x]", id, u.GetNum(), u.GetDigest())
 	} else {
 		//copy endorsement to u and later we will just keep u
 		u.Endorsement = s.Endorsement
@@ -152,6 +162,8 @@ func (g *txNetworkGlobal) addNewPeer(id string) *peerStatus {
 		time.Time{},
 	}
 	g.lruIndex[id] = g.lruQueue.PushBack(ret)
+
+	logger.Infof("We have known new gossip peer [%s]", id)
 
 	return &peerStatus{ret.PeerTxState}
 }
@@ -291,7 +303,7 @@ const (
 )
 
 //Implement for CatalogHelper
-func (c *globalCat) Name() string                        { return hotTxCatName }
+func (c *globalCat) Name() string                        { return globalCatName }
 func (c *globalCat) GetPolicies() gossip.CatalogPolicies { return c.policy }
 
 func (c *globalCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
@@ -336,6 +348,9 @@ func (c *globalCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Me
 	}
 
 	u := model.NewscuttlebuttUpdate(nil)
+	if len(msg.Txs) == 0 {
+		return nil, nil
+	}
 	for id, iu := range msg.Txs {
 		u.UpdatePeer(id, peerStatus{iu})
 	}

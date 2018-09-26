@@ -240,6 +240,7 @@ func (g *txPoolGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 	//check if we have known this peer
 	peerStatus := g.network.QueryPeer(id)
 	if peerStatus == nil {
+		logger.Infof("We hear of peer %s before it is known by us", id)
 		return nil
 	}
 

@@ -107,7 +107,7 @@ func Start(cc Chaincode) error {
 // StartInProc is an entry point for system chaincodes bootstrap. It is not an
 // API for chaincodes.
 func StartInProc(env []string, args []string, cc Chaincode, recv <-chan *pb.ChaincodeMessage, send chan<- *pb.ChaincodeMessage) error {
-	logging.SetLevel(logging.DEBUG, "chaincode")
+	//	logging.SetLevel(logging.DEBUG, "chaincode")
 	chaincodeLogger.Debugf("in proc %v", args)
 
 	var chaincodename string

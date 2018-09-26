@@ -73,7 +73,7 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 		} else if h, err := NewTxNetworkHandler(entryItem, endorser); err != nil {
 			clisrvLogger.Warning("Can not create default endorser, some transaction may not be endorsed:", err)
 		} else {
-			entryItem.Start(h)
+			entryItem.Start(peer.GetPeerCtx(), h)
 			return d
 		}
 	}
@@ -81,7 +81,7 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 	if h, err := NewTxNetworkHandlerNoSec(entryItem); err != nil {
 		clisrvLogger.Fatal("Can not create txnetwork", err)
 	} else {
-		entryItem.Start(h)
+		entryItem.Start(peer.GetPeerCtx(), h)
 	}
 
 	return d

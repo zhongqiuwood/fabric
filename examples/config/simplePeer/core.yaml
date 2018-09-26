@@ -23,7 +23,7 @@ rest:
     enabled: false
 
     # The address that the REST service will listen on for incoming requests.
-    address: 127.0.0.1:7050
+    address: 0.0.0.0:7050
 
     validPatterns:
 
@@ -39,13 +39,13 @@ rest:
 service:
 
     # Enable/disable setting for the secondary rpc for chain and devops service.
-    enabled: false
+    enabled: true
 
-    # The address that the rpc service will listen on 
+    # The address that the rpc service will listen on
     address: 127.0.0.1:7051
 
     # The Address which peer will use when run as client
-    # If the target peer's service is enabled, it should be the port at which 
+    # If the target peer's service is enabled, it should be the port at which
     # service is listening
     cliaddress: 127.0.0.1:7051
 
@@ -82,15 +82,15 @@ logging:
     # options.
     level: debug
     client: debug
-    #peer: warning
 
-    node:      debug:crypto,peer,buckettree=warning
-    #network:   warning
+    peer:      debug
+    node:      info
+    network:   debug
     chaincode: debug
-    #version: warning
+    version:   warning
     output:
-        file: log_
-        postfix: true
+        file: "peer.log"
+        postfix: false
 
 ###############################################################################
 #
@@ -100,7 +100,7 @@ logging:
 peer:
 
     # The Peer id is used for identifying this Peer instance.
-    id: billgates
+    id: vp0
 
     # The privateKey to be used by this peer
     # privateKey: 794ef087680e2494fa4918fd8fb80fb284b50b57d321a31423fe42b9ccf6216047cea0b66fe8365a8e3f2a8140c6866cc45852e63124668bee1daa9c97da0c2a
@@ -111,7 +111,7 @@ peer:
     networkId: dev
 
     # For local calling of peer, often the node and node client can both use
-    localaddr: 127.0.0.1:7051
+    localaddr: 127.0.0.1:7056
 
     # The Address this Peer will listen on
     listenAddress: 127.0.0.1:7055
@@ -120,11 +120,11 @@ peer:
     address: 127.0.0.1:7055
 
     # The Address which peer will use when run as client
-    # If the target peer's service is enabled, it should be the port at which 
+    # If the target peer's service is enabled, it should be the port at which
     # service is listening
-    # will be deprecated
+    # will be deprecated    
     cliaddress: 127.0.0.1:7051
-    
+
     # Whether the Peer should programmatically determine the address to bind to.
     # This case is useful for docker containers.
     addressAutoDetect: false
@@ -132,6 +132,12 @@ peer:
     # Setting for runtime.GOMAXPROCS(n). If n < 1, it does not change the current setting
     gomaxprocs: -1
     workers: 2
+
+    # Use the new gossip txnetwork to broadcast Transactions (disable will use the 
+    # legacy implement in fabric 0.6)
+    # this is a temporary option and will be deprecated after YA-fabric 1.0
+    txnetwork:
+        enable: true
 
     # Sync related configuration
     sync:
@@ -175,7 +181,7 @@ peer:
 
         events:
             # The address that the Event service will be enabled on the validator
-            address: 127.0.0.1:7053
+            address: 0.0.0.0:7053
 
             # total number of events that could be buffered without blocking the
             # validator sends
@@ -187,24 +193,26 @@ peer:
             # if > 0, if buffer full, blocks till timeout
             timeout: 10
 
-    # TLS Settings for server and p2p communications
+    # TLS Settings for p2p communications
     tls:
-    # enable tls for p2p
+        # enable tls for p2p
         enabled: false
-    # enable tls for p2p, will use tlsca
+
+        # enable tls for p2p, will use tlsca
         p2pusetlsca: false
-    # enable for remote rpc call
+
+        # enable for remote rpc call
         serviceenabled: false
-    # enable for local rpc call
+
+        # enable for local rpc call
         localsrvabled: false
+
         cert:
-            file: '%appdata%\hyperledger\cert\gamepaivp1.crt'
+            file: testdata/server1.pem
         key:
-            file: '%appdata%\hyperledger\cert\gamepaivp1.key'
+            file: testdata/server1.key
         # The server name use to verify the hostname returned by TLS handshake
-        rootcert:
-            file: '%appdata%\hyperledger\ca.crt'
-        serverhostoverride: node1.gamecenter.mobi
+        serverhostoverride:
 
     # PKI member services properties
     pki:
@@ -217,9 +225,9 @@ peer:
         tls:
             enabled: false
             rootcert:
-                file: '%appdata%\hyperledger\ca.crt'
+                file: tlsca.cert
             # The server name use to verify the hostname returned by TLS handshake
-            serverhostoverride: gateway.gamecenter.mobi
+            serverhostoverride:
 
     # Peer discovery settings.  Controls how this peer discovers other peers
     discovery:
@@ -230,7 +238,7 @@ peer:
         rootnode:
 
         # The duration of time between attempts to asks peers for their connected peers
-        period:  300s
+        period:  5s
 
         ## leaving this in for example of sub map entry
         # testNodes:
@@ -243,24 +251,36 @@ peer:
 
         # Should the discovered nodes and their reputations
         # be stored in DB and persisted between restarts
-        persist:    false
+        persist:    true
 
         # the period in seconds with which the discovery
         # tries to reconnect to successful nodes
         # 0 means the nodes are not reconnected
-        touchPeriod: 36000s
+        touchPeriod: 6s
 
         # the maximum nuber of nodes to reconnect to
         # -1 for unlimited
         touchMaxNodes: 100
 
+        # Running in hidden mode for node discovery
+        # Node will connect to root nodes only
+        hidden: false
+
+        #Abolished the discovered function of the node and retained the function of detecting other nodes
+        disable: false
+
     # Path on the file system where peer will store data
-    fileSystemPath: '%appdata%\hyperledger01'
+    fileSystemPath: /var/hyperledger/production
+
+    currentDbVersion: 1
     # rocksdb configurations
     db:
+        # 10485760 = 10M
         maxLogFileSize: 10485760
         keepLogFileNum: 10
         logLevel: "warn"
+        perBlockPerCheckpoint: true
+        #version: 0
 
     profile:
         enabled:     false
@@ -277,7 +297,7 @@ vm:
     # unix:///var/run/docker.sock
     # http://localhost:2375
     # https://localhost:2376
-    endpoint: http://localhost:12375
+    endpoint: unix:///var/run/docker.sock
 
     # settings for docker vms
     docker:
@@ -324,14 +344,8 @@ chaincode:
         path:
         name:
 
-    # Notify chaincode the peer's address it should contact to, override the 
-    # peer.address, through ENV variables
-    peer:
-        address: 127.0.0.1:27055
-
     golang:
 
-        withGOPATH: false
         # This is the basis for the Golang Dockerfile.  Additional commands will
         # be appended depedendent upon the chaincode specification.
         Dockerfile:  |
@@ -359,19 +373,23 @@ chaincode:
     # to come through. 1sec should be plenty for chaincode unit tests
     startuptimeout: 300000
 
-    #timeout in millisecs for deploying chaincode from a remote repository.
+    # timeout in millisecs for deploying chaincode from a remote repository.
     deploytimeout: 30000
+    exectimeout: 30000
 
-    #mode - options are "dev", "net"
-    #dev - in dev mode, user runs the chaincode after starting validator from
+    # mode - options are "dev", "net", "native"
+    # dev - in dev mode, user runs the chaincode after starting validator from
     # command line on local machine
-    #net - in net mode validator will run chaincode in a docker container
+    # net - in net mode validator will run chaincode in a docker container
+    # native - the chaincode source code is built in with peer process
+    # and runs on peer starting up
 
-    mode: net
+    mode: native
+    # mode: net
     # typically installpath should not be modified. Otherwise, user must ensure
     # the chaincode executable is placed in the path specifed by installpath in
     # the image
-    installpath: 
+    installpath:
 
     # keepalive in seconds. In situations where the communiction goes through a
     # proxy that does not support keep-alive, this parameter will maintain connection
@@ -438,12 +456,14 @@ security:
     # and maintain a valid set of certificates in order to communicate with
     # other peers
     enabled: false
+    # Specify a ID which will endorse all transactions for a peer
+    endorseID: client    
     # To enroll NVP or VP with membersrvc. These parameters are for 1 time use.
     # They will not be valid on subsequent times without un-enroll first.
     # The values come from off-line registration with obc-ca. For testing, make
     # sure the values are in membersrvc/membersrvc.yaml file eca.users
-    enrollID: vp0
-    enrollSecret: MwYpmSRjupbT
+    enrollID: vp
+    enrollSecret: f3489fy98ghf
     # To enable privacy of transactions (requires security to be enabled). This
     # encrypts the transaction content during transit and at rest. The state
     # data is also encrypted
@@ -461,7 +481,17 @@ security:
     tcert:
       batch:
         # The size of the batch of TCerts
-        size:  200
+        size: 200
+      # tcert.reused for one tCertificate by many transication
+      reused: 
+        enabled: true
+        # expired is second from tcert create for update it, default mean oneweek before expired time and 1/3 before expired time
+        expired: 0
+        # batch is the max times limit one tcert to use
+        batch: 64
+        # round_robin set crypto loop the tcert pool to get reuseable tcert, 0,1,2,3,0,1,2..., default 0 mean disable
+        round_robin: 0
+
     # Enable the release of keys needed to decrypt attributes from TCerts in
     # the chaincode using the metadata field of the transaction (requires
     # security to be enabled).

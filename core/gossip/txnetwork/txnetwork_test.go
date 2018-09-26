@@ -25,7 +25,7 @@ func TestTxEntrance(t *testing.T) {
 
 	wctx, endf := context.WithCancel(context.Background())
 
-	entry := NewTxNetworkEntry(wctx)
+	entry := NewTxNetworkEntry()
 
 	for i := 0; i < 10; i++ {
 
@@ -35,7 +35,7 @@ func TestTxEntrance(t *testing.T) {
 
 	h := &dummyH{nil, 0, t}
 
-	entry.Start(h)
+	entry.Start(wctx, h)
 
 	time.Sleep(time.Second)
 

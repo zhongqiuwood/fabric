@@ -263,13 +263,12 @@ func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPoli
 	//trigger a resonding pulling in another thread
 	go func() {
 		defer h.pulls.popPuller(cpo)
+		logger.Debugf("Start a responding pulling to peer [%s]", cpo.GetId())
 		puller, err := aftertask()
 		if err != nil {
 			logger.Errorf("starting responding pulling fail: %s", err)
 			return
 		}
-
-		logger.Debugf("Start a responding pulling to peer [%s]", cpo.GetId())
 
 		pctx, pctxend := context.WithTimeout(h.hctx,
 			time.Duration(h.GetPolicies().PullTimeout())*time.Second)
@@ -283,7 +282,7 @@ func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPoli
 			//so the triggered push wouldn't make duplicated pulling
 			h.executePush()
 		} else if err == model.EmptyUpdate {
-			logger.Debug("pull nothing from peer [%s]", cpo.GetId())
+			logger.Debugf("pull nothing from peer [%s]", cpo.GetId())
 		} else {
 			cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
 		}
@@ -313,17 +312,16 @@ func (h *catalogHandler) HandleUpdate(msg *pb.Gossip_Update, cpo CatalogPeerPoli
 	ud, err := h.DecodeUpdate(cpo, umsg)
 	if err != nil {
 		cpo.RecordViolation(fmt.Errorf("Decode update for catalog %s fail: %s", h.Name(), err))
-		return
 	}
 
-	//the final update is executed in another thread
+	//the final update is executed in another thread, even nil update is accepted
 	puller.NotifyUpdate(ud)
 
 }
 
 func (h *catalogHandler) executePush() error {
 
-	logger.Debug("try execute a pushing process")
+	logger.Debug("try execute a pushing process for handler", h.Name())
 	wctx, targetCnt := h.schedule.newSchedule(h.hctx, h.GetPolicies().PushCount())
 	if wctx == nil {
 		logger.Debug("Another pushing process is running or no plan any more")
@@ -369,7 +367,7 @@ func (h *catalogHandler) executePush() error {
 
 				logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
 
-				if err != nil && err != context.DeadlineExceeded {
+				if err != nil && err != model.EmptyUpdate {
 					cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
 				}
 				return true

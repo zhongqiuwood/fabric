@@ -217,7 +217,7 @@ func (ws *workingStream) handleMessage(msg *pb.ChaincodeMessage, tctx *transacti
 	case pb.ChaincodeMessage_COMPLETED,
 		pb.ChaincodeMessage_ERROR,
 		pb.ChaincodeMessage_QUERY_ERROR:
-		chaincodeLogger.Debugf("[%s]HandleMessage-_COMPLETED. Notify", msg.Txid)
+		chaincodeLogger.Debugf("[%s]HandleMessage-_COMPLETED. Notify", shorttxid(msg.Txid))
 		tctx.responseNotifier <- msg
 		ws.finishTx(false, tctx, handler)
 	default:

@@ -1022,6 +1022,7 @@ func (p *Impl) initDiscovery() []string {
 	if !(len(rootNodes) == 1 && strings.Compare(rootNodes[0], "") == 0) {
 		addresses = append(rootNodes, p.discHelper.GetAllNodes()...)
 	}
+	peerLogger.Debugf("Retrieved total discovery list: %v", addresses)
 	return addresses
 }
 

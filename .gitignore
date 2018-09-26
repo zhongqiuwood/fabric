@@ -29,5 +29,6 @@ sdk/node/lib/protos/*
 report.xml
 build/
 /wkdir
-/scripts
+#/scripts
+
 dbscan

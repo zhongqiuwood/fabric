@@ -19,19 +19,6 @@ var populatedTxCnt = 32
 
 
 func TestMain(m *testing.M) {
-
-	shash := []byte("stateroot")
-
-	publicKeyInString := hex.EncodeToString([]byte("stateroot"))
-
-	publicKeyInString = string([]byte("stateroot"))
-
-	publicKeyInString = util.EncodeStatehash([]byte("stateroot"))
-
-	if len(publicKeyInString) == 0 || len(shash) == 0 {
-		return
-	}
-
 	setupTestConfig()
 	os.Exit(m.Run())
 }

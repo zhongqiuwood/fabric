@@ -13,6 +13,7 @@ import (
 	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"sync"
+	"github.com/spf13/viper"
 )
 
 var logger = logging.MustGetLogger("statesync")
@@ -100,19 +101,6 @@ func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 	return h
 }
 
-//func (s *StateSync) SyncEventLoop(notify <-chan *peer.SyncEvent, callback chan<- *peer.SyncEventCallback) {
-//
-//	for {
-//		select {
-//		case event := <-notify :
-//			logger.Infof("[%s]: handle SyncEvent: %+v", flogging.GoRDef, event)
-//			err := s.SyncToState(event.Ctx, nil, nil, event.Peer)
-//			cb := &peer.SyncEventCallback{err}
-//
-//			callback <- cb
-//		}
-//	}
-//}
 
 func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
 
@@ -127,6 +115,17 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 	s.curCorrrelation++
 	s.Unlock()
 	handler := s.PickHandler(peer)
+
+	if handler == nil {
+
+		logger.Errorf("[%s]: Failed to find sync handler for peer <%v>",
+			flogging.GoRDef, peer)
+
+		err = fmt.Errorf("[%s]: Failed to find sync handler for peer <%v>",
+			flogging.GoRDef, peer)
+
+		return err
+	}
 
 	err = s.executeSync(ctx, handler, targetState)
 
@@ -173,21 +172,24 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 	logger.Infof("[%s]: query done. mostRecentIdenticalHistoryPosition:%d",
 		flogging.GoRDef, mostRecentIdenticalHistoryPosition)
 
-	startBlockNumber := mostRecentIdenticalHistoryPosition
+	startBlockNumber := mostRecentIdenticalHistoryPosition + 1
 
 	//---------------------------------------------------------------------------
 	// 2. switch to the right checkpoint
 	//---------------------------------------------------------------------------
-	checkpointPosition, err := syncHandler.client.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
-	if err != nil {
-		logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
+	enableStatesyncTest := viper.GetBool("peer.enableStatesyncTest")
+	if !enableStatesyncTest {
 
-		return err
+		checkpointPosition, err := syncHandler.client.switchToBestCheckpoint(mostRecentIdenticalHistoryPosition)
+		if err != nil {
+			logger.Errorf("[%s]: InitiateSync, switchToBestCheckpoint err: %s", flogging.GoRDef, err)
+
+			return err
+		}
+		startBlockNumber = checkpointPosition + 1
+		logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
+			flogging.GoRDef, startBlockNumber, endBlockNumber)
 	}
-	startBlockNumber = checkpointPosition + 1
-	logger.Infof("[%s]: InitiateSync, switch done, startBlockNumber<%d>, endBlockNumber<%d>",
-		flogging.GoRDef, startBlockNumber, endBlockNumber)
-
 	//---------------------------------------------------------------------------
 	// 3. sync detals & blocks
 	//---------------------------------------------------------------------------
@@ -247,7 +249,7 @@ func (syncHandler *stateSyncHandler) fini() {
 
 func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMsg_Type, payloadMsg proto.Message) error {
 
-	logger.Debugf("<%s> to <%s>", msgType.String(), syncHandler.remotePeerIdName())
+	logger.Debugf("%s: <%s> to <%s>", flogging.GoRDef, msgType.String(), syncHandler.remotePeerIdName())
 	var data = []byte(nil)
 
 	if payloadMsg != nil {
@@ -301,7 +303,7 @@ func pickStreamHandler(h *stateSyncHandler) (*pb.StreamHandler, error) {
 
 func (syncHandler *stateSyncHandler) onRecvSyncMsg(e *fsm.Event, payloadMsg proto.Message) *pb.SyncMsg {
 
-	logger.Debugf("from <%s>", syncHandler.remotePeerIdName())
+	logger.Debugf("%s: from <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
 
 	if _, ok := e.Args[0].(*pb.SyncMsg); !ok {
 		e.Cancel(fmt.Errorf("Received unexpected sync message type"))
@@ -339,7 +341,7 @@ func (h *stateSyncHandler) enterIdle(e *fsm.Event) {
 }
 
 func (h *stateSyncHandler) dumpStateUpdate(stateUpdate string) {
-	logger.Debugf("StateSyncHandler Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
+	logger.Debugf("%s: StateSyncHandler Syncing state update: %s. correlationId<%d>, remotePeerId<%s>", flogging.GoRDef,
 		stateUpdate, 0, h.remotePeerIdName())
 }
 

@@ -208,12 +208,9 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 				start = targetBlockNumber
 			} else {
 				end = targetBlockNumber
-				if targetBlockNumber == 1 {
-					return 0, 0, fmt.Errorf("Has no identical state hash")
-				}
 			}
 
-			logger.Infof("start<%d>, end<%d>, targetBlockNumber<%d>, endBlockNumber<%d>",
+			logger.Debugf("start<%d>, end<%d>, targetBlockNumber<%d>, endBlockNumber<%d>",
 				start, end, targetBlockNumber, endBlockNumber)
 
 			// todo: handle timed out
@@ -531,7 +528,7 @@ func (sts *syncer) enterSyncStateDeltas(e *fsm.Event) {
 }
 
 func (sts *syncer) dumpStateUpdate(stateUpdate string) {
-	logger.Debugf("Syncer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>",
+	logger.Debugf("%s: Syncer Syncing state update: %s. correlationId<%d>, remotePeerId<%s>", flogging.GoRDef,
 		stateUpdate, sts.correlationId, sts.parent.remotePeerIdName())
 }
 

@@ -118,7 +118,7 @@ func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 
 	ver := gledger.GetVersion()
 	if ver >= 1 {
-		err = sanityCheckDB(db)
+		err = sanityCheck(db)
 		if err != nil {
 			return nil, err
 		}
@@ -131,15 +131,9 @@ func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 //and state), because we need to update both of them when commiting Txs while
 //inter-dbs transaction can't not be applied
 //
-func sanityCheckDB(db *db.OpenchainDB) error {
-	snapshot := db.GetSnapshot()
-	defer snapshot.Release()
-	return sanityCheck(snapshot)
-}
+func sanityCheck(odb *db.OpenchainDB) error {
 
-func sanityCheck(snapshot *db.DBSnapshot) error {
-
-	size, err := fetchBlockchainSizeFromSnapshot(snapshot)
+	size, err := fetchBlockchainSizeFromDB(odb)
 	if err != nil {
 		return fmt.Errorf("Fetch size fail: %s", err)
 	}
@@ -153,7 +147,7 @@ func sanityCheck(snapshot *db.DBSnapshot) error {
 
 	for n := size - 1; n != 0; n-- {
 
-		block, err := fetchRawBlockFromSnapshot(snapshot, n)
+		block, err := fetchRawBlockFromDB(odb, n)
 		if err != nil {
 			return fmt.Errorf("Fetch block fail: %s", err)
 		}
@@ -220,8 +214,9 @@ func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 	if ret := ledger.LedgerGlobal.AddGlobalState(parent, state); ret == nil {
 		return nil
 	} else {
+		//TODO: we should not need this sanitycheck here?
 		if _, ok := ret.(parentNotExistError); ok {
-			err := sanityCheckDB(ledger.blockchain.OpenchainDB)
+			err := sanityCheck(ledger.blockchain.OpenchainDB)
 			if err != nil {
 				return err
 			}

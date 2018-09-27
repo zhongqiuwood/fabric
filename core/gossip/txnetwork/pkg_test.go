@@ -22,9 +22,7 @@ func TestMain(m *testing.M) {
 }
 
 func initTestLedgerWrapper(tb testing.TB) *ledger.Ledger {
-	testDBWrapper.CleanDB(tb)
-	ledger, err := ledger.GetNewLedger(testDBWrapper.GetDB())
-	testutil.AssertNoError(tb, err, "Error while constructing ledger")
+	l := ledger.InitTestLedger(t)
 	gensisstate, err := ledger.GetCurrentStateHash()
 	testutil.AssertNoError(tb, err, "Error while get gensis state")
 	err = testDBWrapper.PutGenesisGlobalState(gensisstate)

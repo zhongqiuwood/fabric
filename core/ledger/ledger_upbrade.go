@@ -203,7 +203,14 @@ func reconstructGlobalState(odb *db.OpenchainDB) error {
 		return nil
 	}
 
-	var lastState []byte
+	//the "root" hash is arbitary, so we just add some marking here
+	//(differ from the makegensis module, which is just the "empty" statehash of ledger)
+	lastState := []byte("FABRIC_DB_UPGRADING_FROM_V0")
+	err = db.GetGlobalDBHandle().PutGenesisGlobalState(lastState)
+	if err != nil {
+		return fmt.Errorf("Put gensis global state fail: %s", err)
+	}
+
 	for n := uint64(1); n < size; n++ {
 
 		block, err := fetchRawBlockFromDB(odb, n)
@@ -214,11 +221,7 @@ func reconstructGlobalState(odb *db.OpenchainDB) error {
 			return fmt.Errorf("Block %d is not exist yet", n)
 		}
 
-		if lastState == nil {
-			err = db.GetGlobalDBHandle().PutGenesisGlobalState(block.GetStateHash())
-		} else {
-			db.GetGlobalDBHandle().AddGlobalState(lastState, block.GetStateHash())
-		}
+		err = db.GetGlobalDBHandle().AddGlobalState(lastState, block.GetStateHash())
 
 		if err != nil {
 			return fmt.Errorf("Put global state fail: %s", err)

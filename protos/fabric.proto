@@ -181,6 +181,8 @@ message Gossip {
 /*string is used to represent peerID*/        
         map<string, PeerState> data = 1;
         bytes epoch = 2;
+        bool isFull = 3;//indicate digest include all peers I have known
+        bool noResp = 4;//prohibit a "responding pulling" from far end
     }
 
     message Update{

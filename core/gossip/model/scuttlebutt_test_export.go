@@ -17,6 +17,10 @@ func (va testVClock) Less(v_in VClock) bool {
 
 func transVClock(i VClock) testVClock {
 
+	if i == nil {
+		return 0
+	}
+
 	v, ok := i.(testVClock)
 
 	if !ok {
@@ -168,6 +172,10 @@ func (p *testPeer) LocalUpdate(ks []string) {
 	}
 }
 
+func (p *testPeer) SetExtended() {
+	p.ss.Extended = true
+}
+
 func NewTestPeer(t *testing.T, id string) *testPeer {
 
 	s := &testStatus{
@@ -214,4 +222,13 @@ func DumpUpdate(u_in Update) (ret map[string]map[string]int) {
 
 	return
 
+}
+
+func DumpScuttlebutt(m *Model) *scuttlebuttStatus {
+
+	ret, ok := m.Status.(*scuttlebuttStatus)
+	if !ok {
+		panic("wrong code, not scuttlebutt status")
+	}
+	return ret
 }

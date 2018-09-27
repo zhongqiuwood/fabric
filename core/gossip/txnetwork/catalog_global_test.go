@@ -3,11 +3,13 @@ package txnetwork
 import (
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
+	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 	"testing"
 )
 
 func initGlobalStatus() *txNetworkGlobal {
+
 	return CreateTxNetworkGlobal()
 }
 
@@ -201,5 +203,27 @@ func TestTxGlobal(t *testing.T) {
 }
 
 func TestTxGlobalTruncate(t *testing.T) {
+
+}
+
+func TestAsAWhole(t *testing.T) {
+
+	stub := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
+
+	globalM := stub.GetCatalogHandler(globalCatName).Model()
+	globalS := model.DumpScuttlebutt(globalM)
+
+	txM := stub.GetCatalogHandler(hotTxCatName).Model()
+	txS := model.DumpScuttlebutt(txM)
+
+	t.Log("obtain statuses:", globalS, txS)
+	//now we control the models directly
+	if globalS.SelfID != txS.SelfID {
+		t.Fatal("Wrong selfid")
+	}
+
+	if globalS.Extended || !txS.Extended {
+		t.Fatal("Wrong configuration")
+	}
 
 }

@@ -28,7 +28,6 @@ import (
 	"github.com/abchain/fabric/events/producer"
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
-	"golang.org/x/net/context"
 
 	"github.com/abchain/fabric/protos"
 )
@@ -78,11 +77,12 @@ var (
 
 // Ledger - the struct for openchain ledger
 type Ledger struct {
+	*LedgerGlobal
 	blockchain       *blockchain
-	txpool           *transactionPool
 	state            *state.State
 	currentID        interface{}
 	currentStateHash []byte
+	dbVer            int
 }
 
 var ledger *Ledger
@@ -104,29 +104,42 @@ func GetLedger() (*Ledger, error) {
 // GetNewLedger - gives a reference to a new ledger TODO need better approach
 func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 
-	blockchain, err := newBlockchain(db)
+	gledger, err := GetLedgerGlobal()
 	if err != nil {
 		return nil, err
 	}
 
-	txpool, err := newTxPool()
+	blockchain, err := newBlockchain(db)
 	if err != nil {
 		return nil, err
 	}
 
 	state := state.NewState(db)
 
-	err = sanityCheck(db)
-	if err != nil {
-		return nil, err
+	ver := gledger.GetVersion()
+	if ver >= 1 {
+		err = sanityCheckDB(db)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	return &Ledger{blockchain, txpool, state, nil, nil}, nil
+	return &Ledger{gledger, blockchain, state, nil, nil, ver}, nil
 }
 
-func sanityCheck(odb *db.OpenchainDB) error {
+//we need this check and correction for handling the inconsistent between two db (global
+//and state), because we need to update both of them when commiting Txs while
+//inter-dbs transaction can't not be applied
+//
+func sanityCheckDB(db *db.OpenchainDB) error {
+	snapshot := db.GetSnapshot()
+	defer snapshot.Release()
+	return sanityCheck(snapshot)
+}
 
-	size, err := fetchBlockchainSizeFromDB(odb)
+func sanityCheck(snapshot *db.DBSnapshot) error {
+
+	size, err := fetchBlockchainSizeFromSnapshot(snapshot)
 	if err != nil {
 		return fmt.Errorf("Fetch size fail: %s", err)
 	}
@@ -140,7 +153,7 @@ func sanityCheck(odb *db.OpenchainDB) error {
 
 	for n := size - 1; n != 0; n-- {
 
-		block, err := fetchRawBlockFromDB(odb, n)
+		block, err := fetchRawBlockFromSnapshot(snapshot, n)
 		if err != nil {
 			return fmt.Errorf("Fetch block fail: %s", err)
 		}
@@ -161,19 +174,25 @@ func sanityCheck(odb *db.OpenchainDB) error {
 		}
 	}
 
-	//so we have all blocks missed in global state (except for the gensis)
-	//so we just start from a new gensis state
+	//**** we NEVER restruct the root of global states (it can be only updated in upgrade phase)
+	/*
+		if lastExisting == nil {
+			block, err := fetchRawBlockFromSnapshot(snapshot, n)
+			if err != nil {
+				return fmt.Errorf("Fetch gensis block fail: %s", err)
+			}
+			err = db.GetGlobalDBHandle().PutGenesisGlobalState(block.StateHash)
+			if err != nil {
+				return fmt.Errorf("Put genesis state fail: %s", err)
+			}
+		}
+	*/
 	if lastExisting == nil {
-		block, err := fetchRawBlockFromDB(odb, 0)
-		if err != nil {
-			return fmt.Errorf("Fetch gensis block fail: %s", err)
-		}
-		err = db.GetGlobalDBHandle().PutGenesisGlobalState(block.StateHash)
-		if err != nil {
-			return fmt.Errorf("Put genesis state fail: %s", err)
-		}
+		return fmt.Errorf("The whole blockchain is not match with global state")
 	}
 
+	//so we have all blocks missed in global state (except for the gensis)
+	//so we just start from a new gensis state
 	for len(noneExistingList) > 0 {
 
 		pos := len(noneExistingList) - 1
@@ -190,37 +209,28 @@ func sanityCheck(odb *db.OpenchainDB) error {
 	return nil
 }
 
+//overload AddGlobalState in ledgerGlobal
 func (ledger *Ledger) AddGlobalState(parent []byte, state []byte) error {
 
-	s := db.GetGlobalDBHandle().GetGlobalState(parent)
+	if ledger.dbVer < 1 {
+		ledgerLogger.Debugf("Omit global state for dbversion 0")
+		return nil
+	}
 
-	if s == nil {
-		ledgerLogger.Warningf("Try to add state in unexist global state [%x], we execute a sanity check",
-			parent)
-
-		//sanityCheck should be thread safe
-		err := sanityCheck(ledger.blockchain.OpenchainDB)
-		if err != nil {
-			ledgerLogger.Errorf("Sanity check fail in add globalstate: %s", err)
-			return err
+	if ret := ledger.LedgerGlobal.AddGlobalState(parent, state); ret == nil {
+		return nil
+	} else {
+		if _, ok := ret.(parentNotExistError); ok {
+			err := sanityCheckDB(ledger.blockchain.OpenchainDB)
+			if err != nil {
+				return err
+			}
+		} else {
+			return ret
 		}
 	}
 
-	err := db.GetGlobalDBHandle().AddGlobalState(parent, state)
-
-	if err != nil {
-		//should this the correct way to omit StateDuplicatedError?
-		if _, ok := err.(db.StateDuplicatedError); !ok {
-			ledgerLogger.Errorf("Add globalstate fail: %s", err)
-			return err
-		}
-
-		ledgerLogger.Warningf("Try to add existed globalstate: %x", state)
-	}
-
-	ledgerLogger.Infof("Add globalstate [%x]", state)
-	ledgerLogger.Infof("      on parent [%x]", parent)
-	return nil
+	return ledger.LedgerGlobal.AddGlobalState(parent, state)
 }
 
 /////////////////// Transaction-batch related methods ///////////////////////////////
@@ -466,10 +476,6 @@ func (ledger *Ledger) GetStateDelta(blockNumber uint64) (*statemgmt.StateDelta, 
 	return ledger.state.FetchStateDeltaFromDB(blockNumber)
 }
 
-func (ledger *Ledger) GetGlobalState(statehash []byte) *protos.GlobalState {
-	return db.GetGlobalDBHandle().GetGlobalState(statehash)
-}
-
 // ApplyStateDelta applies a state delta to the current state. This is an
 // in memory change only. You must call ledger.CommitStateDelta to persist
 // the change to the DB.
@@ -542,27 +548,6 @@ func (ledger *Ledger) DeleteALLStateKeysAndValues() error {
 /////////////////// transaction related methods /////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////
 
-func (ledger *Ledger) PoolTransactions(txs []*protos.Transaction) {
-	ledger.txpool.poolTransaction(txs)
-}
-
-func (ledger *Ledger) IteratePooledTransactions(ctx context.Context) (chan *protos.Transaction, error) {
-	return ledger.txpool.iteratePooledTx(ctx)
-}
-
-func (ledger *Ledger) PutTransactions(txs []*protos.Transaction) error {
-	return ledger.txpool.putTransaction(txs)
-}
-
-// GetTransactionByID return transaction by it's txId
-func (ledger *Ledger) GetTransactionByID(txID string) (*protos.Transaction, error) {
-	return ledger.txpool.getTransaction(txID)
-}
-
-func (ledger *Ledger) GetPooledTransaction(txID string) *protos.Transaction {
-	return ledger.txpool.getPooledTx(txID)
-}
-
 func (ledger *Ledger) GetCommitedTransaction(txID string) (*protos.Transaction, error) {
 	//we need to check if this tx is really come into block by query it in blockchain-index
 	bln, _, err := ledger.blockchain.indexer.fetchTransactionIndexByID(txID)
@@ -623,7 +608,7 @@ func (ledger *Ledger) GetBlockNumberByState(hash []byte) (uint64, error) {
 
 func (ledger *Ledger) GetBlockNumberByTxid(txID string) (uint64, uint64, error) {
 	//TODO: cache?
-	if _, ok := ledger.txpool.txPool[txID]; ok {
+	if tx := ledger.txpool.getPooledTx(txID); tx != nil {
 		return 0, 0, newLedgerError(ErrorTypeResourceNotFound, "ledger: tx is pending")
 	}
 

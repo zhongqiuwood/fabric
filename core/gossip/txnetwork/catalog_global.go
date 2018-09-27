@@ -30,10 +30,8 @@ func (s peerStatus) To() model.VClock {
 }
 
 func (s peerStatus) PickFrom(id string, d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
-	d, ok := d_in.(standardVClock)
-	if !ok {
-		panic("Type error, not standardVClock")
-	}
+
+	d := toStandardVClock(d_in)
 
 	//we only copy endorsment in first picking (with d is 0)
 	if uint64(d) == 0 {
@@ -183,6 +181,7 @@ func (g *txNetworkGlobal) RemovePeer(id string, _ model.ScuttlebuttPeerStatus) {
 	item, ok := g.lruIndex[id]
 
 	if ok {
+		logger.Infof("gossip peer [%s] is removed", id)
 		g.lruQueue.Remove(item)
 		delete(g.lruIndex, id)
 
@@ -283,6 +282,8 @@ func initNetworkStatus(stub *gossip.GossipStub) {
 
 	network := global.CreateNetwork(stub)
 	selfstatus := model.NewScuttlebuttStatus(network)
+	//use extended mode of scuttlebutt scheme, see code and wiki
+	selfstatus.Extended = true
 
 	selfstatus.SetSelfPeer(network.selfId, &peerStatus{network.QuerySelf()})
 	m := model.NewGossipModel(selfstatus)

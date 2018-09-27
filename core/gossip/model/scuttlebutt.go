@@ -19,12 +19,14 @@ type ScuttlebuttPeerStatus interface {
 type ScuttlebuttDigest interface {
 	GlobalDigest() Digest
 	PeerDigest() map[string]VClock
+	IsPartial() bool
 }
 
 //elements in scuttlebutt scheme include a per-peer data and global data
 type scuttlebuttDigest struct {
 	Digest
-	d map[string]VClock
+	d         map[string]VClock
+	isPartial bool
 }
 
 func NewscuttlebuttDigest(gd Digest) *scuttlebuttDigest {
@@ -35,8 +37,18 @@ func (d *scuttlebuttDigest) GlobalDigest() Digest { return d.Digest }
 
 func (d *scuttlebuttDigest) PeerDigest() map[string]VClock { return d.d }
 
+func (d *scuttlebuttDigest) IsPartial() bool { return d.isPartial }
+
 func (d *scuttlebuttDigest) SetPeerDigest(id string, dig VClock) {
 	d.d[id] = dig
+}
+
+//if user generate digest from model and do not remove some of them manually
+//the digest is always "full" (represent all peers we have known) so we
+//need to mark it as "partial" only when it has been altered
+//**** HOWEVER, we use "extended" flag to depress this for compitable with old codes*****
+func (d *scuttlebuttDigest) MarkDigestIsPartial() {
+	d.isPartial = true
 }
 
 type ScuttlebuttUpdate interface {
@@ -97,6 +109,8 @@ type scuttlebuttStatus struct {
 	ScuttlebuttStatus
 	Peers  map[string]ScuttlebuttPeerStatus
 	SelfID string
+	//depress the usage of extended protocol
+	Extended bool
 }
 
 // type noPeerStatusError string
@@ -122,7 +136,14 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 
 		pss, ok := s.Peers[id]
 		if !ok {
-			continue
+			//with extended protocol, update can carry unknown peers
+			if ss == nil {
+				continue
+			}
+			pss = s.NewPeer(id)
+			if pss == nil {
+				continue
+			}
 		}
 		//remove request
 		if ss == nil {
@@ -162,6 +183,11 @@ func (s *scuttlebuttStatus) GenDigest() Digest {
 
 	}
 
+	if !s.Extended {
+		//depress the flag
+		r.isPartial = true
+	}
+
 	return r
 }
 
@@ -179,32 +205,49 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 
 	digs := dig.PeerDigest()
 
-	//special handle self id
-	if dd, ok := digs[s.SelfID]; ok {
-		if ss, ok := s.Peers[""]; ok && dd.Less(ss.To()) {
-			if ssu, ssgu := ss.PickFrom("", dd, r.Update); ssu != nil {
-				r.u[s.SelfID] = ssu
-				if ssgu != nil {
-					r.Update = ssgu
-				}
-			}
-		}
-		delete(digs, s.SelfID)
-		defer func(v VClock) { digs[s.SelfID] = v }(dd)
-	}
-
 	for id, dd := range digs {
 		ss, ok := s.Peers[id]
 		if !ok {
-			ss = s.NewPeer(id)
-			if ss != nil {
-				s.Peers[id] = ss
+			if id != s.SelfID {
+				ss = s.NewPeer(id)
+				if ss != nil {
+					s.Peers[id] = ss
+				}
+			} else if ss, ok := s.Peers[""]; ok && dd.Less(ss.To()) {
+				//special handle self id
+				if ssu, ssgu := ss.PickFrom("", dd, r.Update); ssu != nil {
+					r.u[id] = ssu
+					if ssgu != nil {
+						r.Update = ssgu
+					}
+				}
 			}
+
 		} else if dd.Less(ss.To()) {
 			if ssu, ssgu := ss.PickFrom(id, dd, r.Update); ssu != nil {
 				r.u[id] = ssu
 				if ssgu != nil {
 					r.Update = ssgu
+				}
+			}
+		}
+	}
+
+	//protocol extended: handling other peer for the "full digest"
+	if !dig.IsPartial() {
+		var pid string
+		for id, ss := range s.Peers {
+			if id == "" {
+				pid = s.SelfID
+			} else {
+				pid = id
+			}
+			if _, ok := digs[pid]; !ok {
+				if ssu, ssgu := ss.PickFrom(id, nil, r.Update); ssu != nil {
+					r.u[pid] = ssu
+					if ssgu != nil {
+						r.Update = ssgu
+					}
 				}
 			}
 		}

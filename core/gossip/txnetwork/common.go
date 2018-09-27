@@ -4,8 +4,11 @@ import (
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/op/go-logging"
 	"sync"
 )
+
+var logger = logging.MustGetLogger("gossip_cat")
 
 type networkIndexs struct {
 	sync.Mutex
@@ -45,6 +48,19 @@ func (g *networkIndexs) CreateNetwork(stub *gossip.GossipStub) *txNetworkGlobal 
 //a standard vclock use the num field in protos
 type standardVClock uint64
 
+func toStandardVClock(v model.VClock) standardVClock {
+
+	if v == nil {
+		return standardVClock(0)
+	}
+
+	ret, ok := v.(standardVClock)
+	if !ok {
+		panic("Type error, not standardVClock")
+	}
+	return ret
+}
+
 func (a standardVClock) Less(b_in model.VClock) bool {
 	if b_in == nil {
 		return false
@@ -74,6 +90,7 @@ func toPbDigestStd(d model.ScuttlebuttDigest, epoch []byte) *pb.Gossip_Digest {
 		}
 	}
 
+	msg.IsFull = !d.IsPartial()
 	return msg
 }
 
@@ -85,6 +102,10 @@ func parsePbDigestStd(msg *pb.Gossip_Digest, core interface{}) model.Scuttlebutt
 		dout.SetPeerDigest(id, standardVClock(ps.GetNum()))
 	}
 
+	if !msg.GetIsFull() {
+		dout.MarkDigestIsPartial()
+	}
+
 	return dout
 }
 
@@ -94,6 +115,7 @@ func registerEvictFunc(target *txNetworkGlobal, catname string, m *model.Model) 
 
 		ru := model.NewscuttlebuttUpdate(nil)
 		ru.RemovePeers(ids)
+		logger.Debugf("Cat %s will remove peers %v", catname, ids)
 
 		go func(ru model.Update) {
 			err := m.RecvUpdate(ru)

@@ -376,6 +376,16 @@ func fetchRawBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (*protos.Block
 	return bytesToBlock(blockBytes)
 }
 
+func fetchRawBlockFromSnapshot(snapshot *db.DBSnapshot, blockNumber uint64) (*protos.Block, error) {
+
+	blockBytes, err := snapshot.GetFromBlockchainCFSnapshot(encodeBlockNumberDBKey(blockNumber))
+	if err != nil {
+		return nil, err
+	}
+
+	return bytesToBlock(blockBytes)
+}
+
 func fetchBlockFromDB(odb *db.OpenchainDB, blockNumber uint64) (blk *protos.Block, err error) {
 
 	blk, err = fetchRawBlockFromDB(odb, blockNumber)
@@ -394,6 +404,16 @@ func bytesToBlockNumber(bytes []byte) uint64 {
 		return 0
 	}
 	return util.DecodeToUint64(bytes)
+}
+
+func fetchBlockchainSizeFromSnapshot(snapshot *db.DBSnapshot) (uint64, error) {
+
+	bytes, err := snapshot.GetFromBlockchainCFSnapshot(blockCountKey)
+	if err != nil {
+		return 0, err
+	}
+
+	return bytesToBlockNumber(bytes), nil
 }
 
 func fetchBlockchainSizeFromDB(odb *db.OpenchainDB) (uint64, error) {

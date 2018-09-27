@@ -168,13 +168,6 @@ type txPoolGlobalUpdate struct {
 
 func (txPoolGlobalUpdate) Gossip_IsUpdateIn() bool { return true }
 
-type txPoolCommited struct {
-	txs       []string
-	commitedH uint64
-}
-
-func (*txPoolCommited) Gossip_IsUpdateIn() bool { return true }
-
 type txPoolGlobal struct {
 	*transactionPool
 	//	ind        map[string]*txMemPoolItem
@@ -222,12 +215,6 @@ func (g *txPoolGlobal) Update(u_in model.Update) error {
 	switch u := u_in.(type) {
 	case txPoolGlobalUpdate:
 		g.currentCpo = u.CatalogPeerPolicies
-	case *txPoolCommited:
-		// for _, txid := range u.txs {
-		// 	if i, ok := g.ind[txid]; ok {
-		// 		i.committedH = u.commitedH
-		// 	}
-		// }
 	default:
 		return fmt.Errorf("Type error, not expected update type")
 	}
@@ -244,6 +231,7 @@ func (g *txPoolGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 		return nil
 	}
 
+	logger.Debugf("txpool now know new peer [%s]", id)
 	ret := new(peerTxMemPool)
 	ret.reset(createPeerTxItem(peerStatus))
 	return ret
@@ -454,10 +442,7 @@ func (p *peerTxMemPool) To() model.VClock {
 
 func (p *peerTxMemPool) PickFrom(id string, d_in model.VClock, gu_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 
-	d, ok := d_in.(standardVClock)
-	if !ok {
-		panic("Type error, not Gossip_Digest_PeerState")
-	}
+	d := toStandardVClock(d_in)
 
 	gu, ok := gu_in.(txPoolGlobalUpdateOut)
 	if !ok {
@@ -618,7 +603,7 @@ func initHotTx(stub *gossip.GossipStub) {
 
 	l, err := ledger.GetLedger()
 	if err != nil {
-		logger.Errorf("Get error fail, could not create hotx tx catalogy")
+		logger.Errorf("Get ledger fail [%s], could not create hotx tx catalogy", err)
 		return
 	}
 

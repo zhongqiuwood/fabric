@@ -190,6 +190,46 @@ func reconstructBlockChain(odb *db.OpenchainDB) (err error, r *reconstructInfo) 
 	return
 }
 
+//scan current blockchain and build it as the ONLY global state route
+func reconstructGlobalState(odb *db.OpenchainDB) error {
+
+	size, err := fetchBlockchainSizeFromDB(odb)
+	if err != nil {
+		return fmt.Errorf("Fetch size fail: %s", err)
+	}
+
+	//if we have not block yet, skip
+	if size == 0 {
+		return nil
+	}
+
+	var lastState []byte
+	for n := uint64(1); n < size; n++ {
+
+		block, err := fetchRawBlockFromDB(odb, n)
+		if err != nil {
+			return fmt.Errorf("Fetch block fail: %s", err)
+		}
+		if block == nil {
+			return fmt.Errorf("Block %d is not exist yet", n)
+		}
+
+		if lastState == nil {
+			err = db.GetGlobalDBHandle().PutGenesisGlobalState(block.GetStateHash())
+		} else {
+			db.GetGlobalDBHandle().AddGlobalState(lastState, block.GetStateHash())
+		}
+
+		if err != nil {
+			return fmt.Errorf("Put global state fail: %s", err)
+		}
+
+		lastState = block.GetStateHash()
+	}
+
+	return nil
+}
+
 //This is a highly hacking for the legacy PBFT module and we should not use persistCF
 //for purpose of consensus in the later version:
 //Here we have a brief explanation according to the PBFT TOCS and pbft-persist.go:
@@ -272,6 +312,12 @@ func updateDBToV1(odb *db.OpenchainDB) error {
 	err, reconstruct := reconstructBlockChain(odb)
 	if err != nil {
 		return fmt.Errorf("Reconstruct blockchain fail: %s", err)
+	}
+
+	//db v0 have no global state so we need to rebuild it first
+	err = reconstructGlobalState(odb)
+	if err != nil {
+		return fmt.Errorf("Reconstruct globalstate fail: %s", err)
 	}
 
 	cf := db.GetGlobalDBHandle().GetCFByName(db.PersistCF)

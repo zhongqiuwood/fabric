@@ -408,7 +408,7 @@ func TestPeerTxPool(t *testing.T) {
 	}
 
 	//must also add global state ...
-	pstatus := global.addNewPeer(defaultPeer)
+	pstatus, _ := global.addNewPeer(defaultPeer)
 	pstatus.Digest = txchainBase.head.digest
 	pstatus.Endorsement = []byte{2, 3, 3}
 
@@ -537,7 +537,7 @@ func TestCatalogyHandler(t *testing.T) {
 	cache := newCache()
 	cache.Import(txcache)
 
-	pstatus := global.addNewPeer(testname)
+	pstatus, _ := global.addNewPeer(testname)
 	pstatus.Digest = txchainBase.head.digest
 	pstatus.Endorsement = []byte{2, 3, 3}
 

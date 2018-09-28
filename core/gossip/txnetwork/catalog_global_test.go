@@ -208,6 +208,13 @@ func TestTxGlobalTruncate(t *testing.T) {
 
 func TestAsAWhole(t *testing.T) {
 
+	l := initTestLedgerWrapper(t)
+	defer func(bits uint) {
+		SetPeerTxQueueLen(bits)
+	}(peerTxQueueLenBit)
+
+	SetPeerTxQueueLen(3)
+
 	stub := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
 
 	globalM := stub.GetCatalogHandler(globalCatName).Model()
@@ -215,6 +222,10 @@ func TestAsAWhole(t *testing.T) {
 
 	txM := stub.GetCatalogHandler(hotTxCatName).Model()
 	txS := model.DumpScuttlebutt(txM)
+	txG, ok := txS.ScuttlebuttStatus.(*txPoolGlobal)
+	if !ok {
+		panic("wrong code, not txPoolGlobal")
+	}
 
 	t.Log("obtain statuses:", globalS, txS)
 	//now we control the models directly
@@ -222,8 +233,80 @@ func TestAsAWhole(t *testing.T) {
 		t.Fatal("Wrong selfid")
 	}
 
-	if globalS.Extended || !txS.Extended {
+	if !globalS.Extended || txS.Extended {
 		t.Fatal("Wrong configuration")
 	}
 
+	//directly send update and insert new peer
+	newpeer := "abc"
+	peerDigest := make([]byte, TxDigestVerifyLen)
+	peerDigest[0] = 2
+	ud := model.NewscuttlebuttUpdate(nil)
+	ud.UpdatePeer(newpeer, peerStatus{createState(peerDigest, 6, true)})
+
+	err := globalM.RecvUpdate(ud)
+	if err != nil {
+		t.Fatal("recv update fail", err)
+	}
+
+	if _, ok := globalS.Peers[newpeer]; !ok {
+		t.Fatal("update fail", globalS.Peers)
+	}
+
+	tx1, _ := buildTestTx(t)
+	tx2, _ := buildTestTx(t)
+	tx1 = buildPrecededTx(peerDigest, tx1)
+	tx2 = buildPrecededTx(getTxDigest(tx1), tx2)
+
+	udt := txPeerUpdate{new(pb.HotTransactionBlock)}
+	udt.BeginSeries = 7 //peer begin from 7, so the cache just cross the border of dqueue
+	udt.Transactions = []*pb.Transaction{tx1, tx2}
+	ud = model.NewscuttlebuttUpdate(nil)
+	ud.UpdatePeer(newpeer, udt)
+
+	err = txM.RecvUpdate(ud)
+	if err != nil {
+		t.Fatal("recv tx update fail", err)
+	}
+
+	if _, ok := txS.Peers[newpeer]; !ok {
+		t.Fatal("update tx fail", txS.Peers)
+	}
+
+	udv := udt.To()
+	prv := txS.Peers[newpeer].To()
+	//clock must equal
+	if prv.Less(udv) || udv.Less(prv) {
+		t.Fatal("unmatch clock", udv, prv)
+	}
+
+	if tx := l.GetPooledTransaction(tx1.GetTxid()); tx == nil {
+		t.Fatal("tx1 is not pooled")
+	}
+
+	if tx := l.GetPooledTransaction(tx2.GetTxid()); tx == nil {
+		t.Fatal("tx2 is not pooled")
+	}
+
+	txcache := txG.AcquireCache(newpeer, 0, 0).peerTxCache
+	//cache for tx with series 7 and 8 just use two cache-row (0, 1)
+	if txcache[0] == nil || txcache[1] == nil {
+		t.Fatal("wrong cache position", txcache)
+	}
+
+	ud = model.NewscuttlebuttUpdate(nil)
+	ud.RemovePeers([]string{newpeer})
+
+	err = globalM.RecvUpdate(ud)
+	if err != nil {
+		t.Fatal("recv rm-update fail", err)
+	}
+
+	if _, ok := globalS.Peers[newpeer]; ok {
+		t.Fatal("peer not remove", globalS.Peers)
+	}
+
+	if _, ok := txS.Peers[newpeer]; ok {
+		t.Fatal("peer not remove", globalS.Peers)
+	}
 }

@@ -111,7 +111,8 @@ type txNetworkGlobal struct {
 	selfId    string
 	lruQueue  *list.List
 	lruIndex  map[string]*list.Element
-	onevicted []func([]string)
+	onupdate  []func(string, bool) error
+	onevicted []func([]string) error
 }
 
 func (*txNetworkGlobal) GenDigest() model.Digest                                { return nil }
@@ -133,50 +134,85 @@ func (g *txNetworkGlobal) truncateTailPeer(cnt int) (ret []string) {
 	return
 }
 
-func (g *txNetworkGlobal) addNewPeer(id string) *peerStatus {
+func handleUpdate(onupdate []func(string, bool) error, id string, created bool) {
+	ret := make(chan error)
+	go func() {
+		for _, f := range onupdate {
+			ret <- f(id, created)
+		}
+
+		close(ret)
+	}()
+
+	for e := range ret {
+		if e != nil {
+			logger.Errorf("Handle update function fail: %s", e)
+		}
+	}
+}
+
+func handleEvict(onevicted []func([]string) error, ids []string) {
+	ret := make(chan error)
+	go func() {
+		for _, f := range onevicted {
+			ret <- f(ids)
+		}
+
+		close(ret)
+	}()
+
+	for e := range ret {
+		if e != nil {
+			logger.Errorf("Handle evicted function fail: %s", e)
+		}
+	}
+}
+
+func (g *txNetworkGlobal) addNewPeer(id string) (ret *peerStatus, ids []string) {
 
 	if _, ok := g.lruIndex[id]; ok {
 		logger.Errorf("Request add duplicated peer [%s]", id)
-		return nil
+		return
 	}
 
 	if len(g.lruIndex) > g.maxPeers {
-		ids := g.truncateTailPeer(len(g.lruIndex) - g.maxPeers)
-		//notify evicted
-		for _, f := range g.onevicted {
-			f(ids)
-		}
+		ids = g.truncateTailPeer(len(g.lruIndex) - g.maxPeers)
 	}
 
 	//if we can't truncate anypeer, just give up
 	if len(g.lruIndex) > g.maxPeers {
 		logger.Errorf("Can't not add peer [%s], exceed limit %d", id, g.maxPeers)
-		return nil
+		return
 	}
 
-	ret := &peerStatusItem{
-		id,
-		new(pb.PeerTxState),
-		time.Time{},
-	}
-	g.lruIndex[id] = g.lruQueue.PushBack(ret)
+	ret = &peerStatus{new(pb.PeerTxState)}
+
+	g.lruIndex[id] = g.lruQueue.PushBack(
+		&peerStatusItem{
+			id,
+			ret.PeerTxState,
+			time.Time{},
+		})
 
 	logger.Infof("We have known new gossip peer [%s]", id)
 
-	return &peerStatus{ret.PeerTxState}
+	return
 }
 
 func (g *txNetworkGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 	g.Lock()
-	defer g.Unlock()
+	ret, rmids := g.addNewPeer(id)
+	f := g.onevicted
+	g.Unlock()
 
-	return g.addNewPeer(id)
+	if rmids != nil {
+		handleEvict(f, rmids)
+	}
+
+	return ret
 }
 
-func (g *txNetworkGlobal) RemovePeer(id string, _ model.ScuttlebuttPeerStatus) {
-
-	g.Lock()
-	defer g.Unlock()
+func (g *txNetworkGlobal) removePeer(id string) bool {
 
 	item, ok := g.lruIndex[id]
 
@@ -184,10 +220,19 @@ func (g *txNetworkGlobal) RemovePeer(id string, _ model.ScuttlebuttPeerStatus) {
 		logger.Infof("gossip peer [%s] is removed", id)
 		g.lruQueue.Remove(item)
 		delete(g.lruIndex, id)
+	}
+	return ok
+}
 
-		for _, f := range g.onevicted {
-			f([]string{id})
-		}
+func (g *txNetworkGlobal) RemovePeer(id string, _ model.ScuttlebuttPeerStatus) {
+
+	g.Lock()
+	ok := g.removePeer(id)
+	f := g.onevicted
+	g.Unlock()
+
+	if ok {
+		handleEvict(f, []string{id})
 	}
 }
 
@@ -221,10 +266,16 @@ func (g *txNetworkGlobal) BlockPeer(id string) {
 	defer g.RUnlock()
 }
 
-func (g *txNetworkGlobal) RegNotify(f func([]string)) {
+func (g *txNetworkGlobal) RegNotify(f func([]string) error) {
 	g.Lock()
 	defer g.Unlock()
 	g.onevicted = append(g.onevicted, f)
+}
+
+func (g *txNetworkGlobal) RegUpdateNotify(f func(string, bool) error) {
+	g.Lock()
+	defer g.Unlock()
+	g.onupdate = append(g.onupdate, f)
 }
 
 func CreateTxNetworkGlobal() *txNetworkGlobal {

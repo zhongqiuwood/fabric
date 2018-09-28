@@ -111,18 +111,17 @@ func parsePbDigestStd(msg *pb.Gossip_Digest, core interface{}) model.Scuttlebutt
 
 //notify remove any peer in a scuttlebutt model
 func registerEvictFunc(target *txNetworkGlobal, catname string, m *model.Model) {
-	target.RegNotify(func(ids []string) {
+	target.RegNotify(func(ids []string) error {
 
 		ru := model.NewscuttlebuttUpdate(nil)
 		ru.RemovePeers(ids)
 		logger.Debugf("Cat %s will remove peers %v", catname, ids)
 
-		go func(ru model.Update) {
-			err := m.RecvUpdate(ru)
-			if err != nil {
-				logger.Errorf("Cat %s remove peer fail: %s", catname, err)
-			}
-		}(ru)
+		err := m.RecvUpdate(ru)
+		if err != nil {
+			logger.Errorf("Cat %s remove peer fail: %s", catname, err)
+		}
+		return err
 
 	})
 }

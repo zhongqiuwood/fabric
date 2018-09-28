@@ -1,7 +1,6 @@
 package txnetwork
 
 import (
-	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/abchain/fabric/core/util"
@@ -12,7 +11,6 @@ import (
 )
 
 var testParams []string
-var testDBWrapper = db.NewTestDBWrapper()
 
 func TestMain(m *testing.M) {
 	testParams = testutil.ParseTestParams()
@@ -21,13 +19,8 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func initTestLedgerWrapper(tb testing.TB) *ledger.Ledger {
-	l := ledger.InitTestLedger(t)
-	gensisstate, err := ledger.GetCurrentStateHash()
-	testutil.AssertNoError(tb, err, "Error while get gensis state")
-	err = testDBWrapper.PutGenesisGlobalState(gensisstate)
-	testutil.AssertNoError(tb, err, "Error while add gensis state")
-	return ledger
+func initTestLedgerWrapper(t *testing.T) *ledger.Ledger {
+	return ledger.InitTestLedger(t)
 }
 
 func buildTestTx(t *testing.T) (*protos.Transaction, string) {

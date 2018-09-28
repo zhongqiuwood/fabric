@@ -269,7 +269,7 @@ func (u txPeerUpdate) To() model.VClock {
 		return nil
 	}
 
-	return standardVClock(u.BeginSeries + uint64(len(u.Transactions)))
+	return standardVClock(u.BeginSeries + uint64(len(u.Transactions)) - 1)
 }
 
 func getLiteTx(tx *pb.Transaction) *pb.Transaction {
@@ -546,6 +546,7 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 	// } else {
 	// 	p.purge(id, peerStatus.GetNum(), g)
 	// }
+	logger.Debugf("peer %s try to updated %d incoming txs from series %d", id, len(u.Transactions), u.BeginSeries)
 
 	var err error
 	u, err = u.getRef(p.lastSeries()+1).completeTxs(g.ledger, g.preH)
@@ -557,6 +558,7 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 	if err != nil {
 		return err
 	} else if inTxs == nil {
+		logger.Infof("peer %s update nothing in %d txs and quit", id, len(u.Transactions))
 		return nil
 	}
 
@@ -579,6 +581,7 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 
 	}
 
+	logger.Debugf("peer %s have updated %d txs", id, mergeCnt)
 	// var mergeW uint
 	// if len(u.Transactions) < int(cat_hottx_one_merge_weight) {
 	// 	mergeW = uint(len(u.Transactions))

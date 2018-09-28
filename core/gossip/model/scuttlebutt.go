@@ -144,6 +144,7 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 			if pss == nil {
 				continue
 			}
+			s.Peers[id] = pss
 		}
 		//remove request
 		if ss == nil {

@@ -27,11 +27,22 @@ var testDBWrapper = db.NewTestDBWrapper()
 
 //InitTestLedger provides a ledger for testing. This method creates a fresh db and constructs a ledger instance on that.
 func InitTestLedger(t *testing.T) *Ledger {
+
+	//"exhaust" the once var in ledger so we can replace the singleton later
+	once.Do(func() {})
+	ledger_gOnce.Do(func() {})
 	testDBWrapper.CleanDB(t)
-	_, err := GetLedger()
-	testutil.AssertNoError(t, err, "Error while constructing ledger")
+	txpool, err := newTxPool()
+	testutil.AssertNoError(t, err, "Error while constructing txpool")
+	//replace global ledger singleton
+	ledger_g = &LedgerGlobal{txpool}
 	newLedger, err := GetNewLedger(testDBWrapper.GetDB())
 	testutil.AssertNoError(t, err, "Error while constructing ledger")
+	gensisstate, err := newLedger.GetCurrentStateHash()
+	testutil.AssertNoError(t, err, "Error while get gensis state")
+	err = testDBWrapper.PutGenesisGlobalState(gensisstate)
+	testutil.AssertNoError(t, err, "Error while add gensis state")
+	//replace ledger singleton
 	ledger = newLedger
 	return newLedger
 }

@@ -21,7 +21,7 @@ import (
 	"net"
 	"os"
 	"testing"
-	"time"
+	_ "time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -42,7 +42,7 @@ func TestGenesis(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:50303"
+	peerAddress := "127.0.0.1:50303"
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -65,8 +65,8 @@ func TestGenesis(t *testing.T) {
 		return &protos.PeerEndpoint{ID: &protos.PeerID{Name: "testpeer"}, Address: peerAddress}, nil
 	}
 
-	ccStartupTimeout := time.Duration(30000) * time.Millisecond
-	protos.RegisterChaincodeSupportServer(grpcServer, chaincode.NewChaincodeSupport(chaincode.DefaultChain, getPeerEndpoint, false, ccStartupTimeout, nil))
+	//ccStartupTimeout := time.Duration(30000) * time.Millisecond
+	protos.RegisterChaincodeSupportServer(grpcServer, chaincode.NewChaincodeSupport(chaincode.DefaultChain, getPeerEndpoint, false, nil))
 
 	go grpcServer.Serve(lis)
 

@@ -58,6 +58,18 @@ func (t *tokenBucket) Available(limit int) int {
 	return limit - t.quota
 }
 
+type PeerPolicies interface {
+	GetId() string
+	IsPolicyViolated() error
+	RecvUpdate(int)
+	RecordViolation(e error)
+	AllowRecvUpdate() bool
+	PushUpdateQuota() int
+	PushUpdate(int)
+	ScoringPeer(int, uint)
+	ResetIntervals(int)
+}
+
 type unlimitPolicies string
 
 func (s unlimitPolicies) GetId() string { return string(s) }
@@ -175,13 +187,14 @@ var DefaultInterval = int64(60)
 var DefaultErrorLimit = 3             //peer is allowed to violate policy 3 times/min
 var DefaultMsgSize = 1024 * 1024 * 16 //msg limit is 16kB/s
 
-func NewPeerPolicy(id string) (ret *peerPolicies) {
-	ret = &peerPolicies{id: id}
+func NewPeerPolicy(id string) PeerPolicies {
+	ret := &peerPolicies{id: id}
 
 	ret.errorLimit = DefaultErrorLimit
 	ret.messageLimit = DefaultMsgSize
 	ret.recvQuota.Interval = DefaultInterval
 	ret.sentQuota.Interval = DefaultInterval
 	ret.errorControl.Interval = DefaultInterval
-	return
+
+	return ret
 }

@@ -6,7 +6,7 @@ import (
 
 type peerPoliciesWrapper struct {
 	*pb.PeerID
-	*peerPolicies
+	PeerPolicies
 }
 
 func (w peerPoliciesWrapper) GetPeer() *pb.PeerID {

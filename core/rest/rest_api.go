@@ -53,14 +53,14 @@ var restLogger = logging.MustGetLogger("rest")
 // underlying ServerOpenchain object. serverDevops is a variable that holds
 // the pointer to the underlying Devops object. This is necessary due to
 // how the gocraft/web package implements context initialization.
-var serverOpenchain *ServerOpenchain
+var serverOpenchain *service.ServerOpenchain
 var serverDevops pb.DevopsServer
 
 // ServerOpenchainREST defines the Openchain REST service object. It exposes
 // the methods available on the ServerOpenchain service and the Devops service
 // through a REST API.
 type ServerOpenchainREST struct {
-	server *ServerOpenchain
+	server *service.ServerOpenchain
 	devops pb.DevopsServer
 }
 
@@ -670,9 +670,9 @@ func (s *ServerOpenchainREST) GetBlockByNumber(rw web.ResponseWriter, req *web.R
 	// Retrieve Block from blockchain
 	block, err := s.server.GetBlockByNumber(context.Background(), &pb.BlockNumber{Number: blockNumber})
 
-	if (err == ErrNotFound) || (err == nil && block == nil) {
+	if (err == service.ErrNotFound) || (err == nil && block == nil) {
 		rw.WriteHeader(http.StatusNotFound)
-		encoder.Encode(restResult{Error: ErrNotFound.Error()})
+		encoder.Encode(restResult{Error: service.ErrNotFound.Error()})
 		return
 	}
 
@@ -700,7 +700,7 @@ func (s *ServerOpenchainREST) GetTransactionByID(rw web.ResponseWriter, req *web
 	// Check for Error
 	if err != nil {
 		switch err {
-		case ErrNotFound:
+		case service.ErrNotFound:
 			rw.WriteHeader(http.StatusNotFound)
 			encoder.Encode(restResult{Error: fmt.Sprintf("Transaction %s is not found.", txID)})
 		default:
@@ -1747,7 +1747,7 @@ func buildOpenchainRESTRouter() *web.Router {
 
 // StartOpenchainRESTServer initializes the REST service and adds the required
 // middleware and routes.
-func StartOpenchainRESTServer(server *ServerOpenchain, devops *service.Devops) {
+func StartOpenchainRESTServer(server *service.ServerOpenchain, devops *service.Devops) {
 	// Initialize the REST service object
 	restLogger.Infof("Initializing the REST service on %s, TLS is %s.", viper.GetString("rest.address"), (map[bool]string{true: "enabled", false: "disabled"})[comm.TLSEnabled()])
 

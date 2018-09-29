@@ -14,7 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 */
 
-package rest
+package service
 
 import (
 	"bytes"
@@ -22,10 +22,10 @@ import (
 	"os"
 	"testing"
 
-	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 )
@@ -36,10 +36,10 @@ func TestMain(m *testing.M) {
 }
 
 func setupTestConfig() {
-	viper.SetConfigName("rest_test") // name of config file (without extension)
-	viper.AddConfigPath(".")         // path to look for the config file in
-	err := viper.ReadInConfig()      // Find and read the config file
-	if err != nil {                  // Handle errors reading the config file
+	viper.SetConfigName("service") // name of config file (without extension)
+	viper.AddConfigPath(".")       // path to look for the config file in
+	err := viper.ReadInConfig()    // Find and read the config file
+	if err != nil {                // Handle errors reading the config file
 		panic(fmt.Errorf("Fatal error config file: %s \n", err))
 	}
 }

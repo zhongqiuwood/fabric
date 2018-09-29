@@ -183,7 +183,7 @@ func StartNode(postrun func() error) error {
 	//pb.RegisterDevopsServer(grpcServer, serverDevops)
 
 	// Register the ServerOpenchain server
-	serverOpenchain, err := rest.NewOpenchainServerWithPeerInfo(peerServer)
+	serverOpenchain, err := service.NewOpenchainServerWithPeerInfo(peerServer)
 	if err != nil {
 		err = fmt.Errorf("Error creating OpenchainServer: %s", err)
 		return err

@@ -29,7 +29,7 @@ import (
 
 	_ "net/http/pprof"
 
-	"github.com/abchain/fabric/core"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/peer/chaincode"
@@ -52,7 +52,7 @@ var mainCmd = &cobra.Command{
 		peerCommand := getPeerCommandFromCobraCommand(cmd)
 		flogging.LoggingInit(peerCommand)
 
-		return core.CacheConfiguration()
+		return config.CacheConfiguration()
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		if versionFlag {

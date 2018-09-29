@@ -49,7 +49,7 @@ type scuttlebuttDigest struct {
 }
 
 func NewscuttlebuttDigest(gd Digest) *scuttlebuttDigest {
-	return &scuttlebuttDigest{Digest: gd, d: make(map[string]VClock)}
+	return &scuttlebuttDigest{Digest: gd, d: make(map[string]VClock), isPartial: true}
 }
 
 func (d *scuttlebuttDigest) GlobalDigest() Digest { return d.Digest }
@@ -62,10 +62,6 @@ func (d *scuttlebuttDigest) SetPeerDigest(id string, dig VClock) {
 	d.d[id] = dig
 }
 
-//if user generate digest from model and do not remove some of them manually
-//the digest is always "full" (represent all peers we have known) so we
-//need to mark it as "partial" only when it has been altered
-//**** HOWEVER, we use "extended" flag to depress this for compitable with old codes*****
 func (d *scuttlebuttDigest) MarkDigestIsPartial() {
 	d.isPartial = true
 }
@@ -192,6 +188,9 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 	return nil
 }
 
+//if digest generate from model the digest is always "full" (represent all peers we have known)
+// so we mark it as "not partial", it was only unmarked when it has been altered
+//**** HOWEVER, we use "extended" flag to depress this for compitable with old codes*****
 func (s *scuttlebuttStatus) GenDigest() Digest {
 	r := NewscuttlebuttDigest(s.ScuttlebuttStatus.GenDigest())
 	for id, ss := range s.Peers {
@@ -203,9 +202,8 @@ func (s *scuttlebuttStatus) GenDigest() Digest {
 
 	}
 
-	if !s.Extended {
-		//depress the flag
-		r.isPartial = true
+	if s.Extended {
+		r.isPartial = false
 	}
 
 	return r

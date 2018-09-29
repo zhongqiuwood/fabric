@@ -127,8 +127,6 @@ func standardUpdateFunc(catname string, m *model.Model) func(string, bool) error
 			logger.Debugf("Cat %s will add peer %s", catname, id)
 			dig := model.NewscuttlebuttDigest(nil)
 			dig.SetPeerDigest(id, model.BottomClock)
-			//it was definetly a "partial" digest
-			dig.MarkDigestIsPartial()
 
 			_ = m.RecvPullDigest(dig)
 			//should generate nothing on update, we may also detect it

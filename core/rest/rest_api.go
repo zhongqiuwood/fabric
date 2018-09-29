@@ -36,9 +36,9 @@ import (
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 
-	core "github.com/abchain/fabric/core"
 	"github.com/abchain/fabric/core/chaincode"
 	"github.com/abchain/fabric/core/comm"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/crypto/primitives"
 	"github.com/abchain/fabric/core/service"
@@ -421,7 +421,7 @@ func (s *ServerOpenchainREST) GetEnrollmentCert(rw web.ResponseWriter, req *web.
 	encoder := json.NewEncoder(rw)
 
 	// If security is enabled, initialize the crypto client
-	if core.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		if restLogger.IsEnabledFor(logging.DEBUG) {
 			restLogger.Debugf("Initializing secure client using context '%s'", enrollmentID)
 		}
@@ -545,7 +545,7 @@ func (s *ServerOpenchainREST) GetTransactionCert(rw web.ResponseWriter, req *web
 	}
 
 	// If security is enabled, initialize the crypto client
-	if core.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		if restLogger.IsEnabledFor(logging.DEBUG) {
 			restLogger.Debugf("Initializing secure client using context '%s'", enrollmentID)
 		}
@@ -795,7 +795,7 @@ func (s *ServerOpenchainREST) Deploy(rw web.ResponseWriter, req *web.Request) {
 	}
 
 	// If security is enabled, add client login token
-	if core.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		chaincodeUsr := spec.SecureContext
 		if chaincodeUsr == "" {
 			rw.WriteHeader(http.StatusBadRequest)
@@ -936,7 +936,7 @@ func (s *ServerOpenchainREST) Invoke(rw web.ResponseWriter, req *web.Request) {
 	}
 
 	// If security is enabled, add client login token
-	if core.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		chaincodeUsr := spec.ChaincodeSpec.SecureContext
 		if chaincodeUsr == "" {
 			rw.WriteHeader(http.StatusBadRequest)
@@ -1078,7 +1078,7 @@ func (s *ServerOpenchainREST) Query(rw web.ResponseWriter, req *web.Request) {
 	}
 
 	// If security is enabled, add client login token
-	if core.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		chaincodeUsr := spec.ChaincodeSpec.SecureContext
 		if chaincodeUsr == "" {
 			rw.WriteHeader(http.StatusBadRequest)
@@ -1411,7 +1411,7 @@ func (s *ServerOpenchainREST) processChaincodeDeploy(spec *pb.ChaincodeSpec) rpc
 	// Check if security is enabled
 	//
 
-	if core.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		// User registrationID must be present inside request payload with security enabled
 		chaincodeUsr := spec.SecureContext
 		if chaincodeUsr == "" {
@@ -1535,7 +1535,7 @@ func (s *ServerOpenchainREST) processChaincodeInvokeOrQuery(method string, spec 
 	// Check if security is enabled
 	//
 
-	if core.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		// User registrationID must be present inside request payload with security enabled
 		chaincodeUsr := spec.ChaincodeSpec.SecureContext
 		if chaincodeUsr == "" {

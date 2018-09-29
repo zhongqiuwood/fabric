@@ -172,7 +172,7 @@ func (d *Handler) beforeHello(e *fsm.Event) {
 	peerLogger.Debugf("Received %s from endpoint=%s", e.Event, helloMessage)
 
 	// If security enabled, need to verify the signature on the hello message
-	if SecurityEnabled() {
+	if securityEnabled() {
 		if err := d.Coordinator.GetSecHelper().Verify(helloMessage.PeerEndpoint.PkiID, msg.Signature, msg.Payload); err != nil {
 			e.Cancel(fmt.Errorf("Error Verifying signature for received HelloMessage: %s", err))
 			return

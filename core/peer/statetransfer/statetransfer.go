@@ -23,8 +23,6 @@ import (
 	"sort"
 	"time"
 
-	_ "github.com/abchain/fabric/core" // Logging format init
-
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/peer"

@@ -24,7 +24,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/abchain/fabric/core"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/peer/common"
 	"github.com/abchain/fabric/peer/util"
 	pb "github.com/abchain/fabric/protos"
@@ -58,7 +58,7 @@ func getChaincodeSpecification(cmd *cobra.Command) (*pb.ChaincodeSpec, error) {
 		Attributes:  attributes,
 	}
 	// If security is enabled, add client login token
-	if core.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		if chaincodeUsr == common.UndefinedParamValue {
 			return spec, errors.New("Must supply username for chaincode when security is enabled")
 		}

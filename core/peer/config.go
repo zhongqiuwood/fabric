@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"github.com/abchain/fabric/core/comm"
+	"github.com/abchain/fabric/core/config"
 	"github.com/spf13/viper"
 
 	pb "github.com/abchain/fabric/protos"
@@ -55,12 +56,6 @@ var syncStateSnapshotChannelSize int
 var syncStateDeltasChannelSize int
 var syncBlocksChannelSize int
 var validatorEnabled bool
-
-// Note: There is some kind of circular import issue that prevents us from
-// importing the "core" package into the "peer" package. The
-// 'peer.SecurityEnabled' bit is a duplicate of the 'core.SecurityEnabled'
-// bit.
-var securityEnabled bool
 
 // CacheConfiguration computes and caches commonly-used constants and
 // computed constants as package variables. Routines which were previously
@@ -128,8 +123,6 @@ func CacheConfiguration() (err error) {
 	syncStateDeltasChannelSize = viper.GetInt("peer.sync.state.deltas.channelSize")
 	syncBlocksChannelSize = viper.GetInt("peer.sync.blocks.channelSize")
 	validatorEnabled = viper.GetBool("peer.validator.enabled")
-
-	securityEnabled = viper.GetBool("security.enabled")
 
 	configurationCached = true
 
@@ -199,9 +192,6 @@ func ValidatorEnabled() bool {
 }
 
 // SecurityEnabled returns the securityEnabled property from cached configuration
-func SecurityEnabled() bool {
-	if !configurationCached {
-		cacheConfiguration()
-	}
-	return securityEnabled
+func securityEnabled() bool {
+	return config.SecurityEnabled()
 }

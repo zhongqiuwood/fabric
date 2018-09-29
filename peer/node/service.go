@@ -1,11 +1,10 @@
-package core
+package node
 
 import (
 	"errors"
 	"fmt"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
-	_ "golang.org/x/net/context"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"

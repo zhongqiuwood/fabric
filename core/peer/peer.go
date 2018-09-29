@@ -234,7 +234,7 @@ type Engine interface {
 // 	peer.secHelper = secHelperFunc()
 
 // 	// Install security object for peer
-// 	if SecurityEnabled() {
+// 	if securityEnabled() {
 // 		if peer.secHelper == nil {
 // 			return nil, fmt.Errorf("Security helper not provided")
 // 		}
@@ -293,7 +293,7 @@ func NewPeerWithEngine(secHelperFunc func() crypto.Peer, engFactory EngineFactor
 	peer.secHelper = secHelperFunc()
 
 	// Install security object for peer
-	if SecurityEnabled() {
+	if securityEnabled() {
 		if peer.secHelper == nil {
 			return nil, fmt.Errorf("Security helper not provided")
 		}
@@ -856,7 +856,7 @@ func (p *Impl) GetPeerEndpoint() (*pb.PeerEndpoint, error) {
 	var ep pb.PeerEndpoint
 	//we use an partial copy of the cached endpoint
 	ep = *p.self
-	if SecurityEnabled() {
+	if securityEnabled() {
 		// Set the PkiID on the PeerEndpoint if security is enabled
 		ep.PkiID = p.GetSecHelper().GetID()
 	}
@@ -991,7 +991,7 @@ func (p *Impl) GetSecHelper() crypto.Peer {
 
 // signMessage modifies the passed in Message by setting the Signature based upon the Payload.
 func (p *Impl) signMessageMutating(msg *pb.Message) error {
-	if SecurityEnabled() {
+	if securityEnabled() {
 		sig, err := p.secHelper.Sign(msg.Payload)
 		if err != nil {
 			return fmt.Errorf("Error signing Openchain Message: %s", err)

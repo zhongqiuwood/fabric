@@ -26,7 +26,6 @@ import (
 
 	"github.com/abchain/fabric/consensus"
 	"github.com/abchain/fabric/consensus/util/events"
-	_ "github.com/abchain/fabric/core" // Needed for logging format init
 	"github.com/op/go-logging"
 
 	"github.com/golang/protobuf/proto"
@@ -140,7 +139,7 @@ type pbftCore struct {
 	chkpts        map[uint64]string // state checkpoints; map lastExec to global hash
 	pset          map[uint64]*ViewChange_PQ
 	qset          map[qidx]*ViewChange_PQ
-	oldViewCnt 	  map[vcidx]uint64
+	oldViewCnt    map[vcidx]uint64
 
 	skipInProgress    bool               // Set when we have detected a fall behind scenario until we pick a new starting point
 	stateTransferring bool               // Set when state transfer is executing

@@ -27,9 +27,9 @@ import (
 	"syscall"
 
 	"github.com/abchain/fabric/consensus/helper"
-	"github.com/abchain/fabric/core"
 	"github.com/abchain/fabric/core/chaincode"
 	"github.com/abchain/fabric/core/comm"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/embedded_chaincode"
@@ -110,9 +110,9 @@ func StartNode(postrun func() error) error {
 		grpclog.Fatalf("Failed to create ehub server: %v", err)
 	}
 
-	logger.Infof("Security enabled status: %t", core.SecurityEnabled())
+	logger.Infof("Security enabled status: %t", config.SecurityEnabled())
 	if viper.GetBool("security.privacy") {
-		if core.SecurityEnabled() {
+		if config.SecurityEnabled() {
 			logger.Infof("Privacy enabled status: true")
 		} else {
 			panic(errors.New("Privacy cannot be enabled as requested because security is disabled"))
@@ -220,7 +220,7 @@ func StartNode(postrun func() error) error {
 	}()
 
 	fsrv := func(addr string, tls bool, serv ...func(*grpc.Server)) {
-		srverr := core.StartService(addr, tls, serv...)
+		srverr := StartService(addr, tls, serv...)
 		if srverr != nil {
 			srverr = fmt.Errorf("fabric service exited with error: %s", srverr)
 		} else {
@@ -263,7 +263,7 @@ func StartNode(postrun func() error) error {
 	}
 
 	// TODO: we still not clear other serverice like rest and ehub ...
-	defer core.StopServices()
+	defer StopServices()
 
 	if postrun != nil {
 		err = postrun()
@@ -312,7 +312,7 @@ func createEventHubServer() (net.Listener, *grpc.Server, error) {
 		var opts []grpc.ServerOption
 
 		if comm.TLSEnabled() {
-			creds, err := core.GetServiceTLSCred()
+			creds, err := GetServiceTLSCred()
 			if err != nil {
 				return nil, nil, fmt.Errorf("Failed to generate credentials %v", err)
 			}
@@ -338,7 +338,7 @@ func getSecHelper() (crypto.Peer, error) {
 	var secHelper crypto.Peer
 	var err error
 	once.Do(func() {
-		if core.SecurityEnabled() {
+		if config.SecurityEnabled() {
 			enrollID := viper.GetString("security.enrollID")
 			enrollSecret := viper.GetString("security.enrollSecret")
 			if peer.ValidatorEnabled() {

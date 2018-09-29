@@ -31,6 +31,7 @@ import (
 
 	"github.com/abchain/fabric/core/chaincode"
 	"github.com/abchain/fabric/core/chaincode/platforms"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/container"
 	crypto "github.com/abchain/fabric/core/crypto"
 	ecc "github.com/abchain/fabric/core/embedded_chaincode/api"
@@ -229,7 +230,7 @@ func (d *Devops) Deploy(ctx context.Context, spec *pb.ChaincodeSpec) (*pb.Chainc
 	var tx *pb.Transaction
 	var sec crypto.Client
 
-	if peer.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
 			clisrvLogger.Debugf("Initializing secure devops using context %s", spec.SecureContext)
 		}
@@ -311,7 +312,7 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	var transaction *pb.Transaction
 	var err error
 	var sec crypto.Client
-	if peer.SecurityEnabled() {
+	if config.SecurityEnabled() {
 		if clisrvLogger.IsEnabledFor(logging.DEBUG) {
 			clisrvLogger.Debugf("Initializing secure devops using context %s", chaincodeInvocationSpec.ChaincodeSpec.SecureContext)
 		}

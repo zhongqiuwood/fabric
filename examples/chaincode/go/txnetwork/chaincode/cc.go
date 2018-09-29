@@ -77,6 +77,12 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 		}
 		return []byte(resp), nil
 
+	} else if function == "count" {
+		l, err := ledger.GetLedger()
+		if err != nil {
+			return nil, fmt.Errorf("acquire ledger fail: %s", err)
+		}
+		return []byte(fmt.Sprintf("%d", l.GetPooledTxCount())), nil
 	} else if function != "query" {
 		return nil, errors.New("Invalid query function name. Expecting \"query\"")
 	}

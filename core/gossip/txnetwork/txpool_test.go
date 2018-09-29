@@ -31,7 +31,7 @@ func TestBaseSettings(t *testing.T) {
 
 func TestTxCache(t *testing.T) {
 
-	queueLen := peerTxQueueMask + 1
+	queueLen := peerTxQueueLen
 	queueLenPart := queueLen / 4
 	if queueLenPart <= 3 {
 		t.Fatal("We have a too small queue len", queueLen)
@@ -174,7 +174,7 @@ func TestCache(t *testing.T) {
 
 	txpool := newTransactionPool(ledger)
 
-	queueLen := peerTxQueueMask + 1
+	queueLen := peerTxQueueLen
 	queueLenPart := queueLen / 4
 	if queueLenPart < 3 {
 		t.Fatal("We have a too small queue len", queueLen)

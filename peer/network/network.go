@@ -31,6 +31,7 @@ var logger = logging.MustGetLogger("networkCmd")
 func Cmd() *cobra.Command {
 	networkCmd.AddCommand(loginCmd())
 	networkCmd.AddCommand(listCmd())
+	networkCmd.AddCommand(statusCmd())
 
 	return networkCmd
 }

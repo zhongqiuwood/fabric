@@ -85,9 +85,9 @@ logging:
     #peer: warning
 
     node:      info:txhandler,gossip,gossip_cat=debug:db,crypto,buckettree=warning
-    #network:   warning
-    chaincode: debug
-    #version: warning
+    network:   warning
+    chaincode: warning
+    version: warning
     output:
         file: log_
         postfix: true

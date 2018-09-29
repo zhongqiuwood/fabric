@@ -39,6 +39,9 @@ func RunNode(cfg *NodeConfig) {
 	flogging.LoggingInit("node")
 
 	// run serve
-	node.StartNode(cfg.PostRun)
+	err = node.StartNode(cfg.PostRun)
+	if err != nil {
+		panic(fmt.Errorf("Failed to running node: %s", err))
+	}
 
 }

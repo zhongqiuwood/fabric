@@ -58,6 +58,26 @@ func (t *tokenBucket) Available(limit int) int {
 	return limit - t.quota
 }
 
+type unlimitPolicies string
+
+func (s unlimitPolicies) GetId() string { return string(s) }
+
+func (unlimitPolicies) IsPolicyViolated() error { return nil }
+
+func (unlimitPolicies) RecvUpdate(int) {}
+
+func (unlimitPolicies) RecordViolation(e error) {}
+
+func (unlimitPolicies) AllowRecvUpdate() bool { return true }
+
+func (unlimitPolicies) PushUpdateQuota() int { return DefaultMsgSize }
+
+func (unlimitPolicies) PushUpdate(int) {}
+
+func (unlimitPolicies) ScoringPeer(int, uint) {}
+
+func (unlimitPolicies) ResetIntervals(int) {}
+
 type peerPolicies struct {
 	sync.RWMutex
 	id               string

@@ -1,5 +1,5 @@
 @echo off
-for /l %%i in (1,1,%1) do call:body %%i
+for /l %%i in (1,1,%1) do call :body %%i
 exit /b
 
 :body
@@ -20,4 +20,5 @@ set CORE_PEER_VALIDATOR_EVENTS_ADDRESS=127.0.0.1:%EVENTADDRPORT%
 set CORE_PEER_FILESYSTEMPATH=%FILEPATHBASE%\txnet%1
 timeout 1
 start txnetwork
+rem start echo .
 endlocal

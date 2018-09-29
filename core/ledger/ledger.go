@@ -142,28 +142,30 @@ func sanityCheck(odb *db.OpenchainDB) error {
 		return nil
 	}
 
+	ledgerLogger.Debug("Start a sanitycheck")
+
 	noneExistingList := make([][]byte, 0)
 	var lastExisting []byte
 
-	for n := size - 1; n != 0; n-- {
+	for n := size; n != 0; n-- {
 
-		block, err := fetchRawBlockFromDB(odb, n)
+		block, err := fetchRawBlockFromDB(odb, n-1)
 		if err != nil {
 			return fmt.Errorf("Fetch block fail: %s", err)
 		}
 		if block == nil {
-			return fmt.Errorf("Block %d is not exist yet", n)
+			return fmt.Errorf("Block %d is not exist yet", n-1)
 		}
 
 		gs := db.GetGlobalDBHandle().GetGlobalState(block.StateHash)
 		if gs != nil {
 			lastExisting = block.StateHash
 			ledgerLogger.Infof("Block number [%d] state exists in txdb, statehash: [%x]",
-				n, block.StateHash)
+				n-1, block.StateHash)
 			break
 		} else {
 			ledgerLogger.Warningf("Block number [%d] state does not exist in txdb, statehash: [%x]",
-				n, block.StateHash)
+				n-1, block.StateHash)
 			noneExistingList = append(noneExistingList, block.StateHash)
 		}
 	}

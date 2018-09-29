@@ -17,7 +17,7 @@ func (va testVClock) Less(v_in VClock) bool {
 
 func transVClock(i VClock) testVClock {
 
-	if i == nil {
+	if i == BottomClock {
 		return 0
 	}
 

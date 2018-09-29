@@ -233,6 +233,8 @@ func (state *State) SetMultipleKeys(chaincodeID string, kvs map[string][]byte) e
 	return nil
 }
 
+var genesisHash = []byte("YAFABRIC09_GENSISHASH")
+
 // GetHash computes new state hash if the stateDelta is to be applied.
 // Recomputes only if stateDelta has changed after most recent call to this function
 func (state *State) GetHash() ([]byte, error) {
@@ -247,6 +249,10 @@ func (state *State) GetHash() ([]byte, error) {
 		return nil, err
 	}
 	logger.Debug("Exit - GetHash()")
+	//we avoid nil-hash and change it
+	if hash == nil {
+		hash = genesisHash
+	}
 	return hash, nil
 }
 

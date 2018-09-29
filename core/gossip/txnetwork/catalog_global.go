@@ -17,15 +17,16 @@ type peerStatus struct {
 }
 
 func (s peerStatus) To() model.VClock {
-	//we right-shift the clock by 1 so an "empty" status has
-	//the lowest clock, while any other status (even when num is 0)
-	//has clock larger than 1. But notice "endorsement" could not
+	//an "empty" status has the lowest clock
+	//But notice "endorsement" could not
 	//be use because when object is used as update
 	//endorsement field may be omitted.
 	//so we judge the empty status by digest
 	if len(s.GetDigest()) == 0 {
-		return standardVClock(0)
+		return model.BottomClock
 	}
+	//shift clock by 1 so every "valid" clock is start from 1, and "unknown" is from bottomclock
+	//(respresent by 0 in protobuf-struct)
 	return standardVClock(s.GetNum() + 1)
 }
 
@@ -63,8 +64,11 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 		panic("Wrong series, model error")
 	}
 
+	lastSeries := s.PeerTxState.GetNum()
+	established := len(s.Endorsement) == 0
+
 	//TODO: we must obtain endorsement in the first pulling
-	if len(s.Endorsement) == 0 {
+	if established {
 		if len(u.GetEndorsement()) == 0 {
 			return fmt.Errorf("Update do not include endorsement for our pulling")
 		}
@@ -72,19 +76,19 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 	} else {
 		//copy endorsement to u and later we will just keep u
 		u.Endorsement = s.Endorsement
+		logger.Infof("We have update gossip peer [%s] from %d to [%d:%x]", id, lastSeries, u.GetNum(), u.GetDigest())
 	}
 
 	//TODO: verify the signature of incoming data
-
 	s.PeerTxState = u.PeerTxState
 
 	//update global part ...
 	g.Lock()
-	defer g.Unlock()
 	//in case we are update local
 	if id == "" {
 		id = g.selfId
 	}
+
 	if item, ok := g.lruIndex[id]; ok {
 
 		if s, ok := item.Value.(*peerStatusItem); ok {
@@ -93,6 +97,18 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 			g.lruQueue.MoveToFront(item)
 		}
 
+	}
+
+	f := g.onupdate
+	g.Unlock()
+
+	//so if the number has "cross" a border of a cache queue row
+	//we will trigger an update notify
+	if lastSeries+uint64(peerTxQueueLen) < s.PeerTxState.GetNum() ||
+		uint(lastSeries)&peerTxQueueMask > uint(s.PeerTxState.GetNum())&peerTxQueueMask {
+		handleUpdate(f, id, false)
+	} else if established {
+		handleUpdate(f, id, true)
 	}
 
 	return nil
@@ -202,11 +218,11 @@ func (g *txNetworkGlobal) addNewPeer(id string) (ret *peerStatus, ids []string) 
 func (g *txNetworkGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 	g.Lock()
 	ret, rmids := g.addNewPeer(id)
-	f := g.onevicted
+	frm := g.onevicted
 	g.Unlock()
 
 	if rmids != nil {
-		handleEvict(f, rmids)
+		handleEvict(frm, rmids)
 	}
 
 	return ret
@@ -266,7 +282,7 @@ func (g *txNetworkGlobal) BlockPeer(id string) {
 	defer g.RUnlock()
 }
 
-func (g *txNetworkGlobal) RegNotify(f func([]string) error) {
+func (g *txNetworkGlobal) RegEvictNotify(f func([]string) error) {
 	g.Lock()
 	defer g.Unlock()
 	g.onevicted = append(g.onevicted, f)

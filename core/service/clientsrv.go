@@ -78,6 +78,9 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 		}
 	}
 
+	epochInterval = uint64(txnetwork.PeerTxQueueLimit() / 2)
+	clisrvLogger.Infof("Set tx epoch interval into %d", epochInterval)
+
 	if h, err := NewTxNetworkHandlerNoSec(entryItem); err != nil {
 		clisrvLogger.Fatal("Can not create txnetwork", err)
 	} else {

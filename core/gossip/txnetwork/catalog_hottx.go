@@ -191,6 +191,10 @@ func (g *txPoolGlobal) GenDigest() model.Digest {
 }
 func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
 
+	if d_in == nil {
+		return txPoolGlobalUpdateOut{g, 0}
+	}
+
 	d, ok := d_in.(*pb.Gossip_Digest)
 
 	if !ok {
@@ -266,7 +270,7 @@ type txPeerUpdate struct {
 
 func (u txPeerUpdate) To() model.VClock {
 	if u.HotTransactionBlock == nil {
-		return nil
+		return model.BottomClock
 	}
 
 	return standardVClock(u.BeginSeries + uint64(len(u.Transactions)) - 1)
@@ -302,35 +306,6 @@ func (u txPeerUpdate) fromTxs(s *peerTxs, epochH uint64, cache txCache) {
 		}
 	}
 }
-
-// //only use for local updating
-// func (u txPeerUpdate) toTxsFast() *peerTxs {
-
-// 	if len(u.Transactions) == 0 {
-// 		return nil
-// 	}
-
-// 	head := &txMemPoolItem{
-// 		//		tx:           txs.Transactions[0],
-// 		//		digest:       txToDigestState(txs.Transactions[0]),
-// 		digestSeries: u.BeginSeries,
-// 	}
-
-// 	current := head
-// 	var last *txMemPoolItem
-
-// 	for _, tx := range u.Transactions {
-// 		last = current
-// 		current.tx = tx
-// 		current.digest = getTxDigest(tx)
-
-// 		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
-// 		last.next = current
-// 	}
-
-// 	last.next = nil //seal the tail
-// 	return &peerTxs{head, last}
-// }
 
 func (u txPeerUpdate) getRef(refSeries uint64) txPeerUpdate {
 
@@ -437,6 +412,10 @@ func (p *peerTxMemPool) reset(txbeg *txMemPoolItem) {
 
 func (p *peerTxMemPool) To() model.VClock {
 
+	if p.lastSeries() == 0 {
+		return model.BottomClock
+	}
+
 	return standardVClock(p.lastSeries())
 }
 
@@ -467,13 +446,7 @@ func (p *peerTxMemPool) PickFrom(id string, d_in model.VClock, gu_in model.Updat
 	return ret, gu_in
 }
 
-func (p *peerTxMemPool) purge(id string, purgeto uint64, g *txPoolGlobal) {
-
-	//never purge at begin
-	if p.head == nil || purgeto <= p.head.digestSeries {
-		return
-	}
-
+func purgePool(p *peerTxMemPool, purgeto uint64) {
 	//purge the outdate part
 	//for zero, we just get UINT64_MAX and no index
 	preserved := p.fetch(purgeto, p.jlindex[purgeto/jumplistInterval-1])
@@ -481,9 +454,6 @@ func (p *peerTxMemPool) purge(id string, purgeto uint64, g *txPoolGlobal) {
 		logger.Warningf("got empty preserved, wrong purge request:", purgeto)
 		return
 	}
-
-	cache := g.AcquireCache(id, p.firstSeries(), p.lastSeries()+1)
-	cache.PurneCache(purgeto)
 
 	//also the jumping index must be purged
 	for i := p.head.digestSeries / jumplistInterval; i < purgeto/jumplistInterval; i++ {
@@ -496,56 +466,37 @@ func (p *peerTxMemPool) purge(id string, purgeto uint64, g *txPoolGlobal) {
 	}
 
 	p.peerTxs = preserved
+}
+
+func (p *peerTxMemPool) purge(id string, purgeto uint64, g *txPoolGlobal) {
+
+	//never purge at begin
+	if p.head == nil || purgeto <= p.head.digestSeries {
+		return
+	}
+
+	logger.Debugf("peer %s try to prune cache from %d to %d", id, p.firstSeries(), purgeto)
+	cache := g.AcquireCache(id, p.firstSeries(), p.lastSeries()+1)
+	cache.PurneCache(purgeto)
+
+	purgePool(p, purgeto)
 
 }
 
-// there are too many ways that a far-end can waste our bandwidth (and
-// limited computational cost) without provding useful information,
-// for example, fill some update under un-existed peer name
-// so we given up scoring the peer until we have more solid process
-// to verify the correctness of data from far-end
-func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
+func (p *peerTxMemPool) handlePeerCoVar(id string, peerStatus *pb.PeerTxState, g *txPoolGlobal) error {
 
-	if u_in == nil {
-		return nil
+	to := peerStatus.GetNum()
+	if to <= p.firstSeries() {
+
+		return fmt.Errorf("covar occurs on %s with a peer status %d earlier than current (%d)",
+			id, to, p.firstSeries())
 	}
 
-	u, ok := u_in.(txPeerUpdate)
-	if !ok {
-		panic("Type error, not txPeerUpdate")
-	}
+	p.purge(id, to, g)
+	return nil
+}
 
-	g, ok := g_in.(*txPoolGlobal)
-	if !ok {
-		panic("Type error, not txPoolGlobal")
-	}
-
-	//checkout global status
-	var peerStatus *pb.PeerTxState
-	if id == "" {
-		peerStatus = g.network.QuerySelf()
-	} else {
-		peerStatus = g.network.QueryPeer(id)
-		if peerStatus == nil {
-			//boom ..., but it may be caused by an stale peer-removing so not
-			//consider as error
-			logger.Warningf("Unknown status in global for peer %s", id)
-			return nil
-		}
-	}
-
-	// --------- YA-fabric 0.9 consider not imply purging ......
-	//purge on each update first
-	//our data is outdate, all cache is clear .... ...
-	// if peerStatus.GetNum() > updatePos {
-	// 	logger.Warningf("Tx chain in peer %s is outdate (%x@[%v]), reset it",
-	// 		id, p.last.digest, p.last.digestSeries)
-	// 	isReset = true
-	//	p.reset(createPeerTxItem(peerStatus))
-	// 	updatePos = peerStatus.GetNum()
-	// } else {
-	// 	p.purge(id, peerStatus.GetNum(), g)
-	// }
+func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *pb.PeerTxState, g *txPoolGlobal) error {
 	logger.Debugf("peer %s try to updated %d incoming txs from series %d", id, len(u.Transactions), u.BeginSeries)
 
 	var err error
@@ -556,7 +507,11 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 
 	inTxs, err := u.toTxs(p.last)
 	if err != nil {
-		return err
+		//NEVER report this as the fraud of far-end because the original peer can build
+		//branch results (by update peer status or sending branched tx chains) deliberately
+		//we just skip the update data
+		logger.Warningf("***** PROBLEM ****** peer %s update found branched incoming", id)
+		return nil
 	} else if inTxs == nil {
 		logger.Infof("peer %s update nothing in %d txs and quit", id, len(u.Transactions))
 		return nil
@@ -582,6 +537,16 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 	}
 
 	logger.Debugf("peer %s have updated %d txs", id, mergeCnt)
+
+	//finally we handle the case if pool's cache is overflowed
+	if int(p.lastSeries()-p.firstSeries())+1 > PeerTxQueueLimit() {
+		to := p.lastSeries() - uint64(PeerTxQueueLimit()) + 1
+		logger.Warning("peer %s's cache has reach limit and we have to prune it to %d", to)
+		//notice, the cache has been full so we do not need to prune it
+		//(the older part has been overwritten)
+		purgePool(p, to)
+	}
+
 	// var mergeW uint
 	// if len(u.Transactions) < int(cat_hottx_one_merge_weight) {
 	// 	mergeW = uint(len(u.Transactions))
@@ -592,6 +557,47 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 	// g.currentCpo.ScoringPeer(mergeCnt*100/len(u.Transactions), mergeW)
 
 	return nil
+}
+
+// there are too many ways that a far-end can waste our bandwidth (and
+// limited computational cost) without provding useful information,
+// for example, fill some update under un-existed peer name
+// so we given up scoring the peer until we have more solid process
+// to verify the correctness of data from far-end
+func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in model.ScuttlebuttStatus) error {
+
+	if u_in == nil {
+		return nil
+	}
+
+	g, ok := g_in.(*txPoolGlobal)
+	if !ok {
+		panic("Type error, not txPoolGlobal")
+	}
+
+	//checkout global status
+	var peerStatus *pb.PeerTxState
+	if id == "" {
+		peerStatus = g.network.QuerySelf()
+	} else {
+		peerStatus = g.network.QueryPeer(id)
+		if peerStatus == nil {
+			//boom ..., but it may be caused by an stale peer-removing so not
+			//consider as error
+			logger.Warningf("Unknown status in global for peer %s", id)
+			return nil
+		}
+	}
+
+	switch u := u_in.(type) {
+	case txPeerUpdate:
+		return p.handlePeerUpdate(u, id, peerStatus, g)
+	case coVarUpdate:
+		return p.handlePeerCoVar(id, peerStatus, g)
+	default:
+		return fmt.Errorf("Type error, not expected update [%v]", u_in)
+	}
+
 }
 
 type hotTxCat struct {
@@ -635,7 +641,8 @@ func initHotTx(stub *gossip.GossipStub) {
 		gossip.NewCatalogHandlerImpl(stub.GetSStub(),
 			stub.GetStubContext(), hotTx, m))
 
-	registerEvictFunc(txglobal.network, hotTxCatName, m)
+	txglobal.network.RegUpdateNotify(standardUpdateFunc(hotTxCatName, m))
+	txglobal.network.RegEvictNotify(standardEvictFunc(hotTxCatName, m))
 }
 
 const (

@@ -445,6 +445,11 @@ func (txdb *GlobalDataDB) updatePath(sn *gorocksdb.Snapshot, wb *gorocksdb.Write
 
 func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byte) error {
 
+	if bytes.Compare(parentStateHash, statehash) == 0 {
+		//never concat same state
+		return nil
+	}
+
 	cm, err := txdb.addGSCritical(parentStateHash, statehash)
 	defer cm.clear()
 

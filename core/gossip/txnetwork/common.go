@@ -50,24 +50,28 @@ type standardVClock uint64
 
 func toStandardVClock(v model.VClock) standardVClock {
 
-	if v == nil {
-		return standardVClock(0)
-	}
-
 	ret, ok := v.(standardVClock)
 	if !ok {
+		if v == model.BottomClock {
+			return standardVClock(0)
+		} else if v == model.TopClock {
+			return standardVClock(^uint64(0))
+		}
 		panic("Type error, not standardVClock")
 	}
 	return ret
 }
 
 func (a standardVClock) Less(b_in model.VClock) bool {
-	if b_in == nil {
-		return false
-	}
 
 	b, ok := b_in.(standardVClock)
 	if !ok {
+		if b_in == model.BottomClock {
+			return false
+		} else if b_in == model.TopClock {
+			return true
+		}
+
 		panic("Wrong type, not standardVClock")
 	}
 
@@ -86,7 +90,7 @@ func toPbDigestStd(d model.ScuttlebuttDigest, epoch []byte) *pb.Gossip_Digest {
 	for id, pd := range d.PeerDigest() {
 
 		msg.Data[id] = &pb.Gossip_Digest_PeerState{
-			Num: uint64(pd.(standardVClock)),
+			Num: uint64(toStandardVClock(pd)),
 		}
 	}
 
@@ -109,19 +113,46 @@ func parsePbDigestStd(msg *pb.Gossip_Digest, core interface{}) model.Scuttlebutt
 	return dout
 }
 
-//notify remove any peer in a scuttlebutt model
-func registerEvictFunc(target *txNetworkGlobal, catname string, m *model.Model) {
-	target.RegNotify(func(ids []string) error {
+//any handler receive co-variate notify musth handle this update
+type coVarUpdate struct{}
+
+func (coVarUpdate) To() model.VClock { return model.TopClock }
+
+//make model add an peer by simulate a digest on it
+func standardUpdateFunc(catname string, m *model.Model) func(string, bool) error {
+
+	return func(id string, create bool) error {
+
+		if create {
+			logger.Debugf("Cat %s will add peer %s", catname, id)
+			dig := model.NewscuttlebuttDigest(nil)
+			dig.SetPeerDigest(id, model.BottomClock)
+			//it was definetly a "partial" digest
+			dig.MarkDigestIsPartial()
+
+			_ = m.RecvPullDigest(dig)
+			//should generate nothing on update, we may also detect it
+			//and warning if the peer has been existed
+			return nil
+		} else {
+			logger.Debugf("Cat %s will update peer %s", catname, id)
+			u := model.NewscuttlebuttUpdate(nil)
+			u.UpdatePeer(id, coVarUpdate{})
+
+			return m.RecvUpdate(u)
+		}
+
+	}
+}
+
+//remove any peer in a scuttlebutt model
+func standardEvictFunc(catname string, m *model.Model) func([]string) error {
+	return func(ids []string) error {
 
 		ru := model.NewscuttlebuttUpdate(nil)
 		ru.RemovePeers(ids)
 		logger.Debugf("Cat %s will remove peers %v", catname, ids)
 
-		err := m.RecvUpdate(ru)
-		if err != nil {
-			logger.Errorf("Cat %s remove peer fail: %s", catname, err)
-		}
-		return err
-
-	})
+		return m.RecvUpdate(ru)
+	}
 }

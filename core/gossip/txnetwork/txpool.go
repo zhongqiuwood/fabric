@@ -21,14 +21,16 @@ const peerTxQueues = 16
 const peerTxMask = uint(peerTxQueues) - 1
 
 var peerTxQueueLenBit = uint(7) //2^7=128
-var peerTxQueueMask int
+var peerTxQueueMask uint
+var peerTxQueueLen int
 
 func init() {
-	peerTxQueueMask = int(1<<(peerTxQueueLenBit)) - 1
+	peerTxQueueMask = (1 << (peerTxQueueLenBit)) - 1
+	peerTxQueueLen = int(peerTxQueueMask) + 1
 }
 
 func PeerTxQueueLimit() int {
-	return peerTxQueues * (peerTxQueueMask + 1)
+	return peerTxQueues * peerTxQueueLen
 }
 
 func SetPeerTxQueueLen(bits uint) {
@@ -36,14 +38,15 @@ func SetPeerTxQueueLen(bits uint) {
 		panic("invalid bit count")
 	}
 	peerTxQueueLenBit = bits
-	peerTxQueueMask = int(1<<(bits)) - 1
+	peerTxQueueMask = (1 << (bits)) - 1
+	peerTxQueueLen = int(peerTxQueueMask) + 1
 }
 
 type peerTxCache [peerTxQueues][]cachedTx
 
 func dequeueLoc(pos uint64) (loc int, qpos int) {
 	loc = int(uint(pos>>peerTxQueueLenBit) & peerTxMask)
-	qpos = int(pos & uint64(peerTxQueueMask))
+	qpos = int(uint(pos) & peerTxQueueMask)
 	return
 }
 
@@ -59,17 +62,17 @@ func (c *peerTxCache) append(from uint64, size int) (ret [][]cachedTx) {
 
 	loc, qpos := dequeueLoc(from)
 	if c[loc] == nil {
-		c[loc] = make([]cachedTx, peerTxQueueMask+1)
+		c[loc] = make([]cachedTx, peerTxQueueLen)
 	}
 
 	for size > 0 {
 
-		if qpos+size > peerTxQueueMask+1 {
-			ret = append(ret, c[loc][qpos:peerTxQueueMask+1])
-			size = size - (peerTxQueueMask + 1 - qpos)
+		if qpos+size > peerTxQueueLen {
+			ret = append(ret, c[loc][qpos:peerTxQueueLen])
+			size = size - (peerTxQueueLen - qpos)
 			qpos = 0
 			loc = int(uint(loc+1) & peerTxMask)
-			c[loc] = make([]cachedTx, peerTxQueueMask+1)
+			c[loc] = make([]cachedTx, peerTxQueueLen)
 		} else {
 			ret = append(ret, c[loc][qpos:qpos+size])
 			size = 0

@@ -29,7 +29,7 @@ var ledger_gOnce sync.Once
 // GetLedger - gives a reference to a 'singleton' global ledger, it was the only singleton
 // part (the ledger singleton is just for compatible)
 func GetLedgerGlobal() (*LedgerGlobal, error) {
-	once.Do(func() {
+	ledger_gOnce.Do(func() {
 		if ledger_gError == nil {
 			txpool, err := newTxPool()
 			if err != nil {
@@ -79,8 +79,7 @@ func (ledger *LedgerGlobal) AddGlobalState(parent []byte, state []byte) error {
 		ledgerLogger.Warningf("Try to add existed globalstate: %x", state)
 	}
 
-	ledgerLogger.Infof("Add globalstate [%x]", state)
-	ledgerLogger.Infof("      on parent [%x]", parent)
+	ledgerLogger.Infof("Add globalstate [%x] on parent [%x]", state, parent)
 	return nil
 }
 
@@ -105,4 +104,8 @@ func (ledger *LedgerGlobal) GetTransactionByID(txID string) (*protos.Transaction
 
 func (ledger *LedgerGlobal) GetPooledTransaction(txID string) *protos.Transaction {
 	return ledger.txpool.getPooledTx(txID)
+}
+
+func (ledger *LedgerGlobal) GetPooledTxCount() int {
+	return ledger.txpool.getPooledTxCount()
 }

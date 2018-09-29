@@ -253,6 +253,10 @@ func TestAsAWhole(t *testing.T) {
 		t.Fatal("update fail", globalS.Peers)
 	}
 
+	if _, ok := txS.Peers[newpeer]; !ok {
+		t.Fatal("txs is not covariated", txS.Peers)
+	}
+
 	tx1, _ := buildTestTx(t)
 	tx2, _ := buildTestTx(t)
 	tx1 = buildPrecededTx(peerDigest, tx1)
@@ -292,6 +296,20 @@ func TestAsAWhole(t *testing.T) {
 	//cache for tx with series 7 and 8 just use two cache-row (0, 1)
 	if txcache[0] == nil || txcache[1] == nil {
 		t.Fatal("wrong cache position", txcache)
+	}
+
+	ud = model.NewscuttlebuttUpdate(nil)
+	ud.UpdatePeer(newpeer, peerStatus{createState(getTxDigest(tx2), 8, false)})
+	err = globalM.RecvUpdate(ud)
+	if err != nil {
+		t.Fatal("recv rm-update fail", err)
+	}
+
+	if txcache[0] != nil {
+		t.Fatal("cache is not prune", txcache)
+	}
+	if txcache[1] == nil {
+		t.Fatal("cache is wrong", txcache)
 	}
 
 	ud = model.NewscuttlebuttUpdate(nil)

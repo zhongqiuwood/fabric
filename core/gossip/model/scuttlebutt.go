@@ -5,6 +5,25 @@ type VClock interface {
 	Less(VClock) bool //VClock can be NEVER less than nil (indicate to "oldest" time)
 }
 
+//a "limit" clock represent the clock in two-side (bottom and top)
+type limitClock bool
+
+func (b limitClock) Less(m VClock) bool {
+	//need to consider the case if incoming is also the limit clock
+	if i, ok := m.(limitClock); ok {
+		if bool(b) == bool(i) {
+			//if we are the same limit clock ...
+			return false
+		}
+	}
+
+	return bool(b)
+}
+
+//any other implement should consider these values before type switch, just like "nil"
+var BottomClock = limitClock(true) //earlier than anything
+var TopClock = limitClock(false)   //later than anything
+
 //scuttlebutt scheme maintain per-peer status work with vclock digest
 type ScuttlebuttPeerUpdate interface {
 	To() VClock
@@ -238,13 +257,17 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 	if !dig.IsPartial() {
 		var pid string
 		for id, ss := range s.Peers {
+			//ss may also have the lowest clock...
+			if !BottomClock.Less(ss.To()) {
+				continue
+			}
 			if id == "" {
 				pid = s.SelfID
 			} else {
 				pid = id
 			}
 			if _, ok := digs[pid]; !ok {
-				if ssu, ssgu := ss.PickFrom(id, nil, r.Update); ssu != nil {
+				if ssu, ssgu := ss.PickFrom(id, BottomClock, r.Update); ssu != nil {
 					r.u[pid] = ssu
 					if ssgu != nil {
 						r.Update = ssgu

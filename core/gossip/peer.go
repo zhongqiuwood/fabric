@@ -115,6 +115,8 @@ var RegisterCat []func(*GossipStub)
 
 func NewGossipWithPeer(p peer.Peer) *GossipStub {
 
+	cache.Do(cacheConfiguration)
+
 	self, err := p.GetPeerEndpoint()
 	if err != nil {
 		panic("No self endpoint")

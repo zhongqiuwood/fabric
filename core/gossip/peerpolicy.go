@@ -188,6 +188,11 @@ var DefaultErrorLimit = 3             //peer is allowed to violate policy 3 time
 var DefaultMsgSize = 1024 * 1024 * 16 //msg limit is 16kB/s
 
 func NewPeerPolicy(id string) PeerPolicies {
+
+	if disablePeerPolicy {
+		return unlimitPolicies(id)
+	}
+
 	ret := &peerPolicies{id: id}
 
 	ret.errorLimit = DefaultErrorLimit

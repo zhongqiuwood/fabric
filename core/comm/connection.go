@@ -5,11 +5,10 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/grpclog"
 
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
-	
+
 	"github.com/abchain/fabric/core/util"
 )
 
@@ -47,7 +46,7 @@ func InitTLSForPeer() credentials.TransportCredentials {
 		var err error
 		creds, err = credentials.NewClientTLSFromFile(util.CanonicalizeFilePath(rootcert), sn)
 		if err != nil {
-			grpclog.Fatalf("Failed to create TLS credentials %v", err)
+			commLogger.Fatalf("Failed to create TLS credentials %v", err)
 		}
 	} else {
 		creds = credentials.NewClientTLSFromCert(nil, sn)

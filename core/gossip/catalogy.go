@@ -222,7 +222,40 @@ func (h *sessionHandler) EncodeUpdate(u model.Update) proto.Message {
 	}
 }
 
-func (h *sessionHandler) Process(p *model.Puller) {
+func (h *sessionHandler) Process(strm *pb.StreamHandler, d model.Digest) {
+
+	cpo := h.cpo
+	puller, err := model.AcceptPulling(h, strm, h.Model(), d)
+	if err != nil {
+		logger.Errorf("accepting pulling fail: %s", err)
+		return
+	}
+
+	if puller == nil {
+		logger.Debugf("do not start responding pulling to peer [%s]", cpo.GetId())
+		return
+	}
+
+	logger.Debugf("Start a responding pulling to peer [%s]", cpo.GetId())
+	defer h.pulls.popPuller(cpo)
+
+	pctx, pctxend := context.WithTimeout(h.hctx,
+		time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+
+	err = puller.Process(pctx)
+	pctxend()
+
+	//when we succefully accept an update, we also trigger a new push process
+	if err == nil {
+		//notice we still occupied the pulling position of this peer
+		//so the triggered push wouldn't make duplicated pulling
+		h.executePush()
+	} else if err == model.EmptyUpdate {
+		logger.Debugf("pull nothing from peer [%s]", cpo.GetId())
+	} else {
+		cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
+	}
+
 }
 
 func (h *sessionHandler) CanPull() *model.Puller {
@@ -255,39 +288,11 @@ func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPoli
 
 	//everytime we accept a digest, it is counted as a push
 	defer h.schedule.pushDone()
-	aftertask := model.AcceptPulling(&sessionHandler{h, cpo}, strm, h.model, h.TransPbToDigest(msg))
-	if aftertask == nil {
-		logger.Debugf("do not start responding pulling to peer [%s]", cpo.GetId())
-		return
-	}
-	//trigger a resonding pulling in another thread
-	go func() {
-		defer h.pulls.popPuller(cpo)
-		logger.Debugf("Start a responding pulling to peer [%s]", cpo.GetId())
-		puller, err := aftertask()
-		if err != nil {
-			logger.Errorf("starting responding pulling fail: %s", err)
-			return
-		}
 
-		pctx, pctxend := context.WithTimeout(h.hctx,
-			time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+	sess := &sessionHandler{h, cpo}
 
-		err = puller.Process(pctx)
-		pctxend()
-
-		//when we succefully accept an update, we also trigger a new push process
-		if err == nil {
-			//notice we still occupied the pulling position of this peer
-			//so the triggered push wouldn't make duplicated pulling
-			h.executePush()
-		} else if err == model.EmptyUpdate {
-			logger.Debugf("pull nothing from peer [%s]", cpo.GetId())
-		} else {
-			cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
-		}
-
-	}()
+	dig := h.TransPbToDigest(msg)
+	go sess.Process(strm, dig)
 }
 
 func (h *catalogHandler) HandleUpdate(msg *pb.Gossip_Update, cpo CatalogPeerPolicies) {

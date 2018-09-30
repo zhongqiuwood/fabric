@@ -26,16 +26,18 @@ type PushHelper interface {
 }
 
 //d can be set to nil and just return empty update (sometimes this indicate an
-//invitation of pulling)
-//YA-fabric 0.9:
-//This accept pulling process has following suppose:
-//a. the handling of pulling (RecvPullDigest in model) is fast
-//b. generate a digest request (decide what should be pulled from far-end) is highly-cost
-//c. for the "responding" pulling, the first pulling request needed to be handled first
-//   to feed extra information for the model
+//"invitation" of pulling)
+//Pulling process including two steps:
+//1. handling incoming digest and response a update
+//2. optional: start a "responding" pull
+//the message among these two step is fixed: that is, the updating in step 1 must
+//be sent after the digest sent in step 2 (unless step 2 is omitted)
 //
-//And after all, the update message must be sent AFTER the "responding" digest
-func AcceptPulling(p PushHelper, stream *pb.StreamHandler, model *Model, d Digest) func() (*Puller, error) {
+//
+//The whole process is considered to be time-consuming: model and helper need to tailor
+//the update to fit it into a suitable message size, and in a pulling process
+//to decide a subset of peers in digest may require many evaluations
+func AcceptPulling(p PushHelper, stream *pb.StreamHandler, model *Model, d Digest) (*Puller, error) {
 
 	var msg proto.Message
 
@@ -46,26 +48,18 @@ func AcceptPulling(p PushHelper, stream *pb.StreamHandler, model *Model, d Diges
 		msg = p.EncodeUpdate(model.RecvPullDigest(d))
 	}
 
+	defer stream.SendMessage(msg)
+
 	if puller := p.CanPull(); puller != nil {
-		//bind update-msg into puller so it will be sent after digest msg
-		return func() (*Puller, error) {
-
-			defer stream.SendMessage(msg)
-			err := puller.Start(p, stream)
-			if err != nil {
-				return nil, err
-			}
-
-			return puller, nil
+		err := puller.Start(p, stream)
+		if err != nil {
+			return nil, err
 		}
 
-	} else {
-		//NOTICE: if stream is NOT enable to drop message, send in HandMessage
-		//may cause a deadlock, but in gossip package this is OK
-		//in fact we can just omit the error of sendmessage
-		stream.SendMessage(msg)
-		return nil
+		return puller, nil
 	}
+
+	return nil, nil
 
 }
 

@@ -47,7 +47,6 @@ import (
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	_ "google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/grpclog"
 )
 
 var chaincodeDevMode bool
@@ -107,7 +106,7 @@ func StartNode(postrun func() error) error {
 
 	ehubLis, ehubGrpcServer, err := createEventHubServer()
 	if err != nil {
-		grpclog.Fatalf("Failed to create ehub server: %v", err)
+		logger.Fatalf("Failed to create ehub server: %v", err)
 	}
 
 	logger.Infof("Security enabled status: %t", config.SecurityEnabled())

@@ -553,7 +553,7 @@ func TestCatalogyHandler(t *testing.T) {
 	dig := hotTx.TransPbToDigest(dig_in)
 
 	//now model should know peer test
-	m.MakeUpdate(dig)
+	m.RecvPullDigest(dig)
 
 	dig = m.GenPullDigest()
 	dig_out := hotTx.TransDigestToPb(dig)
@@ -612,7 +612,7 @@ func TestCatalogyHandler(t *testing.T) {
 
 	dig = hotTx.TransPbToDigest(dig_in)
 
-	u_out, ok := hotTx.EncodeUpdate(nil, m.MakeUpdate(dig), new(pb.Gossip_Tx)).(*pb.Gossip_Tx)
+	u_out, ok := hotTx.EncodeUpdate(nil, m.RecvPullDigest(dig), new(pb.Gossip_Tx)).(*pb.Gossip_Tx)
 	if !ok {
 		panic("type error, not gossip_tx")
 	}

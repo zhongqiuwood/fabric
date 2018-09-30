@@ -84,14 +84,14 @@ func (g *GossipStub) GetCatalogHandler(cat string) CatalogHandler {
 	return g.catalogHandlers[cat]
 }
 
-func (g *GossipStub) AddCatalogHandler(cat string, h CatalogHandler) {
-	_, ok := g.catalogHandlers[cat]
-	g.catalogHandlers[cat] = h
+func (g *GossipStub) AddCatalogHandler(h CatalogHandler) {
+	_, ok := g.catalogHandlers[h.Name()]
+	g.catalogHandlers[h.Name()] = h
 
 	if ok {
-		logger.Errorf("Duplicated add handler for catalog %s", cat)
+		logger.Errorf("Duplicated add handler for catalog %s", h.Name())
 	} else {
-		logger.Infof("Add handler for catalog %s", cat)
+		logger.Infof("Add handler for catalog %s", h.Name())
 	}
 }
 

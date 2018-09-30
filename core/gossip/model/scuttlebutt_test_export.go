@@ -226,7 +226,7 @@ func DumpUpdate(u_in Update) (ret map[string]map[string]int) {
 
 func DumpScuttlebutt(m *Model) *scuttlebuttStatus {
 
-	ret, ok := m.Status.(*scuttlebuttStatus)
+	ret, ok := m.s.(*scuttlebuttStatus)
 	if !ok {
 		panic("wrong code, not scuttlebutt status")
 	}

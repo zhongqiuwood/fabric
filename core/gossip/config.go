@@ -10,7 +10,7 @@ var disablePeerPolicy = false
 
 func cacheConfiguration() {
 
-	disablePeerPolicy = viper.GetBool("peer.gossip.policy.disable")
+	disablePeerPolicy = !viper.GetBool("peer.txnetwork.policy.enable")
 	if disablePeerPolicy {
 		logger.Info("Gossip network has disabled peer policy")
 	}

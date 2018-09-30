@@ -78,7 +78,9 @@ func (unlimitPolicies) IsPolicyViolated() error { return nil }
 
 func (unlimitPolicies) RecvUpdate(int) {}
 
-func (unlimitPolicies) RecordViolation(e error) {}
+func (s unlimitPolicies) RecordViolation(e error) {
+	logger.Errorf("Record a violation of policy on peer %s: %s", s, e)
+}
 
 func (unlimitPolicies) AllowRecvUpdate() bool { return true }
 

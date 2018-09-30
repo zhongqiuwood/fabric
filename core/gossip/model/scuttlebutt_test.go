@@ -9,15 +9,15 @@ import (
 //m1 pull from m2
 func pull(m1 *model.Model, m2 *model.Model) (error, model.Update) {
 
-	u := m2.RecvPullDigest(m1.GenDigest())
+	u := m2.RecvPullDigest(m1.GenPullDigest())
 	return m1.RecvUpdate(u), u
 }
 
 //push-pull, the real protocol between m1 and m2
 func pushpull(m1 *model.Model, m2 *model.Model) error {
 
-	u1 := m2.RecvPullDigest(m1.GenDigest())
-	u2 := m1.RecvPullDigest(m2.GenDigest())
+	u1 := m2.RecvPullDigest(m1.GenPullDigest())
+	u2 := m1.RecvPullDigest(m2.GenPullDigest())
 	if err := m1.RecvUpdate(u1); err != nil {
 		return err
 	}

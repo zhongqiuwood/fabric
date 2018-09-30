@@ -119,38 +119,41 @@ type coVarUpdate struct{}
 func (coVarUpdate) To() model.VClock { return model.TopClock }
 
 //make model add an peer by simulate a digest on it
-func standardUpdateFunc(catname string, m *model.Model) func(string, bool) error {
+func standardUpdateFunc(ch gossip.CatalogHandler) func(string, bool) error {
 
 	return func(id string, create bool) error {
 
 		if create {
-			logger.Debugf("Cat %s will add peer %s", catname, id)
+			logger.Debugf("Cat %s will add peer %s", ch.Name(), id)
 			dig := model.NewscuttlebuttDigest(nil)
 			dig.SetPeerDigest(id, model.BottomClock)
 
-			_ = m.RecvPullDigest(dig)
+			_ = ch.Model().RecvPullDigest(dig)
 			//should generate nothing on update, we may also detect it
 			//and warning if the peer has been existed
+			//after we known new peer, we can broadcast it or try to obtain
+			//more information
+			ch.SelfUpdate()
 			return nil
 		} else {
-			logger.Debugf("Cat %s will update peer %s", catname, id)
+			logger.Debugf("Cat %s will update peer %s", ch.Name(), id)
 			u := model.NewscuttlebuttUpdate(nil)
 			u.UpdatePeer(id, coVarUpdate{})
 
-			return m.RecvUpdate(u)
+			return ch.Model().RecvUpdate(u)
 		}
 
 	}
 }
 
 //remove any peer in a scuttlebutt model
-func standardEvictFunc(catname string, m *model.Model) func([]string) error {
+func standardEvictFunc(ch gossip.CatalogHandler) func([]string) error {
 	return func(ids []string) error {
 
 		ru := model.NewscuttlebuttUpdate(nil)
 		ru.RemovePeers(ids)
-		logger.Debugf("Cat %s will remove peers %v", catname, ids)
+		logger.Debugf("Cat %s will remove peers %v", ch.Name(), ids)
 
-		return m.RecvUpdate(ru)
+		return ch.Model().RecvUpdate(ru)
 	}
 }

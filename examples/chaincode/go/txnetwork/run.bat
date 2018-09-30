@@ -19,6 +19,6 @@ set CORE_PEER_ID=billgates_%1
 set CORE_PEER_VALIDATOR_EVENTS_ADDRESS=127.0.0.1:%EVENTADDRPORT%
 set CORE_PEER_FILESYSTEMPATH=%FILEPATHBASE%\txnet%1
 timeout 1
-start txnetwork
+start cmd /k txnetwork
 rem start echo .
 endlocal

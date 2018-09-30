@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/abchain/fabric/core/chaincode/shim"
+	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger"
 	"golang.org/x/net/context"
 )
@@ -83,6 +84,24 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 			return nil, fmt.Errorf("acquire ledger fail: %s", err)
 		}
 		return []byte(fmt.Sprintf("%d", l.GetPooledTxCount())), nil
+	} else if function == "status" {
+
+		dump := txnetwork.DumpNetwork()
+		if len(dump) == 0 {
+			return nil, fmt.Errorf("no available network")
+		}
+
+		var resp string
+		for netid, outf := range dump {
+			resp = resp + fmt.Sprintf("dumping network %s ----\n", netid)
+			out := outf()
+			for id, s := range out {
+				resp = resp + fmt.Sprintf("*     %s: %d:%x\n", id, s.GetNum(), s.GetDigest())
+			}
+			resp = resp + fmt.Sprintf("dumping network %s end ----\n", netid)
+		}
+		return []byte(resp), nil
+
 	} else if function != "query" {
 		return nil, errors.New("Invalid query function name. Expecting \"query\"")
 	}

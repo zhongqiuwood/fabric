@@ -67,7 +67,7 @@ func initGossipModule(t *testing.T, pendingCat *testCatalogy, m *model.Model) {
 
 				pendingCat.handler = gossip.NewCatalogHandlerImpl(stub.GetSStub(), stub.GetStubContext(), pendingCat, m)
 
-				stub.AddCatalogHandler(pendingCat.Name(), pendingCat.handler)
+				stub.AddCatalogHandler(pendingCat.handler)
 			}
 		})
 

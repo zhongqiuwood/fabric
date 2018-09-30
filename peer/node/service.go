@@ -7,7 +7,6 @@ import (
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/grpclog"
 	"net"
 
 	"github.com/abchain/fabric/core/comm"
@@ -43,7 +42,7 @@ func StartService(listenAddr string, enableTLS bool, regserv ...func(*grpc.Serve
 
 	lis, err := net.Listen("tcp", listenAddr)
 	if err != nil {
-		grpclog.Fatalf("Failed to listen: %v", err)
+		serviceLogger.Fatalf("Failed to listen: %v", err)
 		return err
 	}
 
@@ -53,7 +52,7 @@ func StartService(listenAddr string, enableTLS bool, regserv ...func(*grpc.Serve
 		creds, err := GetServiceTLSCred()
 
 		if err != nil {
-			grpclog.Fatalf("Failed to generate credentials %v", err)
+			serviceLogger.Fatalf("Failed to generate credentials %v", err)
 			return err
 		}
 		opts = []grpc.ServerOption{grpc.Creds(creds)}

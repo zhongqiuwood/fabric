@@ -84,7 +84,7 @@ logging:
     client: debug
     #peer: warning
 
-    node:      info:txhandler,gossip,gossip_cat=debug:db,crypto,buckettree=warning
+    node:      info:gossip,gossip_cat=info:txhandler=info:db,crypto,buckettree=warning
     network:   warning
     chaincode: warning
     version: warning
@@ -112,6 +112,8 @@ peer:
 
     txnetwork:
         enable: true
+        policy:
+            enable: false
 
     # For local calling of peer, often the node and node client can both use
     localaddr: 127.0.0.1:7051

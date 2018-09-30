@@ -33,6 +33,10 @@ func PeerTxQueueLimit() int {
 	return peerTxQueues * peerTxQueueLen
 }
 
+func PeerTxQueueLen() int {
+	return peerTxQueueLen
+}
+
 func SetPeerTxQueueLen(bits uint) {
 	if bits == 0 || bits > 10 {
 		panic("invalid bit count")

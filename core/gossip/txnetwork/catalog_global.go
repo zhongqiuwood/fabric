@@ -360,7 +360,7 @@ func initNetworkStatus(stub *gossip.GossipStub) {
 
 	h := gossip.NewCatalogHandlerImpl(stub.GetSStub(),
 		stub.GetStubContext(), globalcat, m)
-	stub.AddCatalogHandler(globalCatName, h)
+	stub.AddCatalogHandler(h)
 	stub.SubScribeNewPeerNotify(newPeerNotify{h})
 
 }
@@ -438,7 +438,7 @@ func UpdateLocalEpoch(stub *gossip.GossipStub, series uint64, digest []byte) err
 	selfUpdate := model.NewscuttlebuttUpdate(nil)
 	selfUpdate.UpdateLocal(peerStatus{newstate})
 
-	if err := globalcat.Model().Update(selfUpdate); err != nil {
+	if err := globalcat.Model().RecvUpdate(selfUpdate); err != nil {
 		return err
 	} else {
 		globalcat.SelfUpdate()

@@ -13,13 +13,18 @@ var (
 	logger        = logging.MustGetLogger("txhandler")
 )
 
+type txPoint struct {
+	Digest []byte
+	Series uint64
+}
+
 type txNetworkHandlerImpl struct {
 	txnetwork.TxNetworkUpdate
 	defaultEndorser crypto.Client
-	lastDigest      []byte
-	lastSeries      uint64
-	epochDigest     []byte
-	epochSeries     uint64
+	last            txPoint
+	epoch           txPoint
+	chk             map[uint]txPoint
+	nextChkPos      uint
 }
 
 func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
@@ -44,10 +49,12 @@ func NewTxNetworkHandlerNoSec(entry txnetwork.TxNetworkEntry) (*txNetworkHandler
 	ret := new(txNetworkHandlerImpl)
 
 	ret.TxNetworkUpdate = entry
-	ret.lastDigest = selfstatus.GetDigest()
-	ret.lastSeries = selfstatus.GetNum()
+	ret.last = txPoint{selfstatus.GetDigest(), selfstatus.GetNum()}
+	ret.epoch = ret.last
+	ret.nextChkPos = uint(selfstatus.GetNum()/uint64(txnetwork.PeerTxQueueLen())) + 1
+	ret.chk = make(map[uint]txPoint)
 
-	logger.Infof("Start a txnetwork handler for peer at %d[%x]", ret.lastSeries, ret.lastDigest)
+	logger.Infof("Start a txnetwork handler for peer at %d[%x]", ret.last.Series, ret.last.Digest)
 
 	return ret, nil
 }
@@ -75,42 +82,60 @@ func (t *txNetworkHandlerImpl) updateHotTx(txs *pb.HotTransactionBlock, lastDige
 	if err := t.UpdateLocalHotTx(txs); err != nil {
 		logger.Error("Update hot transaction fail", err)
 	} else {
-		t.lastDigest = lastDigest
-		t.lastSeries = lastSeries
+		t.last = txPoint{lastDigest, lastSeries}
+		chk := uint(lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
+		if chk > t.nextChkPos {
+			//checkpoint current, and increase chkpoint pos
+			logger.Infof("Chkpoint %d reach, record [%d:%x]", t.nextChkPos, lastSeries, lastDigest)
+			t.chk[t.nextChkPos] = t.last
+			t.nextChkPos = chk
+		}
 	}
 }
 
 func (t *txNetworkHandlerImpl) updateEpoch() {
 
-	//we do not need to update catalogy for the first time
-	if t.epochSeries == 0 {
-		t.epochDigest = t.lastDigest
-		t.epochSeries = t.lastSeries
-		return
+	//first we search for a eariest checkpoint
+	start := uint(t.epoch.Series/uint64(txnetwork.PeerTxQueueLen())) + 1
+	end := uint(t.last.Series/uint64(txnetwork.PeerTxQueueLen())) + 1
+
+	doUd := func(updated txPoint) {
+		if err := t.UpdateLocalEpoch(updated.Series, updated.Digest); err != nil {
+			logger.Error("Update global fail:", err)
+		}
 	}
 
-	if err := t.UpdateLocalEpoch(t.epochSeries, t.epochDigest); err != nil {
-		logger.Error("Update global fail", err)
-	} else {
-		t.epochDigest = t.lastDigest
-		t.epochSeries = t.lastSeries
+	for i := start; i < end; i++ {
+		if chk, ok := t.chk[i]; ok {
+			delete(t.chk, i)
+			//always update epoch, even we do not update succefully
+			logger.Infof("Update epoch to chkpoint %d [%d:%x]", i, chk.Series, chk.Digest)
+			t.epoch = chk
+			doUd(chk)
+			return
+		}
 	}
+
+	logger.Warning("Can't not find available checkpoint, something may get wrong")
+	//reset epoch but not prune
+	t.epoch = t.last
+	t.chk = make(map[uint]txPoint)
 }
 
 func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
 
 	outtxs := new(pb.HotTransactionBlock)
 
-	lastDigest := t.lastDigest
-	lastSeries := t.lastSeries
-	outtxs.BeginSeries = t.lastSeries + 1
+	lastDigest := t.last.Digest
+	lastSeries := t.last.Series
+	outtxs.BeginSeries = lastSeries + 1
 
 	logger.Debugf("start handling %d txs", len(txs))
 
 	var err error
 	for _, tx := range txs {
 
-		tx.Transaction = buildPrecededTx(t.lastDigest, tx.Transaction)
+		tx.Transaction = buildPrecededTx(lastDigest, tx.Transaction)
 
 		var endorser crypto.Client
 		if tx.GetEndorser() != "" {
@@ -135,16 +160,15 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
 			}
 		}
 
+		//build (complete) tx
 		txdig, err := tx.Digest()
 		if err != nil {
 			logger.Errorf("Can not get digest for tx %v: %s", tx, err)
 			continue
-		} else if len(txdig) < txnetwork.TxDigestVerifyLen {
-			panic("Wrong code generate tx digest less than 16 bytes")
 		}
 		tx.Txid = pb.TxidFromDigest(txdig)
 
-		lastDigest = txdig[:txnetwork.TxDigestVerifyLen]
+		lastDigest = txnetwork.GetTxDigest(tx.Transaction)
 		lastSeries = lastSeries + 1
 
 		outtxs.Transactions = append(outtxs.Transactions, tx.Transaction)
@@ -154,7 +178,7 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
 
 	t.updateHotTx(outtxs, lastDigest, lastSeries)
 
-	if t.epochSeries+epochInterval < t.lastSeries {
+	if t.epoch.Series+epochInterval < lastSeries {
 		t.updateEpoch()
 	}
 

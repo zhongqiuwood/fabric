@@ -20,37 +20,39 @@ type Status interface {
 
 //Now we have the model
 type Model struct {
-	sync.RWMutex
-	Status
+	sync.Mutex
+	s Status
 }
+
+func (m *Model) Status() Status { return m.s }
 
 //gen the "pull" digest to far-end
 func (m *Model) GenPullDigest() Digest {
 
-	m.RLock()
-	defer m.RUnlock()
+	m.Lock()
+	defer m.Unlock()
 
-	return m.GenDigest()
+	return m.s.GenDigest()
 }
 
 //recv the reconciliation message and update status
 func (m *Model) RecvUpdate(r Update) error {
 
-	m.RLock()
-	defer m.RUnlock()
+	m.Lock()
+	defer m.Unlock()
 
-	return m.Update(r)
+	return m.s.Update(r)
 }
 
 //recv the digest from a "pulling" far-end
 func (m *Model) RecvPullDigest(digests Digest) Update {
 
-	m.RLock()
-	defer m.RUnlock()
+	m.Lock()
+	defer m.Unlock()
 
-	return m.MakeUpdate(digests)
+	return m.s.MakeUpdate(digests)
 }
 
 func NewGossipModel(self Status) *Model {
-	return &Model{Status: self}
+	return &Model{s: self}
 }

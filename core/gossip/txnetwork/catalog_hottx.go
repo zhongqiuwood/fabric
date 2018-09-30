@@ -59,6 +59,10 @@ func getTxDigest(tx *pb.Transaction) []byte {
 	return dig[:TxDigestVerifyLen]
 }
 
+func GetTxDigest(tx *pb.Transaction) []byte {
+	return getTxDigest(tx)
+}
+
 //return whether tx is match to the digest
 func txIsMatch(digest []byte, tx *pb.Transaction) bool {
 
@@ -109,7 +113,7 @@ func (p *peerTxs) concat(s *peerTxs) error {
 	}
 
 	if s.head.digestSeries != p.lastSeries()+1 {
-		return fmt.Errorf("Wrong next series: %d", s.head.digestSeries)
+		return fmt.Errorf("Wrong next series: %d (expected %d)", s.head.digestSeries, p.lastSeries()+1)
 	}
 
 	p.last.next = s.head
@@ -348,37 +352,41 @@ func (u txPeerUpdate) completeTxs(l *ledger.Ledger, h TxPreHandler) (ret txPeerU
 	return
 }
 
-func (u txPeerUpdate) toTxs(last *txMemPoolItem) (*peerTxs, error) {
+func (u txPeerUpdate) toTxs(reflastDigest []byte) (*peerTxs, error) {
 
 	if len(u.Transactions) == 0 {
 		return nil, nil
 	}
 
+	tx := u.Transactions[0]
+	if reflastDigest != nil && !txIsPrecede(reflastDigest, tx) {
+		return nil, fmt.Errorf("update have invalid transactions chain for tx at %d", u.BeginSeries)
+	}
+
 	head := &txMemPoolItem{
-		//		tx:           txs.Transactions[0],
-		//		digest:       txToDigestState(txs.Transactions[0]),
+		txid:         tx.GetTxid(),
+		digest:       getTxDigest(tx),
 		digestSeries: u.BeginSeries,
 	}
 
 	current := head
 
 	//construct a peerTxMemPool from txs, and do verification
-	for _, tx := range u.Transactions {
+	for _, tx := range u.Transactions[1:] {
 
-		if last != nil && !txIsPrecede(last.digest, tx) {
-			return nil, fmt.Errorf("update have invalid transactions chain for tx at %d", last.digestSeries+1)
+		if !txIsPrecede(current.digest, tx) {
+			return nil, fmt.Errorf("update have invalid transactions chain for tx at %d", current.digestSeries+1)
 		}
 
-		last = current
-		current.txid = tx.GetTxid()
-		current.digest = getTxDigest(tx)
-
-		current = &txMemPoolItem{digestSeries: current.digestSeries + 1}
-		last.next = current
+		current.next = &txMemPoolItem{
+			txid:         tx.GetTxid(),
+			digest:       getTxDigest(tx),
+			digestSeries: current.digestSeries + 1,
+		}
+		current = current.next
 	}
-	last.next = nil //seal the tail
 
-	return &peerTxs{head, last}, nil
+	return &peerTxs{head, current}, nil
 }
 
 //so we make two indexes for pooling txs: the global one (by txid) and a per-peer
@@ -499,13 +507,17 @@ func (p *peerTxMemPool) handlePeerCoVar(id string, peerStatus *pb.PeerTxState, g
 func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *pb.PeerTxState, g *txPoolGlobal) error {
 	logger.Debugf("peer %s try to updated %d incoming txs from series %d", id, len(u.Transactions), u.BeginSeries)
 
+	if u.BeginSeries > p.lastSeries()+1 {
+		return fmt.Errorf("Get gapped update start from %d, current %d", u.BeginSeries, p.lastSeries())
+	}
+
 	var err error
 	u, err = u.getRef(p.lastSeries()+1).completeTxs(g.ledger, g.preH)
 	if err != nil {
 		return err
 	}
 
-	inTxs, err := u.toTxs(p.last)
+	inTxs, err := u.toTxs(p.last.digest)
 	if err != nil {
 		//NEVER report this as the fraud of far-end because the original peer can build
 		//branch results (by update peer status or sending branched tx chains) deliberately
@@ -522,7 +534,7 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *
 	//sanity check
 	err = p.concat(inTxs)
 	if err != nil {
-		panic("toTxs method should has verified everything, wrong code")
+		panic(fmt.Errorf("toTxs method should has verified everything, wrong code:", err))
 	}
 
 	var mergeCnt int
@@ -637,12 +649,12 @@ func initHotTx(stub *gossip.GossipStub) {
 
 	m := model.NewGossipModel(selfStatus)
 
-	stub.AddCatalogHandler(hotTxCatName,
-		gossip.NewCatalogHandlerImpl(stub.GetSStub(),
-			stub.GetStubContext(), hotTx, m))
+	ch := gossip.NewCatalogHandlerImpl(stub.GetSStub(),
+		stub.GetStubContext(), hotTx, m)
+	stub.AddCatalogHandler(ch)
 
-	txglobal.network.RegUpdateNotify(standardUpdateFunc(hotTxCatName, m))
-	txglobal.network.RegEvictNotify(standardEvictFunc(hotTxCatName, m))
+	txglobal.network.RegUpdateNotify(standardUpdateFunc(ch))
+	txglobal.network.RegEvictNotify(standardEvictFunc(ch))
 }
 
 const (
@@ -739,7 +751,7 @@ func UpdateLocalHotTx(stub *gossip.GossipStub, txs *pb.HotTransactionBlock) erro
 	selfUpdate := model.NewscuttlebuttUpdate(nil)
 	selfUpdate.UpdateLocal(txPeerUpdate{txs})
 
-	if err := hotcat.Model().Update(selfUpdate); err != nil {
+	if err := hotcat.Model().RecvUpdate(selfUpdate); err != nil {
 		return err
 	} else {
 		//notify our peer is updated

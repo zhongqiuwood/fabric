@@ -6,8 +6,13 @@ import (
 	"sync"
 )
 
+type TxHandlerFactory interface {
+	GetPreHandler() TxPreHandler
+}
+
 type TxPreHandler interface {
 	TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error)
+	Release()
 }
 
 type cachedTx struct {
@@ -99,7 +104,7 @@ func (c *peerTxCache) prune(from uint64, to uint64) {
 type transactionPool struct {
 	sync.RWMutex
 	ledger    *ledger.Ledger
-	preH      TxPreHandler
+	txHandler TxHandlerFactory
 	peerCache map[string]*peerTxCache
 }
 

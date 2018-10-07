@@ -512,7 +512,13 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *
 	}
 
 	var err error
-	u, err = u.getRef(p.lastSeries()+1).completeTxs(g.ledger, g.preH)
+	var preh TxPreHandler
+	if g.txHandler != nil {
+		preh = g.txHandler.GetPreHandler()
+		defer preh.Release()
+	}
+
+	u, err = u.getRef(p.lastSeries()+1).completeTxs(g.ledger, preh)
 	if err != nil {
 		return err
 	}
@@ -632,8 +638,9 @@ func initHotTx(stub *gossip.GossipStub) {
 	//	txglobal.ind = make(map[string]*txMemPoolItem)
 	txglobal.network = global.CreateNetwork(stub)
 	txglobal.transactionPool = newTransactionPool(l)
-	txglobal.preH = stub.GetSecurity().GetSecHelper()
-	if txglobal.preH == nil {
+	//TODO: need to set txHandler by some crypto (cred) scheme
+	//txglobal.txHandler = stub.GetSecurity().GetSecHelper()
+	if txglobal.txHandler == nil {
 		logger.Warning("Create txnetwork without security handler")
 	}
 

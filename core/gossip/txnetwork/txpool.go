@@ -7,7 +7,7 @@ import (
 )
 
 type TxHandlerFactory interface {
-	GetPreHandler() TxPreHandler
+	GetPreHandler(string, *pb.PeerTxState) TxPreHandler
 }
 
 type TxPreHandler interface {

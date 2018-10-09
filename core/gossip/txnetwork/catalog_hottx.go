@@ -514,7 +514,7 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *
 	var err error
 	var preh TxPreHandler
 	if g.txHandler != nil {
-		preh = g.txHandler.GetPreHandler()
+		preh = g.txHandler.GetPreHandler(id, peerStatus)
 		defer preh.Release()
 	}
 

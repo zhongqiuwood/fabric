@@ -3,6 +3,7 @@ package txnetwork
 import (
 	"bytes"
 	"fmt"
+	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	"github.com/abchain/fabric/core/ledger"
@@ -323,7 +324,7 @@ func (u txPeerUpdate) getRef(refSeries uint64) txPeerUpdate {
 	}
 }
 
-func (u txPeerUpdate) completeTxs(l *ledger.Ledger, h TxPreHandler) (ret txPeerUpdate, err error) {
+func (u txPeerUpdate) completeTxs(l *ledger.Ledger, h cred.TxPreHandler) (ret txPeerUpdate, err error) {
 	ret.HotTransactionBlock = &pb.HotTransactionBlock{
 		Transactions: make([]*pb.Transaction, len(u.Transactions)),
 		BeginSeries:  u.BeginSeries,
@@ -512,9 +513,12 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *
 	}
 
 	var err error
-	var preh TxPreHandler
+	var preh cred.TxPreHandler
 	if g.txHandler != nil {
-		preh = g.txHandler.GetPreHandler(id, peerStatus)
+		preh, err = g.txHandler.GetPreHandler(id, peerStatus)
+		if err != nil {
+			return err
+		}
 		defer preh.Release()
 	}
 

@@ -1,19 +1,11 @@
 package txnetwork
 
 import (
+	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
 	"sync"
 )
-
-type TxHandlerFactory interface {
-	GetPreHandler(string, *pb.PeerTxState) TxPreHandler
-}
-
-type TxPreHandler interface {
-	TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error)
-	Release()
-}
 
 type cachedTx struct {
 	*pb.Transaction
@@ -104,7 +96,7 @@ func (c *peerTxCache) prune(from uint64, to uint64) {
 type transactionPool struct {
 	sync.RWMutex
 	ledger    *ledger.Ledger
-	txHandler TxHandlerFactory
+	txHandler cred.TxHandlerFactory
 	peerCache map[string]*peerTxCache
 }
 

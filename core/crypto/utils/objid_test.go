@@ -17,7 +17,7 @@ func TestObjIdIndexing(t *testing.T) {
 		t.Fatal("find 1 v fail", v, matched, resd)
 	}
 
-	if !matched || len(resd) != 8 {
+	if !matched {
 		t.Fatal("data 1 fail", v, matched, resd)
 	}
 
@@ -26,7 +26,7 @@ func TestObjIdIndexing(t *testing.T) {
 		t.Fatal("find 2 v fail", v, matched, resd)
 	}
 
-	if !matched || len(resd) != 6 {
+	if !matched {
 		t.Fatal("data 2 fail", v, matched, resd)
 	}
 
@@ -39,7 +39,7 @@ func TestObjIdIndexing(t *testing.T) {
 
 	_, matched, resd = ind.GetItem(asn1.ObjectIdentifier{1, 2, 3, 4, 6, 6, 9})
 
-	if matched || len(resd) != 4 {
+	if matched || len(resd) != 3 {
 		t.Fatal("data 3 fail", matched, resd)
 	}
 
@@ -48,13 +48,13 @@ func TestObjIdIndexing(t *testing.T) {
 		t.Fatal("find 4 v fail", v)
 	}
 
-	if !matched || len(resd) != 1 {
+	if !matched {
 		t.Fatal("data 4 fail", v, matched, resd)
 	}
 
 	_, matched, resd = ind.GetItem(asn1.ObjectIdentifier{9, 8, 7, 6, 5})
 
-	if matched || len(resd) != 0 {
+	if matched || len(resd) != 5 {
 		t.Fatal("data 5 fail", matched, resd)
 	}
 
@@ -64,7 +64,7 @@ func TestObjIdIndexing(t *testing.T) {
 		t.Fatal("find 6 v fail", v)
 	}
 
-	if matched || len(resd) != 1 {
+	if matched || len(resd) != 3 {
 		t.Fatal("data 6 fail", matched, resd)
 	}
 

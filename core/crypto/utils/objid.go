@@ -53,7 +53,5 @@ func (i *ObjIdIndex) GetItem(objid asn1.ObjectIdentifier) (interface{}, bool, as
 	v, res := i.find([]int(objid))
 
 	isMatched := res == nil
-	matched := objid[:len(objid)-len(res)]
-
-	return v, isMatched, matched
+	return v, isMatched, res
 }

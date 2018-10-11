@@ -1,7 +1,6 @@
 package crypto
 
 import (
-	"bytes"
 	"crypto/x509"
 	"fmt"
 	"github.com/abchain/fabric/core/crypto/primitives"
@@ -17,12 +16,12 @@ type tCertEndorsment interface {
 
 func endorseTxMsg(tx *obc.Transaction) ([]byte, error) {
 
-	digest, err := tx.Digest()
+	ret, err := TxToSignatureMsg(tx)
 	if err != nil {
 		return nil, fmt.Errorf("Failed digesting tx [%s].", err.Error())
 	}
 
-	return bytes.Join([][]byte{digest, tx.Cert}, nil), nil
+	return ret, nil
 }
 
 func (node *nodeImpl) tx_endorse(tx *obc.Transaction, endorser tCertEndorsment) (*obc.Transaction, error) {

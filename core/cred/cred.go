@@ -14,8 +14,10 @@ var logger = logging.MustGetLogger("credential")
 	(and somewhat like the mxing of bccsp & msp in fabric 1.0)
 */
 
-type CredentialCore struct {
-	TxValidator TxHandlerFactory
+type Credentials struct {
+	PeerValidator PeerCreds
+	TxEndorserDef TxEndorserFactory
+	TxValidator   TxHandlerFactory
 }
 
 /*
@@ -24,7 +26,10 @@ type CredentialCore struct {
 
 */
 
-type PeerVerifier interface {
+type PeerCreds interface {
+	SelfPeerId() string
+	PeerIdCred() []byte
+	VerifyPeer(string, []byte) error
 }
 
 /*
@@ -32,23 +37,24 @@ type PeerVerifier interface {
  -- entries for transaction's credentials ---
 
 */
-
-//TxHandler Factory is for EVERY POSSIBLE PEER while TxEndorserFactory is for A SINGLE PEER
-type TxHandlerFactory interface {
-	GetPreHandler(id string, status *pb.PeerTxState) (TxPreHandler, error)
-	RemovePreHandler(string)
-}
-
-type TxPreHandler interface {
-	TransactionPreValidation(*pb.Transaction) (*pb.Transaction, error)
-	Release()
-}
-
 type TxEndorserFactory interface {
+	EndorserId() string
+	EndorsePeerState(*pb.PeerTxState) (*pb.PeerTxState, error)
 	GetEndorser(attr ...string) (TxEndorser, error)
 }
 
 type TxEndorser interface {
 	EndorseTransaction(*pb.Transaction) (*pb.Transaction, error)
+	Release()
+}
+
+type TxHandlerFactory interface {
+	ValidatePeer(id string, status *pb.PeerTxState) error
+	GetPreHandler(id string) (TxPreHandler, error)
+	RemovePreHandler(string)
+}
+
+type TxPreHandler interface {
+	TransactionPreValidation(*pb.Transaction) (*pb.Transaction, error)
 	Release()
 }

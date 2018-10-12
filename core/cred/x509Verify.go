@@ -43,7 +43,30 @@ func NewX509ExtVerifer(certs []*x509.Certificate) *x509ExtVerifier {
 	return ret
 }
 
-func (v *x509ExtVerifier) verifyExt(chains [][]*x509.Certificate, exts []asn1.ObjectIdentifier) []*x509.Certificate {
+/* return the FISRT chain with matched ext, if not found matched chain, return nil, and error indicate it*/
+func (v *x509ExtVerifier) Verify(cert *x509.Certificate, immCA *x509.CertPool) ([][]*x509.Certificate, error) {
+
+	opt := x509.VerifyOptions{
+		Intermediates: immCA,
+		Roots:         v.rootCA,
+	}
+
+	unhandledExt := cert.UnhandledCriticalExtensions
+	cert.UnhandledCriticalExtensions = nil
+	defer func() {
+		cert.UnhandledCriticalExtensions = unhandledExt
+	}()
+
+	return cert.Verify(opt)
+}
+
+/* return the FISRT chain with matched ext, if not found matched chain, return nil, and error indicate it*/
+func (v *x509ExtVerifier) VerifyWithAttr(cert *x509.Certificate, immCA *x509.CertPool) (chains [][]*x509.Certificate, matched []*x509.Certificate, err error) {
+
+	chains, err = v.Verify(cert, immCA)
+	if err != nil {
+		return
+	}
 
 	for _, chain := range chains {
 		ca := chain[len(chain)-1]
@@ -62,37 +85,15 @@ func (v *x509ExtVerifier) verifyExt(chains [][]*x509.Certificate, exts []asn1.Ob
 			}
 		}
 		if ok {
-			return chain
+			matched = chain
+			break
 		}
-
 	}
 
-	return nil
-}
-
-/* return the FISRT chain with matched ext, if not found matched chain, return nil, and error indicate it*/
-func (v *x509ExtVerifier) Verify(cert *x509.Certificate, immCA *x509.CertPool) ([][]*x509.Certificate, []*x509.Certificate, error) {
-
-	opt := x509.VerifyOptions{
-		Intermediates: immCA,
-		Roots:         v.rootCA,
-	}
-
-	unhandledExt := cert.UnhandledCriticalExtensions
-	cert.UnhandledCriticalExtensions = nil
-	defer func() {
-		cert.UnhandledCriticalExtensions = unhandledExt
-	}()
-
-	chains, err := cert.Verify(opt)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	matched := v.verifyExt(chains, unhandledExt)
 	if matched == nil {
-		return chains, nil, x509.UnhandledCriticalExtension{}
+		err = x509.UnhandledCriticalExtension{}
+		return
 	}
 
-	return chains, matched, nil
+	return
 }

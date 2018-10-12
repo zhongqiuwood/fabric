@@ -3,6 +3,7 @@ package util
 import (
 	"fmt"
 	"hash"
+	"io"
 )
 
 type ConWriter interface {
@@ -22,12 +23,12 @@ func (w *failConWriter) Error() error {
 	return w.Err
 }
 
-type hashConWriter struct {
-	H hash.Hash
+type conWriter struct {
+	io.Writer
 }
 
-func (w hashConWriter) Write(p []byte) ConWriter {
-	i, err := w.H.Write(p)
+func (w conWriter) Write(p []byte) ConWriter {
+	i, err := w.Writer.Write(p)
 
 	if err != nil {
 		return &failConWriter{err}
@@ -38,10 +39,14 @@ func (w hashConWriter) Write(p []byte) ConWriter {
 	}
 }
 
-func (w hashConWriter) Error() error {
+func (w conWriter) Error() error {
 	return nil
 }
 
+func NewConWriter(wr io.Writer) ConWriter {
+	return &conWriter{wr}
+}
+
 func NewHashWriter(h hash.Hash) ConWriter {
-	return &hashConWriter{h}
+	return NewConWriter(h)
 }

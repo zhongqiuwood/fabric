@@ -6,8 +6,6 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	_ "github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/looplab/fsm"
@@ -578,7 +576,7 @@ func (sts *syncer) switchToBestCheckpoint(startBlockNumber uint64) (uint64, erro
 	checkpointList := db.GetGlobalDBHandle().ListCheckpoints()
 
 	for _, cp := range checkpointList {
-		checkpointsMap[util.EncodeStatehash(cp)] = true
+		checkpointsMap[encodeStatehash(cp)] = true
 	}
 
 	sts.branchNode2CheckpointMap = traverseGlobalStateGraph(genesis.StateHash, checkpointsMap, true)
@@ -639,7 +637,7 @@ func (sts *syncer) switchToCheckpointByBranchNode(branchNodeStateHash []byte) (u
 		panic(fmt.Errorf("the branchNodeStateHash is nil"))
 	}
 
-	checkpointList, ok := sts.branchNode2CheckpointMap[util.EncodeStatehash(branchNodeStateHash)]
+	checkpointList, ok := sts.branchNode2CheckpointMap[encodeStatehash(branchNodeStateHash)]
 
 	var err error
 	var checkpointPosition uint64
@@ -678,7 +676,7 @@ func traverseGlobalStateGraph(genesisStateHash []byte, checkpointsMap map[string
 
 			var stringStateHash string
 			if hexEncoded {
-				stringStateHash = util.EncodeStatehash(nextBranchNodeStateHash)
+				stringStateHash = encodeStatehash(nextBranchNodeStateHash)
 			} else {
 				stringStateHash = string(nextBranchNodeStateHash)
 			}
@@ -705,7 +703,7 @@ func traverseTillBranch(startStateHash []byte, checkpointMap map[string]bool, he
 
 		var stringStateHash string
 		if hexEncoded {
-			stringStateHash = util.EncodeStatehash(curcorStateHash)
+			stringStateHash = encodeStatehash(curcorStateHash)
 		} else {
 			stringStateHash = string(curcorStateHash)
 		}
@@ -778,4 +776,8 @@ func (sts *syncer) fini() {
 		logger.Debugf("close deltaResp channel")
 		close(sts.deltaResp)
 	}
+}
+
+func encodeStatehash(statehash []byte) string {
+	return fmt.Sprintf("%x", statehash)
 }

@@ -165,12 +165,19 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 	// 1. query
 	//---------------------------------------------------------------------------
 	mostRecentIdenticalHistoryPosition, endBlockNumber, err := syncHandler.client.getSyncTargetBlockNumber()
+
+	if mostRecentIdenticalHistoryPosition >= endBlockNumber {
+		logger.Infof("[%s]: No sync required. mostRecentIdenticalHistoryPosition: %d, endBlockNumber: %d",
+			flogging.GoRDef, mostRecentIdenticalHistoryPosition, endBlockNumber)
+		return nil
+	}
+
 	if err != nil {
 		logger.Errorf("[%s]: getSyncTargetBlockNumber err: %s", flogging.GoRDef, err)
 		return err
 	}
-	logger.Infof("[%s]: query done. mostRecentIdenticalHistoryPosition:%d",
-		flogging.GoRDef, mostRecentIdenticalHistoryPosition)
+	logger.Infof("[%s]: query done. mostRecentIdenticalHistoryPosition: %d, endBlockNumber: %d",
+		flogging.GoRDef, mostRecentIdenticalHistoryPosition, endBlockNumber)
 
 	startBlockNumber := mostRecentIdenticalHistoryPosition + 1
 

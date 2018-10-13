@@ -21,7 +21,7 @@ function testbody {
 
 function main {
 
-    for ((index=0; index<${1}; index++)) do
+    for ((index=0; index<$1; index++)) do
         invokebody ${index}
     done
 
@@ -29,7 +29,7 @@ function main {
     ./peer network status
     ./peer chaincode query -n txnetwork -c "{\"Function\": \"count\", \"Args\": []}"
 
-    for ((index=0; index<${2}; index++)) do
+    for ((index=0; index<$2; index++)) do
         invokebody ${index}
     done
 }

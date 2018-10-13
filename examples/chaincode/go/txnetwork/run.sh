@@ -24,8 +24,10 @@ function startpeer {
 }
 
 function main {
-
-    for ((index=0; index<$1; index++)) do
+    ./killbyname.sh txnetwork
+    rm *_stdout_billgates_*.json
+    for ((index=0; index<$1; index++))
+    do
         startpeer ${index}
     done
 }

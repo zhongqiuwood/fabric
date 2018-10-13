@@ -141,7 +141,10 @@ function build_embedded {
         GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/examples/chaincode/go/embedded
 }
 
-
+function build_testsync {
+    CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
+        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/core/statesync/testsync
+}
 
 function build_peer_process {
 
@@ -221,6 +224,7 @@ function startpeer {
     fi
     echo "======================================================"
 
+    export CORE_PEER_TXNETWORK_ENABLE=false
 
     if [ ! "${FULL_PEER_ID}" = "${SYNC_TARGET}" ];then
         export CORE_PEER_SYNCTARGET=${SYNC_TARGET}
@@ -272,16 +276,10 @@ function startpeer {
         cd ../..
     fi
 
-#    if [ ! -d ${FABRIC_TOP}/stderrdir ]; then
-#        mkdir ${FABRIC_TOP}/stderrdir
-#    fi
 
     if [ "$ACTION_CLEAR" = "clearall" ] || [ "$ACTION_CLEAR" = "clearlog" ] || [ "$ACTION_CLEAR" = "cleardb" ];then
         echo '' > ${LOG_STDOUT_FILE}
     fi
-
-    #nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start > /dev/null 2>${FABRIC_TOP}/stderrdir/err_nohup_peer${PEER_ID}.json &
-    #nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start > ${FABRIC_TOP}/nohup_peer${PEER_ID}.log 2>&1 &
 
     nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start >> ${LOG_STDOUT_FILE} 2>>${LOG_STDOUT_FILE} &
 #    ${BUILD_BIN}/peer_fabric_${PEER_ID} node start

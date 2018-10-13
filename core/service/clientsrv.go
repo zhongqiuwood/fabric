@@ -308,7 +308,7 @@ func (d *Devops) invokeOrQuery(ctx context.Context, chaincodeInvocationSpec *pb.
 	// We generate a temporary id for used in work process and update it with
 	// the tx's content
 	id := util.GenerateUUID()
-	clisrvLogger.Infof("Transaction ID: %v", id)
+	clisrvLogger.Debugf("Transaction ID: %v", id)
 	var transaction *pb.Transaction
 	var err error
 	var sec crypto.Client

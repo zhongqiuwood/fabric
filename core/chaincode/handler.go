@@ -192,18 +192,34 @@ func (ws *workingStream) handleInvokeChaincode(msg *pb.ChaincodeMessage, tctx *t
 
 func (ws *workingStream) handleMessage(msg *pb.ChaincodeMessage, tctx *transactionContext, handler *Handler, recvF func()) {
 
+	//we dance most routine into another thread EXCEPT for the completed routine,
+	//because finishTx is thread-unsafe (the tctxs map is touched)
+	//another receiving must be spined off after the handling routine so the
+	//handling of msg from cc is serial
 	switch msg.Type {
 	case pb.ChaincodeMessage_GET_STATE,
 		pb.ChaincodeMessage_RANGE_QUERY_STATE,
 		pb.ChaincodeMessage_RANGE_QUERY_STATE_NEXT,
 		pb.ChaincodeMessage_RANGE_QUERY_STATE_CLOSE:
-		ws.handleReadState(msg, tctx, handler)
+		go func() {
+			ws.handleReadState(msg, tctx, handler)
+			recvF()
+		}()
+
 	case pb.ChaincodeMessage_PUT_STATE,
 		pb.ChaincodeMessage_DEL_STATE:
-		ws.handleWriteState(msg, tctx, handler)
+		go func() {
+			ws.handleWriteState(msg, tctx, handler)
+			recvF()
+		}()
+
 	case pb.ChaincodeMessage_INVOKE_CHAINCODE,
 		pb.ChaincodeMessage_INVOKE_QUERY:
-		ws.handleInvokeChaincode(msg, tctx, handler)
+		go func() {
+			ws.handleInvokeChaincode(msg, tctx, handler)
+			recvF()
+		}()
+
 	case pb.ChaincodeMessage_QUERY_COMPLETED:
 		//need to encrypt the result
 		if payload, err := handler.encrypt(tctx, msg.Payload); nil != err {
@@ -220,12 +236,10 @@ func (ws *workingStream) handleMessage(msg *pb.ChaincodeMessage, tctx *transacti
 		chaincodeLogger.Debugf("[%s]HandleMessage-_COMPLETED. Notify", shorttxid(msg.Txid))
 		tctx.responseNotifier <- msg
 		ws.finishTx(false, tctx, handler)
+		go recvF()
 	default:
 		panic(fmt.Errorf("Unrecognized msg type: %s", msg.Type))
 	}
-
-	//spin off another receiving here(so the handling of msg from cc is serial)
-	recvF()
 }
 
 func (ws *workingStream) recvMsg(msgAvail chan *pb.ChaincodeMessage) {
@@ -280,7 +294,7 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 
 			if tctx, ok := ws.tctxs[in.Txid]; ok {
 				//recv will be triggered among handleMessage
-				go ws.handleMessage(in, tctx, handler, recvF)
+				ws.handleMessage(in, tctx, handler, recvF)
 			} else {
 				chaincodeLogger.Error("Received message from unknown/deleted tx:", in.Txid)
 				//for the "finish message", just omit it, or simply replay and not care error

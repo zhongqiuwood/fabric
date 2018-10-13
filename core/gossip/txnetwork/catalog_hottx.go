@@ -509,12 +509,13 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *
 	logger.Debugf("peer %s try to updated %d incoming txs from series %d", id, len(u.Transactions), u.BeginSeries)
 
 	if u.BeginSeries > p.lastSeries()+1 {
-		return fmt.Errorf("Get gapped update start from %d, current %d", u.BeginSeries, p.lastSeries())
+		return fmt.Errorf("Get gapped update for %s start from %d, current %d", id, u.BeginSeries, p.lastSeries())
 	}
 
 	var err error
 	var preh cred.TxPreHandler
-	if g.txHandler != nil {
+	//skip credentials checking for self-update
+	if id != "" && g.txHandler != nil {
 		preh, err = g.txHandler.GetPreHandler(id, peerStatus)
 		if err != nil {
 			return err

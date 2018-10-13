@@ -30,10 +30,12 @@ function main {
     ./peer chaincode query -n txnetwork -c "{\"Function\": \"count\", \"Args\": []}"
 
     for ((index=0; index<$2; index++)) do
-        invokebody ${index}
+        testbody ${index}
     done
 }
 
 main $1 $2
+
+
 
 

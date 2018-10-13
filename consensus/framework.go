@@ -2,7 +2,10 @@ package consensus
 
 /*
 
-	Consensus Framework
+	YA-fabric: Consensus Framework:
+
+	This is an aggregation of required features for a system-chaincode working
+	for consensus
 
 */
 

@@ -460,7 +460,7 @@ func purgePool(p *peerTxMemPool, purgeto uint64) {
 	//for zero, we just get UINT64_MAX and no index
 	preserved := p.fetch(purgeto, p.jlindex[purgeto/jumplistInterval-1])
 	if preserved == nil {
-		logger.Warningf("got empty preserved, wrong purge request:", purgeto)
+		logger.Warning("got empty preserved, wrong purge request:", purgeto)
 		return
 	}
 
@@ -563,7 +563,7 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *
 	//finally we handle the case if pool's cache is overflowed
 	if int(p.lastSeries()-p.firstSeries())+1 > PeerTxQueueLimit() {
 		to := p.lastSeries() - uint64(PeerTxQueueLimit()) + 1
-		logger.Warning("peer %s's cache has reach limit and we have to prune it to %d", to)
+		logger.Warningf("peer %s's cache has reach limit and we have to prune it to %d", id, to)
 		//notice, the cache has been full so we do not need to prune it
 		//(the older part has been overwritten)
 		purgePool(p, to)

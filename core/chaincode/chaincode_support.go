@@ -485,7 +485,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 			return nil, chrte
 		}
 		//all of us must wait here till the cc is really launched (or failed...)
-		chaincodeLogger.Debugf("Container not in READY state(%s)...send init/ready", chrte.handler.FSM.Current())
+		chaincodeLogger.Debug("chainicode not in READY state...waiting")
 		//now we "chain" the notify so mutiple waitings
 		notifyChain := make(chan error, 1)
 		notfy := chrte.waitNotify

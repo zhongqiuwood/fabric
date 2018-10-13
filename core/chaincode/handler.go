@@ -193,7 +193,7 @@ func (ws *workingStream) handleInvokeChaincode(msg *pb.ChaincodeMessage, tctx *t
 func (ws *workingStream) handleMessage(msg *pb.ChaincodeMessage, tctx *transactionContext, handler *Handler, recvF func()) {
 
 	//we dance most routine into another thread EXCEPT for the completed routine,
-	//because finishTx is thread-unsafe
+	//because finishTx is thread-unsafe (the tctxs map is touched)
 	//another receiving must be spined off after the handling routine so the
 	//handling of msg from cc is serial
 	switch msg.Type {

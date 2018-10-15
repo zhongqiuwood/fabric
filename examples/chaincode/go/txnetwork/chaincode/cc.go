@@ -6,15 +6,17 @@ import (
 	"github.com/abchain/fabric/core/chaincode/shim"
 	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger"
+	logging "github.com/op/go-logging"
 	"golang.org/x/net/context"
 )
 
 // SimpleChaincode example simple Chaincode implementation
 type SimpleChaincode struct {
+	defLogLevel logging.Level
 }
 
 func (t *SimpleChaincode) Init(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
-
+	t.defLogLevel = logging.GetLevel("gossip_cat")
 	return nil, nil
 }
 
@@ -91,16 +93,39 @@ func (t *SimpleChaincode) Query(stub shim.ChaincodeStubInterface, function strin
 			return nil, fmt.Errorf("no available network")
 		}
 
+		dump2 := txnetwork.DumpTxNetwork()
+
 		var resp string
 		for netid, outf := range dump {
 			resp = resp + fmt.Sprintf("dumping network %s ----\n", netid)
 			out := outf()
+			out2 := map[string]uint64{}
+			out2f := dump2[netid]
+			if out2f == nil {
+				resp = resp + "  (No vclock found)\n"
+			} else {
+				out2 = out2f()
+			}
+
 			for id, s := range out {
-				resp = resp + fmt.Sprintf("*     %s: %d:%x\n", id, s.GetNum(), s.GetDigest())
+				resp = resp + fmt.Sprintf("*     %s: [%d/%d]:%x\n", id, s.GetNum(), out2[id], s.GetDigest())
 			}
 			resp = resp + fmt.Sprintf("dumping network %s end ----\n", netid)
 		}
 		return []byte(resp), nil
+
+	} else if function == "debug" {
+		if len(args) != 1 {
+			return nil, errors.New("Incorrect number of arguments. Expecting a switch")
+		}
+		if args[0] == "on" {
+			logging.SetLevel(logging.DEBUG, "gossip_cat")
+			return []byte("Gossip log is set to debug mode"), nil
+		} else {
+			//set log flag to default
+			logging.SetLevel(t.defLogLevel, "gossip_cat")
+			return []byte("Log is resume"), nil
+		}
 
 	} else if function != "query" {
 		return nil, errors.New("Invalid query function name. Expecting \"query\"")

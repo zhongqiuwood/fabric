@@ -4,7 +4,6 @@ import (
 	"bytes"
 	model "github.com/abchain/fabric/core/gossip/model"
 	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 	"testing"
 )
@@ -14,18 +13,6 @@ func newHotTxModel(l *ledger.Ledger) *model.Model {
 	txglobal.ledger = l
 
 	return model.NewGossipModel(model.NewScuttlebuttStatus(txglobal))
-}
-
-var genesisDigest = util.GenerateBytesUUID()
-
-func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
-
-	if len(digest) < TxDigestVerifyLen {
-		digest = append(digest, failDig[len(digest):]...)
-	}
-
-	tx.Nonce = digest
-	return tx
 }
 
 func TestTxChain(t *testing.T) {
@@ -64,7 +51,7 @@ func prolongItemChain(t *testing.T, head *txMemPoolItem, n int) (*peerTxs, []*pb
 
 		dg := getTxDigest(tx)
 
-		t.Logf("create tx with digest %x", dg)
+		t.Logf("create tx %s with digest %x", tx.GetTxid(), dg)
 
 		cur.next = &txMemPoolItem{
 			digest:       dg,
@@ -234,7 +221,9 @@ func TestPeerUpdate(t *testing.T) {
 	}
 
 	txPool := newTransactionPool(ledger)
-	txPool.AcquireCache("helperCache", 0, 1).AddTxs(txcache, true)
+	txPool.AcquireCache("helperCache", 0, 0).AddTxs(txcache, true)
+
+	t.Log("txcache first:", txPool.peerCache["helperCache"][0])
 
 	formTestData(ledger, txchain, [][]int{nil, []int{2, 4, 7}, []int{3, 5}}, cache)
 
@@ -261,6 +250,10 @@ func TestPeerUpdate(t *testing.T) {
 	if !isLiteTx(udt.GetTransactions()[6]) {
 		t.Fatalf("unexpected full-tx <7>")
 	}
+
+	t.Log("txcache:", txcache)
+	t.Log("txpool:", txPool.peerCache["helperCache"][0])
+	t.Log("udt:", udt)
 
 	handledudt, err := udt.getRef(5).completeTxs(ledger, nil)
 	if err != nil {
@@ -374,14 +367,9 @@ func TestPeerTxPool(t *testing.T) {
 
 	//test out-date pick
 	ud_out, _ = pool.PickFrom(defaultPeer, standardVClock(3), txPoolGlobalUpdateOut{txGlobal, 2})
-	ud, ok = ud_out.(txPeerUpdate)
 
-	if !ok {
-		t.Fatalf("type fail: %v", ud_out)
-	}
-
-	if ud.BeginSeries != 5 || len(ud.Transactions) != 1 {
-		t.Fatalf("unexpected begin: %v", ud.Transactions)
+	if ud_out != nil {
+		t.Fatalf("get unexpected output %v", ud_out)
 	}
 
 	//test update

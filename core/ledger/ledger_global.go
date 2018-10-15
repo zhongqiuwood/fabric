@@ -93,6 +93,10 @@ func (ledger *LedgerGlobal) IteratePooledTransactions(ctx context.Context) (chan
 	return ledger.txpool.iteratePooledTx(ctx)
 }
 
+func (ledger *LedgerGlobal) PruneTransactions(txs []*protos.Transaction) {
+	ledger.txpool.clearPool(txs)
+}
+
 func (ledger *LedgerGlobal) PutTransactions(txs []*protos.Transaction) error {
 	return ledger.txpool.putTransaction(txs)
 }

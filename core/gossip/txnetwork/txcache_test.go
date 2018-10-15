@@ -199,8 +199,8 @@ func TestCache(t *testing.T) {
 		t.Fatal("commit fail", err)
 	}
 
-	if cache[0][2].Transaction != nil || cache[0][3].Transaction != nil || cache[0][4].Transaction != nil {
-		t.Fatal("has ghost tx in cache", cache[0][:5])
+	if cache[0][2].commitedH != 0 || cache[0][3].commitedH != 0 || cache[0][4].commitedH != 0 {
+		t.Fatal("has wrong commitH", cache[0][:5])
 	}
 
 	rcache := txpool.AcquireCache("any", 0, last)
@@ -216,8 +216,8 @@ func TestCache(t *testing.T) {
 	if tx == nil || ch != 1 {
 		t.Fatal("get commited tx fail", tx, ch)
 	}
-	if cache[0][2].Transaction == nil || cache[0][3].Transaction != nil || cache[0][4].Transaction == nil {
-		t.Fatal("Wrong cache status ", cache[0][:5])
+	if cache[0][2].commitedH != 1 || cache[0][3].commitedH != 0 || cache[0][4].commitedH != 1 {
+		t.Fatal("has wrong commitH after update", cache[0][:5])
 	}
 
 	//pre commit another block
@@ -230,7 +230,7 @@ func TestCache(t *testing.T) {
 	txpool.AcquireCache("any", 0, last).AddTxs(txcollection[queueLenPart:queueLen+2*queueLenPart], false)
 	last = last + uint64(queueLen+queueLenPart)
 
-	if cache[1][0].Transaction == nil || cache[1][0].commitedH != 2 {
+	if cache[1][0].commitedH != 2 {
 		t.Fatal("Wrong cache status ", cache[1][:5])
 	}
 

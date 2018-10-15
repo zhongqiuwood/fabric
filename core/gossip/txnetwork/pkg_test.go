@@ -30,6 +30,18 @@ func buildTestTx(t *testing.T) (*protos.Transaction, string) {
 	return tx, uuid
 }
 
+var genesisDigest = util.GenerateBytesUUID()
+
+func buildPrecededTx(digest []byte, tx *protos.Transaction) *protos.Transaction {
+
+	if len(digest) < TxDigestVerifyLen {
+		digest = append(digest, failDig[len(digest):]...)
+	}
+
+	tx.Nonce = digest
+	return tx
+}
+
 func TestBaseOp(t *testing.T) {
 
 	ledger := initTestLedgerWrapper(t)

@@ -444,10 +444,8 @@ func (p *peerTxMemPool) PickFrom(id string, d_in model.VClock, gu_in model.Updat
 	peerCache := gu.AcquireCache(id, p.firstSeries(), p.lastSeries()+1)
 
 	if !p.inRange(expectedH) {
-		//we have a too up-to-date range, so we return a single record to
-		//remind far-end they are late
-		nh := p.head.clone()
-		ret.fromTxs(&peerTxs{nh, nh}, gu.epoch, peerCache)
+		//we can not provide required data for this request, just give up
+		return nil, gu_in
 	} else {
 		ret.fromTxs(p.fetch(expectedH, p.jlindex[uint64(d)/jumplistInterval]), uint64(gu.epoch), peerCache)
 	}
@@ -484,7 +482,7 @@ func (p *peerTxMemPool) purge(id string, purgeto uint64, g *txPoolGlobal) {
 		return
 	}
 
-	logger.Debugf("peer %s try to prune cache from %d to %d", id, p.firstSeries(), purgeto)
+	logger.Debugf("peer [%s] try to prune cache from %d to %d", id, p.firstSeries(), purgeto)
 	cache := g.AcquireCache(id, p.firstSeries(), p.lastSeries()+1)
 	cache.PurneCache(purgeto)
 
@@ -506,10 +504,10 @@ func (p *peerTxMemPool) handlePeerCoVar(id string, peerStatus *pb.PeerTxState, g
 }
 
 func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *pb.PeerTxState, g *txPoolGlobal) error {
-	logger.Debugf("peer %s try to updated %d incoming txs from series %d", id, len(u.Transactions), u.BeginSeries)
+	logger.Debugf("peer [%s] try to updated %d incoming txs from series %d", id, len(u.Transactions), u.BeginSeries)
 
 	if u.BeginSeries > p.lastSeries()+1 {
-		return fmt.Errorf("Get gapped update for %s start from %d, current %d", id, u.BeginSeries, p.lastSeries())
+		return fmt.Errorf("Get gapped update for [%s] start from %d, current %d", id, u.BeginSeries, p.lastSeries())
 	}
 
 	var err error
@@ -563,7 +561,7 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, peerStatus *
 
 	//finally we handle the case if pool's cache is overflowed
 	if int(p.lastSeries()-p.firstSeries())+1 > PeerTxQueueLimit() {
-		to := p.lastSeries() - uint64(PeerTxQueueLimit()) + 1
+		to := p.firstSeries() + uint64(PeerTxQueueLen())
 		logger.Warningf("peer %s's cache has reach limit and we have to prune it to %d", id, to)
 		//notice, the cache has been full so we do not need to prune it
 		//(the older part has been overwritten)
@@ -743,6 +741,11 @@ func (c *hotTxCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Mes
 	//can return null data
 	if len(msg.Txs) == 0 {
 		return nil, nil
+	}
+
+	//detected a malicious behavior
+	if _, ok := msg.Txs[""]; ok {
+		return nil, fmt.Errorf("Peer try to update a invalid id (self)")
 	}
 
 	u := model.NewscuttlebuttUpdate(txPoolGlobalUpdate{cpo})

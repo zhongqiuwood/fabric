@@ -1,6 +1,7 @@
 package txnetwork
 
 import (
+	model "github.com/abchain/fabric/core/gossip/model"
 	pb "github.com/abchain/fabric/protos"
 )
 
@@ -21,7 +22,50 @@ func DumpNetwork() map[string]func() map[string]*pb.PeerTxState {
 			//copy index
 
 			for id, item := range net.lruIndex {
+				if id == net.selfId {
+					id = "@" + id
+				}
 				out[id] = item.Value.(*peerStatusItem).PeerTxState
+			}
+
+			return out
+		}
+	}
+
+	return ret
+}
+
+func DumpTxNetwork() map[string]func() map[string]uint64 {
+
+	ret := make(map[string]func() map[string]uint64)
+	global.Lock()
+	defer global.Unlock()
+
+	for stub, _ := range global.ind {
+
+		ch := stub.GetCatalogHandler(hotTxCatName)
+
+		ret[stub.GetSelf().GetName()] = func() map[string]uint64 {
+
+			m := ch.Model()
+			smodel := model.DumpScuttlebutt(m)
+			out := make(map[string]uint64)
+
+			m.Lock()
+			defer m.Unlock()
+			//copy index
+
+			for id, s := range smodel.Peers {
+				if id == "" {
+					id = "@" + smodel.SelfID
+				}
+				to_out, ok := s.To().(standardVClock)
+				if ok {
+					out[id] = uint64(to_out)
+				} else {
+					out[id] = 0
+				}
+
 			}
 
 			return out

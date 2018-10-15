@@ -84,33 +84,29 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 
 	//update global part ...
 	g.Lock()
-	//in case we are update local
+
 	if id == "" {
-		id = g.selfId
-	}
+		//self is only updated from index by not in lru
+		item := g.lruIndex[g.selfId]
+		self := item.Value.(*peerStatusItem)
+		self.PeerTxState = u.PeerTxState
 
-	if item, ok := g.lruIndex[id]; ok {
+	} else {
+		//notice scuttlebutt mode has blocked the real selfID being updated from outside
+		if item, ok := g.lruIndex[id]; ok {
+			if s, ok := item.Value.(*peerStatusItem); ok {
+				s.PeerTxState = u.PeerTxState
+				s.lastAccess = time.Now()
+				g.lruQueue.MoveToFront(item)
+			}
 
-		if s, ok := item.Value.(*peerStatusItem); ok {
-			s.PeerTxState = u.PeerTxState
-			s.lastAccess = time.Now()
-			g.lruQueue.MoveToFront(item)
 		}
-
 	}
 
 	f := g.onupdate
 	g.Unlock()
 
-	//so if the number has "cross" a border of a cache queue row
-	//we will trigger an update notify
-	if lastSeries+uint64(peerTxQueueLen) < s.PeerTxState.GetNum() ||
-		uint(lastSeries)&peerTxQueueMask > uint(s.PeerTxState.GetNum())&peerTxQueueMask {
-		handleUpdate(f, id, false)
-	} else if established {
-		handleUpdate(f, id, true)
-	}
-
+	handleUpdate(f, id, established)
 	return nil
 }
 
@@ -160,6 +156,7 @@ func handleUpdate(onupdate []func(string, bool) error, id string, created bool) 
 		close(ret)
 	}()
 
+	logger.Debugf("Trigger %d notifies for updating peer [%s], (create mode %v)", len(onupdate), id, created)
 	for e := range ret {
 		if e != nil {
 			logger.Errorf("Handle update function fail: %s", e)
@@ -177,6 +174,7 @@ func handleEvict(onevicted []func([]string) error, ids []string) {
 		close(ret)
 	}()
 
+	logger.Debugf("Trigger %d notifies for evicting peers [%v]", len(onevicted), ids)
 	for e := range ret {
 		if e != nil {
 			logger.Errorf("Handle evicted function fail: %s", e)
@@ -186,6 +184,7 @@ func handleEvict(onevicted []func([]string) error, ids []string) {
 
 func (g *txNetworkGlobal) addNewPeer(id string) (ret *peerStatus, ids []string) {
 
+	//lruIndex has included self ID so we simply have blocked a malcious behavior
 	if _, ok := g.lruIndex[id]; ok {
 		logger.Errorf("Request add duplicated peer [%s]", id)
 		return
@@ -419,6 +418,11 @@ func (c *globalCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Me
 	if len(msg.Txs) == 0 {
 		return nil, nil
 	}
+	//detected a malicious behavior
+	if _, ok := msg.Txs[""]; ok {
+		return nil, fmt.Errorf("Peer try to update a invalid id (self)")
+	}
+
 	for id, iu := range msg.Txs {
 		u.UpdatePeer(id, peerStatus{iu})
 	}

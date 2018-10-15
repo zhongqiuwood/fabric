@@ -4,6 +4,7 @@ for /l %%i in (1,1,%1) do call :invokebody %%i
 timeout 1
 peer network status
 peer chaincode query -n txnetwork -c "{\"Function\": \"count\", \"Args\": []}"
+peer chaincode query -n txnetwork -c "{\"Function\": \"status\", \"Args\": []}"
 
 for /l %%i in (1,1,%2) do call :testbody %%i
 goto :eof

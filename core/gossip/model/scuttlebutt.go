@@ -98,6 +98,10 @@ func NewscuttlebuttUpdate(gu Update) *scuttlebuttUpdateIn {
 func (*scuttlebuttUpdateIn) Gossip_IsUpdateIn() bool { return true }
 
 func (u *scuttlebuttUpdateIn) UpdatePeer(id string, pu ScuttlebuttPeerUpdate) {
+	//never allow a "" is added, so self peer can be updated by UpdateLocal
+	if id == "" {
+		return
+	}
 	u.u[id] = pu
 }
 
@@ -151,6 +155,12 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 
 		pss, ok := s.Peers[id]
 		if !ok {
+			if id == s.SelfID {
+				//this may be some occasional error, we just omit it
+				//(self peer can be updated only by "")
+				continue
+			}
+
 			//with extended protocol, update can carry unknown peers
 			if ss == nil {
 				continue

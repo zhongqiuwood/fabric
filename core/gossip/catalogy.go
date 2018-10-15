@@ -50,6 +50,9 @@ type CatalogHelper interface {
 type pullWorks struct {
 	sync.Mutex
 	m map[CatalogPeerPolicies]*model.Puller
+	//a home-make sync.condition which can work along with a context
+	occFlag       int
+	releaseNotify chan error
 }
 
 func (h *pullWorks) queryPuller(cpo CatalogPeerPolicies) *model.Puller {
@@ -63,14 +66,28 @@ func (h *pullWorks) popPuller(cpo CatalogPeerPolicies) *model.Puller {
 
 	h.Lock()
 	defer h.Unlock()
-	p := h.m[cpo]
-	delete(h.m, cpo)
+	p, ok := h.m[cpo]
+	if ok {
+		delete(h.m, cpo)
+
+		if h.occFlag > 1 {
+			select {
+			case h.releaseNotify <- nil:
+			default:
+				logger.Errorf("Seems [%s] try to made notify while no peer is waiting any more", cpo.GetId())
+			}
+		} else if h.occFlag != 1 {
+			panic("Impossible occFlag")
+		}
+		h.occFlag--
+
+	}
 	return p
 }
 
 //if we check-and-create puller under "responsed-pulling" condiction, no-op also indicate the existed
 //puller a pushing is processed
-func (h *pullWorks) newPuller(cpo CatalogPeerPolicies, m *model.Model) *model.Puller {
+func (h *pullWorks) newPuller(ctx context.Context, cpo CatalogPeerPolicies, m *model.Model) *model.Puller {
 	h.Lock()
 	defer h.Unlock()
 
@@ -80,7 +97,26 @@ func (h *pullWorks) newPuller(cpo CatalogPeerPolicies, m *model.Model) *model.Pu
 
 	puller := model.NewPuller(m)
 	h.m[cpo] = puller
+	h.occFlag++
 
+	if h.occFlag > 1 {
+
+		//we must wait for another pulling is finish, so avoid a concurrent-polling which may
+		//waste a lot of bandwidth and comp. cost
+		//this routine work like a condiction
+		h.Unlock()
+		select {
+		case <-h.releaseNotify:
+		case <-ctx.Done():
+			logger.Infof("Peer [%s] waiting for another pulling fail, give up this pulling", cpo.GetId())
+			h.Lock()
+			h.m[cpo] = nil
+			h.occFlag--
+			return nil
+		}
+
+		h.Lock()
+	}
 	return puller
 }
 
@@ -175,14 +211,19 @@ func NewCatalogHandlerImpl(stub *pb.StreamStub, ctx context.Context, helper Cata
 		sstub:         stub,
 		hctx:          ctx,
 		model:         m,
-		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*model.Puller)},
+		pulls:         pullWorks{m: make(map[CatalogPeerPolicies]*model.Puller), releaseNotify: make(chan error, 1)},
 		schedule:      scheduleWorks{cancelSchedules: make(map[context.Context]context.CancelFunc), maxConcurrentTask: 5},
 	}
 }
 
 type sessionHandler struct {
 	*catalogHandler
-	cpo CatalogPeerPolicies
+	cpo        CatalogPeerPolicies
+	pullingCtx context.Context
+}
+
+func genSessionHandler(h *catalogHandler, cpo CatalogPeerPolicies) *sessionHandler {
+	return &sessionHandler{h, cpo, nil}
 }
 
 //implement of pushhelper and pullerhelper
@@ -222,50 +263,65 @@ func (h *sessionHandler) EncodeUpdate(u model.Update) proto.Message {
 	}
 }
 
-func (h *sessionHandler) Process(strm *pb.StreamHandler, d model.Digest) {
+func (h *sessionHandler) Process(strm *pb.StreamHandler, d model.Digest, responding bool) (err error) {
 
 	cpo := h.cpo
-	puller, err := model.AcceptPulling(h, strm, h.Model(), d)
-	if err != nil {
-		logger.Errorf("accepting pulling fail: %s", err)
-		return
-	}
-
-	if puller == nil {
-		logger.Debugf("do not start responding pulling to peer [%s]", cpo.GetId())
-		return
-	}
-
-	logger.Debugf("Start a responding pulling to peer [%s]", cpo.GetId())
-	defer h.pulls.popPuller(cpo)
+	logger.Debugf("Start a pulling (responding %v) to peer [%s]", responding, cpo.GetId())
 
 	pctx, pctxend := context.WithTimeout(h.hctx,
 		time.Duration(h.GetPolicies().PullTimeout())*time.Second)
+	defer pctxend()
+	h.pullingCtx = pctx
+
+	var puller *model.Puller
+	if responding {
+		puller, err = model.AcceptPulling(h, strm, h.Model(), d)
+	} else {
+		puller, err = model.StartPulling(h, strm)
+	}
+
+	if puller != nil {
+		defer h.pulls.popPuller(cpo)
+	}
+
+	if err != nil {
+		logger.Errorf("accepting pulling fail: %s", err)
+		return
+	} else if puller == nil {
+		logger.Debugf("do not start pulling to peer [%s]", cpo.GetId())
+		return
+	}
 
 	err = puller.Process(pctx)
-	pctxend()
 
 	//when we succefully accept an update, we also trigger a new push process
 	if err == nil {
-		//notice we still occupied the pulling position of this peer
+		//notice we should exclude current stream
 		//so the triggered push wouldn't make duplicated pulling
-		h.executePush()
+		if responding {
+			go h.executePush(map[*pb.StreamHandler]bool{strm: true})
+		}
 	} else if err == model.EmptyUpdate {
 		logger.Debugf("pull nothing from peer [%s]", cpo.GetId())
 	} else {
-		cpo.RecordViolation(fmt.Errorf("Passive pulling fail: %s", err))
+		cpo.RecordViolation(fmt.Errorf("Pulling (responding %v) fail: %s", responding, err))
 	}
 
+	return
 }
 
 func (h *sessionHandler) CanPull() *model.Puller {
 
+	if h.pullingCtx == nil {
+		panic("WRONG CODE: CanPull can be only called implicitly within the Process method")
+	}
+
 	if !h.GetPolicies().AllowRecvUpdate() || !h.cpo.AllowRecvUpdate() {
-		logger.Infof("Reject a responding pulling to peer [%s]", h.cpo.GetId())
+		logger.Infof("Policy has rejected a pulling to peer [%s]", h.cpo.GetId())
 		return nil
 	}
 
-	return h.pulls.newPuller(h.cpo, h.Model())
+	return h.pulls.newPuller(h.pullingCtx, h.cpo, h.Model())
 }
 
 func (h *catalogHandler) Model() *model.Model {
@@ -273,9 +329,11 @@ func (h *catalogHandler) Model() *model.Model {
 	return h.model
 }
 
+var emptyExcluded = make(map[*pb.StreamHandler]bool)
+
 func (h *catalogHandler) SelfUpdate() {
 
-	go h.executePush()
+	go h.executePush(emptyExcluded)
 }
 
 func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPolicies) {
@@ -286,13 +344,11 @@ func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPoli
 		return
 	}
 
+	sess := genSessionHandler(h, cpo)
+	go sess.Process(strm, h.TransPbToDigest(msg), true)
+
 	//everytime we accept a digest, it is counted as a push
-	defer h.schedule.pushDone()
-
-	sess := &sessionHandler{h, cpo}
-
-	dig := h.TransPbToDigest(msg)
-	go sess.Process(strm, dig)
+	h.schedule.pushDone()
 }
 
 func (h *catalogHandler) HandleUpdate(msg *pb.Gossip_Update, cpo CatalogPeerPolicies) {
@@ -320,11 +376,12 @@ func (h *catalogHandler) HandleUpdate(msg *pb.Gossip_Update, cpo CatalogPeerPoli
 	}
 
 	//the final update is executed in another thread, even nil update is accepted
+	logger.Debugf("Accept update from peer [%s]", cpo.GetId())
 	puller.NotifyUpdate(ud)
 
 }
 
-func (h *catalogHandler) executePush() error {
+func (h *catalogHandler) executePush(excluded map[*pb.StreamHandler]bool) error {
 
 	logger.Debug("try execute a pushing process for handler", h.Name())
 	wctx, targetCnt := h.schedule.newSchedule(h.hctx, h.GetPolicies().PushCount())
@@ -339,10 +396,13 @@ func (h *catalogHandler) executePush() error {
 
 		if h.schedule.reachPlan(targetCnt) {
 			break
+		} else if _, ok := excluded[strm.StreamHandler]; ok {
+			logger.Debugf("stream %s is excluded, try next one", strm.Id.GetName())
+			continue
 		}
 
 		logger.Debugf("finish (%d) pulls, try execute a pushing on stream to %s",
-			pushCnt, strm.GetName())
+			pushCnt, strm.Id.GetName())
 
 		ph, ok := stub.ObtainHandler(strm.StreamHandler).(*handlerImpl)
 		if !ok {
@@ -350,45 +410,20 @@ func (h *catalogHandler) executePush() error {
 		}
 		cpo := ph.GetPeerPolicy()
 
-		if puller := h.pulls.newPuller(cpo, h.Model()); puller != nil {
-			fail := !func(puller *model.Puller) bool {
-				defer h.pulls.popPuller(cpo)
-				logger.Debugf("start pulling on stream to %s", cpo.GetId())
-				if err := puller.Start(&sessionHandler{h, cpo}, strm.StreamHandler); err != nil {
-
-					logger.Infof("try start pulling to %s fail: %v", cpo.GetId(), err)
-
-					if err == model.EmptyDigest {
-						//***GIVEN UP THE WHOLE PUSH PROCESS***
-						return false
-					} else {
-						return true
-					}
-				}
-
-				pctx, pctxend := context.WithTimeout(wctx, time.Duration(h.GetPolicies().PullTimeout())*time.Second)
-				err := puller.Process(pctx)
-				pctxend()
-
-				logger.Debugf("Scheduled pulling from peer [%s] finish: %v", cpo.GetId(), err)
-
-				if err != nil && err != model.EmptyUpdate {
-					cpo.RecordViolation(fmt.Errorf("Aggressive pulling fail: %s", err))
-				}
-				return true
-			}(puller)
-
-			if fail {
-				break
-			}
+		if err := genSessionHandler(h, cpo).Process(strm.StreamHandler, nil, false); err == model.EmptyDigest {
+			//***GIVEN UP THE WHOLE PUSH PROCESS***
+			logger.Infof("Catalogy handler has forbidden a pulling process")
+			break
+		} else if err == nil {
 			pushCnt++
-
+			logger.Debugf("Scheduled pulling from peer [%s] finish", cpo.GetId())
 		} else {
-			logger.Debugf("stream %s has a working puller, try next one", cpo.GetId())
+			logger.Debugf("Scheduled pulling from peer [%s] failed (%v)", cpo.GetId(), err)
 		}
+
 	}
 
-	logger.Infof("Finished a push process,  %d finished", pushCnt)
+	logger.Debugf("Finished a push process,  %d finished", pushCnt)
 
 	return nil
 }

@@ -154,36 +154,32 @@ func (c *peerCache) GetTx(series uint64, txid string) (*pb.Transaction, uint64) 
 	}
 
 	pos := c.pick(series)
-	if pos.commitedH == 0 {
-		tx := c.parent.ledger.GetPooledTransaction(txid)
-		//tx is still pooled
-		if tx != nil {
-			return tx, 0
-		}
-	}
 
 	if pos.Transaction == nil {
 
-		//cache is erased, we try to recover it first
+		//cache is erased, we try to recover the information
 		tx, err := c.parent.ledger.GetTransactionByID(txid)
 		if tx == nil {
 			logger.Errorf("Can not find Tx %s from ledger again: [%s]", err)
 			return nil, 0
 		}
 
-		//why tx is missed? (because of block reversed, or just commited?) we check it
+		pos.Transaction = tx
 		pos.commitedH = getTxCommitHeight(c.parent.ledger, txid)
-		if pos.commitedH != 0 {
-			//so tx has been commited, can cache again
-			pos.Transaction = tx
-		} else {
+		if pos.commitedH == 0 {
 			//tx can be re pooling here if it was lost before, but we should not encourage
 			//this behavoir
 			logger.Infof("Repool Tx %s [series %d] to ledger again", txid, series)
 			c.parent.ledger.PoolTransactions([]*pb.Transaction{tx})
 		}
-
-		return tx, pos.commitedH
+	} else if pos.commitedH == 0 {
+		tx := c.parent.ledger.GetPooledTransaction(txid)
+		if tx != nil {
+			//tx is still pooled
+			return tx, 0
+		}
+		//or tx is commited, we update the commitH
+		pos.commitedH = getTxCommitHeight(c.parent.ledger, txid)
 	}
 
 	return pos.Transaction, pos.commitedH
@@ -205,12 +201,9 @@ func (c *peerCache) AddTxs(txs []*pb.Transaction, nocheck bool) {
 
 			if commitedH == 0 {
 				pooltxs = append(pooltxs, tx)
-			} else {
-				//NOTICE: we only put "commited" tx into cache, so if the block is
-				//reversed, we can simply erase all cache and recheck every tx
-				//we touched later
-				q[i] = cachedTx{tx, commitedH}
 			}
+
+			q[i] = cachedTx{tx, commitedH}
 			txspos++
 		}
 	}

@@ -1,6 +1,7 @@
 package txnetwork
 
 import (
+	"errors"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	pb "github.com/abchain/fabric/protos"
@@ -124,6 +125,11 @@ func standardUpdateFunc(ch gossip.CatalogHandler) func(string, bool) error {
 	return func(id string, create bool) error {
 
 		if create {
+
+			if id == "" {
+				return errors.New("Try to create the self id")
+			}
+
 			logger.Debugf("Cat %s will add peer %s", ch.Name(), id)
 			dig := model.NewscuttlebuttDigest(nil)
 			dig.SetPeerDigest(id, model.BottomClock)
@@ -138,7 +144,11 @@ func standardUpdateFunc(ch gossip.CatalogHandler) func(string, bool) error {
 		} else {
 			logger.Debugf("Cat %s will update peer %s", ch.Name(), id)
 			u := model.NewscuttlebuttUpdate(nil)
-			u.UpdatePeer(id, coVarUpdate{})
+			if id == "" {
+				u.UpdateLocal(coVarUpdate{})
+			} else {
+				u.UpdatePeer(id, coVarUpdate{})
+			}
 
 			return ch.Model().RecvUpdate(u)
 		}

@@ -327,4 +327,62 @@ func TestAsAWhole(t *testing.T) {
 	if _, ok := txS.Peers[newpeer]; ok {
 		t.Fatal("peer not remove", globalS.Peers)
 	}
+
+}
+
+func TestSelfUpdateAsAWhole(t *testing.T) {
+
+	initTestLedgerWrapper(t)
+	defer func(bits uint) {
+		SetPeerTxQueueLen(bits)
+	}(peerTxQueueLenBit)
+
+	SetPeerTxQueueLen(3)
+
+	stub := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
+
+	globalM := stub.GetCatalogHandler(globalCatName).Model()
+	globalS := model.DumpScuttlebutt(globalM)
+
+	txM := stub.GetCatalogHandler(hotTxCatName).Model()
+	txS := model.DumpScuttlebutt(txM)
+	// txG, ok := txS.ScuttlebuttStatus.(*txPoolGlobal)
+	// if !ok {
+	// 	panic("wrong code, not txPoolGlobal")
+	// }
+
+	txSelf := txS.Peers[""].(*peerTxMemPool)
+
+	chain, txcache := prolongItemChain(t, txSelf.head.clone(), 20)
+	cache := newCache()
+	cache.Import(txcache)
+	var udt = txPeerUpdate{new(pb.HotTransactionBlock)}
+	udt.fromTxs(chain.fetch(1, nil), 0, cache)
+
+	ud := model.NewscuttlebuttUpdate(nil)
+	ud.UpdateLocal(udt)
+
+	if err := txM.RecvUpdate(ud); err != nil {
+		t.Fatalf("update local peer fail: %s", err)
+	}
+
+	if txSelf.lastSeries() != 20 {
+		t.Fatalf("update local peer fail: unexpected end %d", txSelf.lastSeries())
+	}
+
+	jTo := txSelf.jlindex[1]
+	ud = model.NewscuttlebuttUpdate(nil)
+	ud.UpdateLocal(peerStatus{createState(jTo.digest, jTo.digestSeries, false)})
+	if err := globalM.RecvUpdate(ud); err != nil {
+		t.Fatal("recv self update global fail", err)
+	}
+
+	peerSelf := globalS.Peers[""].(*peerStatus)
+	if peerSelf.Num != jTo.digestSeries {
+		t.Fatal("unexpected updated peer status", peerSelf)
+	}
+
+	if txSelf.head.digestSeries != jTo.digestSeries {
+		t.Fatal("unexpected updated tx status", txSelf.head)
+	}
 }

@@ -19,6 +19,11 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func initGlobalStatus() *txNetworkGlobal {
+
+	return CreateTxNetworkGlobal()
+}
+
 func initTestLedgerWrapper(t *testing.T) *ledger.Ledger {
 	return ledger.InitTestLedger(t)
 }

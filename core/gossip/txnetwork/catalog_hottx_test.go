@@ -8,13 +8,6 @@ import (
 	"testing"
 )
 
-func newHotTxModel(l *ledger.Ledger) *model.Model {
-	txglobal := new(txPoolGlobal)
-	txglobal.ledger = l
-
-	return model.NewGossipModel(model.NewScuttlebuttStatus(txglobal))
-}
-
 func TestTxChain(t *testing.T) {
 	tx1, _ := buildTestTx(t)
 	tx2, _ := buildTestTx(t)
@@ -39,10 +32,9 @@ func TestTxChain(t *testing.T) {
 	}
 }
 
-func prolongItemChain(t *testing.T, head *txMemPoolItem, n int) (*peerTxs, []*pb.Transaction) {
+func prolongItemChain(t *testing.T, head *txMemPoolItem, n int) *peerTxs {
 
 	cur := head
-	txs := []*pb.Transaction{nil} //make the array index same for txChain
 
 	for i := 0; i < n; i++ {
 
@@ -56,56 +48,35 @@ func prolongItemChain(t *testing.T, head *txMemPoolItem, n int) (*peerTxs, []*pb
 		cur.next = &txMemPoolItem{
 			digest:       dg,
 			digestSeries: cur.digestSeries + 1,
-			txid:         tx.GetTxid(),
+			tx:           tx,
 		}
 		cur = cur.next
-		txs = append(txs, tx)
 	}
 
-	return &peerTxs{head, cur}, txs
+	return &peerTxs{head, cur}
 }
 
-func populatePoolItems(t *testing.T, n int) (*peerTxs, []*pb.Transaction) {
+func populatePoolItems(t *testing.T, n int) *peerTxs {
 
 	return prolongItemChain(t, &txMemPoolItem{digest: genesisDigest}, n)
 
 }
 
-type dummyCache map[string]*pb.Transaction
-
-func (d dummyCache) GetTx(_ uint64, txid string) (*pb.Transaction, uint64) {
-	return d[txid], 0
-}
-
-func (d dummyCache) Import(txs []*pb.Transaction) {
-
-	for _, tx := range txs {
-		d[tx.GetTxid()] = tx
-	}
-}
-
-func newCache() dummyCache { return dummyCache(make(map[string]*pb.Transaction)) }
-
 func TestPeerTxs(t *testing.T) {
 
-	initGlobalStatus()
-	txs, txcache := populatePoolItems(t, 3)
+	txs := populatePoolItems(t, 3)
 
 	if txs.lastSeries() != 3 {
 		t.Fatalf("broken series %d", txs.last.digestSeries)
 	}
 
-	cache := newCache()
-	cache.Import(txcache)
-
 	for beg := txs.head; beg != txs.last; beg = beg.next {
-		if !txIsPrecede(beg.digest, cache[beg.next.txid]) {
+		if !txIsPrecede(beg.digest, beg.next.tx) {
 			t.Fatalf("chain 1 broken at %d", beg.digestSeries)
 		}
 	}
 
-	txs2, txcache := prolongItemChain(t, txs.last.clone(), 4)
-	cache.Import(txcache)
+	txs2 := prolongItemChain(t, txs.last.clone(), 4)
 	txs2.head = txs2.head.next
 
 	err := txs.concat(txs2)
@@ -119,7 +90,7 @@ func TestPeerTxs(t *testing.T) {
 	}
 
 	for beg := txs.head; beg != txs.last; beg = beg.next {
-		if !txIsPrecede(beg.digest, cache[beg.next.txid]) {
+		if !txIsPrecede(beg.digest, beg.next.tx) {
 			t.Fatalf("chain 2 broken at %d", beg.digestSeries)
 		}
 	}
@@ -138,7 +109,7 @@ func TestPeerTxs(t *testing.T) {
 		t.Fatalf("wrong chain 3 tail: %d", txs3.lastSeries())
 	}
 
-	if bytes.Compare(cache[txs3.head.next.txid].Payload, cache[txs2.head.next.txid].Payload) != 0 {
+	if bytes.Compare(txs3.head.next.tx.Payload, txs2.head.next.tx.Payload) != 0 {
 		t.Fatalf("wrong tx in identify chain 2 and 3")
 	}
 
@@ -156,17 +127,23 @@ func assertTxIsIdentify(tb testing.TB, tx1 *pb.Transaction, tx2 *pb.Transaction)
 	}
 }
 
-func formTestData(ledger *ledger.Ledger, txchain *peerTxs, commitsetting [][]int, cache dummyCache) (indexs []*txMemPoolItem) {
+func formIndexs(txchain *peerTxs) []*txMemPoolItem {
+
+	var indexs []*txMemPoolItem
 
 	//collect all items into array
 	for i := txchain.head; i != nil; i = i.next {
 		indexs = append(indexs, i)
 	}
 
+	return indexs
+}
+
+func formTestData(ledger *ledger.Ledger, indexs []*txMemPoolItem, commitsetting [][]int) {
+
 	genTxs := func(ii []int) (out []*pb.Transaction) {
 		for _, i := range ii {
-			tx, _ := cache[indexs[i].txid]
-			out = append(out, tx)
+			out = append(out, indexs[i].tx)
 		}
 		return
 	}
@@ -186,17 +163,27 @@ func formTestData(ledger *ledger.Ledger, txchain *peerTxs, commitsetting [][]int
 	return
 }
 
+type collection map[string]*txMemPoolItem
+
+func (d collection) Import(items []*txMemPoolItem) {
+
+	for _, i := range items {
+		d[i.tx.GetTxid()] = i
+	}
+}
+
+func newTxCol() collection { return collection(make(map[string]*txMemPoolItem)) }
+
 func TestPeerUpdate(t *testing.T) {
 
 	initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
 
-	txchain, txcache := populatePoolItems(t, 10)
-	cache := newCache()
-	cache.Import(txcache)
+	txchain := populatePoolItems(t, 10)
+	txIndexs := formIndexs(txchain)
 
 	var udt = txPeerUpdate{new(pb.HotTransactionBlock)}
-	udt.fromTxs(txchain.fetch(1, nil), 0, cache)
+	udt.fromTxs(txchain.fetch(1, nil))
 
 	if udt.BeginSeries != 1 {
 		t.Fatalf("wrong begin series in udt1: %d", udt.BeginSeries)
@@ -206,10 +193,10 @@ func TestPeerUpdate(t *testing.T) {
 		t.Fatalf("wrong tx length in udt1: %d", len(udt.GetTransactions()))
 	}
 
-	assertTxIsIdentify(t, txcache[3], udt.GetTransactions()[2])
-	assertTxIsIdentify(t, txcache[6], udt.GetTransactions()[5])
-	assertTxIsIdentify(t, txcache[8], udt.GetTransactions()[7])
-	assertTxIsIdentify(t, txcache[9], udt.GetTransactions()[8])
+	assertTxIsIdentify(t, txIndexs[3].tx, udt.GetTransactions()[2])
+	assertTxIsIdentify(t, txIndexs[6].tx, udt.GetTransactions()[5])
+	assertTxIsIdentify(t, txIndexs[8].tx, udt.GetTransactions()[7])
+	assertTxIsIdentify(t, txIndexs[9].tx, udt.GetTransactions()[8])
 
 	retTxs, err := udt.toTxs(nil)
 	if err != nil {
@@ -220,15 +207,10 @@ func TestPeerUpdate(t *testing.T) {
 		t.Fatalf("fail last or head: %d/%d", retTxs.lastSeries(), retTxs.head.digestSeries)
 	}
 
-	txPool := newTransactionPool(ledger)
-	txPool.AcquireCache("helperCache", 0, 0).AddTxs(txcache, true)
-
-	t.Log("txcache first:", txPool.peerCache["helperCache"][0])
-
-	formTestData(ledger, txchain, [][]int{nil, []int{2, 4, 7}, []int{3, 5}}, cache)
+	formTestData(ledger, txIndexs, [][]int{nil, []int{2, 4, 7}, []int{3, 5}})
 
 	udt.HotTransactionBlock = new(pb.HotTransactionBlock)
-	udt.fromTxs(retTxs.fetch(1, nil), 2, txPool.AcquireCache("helperCache", 0, txchain.lastSeries()+1))
+	udt.fromTxs(retTxs.fetch(1, nil))
 
 	if udt.BeginSeries != 1 {
 		t.Fatalf("wrong begin series in udt2", udt.BeginSeries)
@@ -238,10 +220,16 @@ func TestPeerUpdate(t *testing.T) {
 		t.Fatalf("wrong tx length in udt2: %d", len(udt.GetTransactions()))
 	}
 
-	assertTxIsIdentify(t, txcache[1], udt.GetTransactions()[0])
-	assertTxIsIdentify(t, txcache[6], udt.GetTransactions()[5])
-	assertTxIsIdentify(t, txcache[8], udt.GetTransactions()[7])
-	assertTxIsIdentify(t, txcache[9], udt.GetTransactions()[8])
+	assertTxIsIdentify(t, txIndexs[1].tx, udt.GetTransactions()[0])
+	assertTxIsIdentify(t, txIndexs[6].tx, udt.GetTransactions()[5])
+	assertTxIsIdentify(t, txIndexs[8].tx, udt.GetTransactions()[7])
+	assertTxIsIdentify(t, txIndexs[9].tx, udt.GetTransactions()[8])
+
+	txPool := newTransactionPool(ledger)
+	commitCache := txPool.AcquireCaches("helperCache")
+	commitCache.AddTxs(udt.BeginSeries, udt.GetTransactions(), false)
+
+	udt.pruneTxs(2, commitCache)
 
 	if !isLiteTx(udt.GetTransactions()[1]) {
 		t.Fatalf("unexpected full-tx <2>")
@@ -250,10 +238,6 @@ func TestPeerUpdate(t *testing.T) {
 	if !isLiteTx(udt.GetTransactions()[6]) {
 		t.Fatalf("unexpected full-tx <7>")
 	}
-
-	t.Log("txcache:", txcache)
-	t.Log("txpool:", txPool.peerCache["helperCache"][0])
-	t.Log("udt:", udt)
 
 	handledudt, err := udt.getRef(5).completeTxs(ledger, nil)
 	if err != nil {
@@ -271,11 +255,11 @@ func TestPeerUpdate(t *testing.T) {
 
 	udt.HotTransactionBlock = new(pb.HotTransactionBlock)
 
-	udt.fromTxs(retTxs.fetch(5, nil), 0, cache)
+	udt.fromTxs(retTxs.fetch(5, nil))
 
-	assertTxIsIdentify(t, txcache[5], udt.GetTransactions()[0])
-	assertTxIsIdentify(t, txcache[6], udt.GetTransactions()[1])
-	assertTxIsIdentify(t, txcache[7], udt.GetTransactions()[2])
+	assertTxIsIdentify(t, txIndexs[5].tx, udt.GetTransactions()[0])
+	assertTxIsIdentify(t, txIndexs[6].tx, udt.GetTransactions()[1])
+	assertTxIsIdentify(t, txIndexs[7].tx, udt.GetTransactions()[2])
 
 	//check less index
 	handledudt, err = udt.getRef(3).completeTxs(ledger, nil)
@@ -302,19 +286,19 @@ func TestPeerTxPool(t *testing.T) {
 
 	SetPeerTxQueueLen(3)
 
-	global := initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
+	global := initGlobalStatus()
+
 	txGlobal := &txPoolGlobal{
 		network:         global,
-		transactionPool: newTransactionPool(ledger),
+		transactionPool: global.txPool,
 	}
 
 	defaultPeer := "test"
-	txchainBase, txcache := populatePoolItems(t, 39)
-	cache := newCache()
-	cache.Import(txcache)
+	txchainBase := populatePoolItems(t, 39)
+	indexs := formIndexs(txchainBase)
 
-	indexs := formTestData(ledger, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}}, cache)
+	formTestData(ledger, indexs, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
 
 	//we fill txpool from series 5, fill pool with a jumping index of 4 entries
 	pool := new(peerTxMemPool)
@@ -339,8 +323,7 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("To vclock wrong value: %v", vi)
 	}
 
-	//test pickFrom method, bind a cache with out tested pool
-	txGlobal.AcquireCache(defaultPeer, 0, pool.firstSeries()).AddTxs(txcache[5:], false)
+	//test pickFrom method
 	ud_out, _ := pool.PickFrom(defaultPeer, standardVClock(14), txPoolGlobalUpdateOut{txGlobal, 2})
 
 	ud, ok := ud_out.(txPeerUpdate)
@@ -357,13 +340,13 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("unexpected full-tx <15>")
 	}
 
-	if _, h := txGlobal.AcquireCache(defaultPeer, pool.firstSeries(), pool.lastSeries()+1).GetTx(15, ud.GetTransactions()[0].Txid); h != 2 {
+	if h := txGlobal.AcquireCaches(defaultPeer).GetCommit(15, ud.GetTransactions()[0]); h != 2 {
 		t.Fatal("unexpected commit h", h)
 	}
 
-	assertTxIsIdentify(t, txcache[16], ud.GetTransactions()[1])
-	assertTxIsIdentify(t, txcache[23], ud.GetTransactions()[8])
-	assertTxIsIdentify(t, txcache[38], ud.GetTransactions()[23])
+	assertTxIsIdentify(t, indexs[16].tx, ud.GetTransactions()[1])
+	assertTxIsIdentify(t, indexs[23].tx, ud.GetTransactions()[8])
+	assertTxIsIdentify(t, indexs[38].tx, ud.GetTransactions()[23])
 
 	//test out-date pick
 	ud_out, _ = pool.PickFrom(defaultPeer, standardVClock(3), txPoolGlobalUpdateOut{txGlobal, 2})
@@ -373,9 +356,9 @@ func TestPeerTxPool(t *testing.T) {
 	}
 
 	//test update
-	txChainAdd, txcacheAdd := prolongItemChain(t, txchainBase.last, 20)
-	cache.Import(txcacheAdd)
-	txcache = append(txcache, txcacheAdd[1:]...)
+	txChainAdd := prolongItemChain(t, txchainBase.last, 20)
+	indexAdded := formIndexs(txChainAdd)
+	indexs = append(indexs, indexAdded[1:]...)
 
 	//"cut" the new chain ..., keep baseChain unchange
 	newAddHead := txChainAdd.head.next
@@ -390,13 +373,13 @@ func TestPeerTxPool(t *testing.T) {
 	udt := txPeerUpdate{new(pb.HotTransactionBlock)}
 
 	//all item in txChainAdd is not commited so epoch is of no use
-	udt.fromTxs(txChainAdd, 0, cache)
+	udt.fromTxs(txChainAdd)
 	if udt.BeginSeries != 40 {
 		t.Fatal("unexpected begin series", udt.BeginSeries)
 	}
 
 	//must also add global state ...
-	pstatus, _ := global.addNewPeer(defaultPeer)
+	pstatus, _ := global.peers.AddNewPeer(defaultPeer)
 	pstatus.Digest = txchainBase.head.digest
 	pstatus.Endorsement = []byte{2, 3, 3}
 
@@ -406,7 +389,7 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatal("update fail", err)
 	}
 
-	if txGlobal.AcquireCache("anotherTest", 0, 0).peerTxCache[0] != nil {
+	if txGlobal.AcquireCaches("anotherTest").(*txCache).commitData[0] != nil {
 		t.Fatal("update unknown peer")
 	}
 
@@ -421,18 +404,13 @@ func TestPeerTxPool(t *testing.T) {
 
 	//now you can get tx from ledger
 	checkTx := func(pos int) {
-		txid := indexs[pos].txid
 
-		if txid == "" {
-			t.Fatal("unexpected empty txid")
-		}
-
-		tx := ledger.GetPooledTransaction(txid)
+		tx := ledger.GetPooledTransaction(indexs[pos].tx.GetTxid())
 		if tx == nil {
 			t.Fatalf("get pool tx %d in ledger fail", pos)
 		}
 
-		assertTxIsIdentify(t, txcache[pos], tx)
+		assertTxIsIdentify(t, indexs[pos].tx, tx)
 	}
 
 	checkTx(40)
@@ -452,7 +430,7 @@ func TestPeerTxPool(t *testing.T) {
 
 	newChainArr := udt.Transactions
 	udt = txPeerUpdate{new(pb.HotTransactionBlock)}
-	udt.fromTxs(&peerTxs{indexs[39], indexs[39]}, 0, cache)
+	udt.fromTxs(&peerTxs{indexs[39], indexs[39]})
 	if udt.BeginSeries != 39 || len(udt.Transactions) != 1 {
 		panic("wrong udt")
 	}
@@ -464,8 +442,8 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatal("unexpected last for update with old data", pool.lastSeries())
 	}
 
-	if c := txGlobal.AcquireCache(defaultPeer, 0, 0).peerTxCache; c[5] == nil {
-		t.Fatal("Wrong cache status", c)
+	if c := txGlobal.AcquireCaches(defaultPeer).(*txCache).commitData; c[5] == nil {
+		t.Fatal("Wrong commit cache status", c)
 	}
 
 	//test purge
@@ -475,7 +453,7 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("wrong head series after purge", pool.head.digestSeries)
 	}
 
-	if c := txGlobal.AcquireCache(defaultPeer, 0, 0).peerTxCache; c[5] != nil {
+	if c := txGlobal.AcquireCaches(defaultPeer).(*txCache).commitData; c[5] != nil {
 		t.Fatal("cache still have cache block which should be purged")
 	}
 
@@ -500,8 +478,8 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("unexpected begin: %d", ud.BeginSeries)
 	}
 
-	assertTxIsIdentify(t, txcache[55], ud.GetTransactions()[1])
-	assertTxIsIdentify(t, txcache[59], ud.GetTransactions()[5])
+	assertTxIsIdentify(t, indexs[55].tx, ud.GetTransactions()[1])
+	assertTxIsIdentify(t, indexs[59].tx, ud.GetTransactions()[5])
 
 }
 
@@ -513,19 +491,18 @@ func TestCatalogyHandler(t *testing.T) {
 
 	SetPeerTxQueueLen(3)
 
-	global := initGlobalStatus()
 	l := initTestLedgerWrapper(t)
+	global := initGlobalStatus()
 	txglobal := new(txPoolGlobal)
-	txglobal.transactionPool = newTransactionPool(l)
+	txglobal.transactionPool = global.txPool
 	txglobal.network = global
 
 	const testname = "test"
 
-	txchainBase, txcache := populatePoolItems(t, 39)
-	cache := newCache()
-	cache.Import(txcache)
+	txchainBase := populatePoolItems(t, 39)
+	indexs := formIndexs(txchainBase)
 
-	pstatus, _ := global.addNewPeer(testname)
+	pstatus, _ := global.peers.AddNewPeer(testname)
 	pstatus.Digest = txchainBase.head.digest
 	pstatus.Endorsement = []byte{2, 3, 3}
 
@@ -551,7 +528,7 @@ func TestCatalogyHandler(t *testing.T) {
 	}
 
 	var udt = txPeerUpdate{new(pb.HotTransactionBlock)}
-	udt.fromTxs(txchainBase.fetch(1, nil), 0, cache)
+	udt.fromTxs(txchainBase.fetch(1, nil))
 
 	u_in := &pb.Gossip_Tx{map[string]*pb.HotTransactionBlock{testname: udt.HotTransactionBlock}}
 
@@ -565,30 +542,8 @@ func TestCatalogyHandler(t *testing.T) {
 		t.Fatal("do update fail", err)
 	}
 
-	indexs := formTestData(l, txchainBase, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}}, cache)
-	defcache := txglobal.AcquireCache(testname, 0, txchainBase.lastSeries()+1)
-
-	//now you can get tx from ledger or ind of txGlobal
-	checkTx := func(pos int) {
-		txid := indexs[pos].txid
-
-		if txid == "" {
-			t.Fatal("unexpected empty txid")
-		}
-
-		txItem, _ := defcache.GetTx(uint64(pos), txid)
-		if txItem == nil {
-			t.Fatalf("get tx %d in index fail", txid)
-		}
-
-		assertTxIsIdentify(t, txcache[pos], txItem)
-	}
-
-	checkTx(10)
-	checkTx(12)
-	checkTx(20)
-	checkTx(23)
-	checkTx(35)
+	formTestData(l, indexs, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
+	defcache := txglobal.AcquireCaches(testname)
 
 	dig_in.Data[testname].Num = 20
 
@@ -621,22 +576,24 @@ func TestCatalogyHandler(t *testing.T) {
 			t.Fatalf("unexpected full-tx <23> (at 2)")
 		}
 
-		assertTxIsIdentify(t, txcache[21], txs.GetTransactions()[0])
-		assertTxIsIdentify(t, txcache[38], txs.GetTransactions()[17])
-		assertTxIsIdentify(t, txcache[27], txs.GetTransactions()[6])
-		assertTxIsIdentify(t, txcache[39], txs.GetTransactions()[18])
+		assertTxIsIdentify(t, indexs[21].tx, txs.GetTransactions()[0])
+		assertTxIsIdentify(t, indexs[38].tx, txs.GetTransactions()[17])
+		assertTxIsIdentify(t, indexs[27].tx, txs.GetTransactions()[6])
+		assertTxIsIdentify(t, indexs[39].tx, txs.GetTransactions()[18])
 
 	}
 	//commit more tx
 	l.BeginTxBatch(1)
-	err = l.CommitTxBatch(1, []*pb.Transaction{txcache[21], txcache[27], txcache[39]}, nil, []byte("proof2"))
+	err = l.CommitTxBatch(1, []*pb.Transaction{indexs[21].tx, indexs[27].tx, indexs[39].tx}, nil, []byte("proof2"))
 	if err != nil {
 		t.Fatal("commit more block fail", err)
 	}
 
-	checkTx(21)
-	if _, committedH := defcache.GetTx(21, indexs[21].txid); committedH != 5 {
-		t.Fatal("commit update fail:", committedH)
+	if committedH := defcache.GetCommit(21, indexs[21].tx); committedH != 5 {
+		t.Fatal("commit update fail 21:", committedH)
+	}
+	if committedH := defcache.GetCommit(27, indexs[27].tx); committedH != 5 {
+		t.Fatal("commit update fail 27:", committedH)
 	}
 
 	del_commit := model.NewscuttlebuttUpdate(nil)
@@ -647,7 +604,7 @@ func TestCatalogyHandler(t *testing.T) {
 		t.Fatal("do update fail", err)
 	}
 
-	if len(txglobal.AcquireCache(testname, 0, 0).peerTxCache[0]) > 0 {
+	if len(txglobal.AcquireCaches(testname).(*txCache).commitData[0]) > 0 {
 		t.Fatal("status still have ghost index")
 	}
 }

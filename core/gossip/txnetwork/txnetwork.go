@@ -1,209 +1,294 @@
 package txnetwork
 
 import (
+	"container/list"
 	"fmt"
-	"github.com/abchain/fabric/core/gossip"
+	cred "github.com/abchain/fabric/core/cred"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
-	"golang.org/x/net/context"
 	"sync"
+	"time"
 )
-
-type entryIndexs struct {
-	sync.Mutex
-	ind map[*pb.StreamStub]TxNetworkEntry
-}
-
-type TxNetworkEntry struct {
-	*txNetworkEntry
-	stub *gossip.GossipStub
-}
-
-func (e TxNetworkEntry) GetNetwork() *txNetworkGlobal {
-	return global.GetNetwork(e.stub)
-}
-
-func (e TxNetworkEntry) GetEntry() TxNetwork {
-	return e.txNetworkEntry
-}
-
-func (e TxNetworkEntry) UpdateLocalEpoch(series uint64, digest []byte) error {
-	return UpdateLocalEpoch(e.stub, series, digest)
-}
-
-func (e TxNetworkEntry) UpdateLocalPeer() (*pb.PeerTxState, error) {
-	return UpdateLocalPeer(e.stub)
-}
-
-func (e TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
-	return UpdateLocalHotTx(e.stub, txs)
-}
-
-var entryglobal = entryIndexs{ind: make(map[*pb.StreamStub]TxNetworkEntry)}
-
-func GetNetworkEntry(sstub *pb.StreamStub) (TxNetworkEntry, bool) {
-
-	entryglobal.Lock()
-	defer entryglobal.Unlock()
-	e, ok := entryglobal.ind[sstub]
-	return e, ok
-}
-
-func init() {
-	gossip.RegisterCat = append(gossip.RegisterCat, initTxnetworkEntrance)
-}
-
-func initTxnetworkEntrance(stub *gossip.GossipStub) {
-
-	entryglobal.Lock()
-	defer entryglobal.Unlock()
-
-	entryglobal.ind[stub.GetSStub()] = TxNetworkEntry{
-		NewTxNetworkEntry(),
-		stub,
-	}
-}
-
-type TxNetworkHandler interface {
-	HandleTxs(tx []*PendingTransaction)
-	Release()
-}
-
-type TxNetwork interface {
-	BroadCastTransaction(*pb.Transaction, string, ...string) error
-	BroadCastTransactionDefault(*pb.Transaction, ...string) error
-	ExecuteTransaction(context.Context, *pb.Transaction, string, ...string) *pb.Response
-}
-
-type TxNetworkUpdate interface {
-	UpdateLocalEpoch(series uint64, digest []byte) error
-	UpdateLocalPeer() (*pb.PeerTxState, error)
-	UpdateLocalHotTx(*pb.HotTransactionBlock) error
-}
-
-type txNetworkEntry struct {
-	source chan *PendingTransaction
-}
 
 const (
-	maxOutputBatch = 16
+	def_maxPeer = 1024
 )
 
-func NewTxNetworkEntry() *txNetworkEntry {
+//txnetworkglobal manage datas required by single gossip-base txnetwork: (peers, txs, etc...)
+type txNetworkGlobal struct {
+	notifies
+	peers  *txNetworkPeers
+	txPool *transactionPool
+}
 
-	return &txNetworkEntry{
-		source: make(chan *PendingTransaction, maxOutputBatch*3),
+func CreateTxNetworkGlobal() *txNetworkGlobal {
+
+	sid := util.GenerateBytesUUID()
+	if len(sid) < TxDigestVerifyLen {
+		panic("Wrong code generate uuid less than 16 bytes [128bit]")
+	}
+
+	peers := &txNetworkPeers{
+		maxPeers: def_maxPeer,
+		lruQueue: list.New(),
+		lruIndex: make(map[string]*list.Element),
+		selfId:   fmt.Sprintf("%x", sid),
+	}
+
+	l, err := ledger.GetLedger()
+	if err != nil {
+		logger.Warning("Could not get default ledger", err)
+	}
+
+	txPool := &transactionPool{
+		ledger:  l,
+		cCaches: make(map[string]*commitData),
+	}
+
+	//also create self peer
+	self := &peerStatusItem{
+		"",
+		&pb.PeerTxState{
+			Digest: sid[:TxDigestVerifyLen],
+			//TODO: we must endorse it
+			Endorsement: []byte{1},
+		},
+		time.Now(),
+	}
+
+	logger.Infof("Create self peer [%s]", peers.selfId)
+	item := &list.Element{Value: self}
+	peers.lruIndex[peers.selfId] = item
+
+	return &txNetworkGlobal{
+		peers:  peers,
+		txPool: txPool,
 	}
 }
 
-func (e *txNetworkEntry) worker(ictx context.Context, h TxNetworkHandler) {
+type notifies struct {
+	sync.RWMutex
+	onupdate  []func(string, bool) error
+	onevicted []func([]string) error
+}
 
-	var txBuffer [maxOutputBatch]*PendingTransaction
-	txs := txBuffer[:0]
-	ctx, endf := context.WithCancel(ictx)
+func (g *notifies) RegEvictNotify(f func([]string) error) {
+	g.Lock()
+	defer g.Unlock()
+	g.onevicted = append(g.onevicted, f)
+}
 
-	logger.Infof("Start a worker for txnetwork entry with handler %x", h)
-	defer func() {
-		h.Release()
-		logger.Infof("End the worker for txnetwork entry with handler %x", h)
-		endf()
-	}()
-	for {
+func (g *notifies) RegUpdateNotify(f func(string, bool) error) {
+	g.Lock()
+	defer g.Unlock()
+	g.onupdate = append(g.onupdate, f)
+}
 
-		if len(txs) == 0 {
-			//wait for an item
-			select {
-			case item := <-e.source:
-				txs = append(txs, item)
-			case <-ctx.Done():
-				return
-			}
-		} else if len(txs) >= maxOutputBatch {
-			h.HandleTxs(txs)
-			txs = txBuffer[:0]
-		} else {
-			//wait more item or handle we have
-			select {
-			case item := <-e.source:
-				txs = append(txs, item)
-			case <-ctx.Done():
-				return
-			default:
-				h.HandleTxs(txs)
-				txs = txBuffer[:0]
-			}
+func (g *notifies) handleUpdate(id string, created bool) {
+	ret := make(chan error)
+	g.RLock()
+	go func(onupdate []func(string, bool) error) {
+		logger.Debugf("Trigger %d notifies for updating peer [%s], (create mode %v)", len(onupdate), id, created)
+		for _, f := range onupdate {
+			ret <- f(id, created)
 		}
 
+		close(ret)
+	}(g.onupdate)
+	g.RUnlock()
+
+	for e := range ret {
+		if e != nil {
+			logger.Errorf("Handle update function fail: %s", e)
+		}
 	}
 }
 
-func (e *txNetworkEntry) Start(ctx context.Context, h TxNetworkHandler) {
+func (g *notifies) handleEvict(ids []string) {
+	ret := make(chan error)
+	g.RLock()
+	go func(onevicted []func([]string) error) {
+		logger.Debugf("Trigger %d notifies for evicting peers [%v]", len(onevicted), ids)
+		for _, f := range onevicted {
+			ret <- f(ids)
+		}
 
-	go e.worker(ctx, h)
-}
+		close(ret)
+	}(g.onevicted)
+	g.RUnlock()
 
-type PendingTransaction struct {
-	*pb.Transaction
-	endorser string
-	attrs    []string
-	resp     chan *pb.Response
-}
-
-func (t *PendingTransaction) GetEndorser() string {
-	if t == nil {
-		return ""
-	}
-
-	return t.endorser
-}
-
-func (t *PendingTransaction) GetAttrs() []string {
-	if t == nil {
-		return nil
-	}
-
-	return t.attrs
-}
-
-func (t *PendingTransaction) Respond(resp *pb.Response) {
-	if t != nil {
-		t.resp <- resp
+	for e := range ret {
+		if e != nil {
+			logger.Errorf("Handle evicted function fail: %s", e)
+		}
 	}
 }
 
-func (e *txNetworkEntry) broadcast(ptx *PendingTransaction) error {
-	if e == nil {
-		return fmt.Errorf("txNetwork not init yet")
+type txNetworkPeers struct {
+	maxPeers int
+	sync.RWMutex
+	selfId   string
+	lruQueue *list.List
+	lruIndex map[string]*list.Element
+}
+
+func (g *txNetworkPeers) truncateTailPeer(cnt int) (ret []string) {
+
+	for ; cnt > 0; cnt-- {
+		v, ok := g.lruQueue.Remove(g.lruQueue.Back()).(*peerStatusItem)
+		if !ok {
+			panic("Type error, not peerStatus")
+		}
+		delete(g.lruIndex, v.peerId)
+		ret = append(ret, v.peerId)
 	}
 
-	select {
-	case e.source <- ptx:
-		return nil
-	default:
-		return fmt.Errorf("Buffer full, can not write more")
+	return
+}
+
+func (g *txNetworkPeers) AddNewPeer(id string) (ret *peerStatus, ids []string) {
+
+	g.Lock()
+	defer g.Unlock()
+
+	//lruIndex has included self ID so we simply have blocked a malcious behavior
+	if _, ok := g.lruIndex[id]; ok {
+		logger.Errorf("Request add duplicated peer [%s]", id)
+		return
 	}
+
+	if len(g.lruIndex) > g.maxPeers {
+		ids = g.truncateTailPeer(len(g.lruIndex) - g.maxPeers)
+	}
+
+	//if we can't truncate anypeer, just give up
+	if len(g.lruIndex) > g.maxPeers {
+		logger.Errorf("Can't not add peer [%s], exceed limit %d", id, g.maxPeers)
+		return
+	}
+
+	ret = &peerStatus{new(pb.PeerTxState)}
+
+	g.lruIndex[id] = g.lruQueue.PushBack(
+		&peerStatusItem{
+			id,
+			ret.PeerTxState,
+			time.Time{},
+		})
+
+	logger.Infof("We have known new gossip peer [%s]", id)
+
+	return
 }
 
-func (e *txNetworkEntry) BroadCastTransactionDefault(tx *pb.Transaction, attrs ...string) error {
-	return e.BroadCastTransaction(tx, "", attrs...)
+func (g *txNetworkPeers) RemovePeer(id string) bool {
+
+	g.Lock()
+	defer g.Unlock()
+
+	item, ok := g.lruIndex[id]
+
+	if ok {
+		logger.Infof("gossip peer [%s] is removed", id)
+		g.lruQueue.Remove(item)
+		delete(g.lruIndex, id)
+	}
+	return ok
 }
 
-func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string, attrs ...string) error {
-	return e.broadcast(&PendingTransaction{tx, client, attrs, nil})
+func (g *txNetworkPeers) QueryPeer(id string) *pb.PeerTxState {
+	g.RLock()
+	defer g.RUnlock()
+
+	i, ok := g.lruIndex[id]
+	if ok {
+		s := i.Value.(*peerStatusItem).PeerTxState
+		if len(s.Endorsement) == 0 {
+			//never return an peer which is not inited
+			return nil
+		}
+		return s
+	}
+
+	return nil
 }
 
-func (e *txNetworkEntry) ExecuteTransaction(ctx context.Context, tx *pb.Transaction, client string, attrs ...string) *pb.Response {
-
-	resp := make(chan *pb.Response)
-	ret := e.broadcast(&PendingTransaction{tx, client, attrs, resp})
-
+func (g *txNetworkPeers) QuerySelf() *pb.PeerTxState {
+	ret := g.QueryPeer(g.selfId)
 	if ret == nil {
-		select {
-		case ret := <-resp:
-			return ret
-		case <-ctx.Done():
-			return &pb.Response{pb.Response_FAILURE, []byte(fmt.Sprintf("%s", ctx.Err()))}
-		}
-	} else {
-		return &pb.Response{pb.Response_FAILURE, []byte(fmt.Sprintf("Exec transaction fail: %s", ret))}
+		panic(fmt.Errorf("Do not create self peer [%s] in network", g.selfId))
 	}
+	return ret
+}
+
+func (g *txNetworkPeers) BlockPeer(id string) {
+	g.RLock()
+	defer g.RUnlock()
+}
+
+func (g *txNetworkPeers) TouchPeer(id string, status *pb.PeerTxState) {
+	g.Lock()
+	defer g.Unlock()
+
+	if id == "" {
+		//self is only updated from index by not in lru
+		item := g.lruIndex[g.selfId]
+		self := item.Value.(*peerStatusItem)
+		self.PeerTxState = status
+
+	} else {
+		//notice scuttlebutt mode has blocked the real selfID being updated from outside
+		if item, ok := g.lruIndex[id]; ok {
+			if s, ok := item.Value.(*peerStatusItem); ok {
+				s.PeerTxState = status
+				s.lastAccess = time.Now()
+				g.lruQueue.MoveToFront(item)
+			}
+
+		}
+	}
+
+}
+
+type transactionPool struct {
+	sync.RWMutex
+	ledger    *ledger.Ledger
+	txHandler cred.TxHandlerFactory
+	cCaches   map[string]*commitData
+}
+
+func newTransactionPool(ledger *ledger.Ledger) *transactionPool {
+	ret := new(transactionPool)
+	ret.cCaches = make(map[string]*commitData)
+	ret.ledger = ledger
+
+	return ret
+}
+
+func (tp *transactionPool) AcquireCaches(peer string) TxCache {
+
+	tp.RLock()
+
+	c, ok := tp.cCaches[peer]
+
+	if !ok {
+		tp.RUnlock()
+
+		c = new(commitData)
+		tp.Lock()
+		defer tp.Unlock()
+		tp.cCaches[peer] = c
+		return &txCache{c, peer, tp}
+	}
+
+	tp.RUnlock()
+	return &txCache{c, peer, tp}
+}
+
+func (tp *transactionPool) RemoveCaches(peer string) {
+	tp.Lock()
+	defer tp.Unlock()
+
+	delete(tp.cCaches, peer)
 }

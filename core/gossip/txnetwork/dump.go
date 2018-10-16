@@ -13,6 +13,7 @@ func DumpNetwork() map[string]func() map[string]*pb.PeerTxState {
 
 	for stub, net := range global.ind {
 
+		peers := net.peers
 		ret[stub.GetSelf().GetName()] = func() map[string]*pb.PeerTxState {
 
 			out := make(map[string]*pb.PeerTxState)
@@ -21,8 +22,8 @@ func DumpNetwork() map[string]func() map[string]*pb.PeerTxState {
 			defer net.RUnlock()
 			//copy index
 
-			for id, item := range net.lruIndex {
-				if id == net.selfId {
+			for id, item := range peers.lruIndex {
+				if id == peers.selfId {
 					id = "@" + id
 				}
 				out[id] = item.Value.(*peerStatusItem).PeerTxState

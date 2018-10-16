@@ -8,11 +8,6 @@ import (
 	"testing"
 )
 
-func initGlobalStatus() *txNetworkGlobal {
-
-	return CreateTxNetworkGlobal()
-}
-
 func createState(digest []byte, num uint64, endorse bool) *pb.PeerTxState {
 	ret := &pb.PeerTxState{Digest: digest, Num: num}
 
@@ -28,8 +23,11 @@ func createState(digest []byte, num uint64, endorse bool) *pb.PeerTxState {
 func TestTxGlobal(t *testing.T) {
 	global := initGlobalStatus()
 
-	selfstatus := model.NewScuttlebuttStatus(global)
-	selfstatus.SetSelfPeer(global.selfId, &peerStatus{global.QuerySelf()})
+	peerG := new(peersGlobal)
+	peerG.network = global
+	peerG.txNetworkPeers = peerG.network.peers
+	selfstatus := model.NewScuttlebuttStatus(peerG)
+	selfstatus.SetSelfPeer(peerG.selfId, &peerStatus{peerG.QuerySelf()})
 	m := model.NewGossipModel(selfstatus)
 
 	globalcat := new(globalCat)
@@ -43,11 +41,11 @@ func TestTxGlobal(t *testing.T) {
 
 	m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
 
-	if _, ok := global.lruIndex[testpeername]; !ok {
+	if _, ok := peerG.lruIndex[testpeername]; !ok {
 		t.Fatalf("%s is not known", testpeername)
 	}
 
-	if s := global.QueryPeer(testpeername); s != nil {
+	if s := peerG.QueryPeer(testpeername); s != nil {
 		t.Fatalf("query get uninited %s", testpeername)
 	}
 
@@ -66,7 +64,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("do not found no endorsement error")
 	}
 
-	if s := global.QueryPeer(testpeername); s != nil {
+	if s := peerG.QueryPeer(testpeername); s != nil {
 		t.Fatalf("query get uninited %s", testpeername)
 	}
 
@@ -84,7 +82,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("recv update fail", err)
 	}
 
-	if s := global.QueryPeer(testpeername); s == nil {
+	if s := peerG.QueryPeer(testpeername); s == nil {
 		t.Fatalf("could not get peer %s", testpeername)
 	}
 	//pick 1
@@ -116,7 +114,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("recv update fail 2", err)
 	}
 
-	self := global.QuerySelf()
+	self := peerG.QuerySelf()
 
 	if self.Num != 4 {
 		t.Fatal("self update fail", self)
@@ -128,7 +126,7 @@ func TestTxGlobal(t *testing.T) {
 
 	//pick 2
 	pbin.Data[testpeername].Num = 2
-	pbin.Data[global.selfId] = &pb.Gossip_Digest_PeerState{}
+	pbin.Data[peerG.selfId] = &pb.Gossip_Digest_PeerState{}
 
 	uout2 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
 
@@ -148,7 +146,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("could not get update of testpeer", msgout2)
 	}
 
-	if s, ok := msgout2.Txs[global.selfId]; ok {
+	if s, ok := msgout2.Txs[peerG.selfId]; ok {
 
 		if s.Num != 4 {
 			t.Fatal("wrong selfpeer state", msgout2)
@@ -171,11 +169,11 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("recv update fail 3", err)
 	}
 
-	if _, ok := global.lruIndex[testpeername]; ok {
+	if _, ok := peerG.lruIndex[testpeername]; ok {
 		t.Fatal("testpeer do not removed")
 	}
 
-	if global.lruQueue.Len() > 0 {
+	if peerG.lruQueue.Len() > 0 {
 		t.Fatal("wrong lru queue")
 	}
 
@@ -187,7 +185,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("pick ghost test peer")
 	}
 
-	if s, ok := msgout3.Txs[global.selfId]; ok {
+	if s, ok := msgout3.Txs[peerG.selfId]; ok {
 
 		if s.Num != 4 {
 			t.Fatal("wrong selfpeer state", msgout3)
@@ -292,10 +290,10 @@ func TestAsAWhole(t *testing.T) {
 		t.Fatal("tx2 is not pooled")
 	}
 
-	txcache := txG.AcquireCache(newpeer, 0, 0).peerTxCache
+	ccache := txG.AcquireCaches(newpeer).(*txCache).commitData
 	//cache for tx with series 7 and 8 just use two cache-row (0, 1)
-	if txcache[0] == nil || txcache[1] == nil {
-		t.Fatal("wrong cache position", txcache)
+	if ccache[0] == nil || ccache[1] == nil {
+		t.Fatal("wrong cache position", ccache)
 	}
 
 	ud = model.NewscuttlebuttUpdate(nil)
@@ -305,11 +303,11 @@ func TestAsAWhole(t *testing.T) {
 		t.Fatal("recv rm-update fail", err)
 	}
 
-	if txcache[0] != nil {
-		t.Fatal("cache is not prune", txcache)
+	if ccache[0] != nil {
+		t.Fatal("cache is not prune", ccache)
 	}
-	if txcache[1] == nil {
-		t.Fatal("cache is wrong", txcache)
+	if ccache[1] == nil {
+		t.Fatal("cache is wrong", ccache)
 	}
 
 	ud = model.NewscuttlebuttUpdate(nil)
@@ -353,11 +351,9 @@ func TestSelfUpdateAsAWhole(t *testing.T) {
 
 	txSelf := txS.Peers[""].(*peerTxMemPool)
 
-	chain, txcache := prolongItemChain(t, txSelf.head.clone(), 20)
-	cache := newCache()
-	cache.Import(txcache)
+	chain := prolongItemChain(t, txSelf.head.clone(), 20)
 	var udt = txPeerUpdate{new(pb.HotTransactionBlock)}
-	udt.fromTxs(chain.fetch(1, nil), 0, cache)
+	udt.fromTxs(chain.fetch(1, nil))
 
 	ud := model.NewscuttlebuttUpdate(nil)
 	ud.UpdateLocal(udt)

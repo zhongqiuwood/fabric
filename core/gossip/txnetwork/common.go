@@ -22,18 +22,8 @@ func init() {
 	global.ind = make(map[*gossip.GossipStub]*txNetworkGlobal)
 }
 
+//txNetwork is a singleton related with stub
 func (g *networkIndexs) GetNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
-	g.Lock()
-	defer g.Unlock()
-
-	if n, ok := g.ind[stub]; ok {
-		return n
-	} else {
-		return nil
-	}
-}
-
-func (g *networkIndexs) CreateNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
 	g.Lock()
 	defer g.Unlock()
 

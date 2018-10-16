@@ -1,16 +1,9 @@
 package txnetwork
 
 import (
-	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
-	"sync"
 )
-
-type cachedTx struct {
-	*pb.Transaction
-	commitedH uint64
-}
 
 //a deque struct mapped the tx chain into arrays
 
@@ -43,7 +36,7 @@ func SetPeerTxQueueLen(bits uint) {
 	peerTxQueueLen = int(peerTxQueueMask) + 1
 }
 
-type peerTxCache [peerTxQueues][]cachedTx
+type commitData [peerTxQueues][]uint64
 
 func dequeueLoc(pos uint64) (loc int, qpos int) {
 	loc = int(uint(pos>>peerTxQueueLenBit) & peerTxMask)
@@ -51,7 +44,7 @@ func dequeueLoc(pos uint64) (loc int, qpos int) {
 	return
 }
 
-func (c *peerTxCache) pick(pos uint64) *cachedTx {
+func (c *commitData) pick(pos uint64) *uint64 {
 
 	loc, qpos := dequeueLoc(pos)
 	return &c[loc][qpos]
@@ -59,11 +52,11 @@ func (c *peerTxCache) pick(pos uint64) *cachedTx {
 
 //return a dequeue of append space (it maybe overlapped if the size is exceed
 //the limit, that is, peerTxQueues * peerTxQueueLen)
-func (c *peerTxCache) append(from uint64, size int) (ret [][]cachedTx) {
+func (c *commitData) append(from uint64, size int) (ret [][]uint64) {
 
 	loc, qpos := dequeueLoc(from)
 	if c[loc] == nil {
-		c[loc] = make([]cachedTx, peerTxQueueLen)
+		c[loc] = make([]uint64, peerTxQueueLen)
 	}
 
 	for size > 0 {
@@ -73,7 +66,7 @@ func (c *peerTxCache) append(from uint64, size int) (ret [][]cachedTx) {
 			size = size - (peerTxQueueLen - qpos)
 			qpos = 0
 			loc = int(uint(loc+1) & peerTxMask)
-			c[loc] = make([]cachedTx, peerTxQueueLen)
+			c[loc] = make([]uint64, peerTxQueueLen)
 		} else {
 			ret = append(ret, c[loc][qpos:qpos+size])
 			size = 0
@@ -82,7 +75,7 @@ func (c *peerTxCache) append(from uint64, size int) (ret [][]cachedTx) {
 	return
 }
 
-func (c *peerTxCache) prune(from uint64, to uint64) {
+func (c *commitData) pruning(from uint64, to uint64) {
 
 	locBeg := from >> peerTxQueueLenBit
 	logTo := to >> peerTxQueueLenBit
@@ -93,30 +86,16 @@ func (c *peerTxCache) prune(from uint64, to uint64) {
 
 }
 
-type transactionPool struct {
-	sync.RWMutex
-	ledger    *ledger.Ledger
-	txHandler cred.TxHandlerFactory
-	peerCache map[string]*peerTxCache
-}
-
-func newTransactionPool(ledger *ledger.Ledger) *transactionPool {
-	ret := new(transactionPool)
-	ret.peerCache = make(map[string]*peerTxCache)
-	ret.ledger = ledger
-
-	return ret
-}
-
-type txCache interface {
-	GetTx(uint64, string) (*pb.Transaction, uint64)
+type TxCache interface {
+	GetCommit(series uint64, tx *pb.Transaction) uint64
+	AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error
+	Pruning(from uint64, to uint64)
 }
 
 //the cache is supposed to be handled only by single goroutine
-type peerCache struct {
-	*peerTxCache
-	beg    uint64
-	last   uint64
+type txCache struct {
+	*commitData
+	id     string
 	parent *transactionPool
 }
 
@@ -137,104 +116,79 @@ func getTxCommitHeight(l *ledger.Ledger, txid string) uint64 {
 
 }
 
-func (c *peerCache) GetTx(series uint64, txid string) (*pb.Transaction, uint64) {
+func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 
-	if series < c.beg || series >= c.last {
-		//can we declaim this?
-		logger.Fatalf("Accept outbound series: [%d], code is wrong", series)
-		return nil, 0
-	}
-
-	pos := c.pick(series)
-
-	if pos.Transaction == nil {
-
-		//cache is erased, we try to recover the information
-		tx, err := c.parent.ledger.GetTransactionByID(txid)
-		if tx == nil {
-			logger.Errorf("Can not find Tx %s from ledger again: [%s]", err)
-			return nil, 0
+	pos := c.commitData.pick(series)
+	if *pos == 0 {
+		if tx := c.parent.ledger.GetPooledTransaction(tx.GetTxid()); tx != nil {
+			//tx is still being pooled
+			return 0
 		}
+		//or tx is commited, we need to update the commitH
 
-		pos.Transaction = tx
-		pos.commitedH = getTxCommitHeight(c.parent.ledger, txid)
-		if pos.commitedH == 0 {
+		if h := getTxCommitHeight(c.parent.ledger, tx.GetTxid()); h == 0 {
 			//tx can be re pooling here if it was lost before, but we should not encourage
 			//this behavoir
-			logger.Infof("Repool Tx %s [series %d] to ledger again", txid, series)
+			logger.Infof("Repool Tx {%s} [series %d] to ledger again", tx.GetTxid(), series)
 			c.parent.ledger.PoolTransactions([]*pb.Transaction{tx})
+		} else {
+			*pos = h
 		}
-	} else if pos.commitedH == 0 {
-		tx := c.parent.ledger.GetPooledTransaction(txid)
-		if tx != nil {
-			//tx is still pooled
-			return tx, 0
-		}
-		//or tx is commited, we update the commitH
-		pos.commitedH = getTxCommitHeight(c.parent.ledger, txid)
 	}
 
-	return pos.Transaction, pos.commitedH
+	return *pos
 }
 
-func (c *peerCache) AddTxs(txs []*pb.Transaction, nocheck bool) {
+func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error {
 
-	pooltxs := make([]*pb.Transaction, 0, len(txs))
-	added := c.append(c.last, len(txs))
-	var txspos int
-
-	for _, q := range added {
-		for i := 0; i < len(q); i++ {
-			tx := txs[txspos]
-			var commitedH uint64
-			if !nocheck {
-				commitedH, _, _ = c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
+	udt := txPeerUpdate{&pb.HotTransactionBlock{Transactions: txs}}
+	var err error
+	if !nocheck {
+		if c.parent.txHandler != nil {
+			preHandler, err := c.parent.txHandler.GetPreHandler(c.id)
+			if err != nil {
+				return err
 			}
-
-			if commitedH == 0 {
-				pooltxs = append(pooltxs, tx)
-			}
-
-			q[i] = cachedTx{tx, commitedH}
-			txspos++
+			_, err = udt.completeTxs(c.parent.ledger, preHandler)
+		} else {
+			_, err = udt.completeTxs(c.parent.ledger, nil)
 		}
+
 	}
 
-	//sanity check
-	if txspos != len(txs) {
-		panic("AddTxs encounter wrong subscript")
+	if err != nil {
+		return err
 	}
+	c.commitData.append(from, len(txs))
+	/* 	var txspos int
+	   	_ := c.commitData.append(from, len(txs))
 
-	c.parent.ledger.PoolTransactions(pooltxs)
+	   	for _, q := range added {
+	   		for i := 0; i < len(q); i++ {
+	   			tx := txs[txspos]
+	   			var commitedH uint64
+	   			if !nocheck {
+	   				commitedH, _, _ = c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
+	   			}
+
+	   			if commitedH == 0 {
+	   				pooltxs = append(pooltxs, tx)
+	   			}
+
+	   			q[i] = commitedH
+	   			txspos++
+	   		}
+	   	}
+
+	   	//sanity check
+	   	if txspos != len(txs) {
+	   		panic("AddTxs encounter wrong subscript")
+	   	} */
+
+	c.parent.ledger.PoolTransactions(txs)
+	return nil
 }
 
-func (c *peerCache) PurneCache(to uint64) {
-	c.prune(c.beg, to)
-}
-
-func (tp *transactionPool) AcquireCache(peer string, beg uint64, last uint64) *peerCache {
-
-	tp.RLock()
-
-	c, ok := tp.peerCache[peer]
-
-	if !ok {
-		tp.RUnlock()
-
-		c = new(peerTxCache)
-		tp.Lock()
-		defer tp.Unlock()
-		tp.peerCache[peer] = c
-		return &peerCache{c, beg, last, tp}
-	}
-
-	tp.RUnlock()
-	return &peerCache{c, beg, last, tp}
-}
-
-func (tp *transactionPool) RemoveCache(peer string) {
-	tp.Lock()
-	defer tp.Unlock()
-
-	delete(tp.peerCache, peer)
+func (c *txCache) Pruning(from uint64, to uint64) {
+	c.commitData.pruning(from, to)
 }

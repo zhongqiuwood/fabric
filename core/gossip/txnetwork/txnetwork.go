@@ -18,8 +18,9 @@ const (
 //txnetworkglobal manage datas required by single gossip-base txnetwork: (peers, txs, etc...)
 type txNetworkGlobal struct {
 	notifies
-	peers  *txNetworkPeers
-	txPool *transactionPool
+	peers         *txNetworkPeers
+	txPool        *transactionPool
+	credvalidator cred.TxHandlerFactory
 }
 
 func CreateTxNetworkGlobal() *txNetworkGlobal {
@@ -71,6 +72,13 @@ type notifies struct {
 	sync.RWMutex
 	onupdate  []func(string, bool) error
 	onevicted []func([]string) error
+	onsetself []func(string, *pb.PeerTxState)
+}
+
+func (g *notifies) RegSetSelfPeer(f func(string, *pb.PeerTxState)) {
+	g.Lock()
+	defer g.Unlock()
+	g.onsetself = append(g.onsetself, f)
 }
 
 func (g *notifies) RegEvictNotify(f func([]string) error) {
@@ -128,9 +136,10 @@ func (g *notifies) handleEvict(ids []string) {
 type txNetworkPeers struct {
 	maxPeers int
 	sync.RWMutex
-	selfId   string
-	lruQueue *list.List
-	lruIndex map[string]*list.Element
+	selfId      string
+	lruQueue    *list.List
+	lruIndex    map[string]*list.Element
+	peerHandler cred.TxHandlerFactory
 }
 
 func (g *txNetworkPeers) truncateTailPeer(cnt int) (ret []string) {
@@ -291,4 +300,18 @@ func (tp *transactionPool) RemoveCaches(peer string) {
 	defer tp.Unlock()
 
 	delete(tp.cCaches, peer)
+}
+
+func (tp *transactionPool) ResetLedger() {
+	tp.Lock()
+	defer tp.Unlock()
+
+	tp.cCaches = make(map[string]*commitData)
+}
+
+func (tp *transactionPool) ClearCaches() {
+	tp.Lock()
+	defer tp.Unlock()
+
+	tp.cCaches = make(map[string]*commitData)
 }

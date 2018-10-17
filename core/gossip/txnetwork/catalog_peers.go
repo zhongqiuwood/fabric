@@ -56,6 +56,13 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 		panic("Type error, not txNetworkGlobal")
 	}
 
+	if id != "" && g.network.credvalidator != nil {
+		err := g.network.credvalidator.ValidatePeerStatus(id, u.PeerTxState)
+		if err != nil {
+			return fmt.Errorf("Peer [%d]'s state is invalid: %s", err)
+		}
+	}
+
 	//scuttlebutt mode should avoiding this
 	if u.GetNum() < s.GetNum() {
 		panic("Wrong series, model error")
@@ -63,20 +70,19 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 
 	lastSeries := s.PeerTxState.GetNum()
 	established := len(s.Endorsement) == 0
-
-	//TODO: we must obtain endorsement in the first pulling
 	if established {
 		if len(u.GetEndorsement()) == 0 {
 			return fmt.Errorf("Update do not include endorsement for our pulling")
 		}
 		logger.Infof("We have establish new gossip peer [%s]:[%d:%x]", id, u.GetNum(), u.GetDigest())
 	} else {
-		//copy endorsement to u and later we will just keep u
-		u.Endorsement = s.Endorsement
+		if len(u.GetEndorsement()) == 0 {
+			//copy endorsement to u and later we will just keep u
+			u.Endorsement = s.Endorsement
+		}
 		logger.Infof("We have update gossip peer [%s] from %d to [%d:%x]", id, lastSeries, u.GetNum(), u.GetDigest())
 	}
 
-	//TODO: verify the signature of incoming data
 	s.PeerTxState = u.PeerTxState
 
 	g.TouchPeer(id, s.PeerTxState)
@@ -117,6 +123,7 @@ func (g *peersGlobal) RemovePeer(id string, _ model.ScuttlebuttPeerStatus) {
 	ok := g.txNetworkPeers.RemovePeer(id)
 
 	if ok {
+		g.network.txPool.RemoveCaches(id)
 		g.network.handleEvict([]string{id})
 	}
 }
@@ -143,7 +150,7 @@ func init() {
 func initNetworkStatus(stub *gossip.GossipStub) {
 
 	peerG := new(peersGlobal)
-	peerG.network = global.GetNetwork(stub)
+	peerG.network = getTxNetwork(stub)
 	peerG.txNetworkPeers = peerG.network.peers
 
 	selfstatus := model.NewScuttlebuttStatus(peerG)
@@ -160,6 +167,12 @@ func initNetworkStatus(stub *gossip.GossipStub) {
 	stub.AddCatalogHandler(h)
 	stub.SubScribeNewPeerNotify(newPeerNotify{h})
 
+	peerG.network.RegSetSelfPeer(func(newID string, state *pb.PeerTxState) {
+		m.Lock()
+		defer m.Unlock()
+		selfstatus.SetSelfPeer(newID, &peerStatus{state})
+		logger.Infof("TXPeers cat reset self peer to %s", newID)
+	})
 }
 
 const (
@@ -225,28 +238,4 @@ func (c *globalCat) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg_in proto.Me
 	}
 
 	return u, nil
-}
-
-func UpdateLocalEpoch(stub *gossip.GossipStub, series uint64, digest []byte) error {
-	globalcat := stub.GetCatalogHandler(globalCatName)
-	if globalcat == nil {
-		return fmt.Errorf("Can't not found corresponding global catalogHandler")
-	}
-
-	newstate := &pb.PeerTxState{Digest: digest, Num: series}
-	//TODO: make signature
-
-	selfUpdate := model.NewscuttlebuttUpdate(nil)
-	selfUpdate.UpdateLocal(peerStatus{newstate})
-
-	if err := globalcat.Model().RecvUpdate(selfUpdate); err != nil {
-		return err
-	} else {
-		globalcat.SelfUpdate()
-		return nil
-	}
-}
-
-func UpdateLocalPeer(stub *gossip.GossipStub) (*pb.PeerTxState, error) {
-	return nil, fmt.Errorf("Not implied")
 }

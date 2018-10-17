@@ -1,6 +1,7 @@
 package txnetwork
 
 import (
+	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"testing"
 	"time"
@@ -21,16 +22,22 @@ func (h *dummyH) HandleTxs(tx []*PendingTransaction) {
 	h.callTimes++
 
 }
+
+type dummyEndorser int
+
+func (dummyEndorser) EndorseTransaction(tx *pb.Transaction) (*pb.Transaction, error) { return tx, nil }
+func (dummyEndorser) Release()                                                       {}
+
 func TestTxEntrance(t *testing.T) {
 
 	wctx, endf := context.WithCancel(context.Background())
 
-	entry := NewTxNetworkEntry()
+	entry := newTxNetworkEntry()
 
 	for i := 0; i < 10; i++ {
 
 		tx, _ := buildTestTx(t)
-		entry.BroadCastTransaction(tx, "aa")
+		entry.BroadCastTransaction(tx, nil)
 	}
 
 	h := &dummyH{nil, 0, t}
@@ -50,7 +57,7 @@ func TestTxEntrance(t *testing.T) {
 	for i := 0; i < 5; i++ {
 
 		tx, _ := buildTestTx(t)
-		entry.BroadCastTransaction(tx, "bb")
+		entry.BroadCastTransaction(tx, dummyEndorser(i))
 	}
 
 	time.Sleep(time.Second)
@@ -59,7 +66,11 @@ func TestTxEntrance(t *testing.T) {
 		t.Fatal("Handler never receive enough txs:", h.tx)
 	}
 
-	if h.tx[13].endorser != "bb" || h.tx[7].endorser != "aa" {
+	if h.tx[7].endorser != nil {
+		t.Fatal("ghost endorser", h.tx)
+	}
+
+	if int(h.tx[13].endorser.(dummyEndorser)) != 3 {
 		t.Fatal("Wrong endorser name", h.tx)
 	}
 
@@ -72,7 +83,7 @@ func TestTxEntrance(t *testing.T) {
 	time.Sleep(time.Second)
 
 	ntx, _ := buildTestTx(t)
-	entry.BroadCastTransaction(ntx, "cc")
+	entry.BroadCastTransaction(ntx, dummyEndorser(100))
 
 	time.Sleep(time.Second)
 

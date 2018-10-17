@@ -2,45 +2,68 @@ package txnetwork
 
 import (
 	"fmt"
+	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/gossip"
+	model "github.com/abchain/fabric/core/gossip/model"
+	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"sync"
 )
 
-type entryIndexs struct {
+var entryglobal struct {
 	sync.Mutex
-	ind map[*pb.StreamStub]TxNetworkEntry
+	ind map[*pb.StreamStub]*TxNetworkEntry
 }
 
 type TxNetworkEntry struct {
 	*txNetworkEntry
+	*txNetworkGlobal
 	stub *gossip.GossipStub
 }
 
-func (e TxNetworkEntry) GetNetwork() *txNetworkGlobal {
-	return global.GetNetwork(e.stub)
+//Init method can be only executed before gossip network is running, to override
+//the default settings
+func (e *TxNetworkEntry) InitLedger(l *ledger.Ledger) {
+	e.txPool.ledger = l
 }
 
-func (e TxNetworkEntry) GetEntry() TxNetwork {
-	return e.txNetworkEntry
+func (e *TxNetworkEntry) InitCred(v cred.TxHandlerFactory) {
+	e.credvalidator = v
+	e.txPool.txHandler = v
 }
 
-func (e TxNetworkEntry) UpdateLocalEpoch(series uint64, digest []byte) error {
-	return UpdateLocalEpoch(e.stub, series, digest)
+func (e *TxNetworkEntry) catalogHandlerUpdateLocal(catName string, u model.ScuttlebuttPeerUpdate, ug model.Update) error {
+	cat := e.stub.GetCatalogHandler(catName)
+	if cat == nil {
+		return fmt.Errorf("Can't not found corresponding cataloghandler [%s] catalogHandler", catName)
+	}
+
+	selfUpdate := model.NewscuttlebuttUpdate(ug)
+	selfUpdate.UpdateLocal(u)
+
+	if err := cat.Model().RecvUpdate(selfUpdate); err != nil {
+		return err
+	} else {
+		//notify our peer is updated
+		cat.SelfUpdate()
+		return nil
+	}
 }
 
-func (e TxNetworkEntry) UpdateLocalPeer() (*pb.PeerTxState, error) {
-	return UpdateLocalPeer(e.stub)
+func (e *TxNetworkEntry) UpdateLocalPeer(s *pb.PeerTxState) error {
+	return e.catalogHandlerUpdateLocal(globalCatName, peerStatus{s}, nil)
 }
 
-func (e TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
-	return UpdateLocalHotTx(e.stub, txs)
+func (e *TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
+	return e.catalogHandlerUpdateLocal(hotTxCatName, txPeerUpdate{txs}, nil)
 }
 
-var entryglobal = entryIndexs{ind: make(map[*pb.StreamStub]TxNetworkEntry)}
+func (e *TxNetworkEntry) GetPeerStatus() *pb.PeerTxState {
+	return e.peers.QuerySelf()
+}
 
-func GetNetworkEntry(sstub *pb.StreamStub) (TxNetworkEntry, bool) {
+func GetNetworkEntry(sstub *pb.StreamStub) (*TxNetworkEntry, bool) {
 
 	entryglobal.Lock()
 	defer entryglobal.Unlock()
@@ -49,6 +72,7 @@ func GetNetworkEntry(sstub *pb.StreamStub) (TxNetworkEntry, bool) {
 }
 
 func init() {
+	entryglobal.ind = make(map[*pb.StreamStub]*TxNetworkEntry)
 	gossip.RegisterCat = append(gossip.RegisterCat, initTxnetworkEntrance)
 }
 
@@ -57,27 +81,20 @@ func initTxnetworkEntrance(stub *gossip.GossipStub) {
 	entryglobal.Lock()
 	defer entryglobal.Unlock()
 
-	entryglobal.ind[stub.GetSStub()] = TxNetworkEntry{
-		NewTxNetworkEntry(),
+	entryglobal.ind[stub.GetSStub()] = &TxNetworkEntry{
+		newTxNetworkEntry(),
+		getTxNetwork(stub),
 		stub,
 	}
 }
 
 type TxNetworkHandler interface {
 	HandleTxs(tx []*PendingTransaction)
-	Release()
 }
 
 type TxNetwork interface {
-	BroadCastTransaction(*pb.Transaction, string, ...string) error
-	BroadCastTransactionDefault(*pb.Transaction, ...string) error
-	ExecuteTransaction(context.Context, *pb.Transaction, string, ...string) *pb.Response
-}
-
-type TxNetworkUpdate interface {
-	UpdateLocalEpoch(series uint64, digest []byte) error
-	UpdateLocalPeer() (*pb.PeerTxState, error)
-	UpdateLocalHotTx(*pb.HotTransactionBlock) error
+	BroadCastTransaction(*pb.Transaction, cred.TxEndorser) error
+	ExecuteTransaction(context.Context, *pb.Transaction, cred.TxEndorser) *pb.Response
 }
 
 type txNetworkEntry struct {
@@ -88,7 +105,7 @@ const (
 	maxOutputBatch = 16
 )
 
-func NewTxNetworkEntry() *txNetworkEntry {
+func newTxNetworkEntry() *txNetworkEntry {
 
 	return &txNetworkEntry{
 		source: make(chan *PendingTransaction, maxOutputBatch*3),
@@ -103,7 +120,6 @@ func (e *txNetworkEntry) worker(ictx context.Context, h TxNetworkHandler) {
 
 	logger.Infof("Start a worker for txnetwork entry with handler %x", h)
 	defer func() {
-		h.Release()
 		logger.Infof("End the worker for txnetwork entry with handler %x", h)
 		endf()
 	}()
@@ -143,25 +159,12 @@ func (e *txNetworkEntry) Start(ctx context.Context, h TxNetworkHandler) {
 
 type PendingTransaction struct {
 	*pb.Transaction
-	endorser string
-	attrs    []string
+	endorser cred.TxEndorser
 	resp     chan *pb.Response
 }
 
-func (t *PendingTransaction) GetEndorser() string {
-	if t == nil {
-		return ""
-	}
-
+func (t *PendingTransaction) GetEndorser() cred.TxEndorser {
 	return t.endorser
-}
-
-func (t *PendingTransaction) GetAttrs() []string {
-	if t == nil {
-		return nil
-	}
-
-	return t.attrs
 }
 
 func (t *PendingTransaction) Respond(resp *pb.Response) {
@@ -183,18 +186,14 @@ func (e *txNetworkEntry) broadcast(ptx *PendingTransaction) error {
 	}
 }
 
-func (e *txNetworkEntry) BroadCastTransactionDefault(tx *pb.Transaction, attrs ...string) error {
-	return e.BroadCastTransaction(tx, "", attrs...)
+func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, endorser cred.TxEndorser) error {
+	return e.broadcast(&PendingTransaction{tx, endorser, nil})
 }
 
-func (e *txNetworkEntry) BroadCastTransaction(tx *pb.Transaction, client string, attrs ...string) error {
-	return e.broadcast(&PendingTransaction{tx, client, attrs, nil})
-}
-
-func (e *txNetworkEntry) ExecuteTransaction(ctx context.Context, tx *pb.Transaction, client string, attrs ...string) *pb.Response {
+func (e *txNetworkEntry) ExecuteTransaction(ctx context.Context, tx *pb.Transaction, endorser cred.TxEndorser) *pb.Response {
 
 	resp := make(chan *pb.Response)
-	ret := e.broadcast(&PendingTransaction{tx, client, attrs, resp})
+	ret := e.broadcast(&PendingTransaction{tx, endorser, resp})
 
 	if ret == nil {
 		select {

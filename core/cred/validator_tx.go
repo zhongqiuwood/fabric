@@ -57,57 +57,83 @@ func (f *txHandlerDefault) UpdateRootCA(CAs []*x509.Certificate, immeCAs []*x509
 	f.Unlock()
 }
 
-func (f *txHandlerDefault) ValidatePeer(id string, status *pb.PeerTxState) error {
+func (f *txHandlerDefault) ValidatePeerStatus(id string, status *pb.PeerTxState) (err error) {
 
-	cer, err := primitives.DERToX509Certificate(status.Endorsement)
-	if err != nil {
-		return err
-	} else if len(cer.UnhandledCriticalExtensions) > 0 {
-		//the peer's cert must not include extension
-		return x509.UnhandledCriticalExtension{}
+	f.RLock()
+	cachedCert := f.certcache[id]
+	f.RUnlock()
+
+	var ok bool
+	var certPubkey *ecdsa.PublicKey
+	if len(status.Endorsement) == 0 {
+		//we allow to use cached certificate
+		f.RLock()
+		defer f.RUnlock()
+
+		if cachedCert == nil {
+			err = errors.New("Status has no certificate and we have no cache")
+			return
+		}
+		certPubkey = cachedCert.PublicKey.(*ecdsa.PublicKey)
+	} else {
+		var cer *x509.Certificate
+		cer, err = primitives.DERToX509Certificate(status.Endorsement)
+		if err != nil {
+			return
+		} else if len(cer.UnhandledCriticalExtensions) > 0 {
+			//the peer's cert must not include extension
+			return x509.UnhandledCriticalExtension{}
+		}
+		_, err = f.rootVerifier.Verify(cer, nil)
+		if err != nil {
+			return
+		}
+
+		certPubkey, ok = cer.PublicKey.(*ecdsa.PublicKey)
+		if !ok {
+			err = errors.New("Tcert not use ecdsa signature")
+			return
+		}
+
+		//peer's cert can be updated but we require it must have same
+		//pubkey as the original one
+		if cachedCert != nil {
+			oldpk := cachedCert.PublicKey.(*ecdsa.PublicKey)
+			if certPubkey.X.Cmp(oldpk.X) != 0 {
+				err = errors.New("Tcert is not match with previous")
+				return
+			}
+		}
+
+		logger.Infof("Verify a new peer's x509 certificate [%x]", cer.SubjectKeyId)
+
+		defer func() {
+			if err != nil {
+				return
+			}
+			//update cache, and rebuild verifier
+			f.Lock()
+
+			f.certcache[id] = cer
+			f.cache[id] = newVerifier(id, cer, f)
+
+			f.Unlock()
+		}()
 	}
 
-	_, err = f.rootVerifier.Verify(cer, nil)
+	var smsg []byte
+	smsg, err = status.MsgEncode(id)
 	if err != nil {
-		return err
-	}
-
-	certPubkey, ok := cer.PublicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return errors.New("Tcert not use ecdsa signature")
-	}
-
-	smsg, err := status.MsgEncode(id)
-	if err != nil {
-		return err
+		return
 	}
 
 	ok, err = primitives.ECDSAVerify(certPubkey, smsg, status.Signature)
 	if err != nil {
-		return err
+		return
 	} else if !ok {
 		return utils.ErrInvalidTransactionSignature
 	}
-
-	logger.Infof("Verify a peer's x509 certificate [%x]", cer.SubjectKeyId)
-
-	//peer's cert can be updated but we require it must have same
-	//pubkey as the original one
-	f.Lock()
-	defer f.Unlock()
-
-	if ret, ok := f.certcache[id]; ok {
-		oldpk := ret.PublicKey.(*ecdsa.PublicKey)
-		if certPubkey.X.Cmp(oldpk.X) != 0 {
-			return errors.New("Tcert is not match with previous")
-		}
-	}
-
-	//update cache, and rebuild verifier
-	f.certcache[id] = cer
-	f.cache[id] = newVerifier(id, cer, f)
-
-	return nil
+	return
 }
 
 func (f *txHandlerDefault) GetPreHandler(id string) (TxPreHandler, error) {

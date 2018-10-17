@@ -239,10 +239,12 @@ func TestPeerUpdate(t *testing.T) {
 		t.Fatalf("unexpected full-tx <7>")
 	}
 
-	handledudt, err := udt.getRef(5).completeTxs(ledger, nil)
+	_, err = completeTxs(udt.Transactions, ledger, nil)
 	if err != nil {
 		t.Fatal("handle udt fail:", err)
 	}
+
+	handledudt := udt.getRef(5)
 
 	retTxs, err = handledudt.toTxs(nil)
 	if err != nil {
@@ -262,10 +264,7 @@ func TestPeerUpdate(t *testing.T) {
 	assertTxIsIdentify(t, txIndexs[7].tx, udt.GetTransactions()[2])
 
 	//check less index
-	handledudt, err = udt.getRef(3).completeTxs(ledger, nil)
-	if err != nil {
-		t.Fatal("handle udt fail:", err)
-	}
+	handledudt = udt.getRef(3)
 
 	retTxs, err = handledudt.toTxs(nil)
 	if err != nil {
@@ -334,14 +333,6 @@ func TestPeerTxPool(t *testing.T) {
 
 	if ud.BeginSeries != 15 {
 		t.Fatalf("unexpected begin: %d", ud.BeginSeries)
-	}
-
-	if !isLiteTx(ud.GetTransactions()[0]) {
-		t.Fatalf("unexpected full-tx <15>")
-	}
-
-	if h := txGlobal.AcquireCaches(defaultPeer).GetCommit(15, ud.GetTransactions()[0]); h != 2 {
-		t.Fatal("unexpected commit h", h)
 	}
 
 	assertTxIsIdentify(t, indexs[16].tx, ud.GetTransactions()[1])
@@ -596,15 +587,4 @@ func TestCatalogyHandler(t *testing.T) {
 		t.Fatal("commit update fail 27:", committedH)
 	}
 
-	del_commit := model.NewscuttlebuttUpdate(nil)
-	del_commit.RemovePeers([]string{testname})
-
-	err = m.RecvUpdate(del_commit)
-	if err != nil {
-		t.Fatal("do update fail", err)
-	}
-
-	if len(txglobal.AcquireCaches(testname).(*txCache).commitData[0]) > 0 {
-		t.Fatal("status still have ghost index")
-	}
 }

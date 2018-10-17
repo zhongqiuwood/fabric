@@ -49,7 +49,7 @@ type TxEndorser interface {
 }
 
 type TxHandlerFactory interface {
-	ValidatePeer(id string, status *pb.PeerTxState) error
+	ValidatePeerStatus(id string, status *pb.PeerTxState) error
 	GetPreHandler(id string) (TxPreHandler, error)
 	RemovePreHandler(string)
 }

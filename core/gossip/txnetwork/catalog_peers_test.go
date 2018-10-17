@@ -326,6 +326,10 @@ func TestAsAWhole(t *testing.T) {
 		t.Fatal("peer not remove", globalS.Peers)
 	}
 
+	if len(txG.AcquireCaches(newpeer).(*txCache).commitData[0]) > 0 {
+		t.Fatal("removed peer still have ghost cache")
+	}
+
 }
 
 func TestSelfUpdateAsAWhole(t *testing.T) {

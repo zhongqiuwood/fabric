@@ -183,7 +183,12 @@ func TestCommitting(t *testing.T) {
 	//generate a collection of txs large enough...
 	txcollection := make([]*pb.Transaction, queueLen*3+queueLenPart)
 	for i, _ := range txcollection {
-		txcollection[i], _ = buildTestTx(t)
+		tx, _ := buildTestTx(t)
+		if i > 0 {
+			d, _ := txcollection[i-1].Digest()
+			tx = buildPrecededTx(d, tx)
+		}
+		txcollection[i] = tx
 	}
 
 	last := uint64(1)
@@ -225,20 +230,19 @@ func TestCommitting(t *testing.T) {
 		t.Fatal("commit fail", err)
 	}
 
-	txpool.AcquireCaches("any").AddTxs(last, txcollection[queueLenPart:queueLen+2*queueLenPart], false)
+	err = txpool.AcquireCaches("any").AddTxs(last, txcollection[queueLenPart:queueLen+2*queueLenPart], false)
+	if err != nil {
+		t.Fatal("add txs fail", err)
+	}
 	last = last + uint64(queueLen+queueLenPart)
 
-	if cache[1][0] != 2 {
-		t.Fatal("Wrong cache status ", cache[1][:5])
+	ch = rcache.GetCommit(uint64(queueLen), txcollection[queueLen])
+	if ch != 2 || cache[1][0] != 2 {
+		t.Fatal("Wrong commit status ", cache[1][:5], ch)
 	}
 
-	rcache = txpool.AcquireCaches("any")
 	ch = rcache.GetCommit(uint64(queueLen-1), txcollection[queueLen-1])
 	if ch != 0 {
-		t.Fatal("get uncommit tx fail", ch)
-	}
-	ch = rcache.GetCommit(uint64(queueLen), txcollection[queueLen])
-	if ch != 2 {
 		t.Fatal("get uncommit tx fail", ch)
 	}
 	ch = rcache.GetCommit(uint64(queueLen+1), txcollection[queueLen+1])

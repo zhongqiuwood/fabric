@@ -11,28 +11,26 @@ import (
 
 var logger = logging.MustGetLogger("gossip_cat")
 
-type networkIndexs struct {
+var global struct {
 	sync.Mutex
 	ind map[*gossip.GossipStub]*txNetworkGlobal
 }
-
-var global networkIndexs
 
 func init() {
 	global.ind = make(map[*gossip.GossipStub]*txNetworkGlobal)
 }
 
 //txNetwork is a singleton related with stub
-func (g *networkIndexs) GetNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
-	g.Lock()
-	defer g.Unlock()
+func getTxNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
+	global.Lock()
+	defer global.Unlock()
 
-	if n, ok := g.ind[stub]; ok {
+	if n, ok := global.ind[stub]; ok {
 		return n
 	}
 
 	ret := CreateTxNetworkGlobal()
-	g.ind[stub] = ret
+	global.ind[stub] = ret
 	return ret
 }
 

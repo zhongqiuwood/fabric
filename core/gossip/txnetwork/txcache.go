@@ -1,6 +1,8 @@
 package txnetwork
 
 import (
+	"fmt"
+	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
 )
@@ -139,9 +141,34 @@ func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 	return *pos
 }
 
+func completeTxs(txsin []*pb.Transaction, l *ledger.Ledger, h cred.TxPreHandler) (txs []*pb.Transaction, err error) {
+
+	txs = txsin
+	for i, tx := range txsin {
+		if isLiteTx(tx) {
+			tx, err = l.GetTransactionByID(tx.GetTxid())
+			if err != nil {
+				err = fmt.Errorf("Checking tx from db fail: %s", err)
+				return
+			} else if tx == nil {
+				err = fmt.Errorf("update give uncommited transactions")
+				return
+			}
+		} else if h != nil {
+			tx, err = h.TransactionPreValidation(tx)
+			if err != nil {
+				err = fmt.Errorf("Verify tx fail: %s", err)
+				return
+			}
+		}
+		txs[i] = tx
+	}
+
+	return
+}
+
 func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error {
 
-	udt := txPeerUpdate{&pb.HotTransactionBlock{Transactions: txs}}
 	var err error
 	if !nocheck {
 		if c.parent.txHandler != nil {
@@ -149,9 +176,9 @@ func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error
 			if err != nil {
 				return err
 			}
-			_, err = udt.completeTxs(c.parent.ledger, preHandler)
+			txs, err = completeTxs(txs, c.parent.ledger, preHandler)
 		} else {
-			_, err = udt.completeTxs(c.parent.ledger, nil)
+			txs, err = completeTxs(txs, c.parent.ledger, nil)
 		}
 
 	}
@@ -159,33 +186,34 @@ func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error
 	if err != nil {
 		return err
 	}
-	c.commitData.append(from, len(txs))
-	/* 	var txspos int
-	   	_ := c.commitData.append(from, len(txs))
 
-	   	for _, q := range added {
-	   		for i := 0; i < len(q); i++ {
-	   			tx := txs[txspos]
-	   			var commitedH uint64
-	   			if !nocheck {
-	   				commitedH, _, _ = c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
-	   			}
+	var txspos int
+	added := c.commitData.append(from, len(txs))
+	pooltxs := make([]*pb.Transaction, 0, len(txs))
 
-	   			if commitedH == 0 {
-	   				pooltxs = append(pooltxs, tx)
-	   			}
+	for _, q := range added {
+		for i := 0; i < len(q); i++ {
+			tx := txs[txspos]
+			var commitedH uint64
+			if !nocheck {
+				commitedH, _, _ = c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
+			}
 
-	   			q[i] = commitedH
-	   			txspos++
-	   		}
-	   	}
+			if commitedH == 0 {
+				pooltxs = append(pooltxs, tx)
+			}
 
-	   	//sanity check
-	   	if txspos != len(txs) {
-	   		panic("AddTxs encounter wrong subscript")
-	   	} */
+			q[i] = commitedH
+			txspos++
+		}
+	}
 
-	c.parent.ledger.PoolTransactions(txs)
+	//sanity check
+	if txspos != len(txs) {
+		panic("wrong code")
+	}
+
+	c.parent.ledger.PoolTransactions(pooltxs)
 	return nil
 }
 

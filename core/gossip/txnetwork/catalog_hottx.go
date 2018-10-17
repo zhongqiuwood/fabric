@@ -3,10 +3,9 @@ package txnetwork
 import (
 	"bytes"
 	"fmt"
-	cred "github.com/abchain/fabric/core/cred"
+
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
-	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
 	proto "github.com/golang/protobuf/proto"
 )
@@ -296,32 +295,6 @@ func (u txPeerUpdate) pruneTxs(epochH uint64, ccache TxCache) txPeerUpdate {
 	return u
 }
 
-func (u txPeerUpdate) completeTxs(l *ledger.Ledger, h cred.TxPreHandler) (ret txPeerUpdate, err error) {
-
-	for i, tx := range u.Transactions {
-		if isLiteTx(tx) {
-			tx, err = l.GetTransactionByID(tx.GetTxid())
-			if err != nil {
-				err = fmt.Errorf("Checking tx from db fail: %s", err)
-				return
-			} else if tx == nil {
-				err = fmt.Errorf("update give uncommited transactions")
-				return
-			}
-		} else if h != nil {
-			tx, err = h.TransactionPreValidation(tx)
-			if err != nil {
-				err = fmt.Errorf("Verify tx fail: %s", err)
-				return
-			}
-		}
-		u.Transactions[i] = tx
-	}
-
-	ret = u
-	return
-}
-
 func (u txPeerUpdate) toTxs(reflastDigest []byte) (*peerTxs, error) {
 
 	if len(u.Transactions) == 0 {
@@ -571,7 +544,7 @@ func initHotTx(stub *gossip.GossipStub) {
 
 	txglobal := new(txPoolGlobal)
 	//	txglobal.ind = make(map[string]*txMemPoolItem)
-	txglobal.network = global.GetNetwork(stub)
+	txglobal.network = getTxNetwork(stub)
 	txglobal.transactionPool = txglobal.network.txPool
 
 	hotTx := new(hotTxCat)
@@ -593,6 +566,15 @@ func initHotTx(stub *gossip.GossipStub) {
 
 	txglobal.network.RegUpdateNotify(standardUpdateFunc(ch))
 	txglobal.network.RegEvictNotify(standardEvictFunc(ch))
+	txglobal.network.RegSetSelfPeer(func(newID string, state *pb.PeerTxState) {
+		m.Lock()
+		defer m.Unlock()
+		self := &peerTxMemPool{}
+		self.reset(createPeerTxItem(state))
+		selfStatus.SetSelfPeer(newID, self)
+		logger.Infof("Hottx cat reset self peer to %s", newID)
+	})
+
 }
 
 const (

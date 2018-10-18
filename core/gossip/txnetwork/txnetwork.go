@@ -52,7 +52,7 @@ func CreateTxNetworkGlobal() *txNetworkGlobal {
 		"",
 		&pb.PeerTxState{
 			Digest: sid[:TxDigestVerifyLen],
-			//TODO: we must endorse it
+			//add one byte to indicate this peer is endorsed
 			Endorsement: []byte{1},
 		},
 		time.Now(),
@@ -133,6 +133,17 @@ func (g *notifies) handleEvict(ids []string) {
 	}
 }
 
+func (g *notifies) handleSetSelf(id string, state *pb.PeerTxState) {
+	g.RLock()
+	fs := g.onsetself
+	g.RUnlock()
+
+	//set self is not need to spawn a thread because it always is called outside any model
+	for _, f := range fs {
+		f(id, state)
+	}
+}
+
 type txNetworkPeers struct {
 	maxPeers int
 	sync.RWMutex
@@ -204,6 +215,30 @@ func (g *txNetworkPeers) RemovePeer(id string) bool {
 		delete(g.lruIndex, id)
 	}
 	return ok
+}
+
+func (g *txNetworkPeers) ChangeSelf(id string, state *pb.PeerTxState) error {
+
+	g.Lock()
+	defer g.Unlock()
+
+	_, ok := g.lruIndex[id]
+	if ok {
+		return fmt.Errorf("ID %s has existed and can't not be use", id)
+	}
+
+	//old self peer is always being kept
+	old, ok := g.lruIndex[g.selfId]
+	g.lruQueue.MoveToFront(old)
+
+	//also create self peer
+	newself := &peerStatusItem{"", state, time.Now()}
+
+	logger.Infof("Set self peer to [%s]", id)
+	g.selfId = id
+	g.lruIndex[g.selfId] = &list.Element{Value: newself}
+
+	return nil
 }
 
 func (g *txNetworkPeers) QueryPeer(id string) *pb.PeerTxState {

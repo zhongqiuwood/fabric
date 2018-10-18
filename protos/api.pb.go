@@ -69,7 +69,7 @@ It has these top-level messages:
 	SyncMsg
 	SyncStateQuery
 	SyncStateResp
-	Gossip
+	GossipMsg
 	HotTransactionBlock
 	PeerTxState
 	Gossip_Tx

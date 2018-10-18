@@ -21,7 +21,7 @@ func InitGossipStream(bindPeer peer.Peer, bindSrv *grpc.Server) *pb.StreamStub {
 	}
 
 	//bind server
-	pb.regi
+	pb.RegisterGossipServer(bindSrv, GossipFactory{gstub})
 
 	return gstub.GetSStub()
 }
@@ -49,10 +49,10 @@ func (h GossipHandlerImpl) Tag() string { return "Gossip" }
 
 func (h GossipHandlerImpl) EnableLoss() bool { return true }
 
-func (h GossipHandlerImpl) NewMessage() proto.Message { return new(pb.Gossip) }
+func (h GossipHandlerImpl) NewMessage() proto.Message { return new(pb.GossipMsg) }
 
 func (h GossipHandlerImpl) HandleMessage(m proto.Message) error {
-	return h.GossipHandler.HandleMessage(m.(*pb.Gossip))
+	return h.GossipHandler.HandleMessage(m.(*pb.GossipMsg))
 }
 
 func (h GossipHandlerImpl) BeforeSendMessage(proto.Message) error {
@@ -72,9 +72,9 @@ func (t GossipFactory) NewStreamHandlerImpl(id *pb.PeerID, sstub *pb.StreamStub,
 }
 
 func (t GossipFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, error) {
-	serverClient := pb.NewPeerClient(conn)
+	serverClient := pb.NewGossipClient(conn)
 	ctx := context.Background()
-	stream, err := serverClient.GossipIn(ctx)
+	stream, err := serverClient.In(ctx)
 
 	if err != nil {
 		return nil, err
@@ -83,6 +83,6 @@ func (t GossipFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream
 	return stream, nil
 }
 
-func (t GossipFactory) GossipIn(stream pb.Peer_GossipInServer) error {
+func (t GossipFactory) In(stream pb.Gossip_InServer) error {
 	return t.GetSStub().HandleServer(stream)
 }

@@ -289,6 +289,9 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 
 }
 
+//set a newid as self, if it has existed, the old peer will be replaced without any warning!
+//after reset, the old self peer will become a common peer (and you need to remove it by
+//an update)
 func (s *scuttlebuttStatus) SetSelfPeer(selfid string,
 	self ScuttlebuttPeerStatus) (oldself string) {
 
@@ -296,8 +299,12 @@ func (s *scuttlebuttStatus) SetSelfPeer(selfid string,
 		oldself = id
 	}(s.SelfID)
 
-	s.SelfID = selfid
+	if oldstate, ok := s.Peers[""]; ok {
+		s.Peers[s.SelfID] = oldstate
+	}
 	s.Peers[""] = self
+	s.SelfID = selfid
+
 	return
 }
 

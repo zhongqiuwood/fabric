@@ -36,7 +36,7 @@ func (g *handlerImpl) GetPeerPolicy() CatalogPeerPolicies {
 	return g.ppo
 }
 
-func (g *handlerImpl) HandleMessage(msg *pb.Gossip) error {
+func (g *handlerImpl) HandleMessage(msg *pb.GossipMsg) error {
 
 	global, ok := g.cores[msg.GetCatalog()]
 	if !ok {

@@ -35,7 +35,7 @@ var GossipFactory func(*GossipStub) pb.StreamHandlerFactory
 
 //the simplified stream handler
 type GossipHandler interface {
-	HandleMessage(*pb.Gossip) error
+	HandleMessage(*pb.GossipMsg) error
 	Stop()
 }
 

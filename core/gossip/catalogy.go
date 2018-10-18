@@ -15,8 +15,8 @@ type CatalogHandler interface {
 	Model() *model.Model
 	//just notify the model is updated
 	SelfUpdate()
-	HandleUpdate(*pb.Gossip_Update, CatalogPeerPolicies)
-	HandleDigest(*pb.Gossip_Digest, CatalogPeerPolicies)
+	HandleUpdate(*pb.GossipMsg_Update, CatalogPeerPolicies)
+	HandleDigest(*pb.GossipMsg_Digest, CatalogPeerPolicies)
 }
 
 type CatalogHandlerEx interface {
@@ -38,8 +38,8 @@ type CatalogHelper interface {
 	Name() string
 	GetPolicies() CatalogPolicies //caller do not need to check the interface
 
-	TransDigestToPb(model.Digest) *pb.Gossip_Digest
-	TransPbToDigest(*pb.Gossip_Digest) model.Digest
+	TransDigestToPb(model.Digest) *pb.GossipMsg_Digest
+	TransPbToDigest(*pb.GossipMsg_Digest) model.Digest
 
 	UpdateMessage() proto.Message
 	EncodeUpdate(CatalogPeerPolicies, model.Update, proto.Message) proto.Message
@@ -228,10 +228,10 @@ func genSessionHandler(h *catalogHandler, cpo CatalogPeerPolicies) *sessionHandl
 //implement of pushhelper and pullerhelper
 func (h *sessionHandler) EncodeDigest(d model.Digest) proto.Message {
 
-	msg := &pb.Gossip{
+	msg := &pb.GossipMsg{
 		Seq:     getGlobalSeq(),
 		Catalog: h.Name(),
-		M:       &pb.Gossip_Dig{h.TransDigestToPb(d)},
+		M:       &pb.GossipMsg_Dig{h.TransDigestToPb(d)},
 	}
 
 	h.cpo.PushUpdate(msg.EstimateSize())
@@ -241,7 +241,7 @@ func (h *sessionHandler) EncodeDigest(d model.Digest) proto.Message {
 
 func (h *sessionHandler) EncodeUpdate(u model.Update) proto.Message {
 
-	udsent := &pb.Gossip_Update{}
+	udsent := &pb.GossipMsg_Update{}
 
 	if u != nil {
 		payloadByte, err := proto.Marshal(
@@ -255,10 +255,10 @@ func (h *sessionHandler) EncodeUpdate(u model.Update) proto.Message {
 		}
 	}
 
-	return &pb.Gossip{
+	return &pb.GossipMsg{
 		Seq:     getGlobalSeq(),
 		Catalog: h.Name(),
-		M:       &pb.Gossip_Ud{udsent},
+		M:       &pb.GossipMsg_Ud{udsent},
 	}
 }
 
@@ -335,7 +335,7 @@ func (h *catalogHandler) SelfUpdate() {
 	go h.executePush(emptyExcluded)
 }
 
-func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPolicies) {
+func (h *catalogHandler) HandleDigest(msg *pb.GossipMsg_Digest, cpo CatalogPeerPolicies) {
 
 	strm := h.sstub.PickHandler(cpo.GetPeer())
 	if strm == nil {
@@ -350,7 +350,7 @@ func (h *catalogHandler) HandleDigest(msg *pb.Gossip_Digest, cpo CatalogPeerPoli
 	h.schedule.pushDone()
 }
 
-func (h *catalogHandler) HandleUpdate(msg *pb.Gossip_Update, cpo CatalogPeerPolicies) {
+func (h *catalogHandler) HandleUpdate(msg *pb.GossipMsg_Update, cpo CatalogPeerPolicies) {
 
 	puller := h.pulls.queryPuller(cpo)
 	if puller == nil {

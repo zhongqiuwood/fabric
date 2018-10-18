@@ -59,6 +59,16 @@ func (e *TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
 	return e.catalogHandlerUpdateLocal(hotTxCatName, txPeerUpdate{txs}, nil)
 }
 
+func (e *TxNetworkEntry) ResetSelfPeer(id string, state *pb.PeerTxState) error {
+
+	if err := e.txNetworkGlobal.peers.ChangeSelf(id, state); err != nil {
+		return err
+	}
+
+	e.txNetworkGlobal.handleSetSelf(id, state)
+	return nil
+}
+
 func (e *TxNetworkEntry) GetPeerStatus() *pb.PeerTxState {
 	return e.peers.QuerySelf()
 }

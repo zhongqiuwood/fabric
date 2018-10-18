@@ -2,14 +2,14 @@ syntax = "proto3";
 package protos;
 import "fabric.proto";
 
-service GossipServer {
+service Gossip {
     // Request a new stream for bi-direction gossip
     // We must sent a peerId first for merging the stream with chatting,
     // This can't be achieve by protobuf and we had to imple it manually
-    rpc In(stream Gossip) returns (stream Gossip) {} 
+    rpc In(stream GossipMsg) returns (stream GossipMsg) {} 
 }
 
-message Gossip {
+message GossipMsg {
 
     message Digest{
         message PeerState{

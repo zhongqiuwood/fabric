@@ -11,6 +11,7 @@ It is generated from these files:
 	devops.proto
 	events.proto
 	fabric.proto
+	gossip.proto
 	server_admin.proto
 
 It has these top-level messages:
@@ -54,11 +55,6 @@ It has these top-level messages:
 	PeersMessage
 	PeersAddresses
 	HelloMessage
-	Gossip
-	HotTransactionBlock
-	PeerTxState
-	Gossip_Tx
-	Gossip_TxState
 	Message
 	Response
 	GlobalState
@@ -73,6 +69,11 @@ It has these top-level messages:
 	SyncMsg
 	SyncStateQuery
 	SyncStateResp
+	Gossip
+	HotTransactionBlock
+	PeerTxState
+	Gossip_Tx
+	Gossip_TxState
 	ServerStatus
 */
 package protos

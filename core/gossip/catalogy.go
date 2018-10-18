@@ -3,7 +3,6 @@ package gossip
 import (
 	"fmt"
 	model "github.com/abchain/fabric/core/gossip/model"
-	"github.com/abchain/fabric/core/gossip/stub"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
 	"golang.org/x/net/context"
@@ -404,7 +403,7 @@ func (h *catalogHandler) executePush(excluded map[*pb.StreamHandler]bool) error 
 		logger.Debugf("finish (%d) pulls, try execute a pushing on stream to %s",
 			pushCnt, strm.Id.GetName())
 
-		ph, ok := stub.ObtainHandler(strm.StreamHandler).(*handlerImpl)
+		ph, ok := ObtainHandler(strm.StreamHandler).(*handlerImpl)
 		if !ok {
 			panic("type error, not handlerImpl")
 		}

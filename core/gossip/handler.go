@@ -4,6 +4,8 @@ import (
 	pb "github.com/abchain/fabric/protos"
 )
 
+var ObtainHandler func(*pb.StreamHandler) GossipHandler
+
 type peerPoliciesWrapper struct {
 	*pb.PeerID
 	PeerPolicies

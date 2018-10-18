@@ -124,14 +124,6 @@ service Peer {
     // other Message (e.g. from other peers).
     rpc Chat(stream Message) returns (stream Message) {}
 
-    // Request a new stream for bi-direction gossip
-    // We must sent a peerId first for merging the stream with chatting,
-    // This can't be achieve by protobuf and we had to imple it manually
-    rpc GossipIn(stream Gossip) returns (stream Gossip) {}
-
-    // Request a new stream for state syncing
-    rpc SyncIn(stream SyncMsg) returns (stream SyncMsg) {}
-
     // Process a transaction from a remote source.
     rpc ProcessTransaction(Transaction) returns (Response) {}
 
@@ -171,53 +163,9 @@ message HelloMessage {
   BlockchainInfo blockchainInfo = 2;
 }
 
-message Gossip {
-
-    message Digest{
-        message PeerState{
-            bytes state = 1;
-            uint64 num  = 2;
-        }
-/*string is used to represent peerID*/        
-        map<string, PeerState> data = 1;
-        bytes epoch = 2;
-        bool isFull = 3;//indicate digest include all peers I have known
-        bool noResp = 4;//prohibit a "responding pulling" from far end
-    }
-
-    message Update{
-        bytes  payload = 1;
-    }
-
-    //all the gossip message (with different catalog) MUST share the
-    //same series of seq
-    uint64 seq = 1;
-    string catalog = 2;
-    oneof m{
-        Digest dig = 3;
-        Update ud  = 4;
-    }
-}
-
-// TransactionBlock carries a batch of transactions.
-message HotTransactionBlock {
-    repeated Transaction transactions = 1;
-    uint64 beginSeries = 2;
-}
-
-message PeerTxState{
-    bytes digest = 1;
-    uint64 num  = 2;
-    bytes signature = 5;
-    bytes endorsement = 6;
-}
-
-message Gossip_Tx{
-    map<string, HotTransactionBlock> txs = 1;
-}
-
-message Gossip_TxState{
-    map<string, PeerTxState> txs = 1;
+service SyncServer {
+    // Request a new stream for state syncing
+    rpc In(stream SyncMsg) returns (stream SyncMsg) {}
 }
 
 message Message {

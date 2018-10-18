@@ -8,6 +8,9 @@ import (
 	"github.com/op/go-logging"
 	"os"
 	"testing"
+
+	//this import is required to init the GossipFactory func
+	_ "github.com/abchain/fabric/core/gossip/stub"
 )
 
 var testParams []string

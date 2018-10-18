@@ -196,6 +196,7 @@ func NewStreamStub(factory StreamHandlerFactory, peerid *PeerID) *StreamStub {
 }
 
 func (s *StreamStub) registerHandler(h *StreamHandler, peerid *PeerID) error {
+
 	s.handlerMap.Lock()
 	defer s.handlerMap.Unlock()
 

@@ -1,7 +1,6 @@
 package gossip
 
 import (
-	"github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/peer"
 	peerACL "github.com/abchain/fabric/core/peer/acl"
 	pb "github.com/abchain/fabric/protos"
@@ -32,6 +31,14 @@ func getGlobalSeq() uint64 {
 	return globalSeq
 }
 
+var GossipFactory func(*GossipStub) pb.StreamHandlerFactory
+
+//the simplified stream handler
+type GossipHandler interface {
+	HandleMessage(*pb.Gossip) error
+	Stop()
+}
+
 //GossipStub struct
 type GossipStub struct {
 	self            *pb.PeerID
@@ -45,23 +52,9 @@ type GossipStub struct {
 	globalCtx context.Context
 }
 
-var gossipMapper = map[*pb.StreamStub]*GossipStub{}
-
-//an default collection can be used ...
-var defaultCatalogHandlers = map[string]CatalogHandler{}
-
-func init() {
-	stub.DefaultFactory = func(id *pb.PeerID, sstub *pb.StreamStub) stub.GossipHandler {
-		logger.Debug("create handler for peer", id)
-
-		ss, ok := gossipMapper[sstub]
-		if !ok {
-			logger.Warningf("Stream stub for peer [%s] is not registered in gossip module", id.GetName())
-			return newHandler(id, defaultCatalogHandlers)
-		} else {
-			return newHandler(id, ss.catalogHandlers)
-		}
-	}
+func (g *GossipStub) CreateGossipHandler(id *pb.PeerID) GossipHandler {
+	logger.Debug("create handler for peer", g.self)
+	return newHandler(id, g.catalogHandlers)
 }
 
 func (g *GossipStub) GetSelf() *pb.PeerID {
@@ -127,12 +120,10 @@ func NewGossipWithPeer(p peer.Peer) *GossipStub {
 	gossipStub := &GossipStub{
 		self:            self.ID,
 		catalogHandlers: make(map[string]CatalogHandler),
-		StreamStub:      p.GetStreamStub("gossip"),
-		sec:             p,
-		globalCtx:       gctx,
+		//		StreamStub:      p.GetStreamStub("gossip"),
+		sec:       p,
+		globalCtx: gctx,
 	}
-
-	gossipMapper[gossipStub.StreamStub] = gossipStub
 
 	nb, err := p.GetNeighbour()
 
@@ -143,30 +134,26 @@ func NewGossipWithPeer(p peer.Peer) *GossipStub {
 		gossipStub.AccessControl, _ = nb.GetACL()
 	}
 
-	//setting posthandler for peer
-	p.SetStreamOption("gossip", gossipStub)
+	//gossipStub itself is also a posthandler
+	err = p.AddStreamStub("gossip", GossipFactory(gossipStub), gossipStub)
+	if err != nil {
+		logger.Error("Bind gossip stub to peer fail: ", err)
+		return nil
+	}
+
+	gossipStub.StreamStub = p.GetStreamStub("gossip")
+	if gossipStub.StreamStub == nil {
+		//sanity check
+		panic("When streamstub is succefully added, it should not vanish here")
+	}
 
 	//reg all catalogs
 	for _, f := range RegisterCat {
 		f(gossipStub)
 	}
 
-	logger.Info("A Gossip module inited")
+	logger.Infof("A Gossip module created on peer %s", self.ID)
 
 	return gossipStub
 
-}
-
-var defaultGossipStub *GossipStub
-var defaultGossipInit sync.Once
-
-// GetGossip, pass nil to obtain the "default" gossip singleton
-// *** current this method can only get the default one
-func GetGossip(p peer.Peer) *GossipStub {
-
-	defaultGossipInit.Do(func() {
-		defaultGossipStub = NewGossipWithPeer(p)
-	})
-
-	return defaultGossipStub
 }

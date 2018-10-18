@@ -49,7 +49,7 @@ var ServerStatus_StatusCode_value = map[string]int32{
 func (x ServerStatus_StatusCode) String() string {
 	return proto.EnumName(ServerStatus_StatusCode_name, int32(x))
 }
-func (ServerStatus_StatusCode) EnumDescriptor() ([]byte, []int) { return fileDescriptor6, []int{0, 0} }
+func (ServerStatus_StatusCode) EnumDescriptor() ([]byte, []int) { return fileDescriptor7, []int{0, 0} }
 
 type ServerStatus struct {
 	Status ServerStatus_StatusCode `protobuf:"varint,1,opt,name=status,enum=protos.ServerStatus_StatusCode" json:"status,omitempty"`
@@ -58,7 +58,7 @@ type ServerStatus struct {
 func (m *ServerStatus) Reset()                    { *m = ServerStatus{} }
 func (m *ServerStatus) String() string            { return proto.CompactTextString(m) }
 func (*ServerStatus) ProtoMessage()               {}
-func (*ServerStatus) Descriptor() ([]byte, []int) { return fileDescriptor6, []int{0} }
+func (*ServerStatus) Descriptor() ([]byte, []int) { return fileDescriptor7, []int{0} }
 
 func (m *ServerStatus) GetStatus() ServerStatus_StatusCode {
 	if m != nil {
@@ -212,9 +212,9 @@ var _Admin_serviceDesc = grpc.ServiceDesc{
 	Metadata: "server_admin.proto",
 }
 
-func init() { proto.RegisterFile("server_admin.proto", fileDescriptor6) }
+func init() { proto.RegisterFile("server_admin.proto", fileDescriptor7) }
 
-var fileDescriptor6 = []byte{
+var fileDescriptor7 = []byte{
 	// 253 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0x12, 0x2a, 0x4e, 0x2d, 0x2a,
 	0x4b, 0x2d, 0x8a, 0x4f, 0x4c, 0xc9, 0xcd, 0xcc, 0xd3, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62,

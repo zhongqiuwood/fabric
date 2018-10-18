@@ -37,10 +37,8 @@ import (
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/discovery"
-	gossipstub "github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer/acl"
-	syncstub "github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 )
@@ -52,10 +50,9 @@ type Peer interface {
 	ExecuteTransaction(transaction *pb.Transaction) *pb.Response
 	SecurityAccessor
 	GetNeighbour() (Neighbour, error)
-	//  currently the availiable streamstub is "gossip" and "sync"
+	//init stream stubs, with options ...
+	AddStreamStub(string, pb.StreamHandlerFactory, ...interface{}) error
 	GetStreamStub(string) *pb.StreamStub
-	//  now we can set the StreamFilter or StreamPostHandler
-	SetStreamOption(string, interface{})
 	GetPeerCtx() context.Context
 }
 
@@ -264,14 +261,11 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 	peer.pctx = pctx
 	peer.onEnd = endf
 
-	peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory(), self.ID)
-	peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory(), self.ID)
+	// peer.gossipStub = pb.NewStreamStub(gossipstub.GetDefaultFactory(), self.ID)
+	// peer.syncStub = pb.NewStreamStub(syncstub.GetDefaultFactory(), self.ID)
 
 	//mapping of all streamstubs above:
-	peer.streamStubs = map[string]*pb.StreamStub{
-		"gossip": peer.gossipStub,
-		"sync":   peer.syncStub,
-	}
+	peer.streamStubs = make(map[string]*pb.StreamStub)
 	peer.streamFilters = make(map[string]StreamFilter)
 	peer.streamPostHandlers = make(map[string]StreamPostHandler)
 
@@ -332,13 +326,13 @@ func (p *Impl) Chat(stream pb.Peer_ChatServer) error {
 	return p.handleChat(stream.Context(), stream, false)
 }
 
-func (p *Impl) GossipIn(stream pb.Peer_GossipInServer) error {
-	return p.gossipStub.HandleServer(stream)
-}
+// func (p *Impl) GossipIn(stream pb.Peer_GossipInServer) error {
+// 	return p.gossipStub.HandleServer(stream)
+// }
 
-func (p *Impl) SyncIn(stream pb.Peer_SyncInServer) error {
-	return p.syncStub.HandleServer(stream)
-}
+// func (p *Impl) SyncIn(stream pb.Peer_SyncInServer) error {
+// 	return p.syncStub.HandleServer(stream)
+// }
 
 // ProcessTransaction implementation of the ProcessTransaction RPC function
 func (p *Impl) ProcessTransaction(ctx context.Context, tx *pb.Transaction) (response *pb.Response, err error) {
@@ -454,24 +448,30 @@ func getHandlerKeyFromPeerEndpoint(peerEndpoint *pb.PeerEndpoint) *pb.PeerID {
 	return peerEndpoint.ID
 }
 
-func (p *Impl) GetStreamStub(name string) *pb.StreamStub {
+func (p *Impl) AddStreamStub(name string, factory pb.StreamHandlerFactory, opts ...interface{}) error {
+	if _, ok := p.streamStubs[name]; ok {
+		return fmt.Errorf("streamstub %s is exist", name)
+	}
 
-	return p.streamStubs[name]
+	for _, opt := range opts {
+		switch v := opt.(type) {
+		case StreamFilter:
+			p.streamFilters[name] = v
+		case StreamPostHandler:
+			p.streamPostHandlers[name] = v
+		default:
+			return fmt.Errorf("Unrecognized option: %v", opt)
+		}
+	}
+
+	stub := pb.NewStreamStub(factory, p.self.ID)
+	p.streamStubs[name] = stub
+	peerLogger.Infof("Add a new streamstub [%s]", name)
+	return nil
 }
 
-func (p *Impl) SetStreamOption(name string, opt interface{}) {
-	if _, ok := p.streamStubs[name]; !ok {
-		fmt.Errorf("Can not set option for unexist streamstub: %s", name)
-	}
-
-	switch v := opt.(type) {
-	case StreamFilter:
-		p.streamFilters[name] = v
-	case StreamPostHandler:
-		p.streamPostHandlers[name] = v
-	default:
-		fmt.Errorf("Unrecognized option: %v", opt)
-	}
+func (p *Impl) GetStreamStub(name string) *pb.StreamStub {
+	return p.streamStubs[name]
 }
 
 func (p *Impl) GetDiscoverer() (Discoverer, error) {

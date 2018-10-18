@@ -3,6 +3,8 @@ package gossip_test
 import (
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
+	//this import is required to init the GossipFactory func
+	_ "github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"

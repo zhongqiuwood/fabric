@@ -27,7 +27,8 @@ func TestTxGlobal(t *testing.T) {
 	peerG.network = global
 	peerG.txNetworkPeers = peerG.network.peers
 	selfstatus := model.NewScuttlebuttStatus(peerG)
-	selfstatus.SetSelfPeer(peerG.selfId, &peerStatus{peerG.QuerySelf()})
+	stxs, _ := peerG.QuerySelf()
+	selfstatus.SetSelfPeer(peerG.selfId, &peerStatus{stxs})
 	m := model.NewGossipModel(selfstatus)
 
 	globalcat := new(globalCat)
@@ -35,8 +36,8 @@ func TestTxGlobal(t *testing.T) {
 
 	const testpeername = "testpeer"
 	//make test peer is known
-	pbin := &pb.Gossip_Digest{
-		Data: map[string]*pb.Gossip_Digest_PeerState{testpeername: &pb.Gossip_Digest_PeerState{}},
+	pbin := &pb.GossipMsg_Digest{
+		Data: map[string]*pb.GossipMsg_Digest_PeerState{testpeername: &pb.GossipMsg_Digest_PeerState{}},
 	}
 
 	m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
@@ -114,7 +115,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("recv update fail 2", err)
 	}
 
-	self := peerG.QuerySelf()
+	self, _ := peerG.QuerySelf()
 
 	if self.Num != 4 {
 		t.Fatal("self update fail", self)
@@ -126,7 +127,7 @@ func TestTxGlobal(t *testing.T) {
 
 	//pick 2
 	pbin.Data[testpeername].Num = 2
-	pbin.Data[peerG.selfId] = &pb.Gossip_Digest_PeerState{}
+	pbin.Data[peerG.selfId] = &pb.GossipMsg_Digest_PeerState{}
 
 	uout2 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
 

@@ -23,6 +23,30 @@ type txNetworkGlobal struct {
 	credvalidator cred.TxHandlerFactory
 }
 
+//if this is set, network will be created with default peer status,
+//which is useful in testing and some other purpose (i.e. create a simple instance)
+var DefaultInitPeer struct {
+	Id    string
+	State *pb.PeerTxState
+}
+
+func ToStringId(id []byte) string {
+	return fmt.Sprintf("%x", id)
+}
+
+func CreateSimplePeer() (string, *pb.PeerTxState) {
+	id := util.GenerateBytesUUID()
+	if len(id) < TxDigestVerifyLen {
+		panic("Wrong code generate uuid less than 16 bytes [128bit]")
+	}
+
+	return ToStringId(id), &pb.PeerTxState{
+		Digest: id[:TxDigestVerifyLen],
+		//add one byte to indicate this peer is endorsed
+		Endorsement: []byte{1},
+	}
+}
+
 func CreateTxNetworkGlobal() *txNetworkGlobal {
 
 	sid := util.GenerateBytesUUID()
@@ -34,7 +58,6 @@ func CreateTxNetworkGlobal() *txNetworkGlobal {
 		maxPeers: def_maxPeer,
 		lruQueue: list.New(),
 		lruIndex: make(map[string]*list.Element),
-		selfId:   fmt.Sprintf("%x", sid),
 	}
 
 	l, err := ledger.GetLedger()
@@ -47,20 +70,12 @@ func CreateTxNetworkGlobal() *txNetworkGlobal {
 		cCaches: make(map[string]*commitData),
 	}
 
-	//also create self peer
-	self := &peerStatusItem{
-		"",
-		&pb.PeerTxState{
-			Digest: sid[:TxDigestVerifyLen],
-			//add one byte to indicate this peer is endorsed
-			Endorsement: []byte{1},
-		},
-		time.Now(),
+	if DefaultInitPeer.Id != "" {
+		peers.selfId = DefaultInitPeer.Id
+		logger.Infof("Create self peer [%s]", peers.selfId)
+		//also create self peer
+		peers.lruIndex[peers.selfId] = &list.Element{Value: &peerStatusItem{"", DefaultInitPeer.State, time.Now()}}
 	}
-
-	logger.Infof("Create self peer [%s]", peers.selfId)
-	item := &list.Element{Value: self}
-	peers.lruIndex[peers.selfId] = item
 
 	return &txNetworkGlobal{
 		peers:  peers,
@@ -217,12 +232,18 @@ func (g *txNetworkPeers) RemovePeer(id string) bool {
 	return ok
 }
 
-func (g *txNetworkPeers) ChangeSelf(id string, state *pb.PeerTxState) error {
+func (g *txNetworkPeers) ChangeSelf(id []byte) error {
+
+	if len(id) < TxDigestVerifyLen {
+		return fmt.Errorf("Endorser do not has a id long enough (%d bytes)", TxDigestVerifyLen)
+	}
 
 	g.Lock()
 	defer g.Unlock()
 
-	_, ok := g.lruIndex[id]
+	sid := ToStringId(id)
+
+	_, ok := g.lruIndex[sid]
 	if ok {
 		return fmt.Errorf("ID %s has existed and can't not be use", id)
 	}
@@ -231,11 +252,17 @@ func (g *txNetworkPeers) ChangeSelf(id string, state *pb.PeerTxState) error {
 	old, ok := g.lruIndex[g.selfId]
 	g.lruQueue.MoveToFront(old)
 
-	//also create self peer
-	newself := &peerStatusItem{"", state, time.Now()}
+	//also create self peer, notice we do not endorse it so new self
+	//peer will not be propagated before a local-peer updating
+	newself := &peerStatusItem{
+		"",
+		&pb.PeerTxState{
+			Digest: id[:TxDigestVerifyLen],
+		},
+		time.Now()}
 
-	logger.Infof("Set self peer to [%s]", id)
-	g.selfId = id
+	logger.Infof("Set self peer to [%s]", sid)
+	g.selfId = sid
 	g.lruIndex[g.selfId] = &list.Element{Value: newself}
 
 	return nil
@@ -258,12 +285,21 @@ func (g *txNetworkPeers) QueryPeer(id string) *pb.PeerTxState {
 	return nil
 }
 
-func (g *txNetworkPeers) QuerySelf() *pb.PeerTxState {
-	ret := g.QueryPeer(g.selfId)
-	if ret == nil {
-		panic(fmt.Errorf("Do not create self peer [%s] in network", g.selfId))
+func (g *txNetworkPeers) QuerySelf() (*pb.PeerTxState, string) {
+
+	g.RLock()
+	defer g.RUnlock()
+	if g.selfId == "" {
+		return nil, ""
 	}
-	return ret
+
+	i, ok := g.lruIndex[g.selfId]
+	if !ok {
+		return nil, ""
+	}
+
+	//self is supposed to always own endorsements
+	return i.Value.(*peerStatusItem).PeerTxState, g.selfId
 }
 
 func (g *txNetworkPeers) BlockPeer(id string) {

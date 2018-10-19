@@ -13,7 +13,7 @@ import (
 
 var entryglobal struct {
 	sync.Mutex
-	ind map[*pb.StreamStub]*TxNetworkEntry
+	ind map[*gossip.GossipStub]*TxNetworkEntry
 }
 
 type TxNetworkEntry struct {
@@ -31,6 +31,50 @@ func (e *TxNetworkEntry) InitLedger(l *ledger.Ledger) {
 func (e *TxNetworkEntry) InitCred(v cred.TxHandlerFactory) {
 	e.credvalidator = v
 	e.txPool.txHandler = v
+}
+
+func (e *TxNetworkEntry) ResetPeerSimple(id []byte) error {
+
+	if err := e.txNetworkGlobal.peers.ChangeSelf(id); err != nil {
+		return err
+	}
+
+	selfState, selfId := e.txNetworkGlobal.peers.QuerySelf()
+	e.txNetworkGlobal.handleSetSelf(selfId, selfState)
+	//add a mark to indicate the peer is endorsered
+	selfState.Endorsement = []byte{1}
+	e.catalogHandlerUpdateLocal(globalCatName, peerStatus{selfState}, nil)
+
+	return nil
+}
+
+func (e *TxNetworkEntry) ResetPeer(endorser cred.TxEndorserFactory) error {
+
+	id := endorser.EndorserId()
+	var err error
+
+	if err = e.txNetworkGlobal.peers.ChangeSelf(id); err != nil {
+		return err
+	}
+
+	//we have a inconsistent status here (the self is updated in global network
+	//while is not yet in each scuttlebutt model), but this should be all right
+	//as long as the model is not updated self status, which is controllable
+	//by the caller of SetSelf
+	selfState, selfId := e.txNetworkGlobal.peers.QuerySelf()
+	//we update scuttlebutt model before the state is endorsed, now we have
+	//a new self-peer, but not be propagated on the network
+	e.txNetworkGlobal.handleSetSelf(selfId, selfState)
+
+	selfState, err = endorser.EndorsePeerState(selfState)
+	if err != nil {
+		return err
+	}
+
+	//everything is done, now disclose our new peer to the whole network
+	e.catalogHandlerUpdateLocal(globalCatName, peerStatus{selfState}, nil)
+
+	return nil
 }
 
 func (e *TxNetworkEntry) catalogHandlerUpdateLocal(catName string, u model.ScuttlebuttPeerUpdate, ug model.Update) error {
@@ -59,30 +103,20 @@ func (e *TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
 	return e.catalogHandlerUpdateLocal(hotTxCatName, txPeerUpdate{txs}, nil)
 }
 
-func (e *TxNetworkEntry) ResetSelfPeer(id string, state *pb.PeerTxState) error {
-
-	if err := e.txNetworkGlobal.peers.ChangeSelf(id, state); err != nil {
-		return err
-	}
-
-	e.txNetworkGlobal.handleSetSelf(id, state)
-	return nil
-}
-
-func (e *TxNetworkEntry) GetPeerStatus() *pb.PeerTxState {
+func (e *TxNetworkEntry) GetPeerStatus() (*pb.PeerTxState, string) {
 	return e.peers.QuerySelf()
 }
 
-func GetNetworkEntry(sstub *pb.StreamStub) (*TxNetworkEntry, bool) {
+func GetNetworkEntry(stub *gossip.GossipStub) (*TxNetworkEntry, bool) {
 
 	entryglobal.Lock()
 	defer entryglobal.Unlock()
-	e, ok := entryglobal.ind[sstub]
+	e, ok := entryglobal.ind[stub]
 	return e, ok
 }
 
 func init() {
-	entryglobal.ind = make(map[*pb.StreamStub]*TxNetworkEntry)
+	entryglobal.ind = make(map[*gossip.GossipStub]*TxNetworkEntry)
 	gossip.RegisterCat = append(gossip.RegisterCat, initTxnetworkEntrance)
 }
 
@@ -91,7 +125,7 @@ func initTxnetworkEntrance(stub *gossip.GossipStub) {
 	entryglobal.Lock()
 	defer entryglobal.Unlock()
 
-	entryglobal.ind[stub.GetSStub()] = &TxNetworkEntry{
+	entryglobal.ind[stub] = &TxNetworkEntry{
 		newTxNetworkEntry(),
 		getTxNetwork(stub),
 		stub,
@@ -100,11 +134,7 @@ func initTxnetworkEntrance(stub *gossip.GossipStub) {
 
 type TxNetworkHandler interface {
 	HandleTxs(tx []*PendingTransaction)
-}
-
-type TxNetwork interface {
-	BroadCastTransaction(*pb.Transaction, cred.TxEndorser) error
-	ExecuteTransaction(context.Context, *pb.Transaction, cred.TxEndorser) *pb.Response
+	Release()
 }
 
 type txNetworkEntry struct {
@@ -122,16 +152,15 @@ func newTxNetworkEntry() *txNetworkEntry {
 	}
 }
 
-func (e *txNetworkEntry) worker(ictx context.Context, h TxNetworkHandler) {
+func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 
 	var txBuffer [maxOutputBatch]*PendingTransaction
 	txs := txBuffer[:0]
-	ctx, endf := context.WithCancel(ictx)
 
 	logger.Infof("Start a worker for txnetwork entry with handler %x", h)
 	defer func() {
 		logger.Infof("End the worker for txnetwork entry with handler %x", h)
-		endf()
+		h.Release()
 	}()
 	for {
 
@@ -178,7 +207,7 @@ func (t *PendingTransaction) GetEndorser() cred.TxEndorser {
 }
 
 func (t *PendingTransaction) Respond(resp *pb.Response) {
-	if t != nil {
+	if t.resp != nil {
 		t.resp <- resp
 	}
 }

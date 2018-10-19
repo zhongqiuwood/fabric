@@ -19,6 +19,11 @@ func TestMain(m *testing.M) {
 	testParams = testutil.ParseTestParams()
 	testutil.SetupTestConfig()
 	testutil.SetLogLevel(logging.DEBUG, "")
+
+	//create a default peer
+	id, s := CreateSimplePeer()
+	DefaultInitPeer.Id = id
+	DefaultInitPeer.State = s
 	os.Exit(m.Run())
 }
 
@@ -39,16 +44,6 @@ func buildTestTx(t *testing.T) (*protos.Transaction, string) {
 }
 
 var genesisDigest = util.GenerateBytesUUID()
-
-func buildPrecededTx(digest []byte, tx *protos.Transaction) *protos.Transaction {
-
-	if len(digest) < TxDigestVerifyLen {
-		digest = append(digest, failDig[len(digest):]...)
-	}
-
-	tx.Nonce = digest
-	return tx
-}
 
 func TestBaseOp(t *testing.T) {
 

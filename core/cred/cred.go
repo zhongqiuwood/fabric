@@ -38,7 +38,7 @@ type PeerCreds interface {
 
 */
 type TxEndorserFactory interface {
-	EndorserId() string
+	EndorserId() []byte //notice the endorserid is bytes
 	EndorsePeerState(*pb.PeerTxState) (*pb.PeerTxState, error)
 	GetEndorser(attr ...string) (TxEndorser, error)
 }

@@ -502,9 +502,9 @@ func TestCatalogyHandler(t *testing.T) {
 	m := model.NewGossipModel(model.NewScuttlebuttStatus(txglobal))
 
 	//try to build a proto directly
-	dig_in := &pb.Gossip_Digest{Data: make(map[string]*pb.Gossip_Digest_PeerState)} //any epoch is ok
+	dig_in := &pb.GossipMsg_Digest{Data: make(map[string]*pb.GossipMsg_Digest_PeerState)} //any epoch is ok
 
-	dig_in.Data[testname] = &pb.Gossip_Digest_PeerState{}
+	dig_in.Data[testname] = &pb.GossipMsg_Digest_PeerState{}
 
 	dig := hotTx.TransPbToDigest(dig_in)
 

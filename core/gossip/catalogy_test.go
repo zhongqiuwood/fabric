@@ -27,11 +27,11 @@ const (
 func (tc *testCatalogy) Name() string                        { return testCat }
 func (tc *testCatalogy) GetPolicies() gossip.CatalogPolicies { return tc.CatalogPolicies }
 
-func (tc *testCatalogy) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
+func (tc *testCatalogy) TransDigestToPb(d_in model.Digest) *pb.GossipMsg_Digest {
 	return model.TestDigestToPb(d_in)
 }
 
-func (tc *testCatalogy) TransPbToDigest(dig *pb.Gossip_Digest) model.Digest {
+func (tc *testCatalogy) TransPbToDigest(dig *pb.GossipMsg_Digest) model.Digest {
 	return model.TestPbToDigest(dig)
 }
 

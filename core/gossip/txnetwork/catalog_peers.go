@@ -14,12 +14,8 @@ type peerStatus struct {
 }
 
 func (s peerStatus) To() model.VClock {
-	//an "empty" status has the lowest clock
-	//But notice "endorsement" could not
-	//be use because when object is used as update
-	//endorsement field may be omitted.
-	//so we judge the empty status by digest
-	if len(s.GetDigest()) == 0 {
+	//an "empty" status (no num and endorsement) has the lowest clock
+	if s.GetNum() == 0 && len(s.Endorsement) == 0 {
 		return model.BottomClock
 	}
 	//shift clock by 1 so every "valid" clock is start from 1, and "unknown" is from bottomclock
@@ -156,7 +152,9 @@ func initNetworkStatus(stub *gossip.GossipStub) {
 	selfstatus := model.NewScuttlebuttStatus(peerG)
 	//use extended mode of scuttlebutt scheme, see code and wiki
 	selfstatus.Extended = true
-	selfstatus.SetSelfPeer(peerG.selfId, &peerStatus{peerG.QuerySelf()})
+	if selfs, _ := peerG.QuerySelf(); selfs != nil {
+		selfstatus.SetSelfPeer(peerG.selfId, &peerStatus{selfs})
+	}
 	m := model.NewGossipModel(selfstatus)
 
 	globalcat := new(globalCat)
@@ -183,7 +181,7 @@ const (
 func (c *globalCat) Name() string                        { return globalCatName }
 func (c *globalCat) GetPolicies() gossip.CatalogPolicies { return c.policy }
 
-func (c *globalCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
+func (c *globalCat) TransDigestToPb(d_in model.Digest) *pb.GossipMsg_Digest {
 	d, ok := d_in.(model.ScuttlebuttDigest)
 	if !ok {
 		panic("Type error, not ScuttlebuttDigest")
@@ -191,7 +189,7 @@ func (c *globalCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
 	return toPbDigestStd(d, nil)
 }
 
-func (c *globalCat) TransPbToDigest(msg *pb.Gossip_Digest) model.Digest {
+func (c *globalCat) TransPbToDigest(msg *pb.GossipMsg_Digest) model.Digest {
 	return parsePbDigestStd(msg, nil)
 }
 

@@ -20,16 +20,30 @@ import (
 	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
+	"github.com/abchain/fabric/events/litekfk"
+	"github.com/op/go-logging"
+)
+
+var (
+	logger = logging.MustGetLogger("engine")
 )
 
 type PeerEngine struct {
+	peer.Peer
+
+	//all the received transactions can be read out from different topic,
+	//according to the configuration in transation filter
+	TxTopic map[string]litekfk.Topic
+
 	*cred.Credentials
 	*txnetwork.TxNetworkEntry
-	peer.Peer
 
 	//don't access ledger from PeerEngine, visit it in NodeEngine instead
 	ledger   *ledger.Ledger
 	srvPoint *servicePoint
+
+	defaultAttr []string
+	runStatus   chan error
 }
 
 /*

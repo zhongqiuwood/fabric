@@ -61,10 +61,24 @@ func GetTxDigest(tx *pb.Transaction) []byte {
 	return getTxDigest(tx)
 }
 
+func GetPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
+	return buildPrecededTx(digest, tx)
+}
+
 //return whether tx is match to the digest
 func txIsMatch(digest []byte, tx *pb.Transaction) bool {
 
 	return bytes.Compare(digest, getTxDigest(tx)) == 0
+}
+
+func buildPrecededTx(digest []byte, tx *pb.Transaction) *pb.Transaction {
+
+	if len(digest) < TxDigestVerifyLen {
+		digest = append(digest, failDig[len(digest):]...)
+	}
+
+	tx.Nonce = digest
+	return tx
 }
 
 //return whether tx2 is precede of the digest
@@ -72,6 +86,8 @@ func txIsPrecede(digest []byte, tx2 *pb.Transaction) bool {
 	n := tx2.GetNonce()
 	if len(n) < TxDigestVerifyLen {
 		return false
+	} else if len(digest) < TxDigestVerifyLen {
+		digest = append(digest, failDig[len(digest):]...)
 	}
 	return bytes.Compare(digest, n[:TxDigestVerifyLen]) == 0
 }
@@ -196,7 +212,7 @@ func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
 		return txPoolGlobalUpdateOut{g, 0}
 	}
 
-	d, ok := d_in.(*pb.Gossip_Digest)
+	d, ok := d_in.(*pb.GossipMsg_Digest)
 
 	if !ok {
 		panic("Type error, not Gossip_Digest")
@@ -510,15 +526,15 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 	//checkout global status
 	var peerStatus *pb.PeerTxState
 	if id == "" {
-		peerStatus = g.network.peers.QuerySelf()
+		peerStatus, _ = g.network.peers.QuerySelf()
 	} else {
 		peerStatus = g.network.peers.QueryPeer(id)
-		if peerStatus == nil {
-			//boom ..., but it may be caused by an stale peer-removing so not
-			//consider as error
-			logger.Warningf("Unknown status in global for peer %s", id)
-			return nil
-		}
+	}
+	if peerStatus == nil {
+		//boom ..., but it may be caused by an stale peer-removing so not
+		//consider as error
+		logger.Warningf("Unknown status in global for peer [%s]", id)
+		return nil
 	}
 
 	switch u := u_in.(type) {
@@ -553,10 +569,12 @@ func initHotTx(stub *gossip.GossipStub) {
 	selfStatus := model.NewScuttlebuttStatus(txglobal)
 
 	peers := txglobal.network.peers
-	self := &peerTxMemPool{}
-	self.reset(createPeerTxItem(peers.QuerySelf()))
+	if selfs, _ := peers.QuerySelf(); selfs != nil {
+		self := &peerTxMemPool{}
+		self.reset(createPeerTxItem(selfs))
 
-	selfStatus.SetSelfPeer(peers.selfId, self)
+		selfStatus.SetSelfPeer(peers.selfId, self)
+	}
 
 	m := model.NewGossipModel(selfStatus)
 
@@ -585,7 +603,7 @@ const (
 func (c *hotTxCat) Name() string                        { return hotTxCatName }
 func (c *hotTxCat) GetPolicies() gossip.CatalogPolicies { return c.policy }
 
-func (c *hotTxCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
+func (c *hotTxCat) TransDigestToPb(d_in model.Digest) *pb.GossipMsg_Digest {
 
 	d, ok := d_in.(model.ScuttlebuttDigest)
 	if !ok {
@@ -597,7 +615,7 @@ func (c *hotTxCat) TransDigestToPb(d_in model.Digest) *pb.Gossip_Digest {
 
 }
 
-func (c *hotTxCat) TransPbToDigest(msg *pb.Gossip_Digest) model.Digest {
+func (c *hotTxCat) TransPbToDigest(msg *pb.GossipMsg_Digest) model.Digest {
 
 	return parsePbDigestStd(msg, msg)
 

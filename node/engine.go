@@ -29,20 +29,22 @@ var (
 )
 
 type PeerEngine struct {
+	*cred.Credentials
+	*txnetwork.TxNetworkEntry
 	peer.Peer
 
 	//all the received transactions can be read out from different topic,
 	//according to the configuration in transation filter
 	TxTopic map[string]litekfk.Topic
 
-	*cred.Credentials
-	*txnetwork.TxNetworkEntry
-
 	//don't access ledger from PeerEngine, visit it in NodeEngine instead
 	ledger   *ledger.Ledger
 	srvPoint *servicePoint
 
+	//run-time vars
 	defaultAttr []string
+	lastID      string
+	lastCache   txPoint
 	runStatus   chan error
 }
 

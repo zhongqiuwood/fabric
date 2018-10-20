@@ -35,11 +35,15 @@ func (s *PeerTxState) MsgEncode(id string) ([]byte, error) {
 	var buf bytes.Buffer
 	w := util.NewConWriter(&buf)
 
-	if err := w.Write([]byte(id)).Write(s.Digest).Error(); err != nil {
+	if err := w.Write([]byte(id)).Write(s.Digest).Write(s.Endorsement).Error(); err != nil {
 		return nil, err
 	}
 
 	if err := bin.Write(&buf, bin.BigEndian, s.Num); err != nil {
+		return nil, err
+	}
+
+	if err := bin.Write(&buf, bin.BigEndian, s.EndorsementVer); err != nil {
 		return nil, err
 	}
 

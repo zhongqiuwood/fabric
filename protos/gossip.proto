@@ -48,6 +48,7 @@ message PeerTxState{
     uint64 num  = 2;
     bytes signature = 5;
     bytes endorsement = 6;
+    uint32 endorsementVer = 7;
 }
 
 message Gossip_Tx{

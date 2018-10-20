@@ -8,14 +8,11 @@ import (
 	"testing"
 )
 
-func createState(digest []byte, num uint64, endorse bool) *pb.PeerTxState {
+func createState(digest []byte, num uint64) *pb.PeerTxState {
 	ret := &pb.PeerTxState{Digest: digest, Num: num}
 
 	//todo: make signature
-
-	if endorse {
-		ret.Endorsement = []byte{1, 2, 3}
-	}
+	ret.Endorsement = []byte{1, 2, 3}
 
 	return ret
 }
@@ -52,8 +49,9 @@ func TestTxGlobal(t *testing.T) {
 
 	//update test peer
 	uin1 := &pb.Gossip_TxState{
-		Txs: map[string]*pb.PeerTxState{testpeername: createState([]byte{1}, 3, false)},
+		Txs: map[string]*pb.PeerTxState{testpeername: createState([]byte{1}, 3)},
 	}
+	uin1.Txs[testpeername].Endorsement = nil
 
 	u1, err := globalcat.DecodeUpdate(nil, uin1)
 	if err != nil {
@@ -70,7 +68,7 @@ func TestTxGlobal(t *testing.T) {
 	}
 
 	uin2 := &pb.Gossip_TxState{
-		Txs: map[string]*pb.PeerTxState{testpeername: createState([]byte{1}, 3, true)},
+		Txs: map[string]*pb.PeerTxState{testpeername: createState([]byte{1}, 3)},
 	}
 
 	u2, err := globalcat.DecodeUpdate(nil, uin2)
@@ -108,7 +106,10 @@ func TestTxGlobal(t *testing.T) {
 
 	//update local
 	uself := model.NewscuttlebuttUpdate(nil)
-	uself.UpdateLocal(peerStatus{createState([]byte{2}, 4, false)})
+	ustate := createState([]byte{2}, 4)
+	ustate.Endorsement = nil
+	//update local enable a vanished endorsement (use previous one instead)
+	uself.UpdateLocal(peerStatus{ustate})
 
 	err = m.RecvUpdate(uself)
 	if err != nil {
@@ -137,10 +138,6 @@ func TestTxGlobal(t *testing.T) {
 
 		if s.Num != 3 {
 			t.Fatal("wrong testpeer state", msgout2)
-		}
-
-		if len(s.Endorsement) != 0 {
-			t.Fatal("include unexpected endorsement", msgout2)
 		}
 
 	} else {
@@ -241,7 +238,7 @@ func TestAsAWhole(t *testing.T) {
 	peerDigest := make([]byte, TxDigestVerifyLen)
 	peerDigest[0] = 2
 	ud := model.NewscuttlebuttUpdate(nil)
-	ud.UpdatePeer(newpeer, peerStatus{createState(peerDigest, 6, true)})
+	ud.UpdatePeer(newpeer, peerStatus{createState(peerDigest, 6)})
 
 	err := globalM.RecvUpdate(ud)
 	if err != nil {
@@ -298,7 +295,7 @@ func TestAsAWhole(t *testing.T) {
 	}
 
 	ud = model.NewscuttlebuttUpdate(nil)
-	ud.UpdatePeer(newpeer, peerStatus{createState(getTxDigest(tx2), 8, false)})
+	ud.UpdatePeer(newpeer, peerStatus{createState(getTxDigest(tx2), 8)})
 	err = globalM.RecvUpdate(ud)
 	if err != nil {
 		t.Fatal("recv rm-update fail", err)
@@ -373,7 +370,7 @@ func TestSelfUpdateAsAWhole(t *testing.T) {
 
 	jTo := txSelf.jlindex[1]
 	ud = model.NewscuttlebuttUpdate(nil)
-	ud.UpdateLocal(peerStatus{createState(jTo.digest, jTo.digestSeries, false)})
+	ud.UpdateLocal(peerStatus{createState(jTo.digest, jTo.digestSeries)})
 	if err := globalM.RecvUpdate(ud); err != nil {
 		t.Fatal("recv self update global fail", err)
 	}

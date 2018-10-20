@@ -232,6 +232,8 @@ func (g *txNetworkPeers) RemovePeer(id string) bool {
 	return ok
 }
 
+var SelfIDNotChange = fmt.Errorf("Try to change to an id current used")
+
 func (g *txNetworkPeers) ChangeSelf(id []byte) error {
 
 	if len(id) < TxDigestVerifyLen {
@@ -242,6 +244,9 @@ func (g *txNetworkPeers) ChangeSelf(id []byte) error {
 	defer g.Unlock()
 
 	sid := ToStringId(id)
+	if g.selfId == sid {
+		return SelfIDNotChange
+	}
 
 	_, ok := g.lruIndex[sid]
 	if ok {

@@ -39,6 +39,7 @@ type PeerCreds interface {
 */
 type TxEndorserFactory interface {
 	EndorserId() []byte //notice the endorserid is bytes
+	//EndorsePeerState need to consider the exist endorsment field and decide update it or not
 	EndorsePeerState(*pb.PeerTxState) (*pb.PeerTxState, error)
 	GetEndorser(attr ...string) (TxEndorser, error)
 }

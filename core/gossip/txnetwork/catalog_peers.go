@@ -9,6 +9,10 @@ import (
 	"time"
 )
 
+const (
+	EndorseVerLimit = 128
+)
+
 type peerStatus struct {
 	*pb.PeerTxState
 }
@@ -18,25 +22,23 @@ func (s peerStatus) To() model.VClock {
 	if s.GetNum() == 0 && len(s.Endorsement) == 0 {
 		return model.BottomClock
 	}
-	//shift clock by 1 so every "valid" clock is start from 1, and "unknown" is from bottomclock
-	//(respresent by 0 in protobuf-struct)
-	return standardVClock(s.GetNum() + 1)
+
+	//now the vclock is consistented with both tx series and endorsement versions
+	//we also shift clock by 1 so every "valid" clock is start from 1,
+	//and "unknown" is from bottomclock (respresent by 0 in protobuf-struct)
+	return standardVClock(s.GetNum()*uint64(EndorseVerLimit) + uint64(s.GetEndorsementVer()) + 1)
 }
 
 func (s peerStatus) PickFrom(id string, d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 
-	d := toStandardVClock(d_in)
-
-	//we only copy endorsment in first picking (with d is 0)
-	if uint64(d) == 0 {
-		return peerStatus{s.PeerTxState}, u_in
-	} else {
-		ret := new(pb.PeerTxState)
-		ret.Num = s.GetNum()
-		ret.Digest = s.GetDigest()
-		ret.Signature = s.GetSignature()
-		return peerStatus{ret}, u_in
-	}
+	//a (parital) deep copy is made
+	ret := new(pb.PeerTxState)
+	ret.Num = s.GetNum()
+	ret.Digest = s.GetDigest()
+	ret.Signature = s.GetSignature()
+	ret.Endorsement = s.GetEndorsement()
+	ret.EndorsementVer = s.GetEndorsementVer()
+	return peerStatus{ret}, u_in
 
 }
 
@@ -52,10 +54,16 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 		panic("Type error, not txNetworkGlobal")
 	}
 
-	if id != "" && g.network.credvalidator != nil {
-		err := g.network.credvalidator.ValidatePeerStatus(id, u.PeerTxState)
-		if err != nil {
-			return fmt.Errorf("Peer [%d]'s state is invalid: %s", err)
+	if id != "" {
+		if g.network.credvalidator != nil {
+			err := g.network.credvalidator.ValidatePeerStatus(id, u.PeerTxState)
+			if err != nil {
+				return fmt.Errorf("Peer [%s]'s state is invalid: %s", id, err)
+			}
+		} else {
+			if len(u.GetEndorsement()) == 0 {
+				return fmt.Errorf("Peer [%s] has no endorsement", id)
+			}
 		}
 	}
 
@@ -67,14 +75,11 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 	lastSeries := s.PeerTxState.GetNum()
 	established := len(s.Endorsement) == 0
 	if established {
-		if len(u.GetEndorsement()) == 0 {
-			return fmt.Errorf("Update do not include endorsement for our pulling")
-		}
 		logger.Infof("We have establish new gossip peer [%s]:[%d:%x]", id, u.GetNum(), u.GetDigest())
 	} else {
+		//this enable local update reuse old endorsement
 		if len(u.GetEndorsement()) == 0 {
-			//copy endorsement to u and later we will just keep u
-			u.Endorsement = s.Endorsement
+			u.Endorsement = s.GetEndorsement()
 		}
 		logger.Infof("We have update gossip peer [%s] from %d to [%d:%x]", id, lastSeries, u.GetNum(), u.GetDigest())
 	}

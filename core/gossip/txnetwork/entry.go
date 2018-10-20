@@ -18,29 +18,29 @@ var entryglobal struct {
 
 type TxNetworkEntry struct {
 	*txNetworkEntry
-	*txNetworkGlobal
+	net  *txNetworkGlobal
 	stub *gossip.GossipStub
 }
 
 //Init method can be only executed before gossip network is running, to override
 //the default settings
 func (e *TxNetworkEntry) InitLedger(l *ledger.Ledger) {
-	e.txPool.ledger = l
+	e.net.txPool.ledger = l
 }
 
 func (e *TxNetworkEntry) InitCred(v cred.TxHandlerFactory) {
-	e.credvalidator = v
-	e.txPool.txHandler = v
+	e.net.credvalidator = v
+	e.net.txPool.txHandler = v
 }
 
 func (e *TxNetworkEntry) ResetPeerSimple(id []byte) error {
 
-	if err := e.txNetworkGlobal.peers.ChangeSelf(id); err != nil {
+	if err := e.net.peers.ChangeSelf(id); err != nil {
 		return err
 	}
 
-	selfState, selfId := e.txNetworkGlobal.peers.QuerySelf()
-	e.txNetworkGlobal.handleSetSelf(selfId, selfState)
+	selfState, selfId := e.net.peers.QuerySelf()
+	e.net.handleSetSelf(selfId, selfState)
 	//add a mark to indicate the peer is endorsered
 	selfState.Endorsement = []byte{1}
 	e.catalogHandlerUpdateLocal(globalCatName, peerStatus{selfState}, nil)
@@ -51,21 +51,36 @@ func (e *TxNetworkEntry) ResetPeerSimple(id []byte) error {
 func (e *TxNetworkEntry) ResetPeer(endorser cred.TxEndorserFactory) error {
 
 	id := endorser.EndorserId()
-	var err error
+	err := e.net.peers.ChangeSelf(id)
 
-	if err = e.txNetworkGlobal.peers.ChangeSelf(id); err != nil {
+	var selfState *pb.PeerTxState
+	if err == nil {
+		//self id is changed
+
+		//we have a inconsistent status here (the self is updated in global network
+		//while is not yet in each scuttlebutt model), but this should be all right
+		//as long as the model is not updated self status, which is controllable
+		//by the caller of SetSelf
+
+		var selfId string
+		//obtain self state after chaning
+		selfState, selfId = e.net.peers.QuerySelf()
+
+		//sanity check
+		if selfState == nil {
+			panic("state must be obtained succefully after a calling of change self")
+		}
+		//we also update scuttlebutt model before the state is endorsed, now we have
+		//a new self-peer, but not endorsed so do not propagate it on the network
+		e.net.handleSetSelf(selfId, selfState)
+
+	} else if err != SelfIDNotChange {
 		return err
+	} else {
+		selfState, _ = e.net.peers.QuerySelf()
 	}
 
-	//we have a inconsistent status here (the self is updated in global network
-	//while is not yet in each scuttlebutt model), but this should be all right
-	//as long as the model is not updated self status, which is controllable
-	//by the caller of SetSelf
-	selfState, selfId := e.txNetworkGlobal.peers.QuerySelf()
-	//we update scuttlebutt model before the state is endorsed, now we have
-	//a new self-peer, but not be propagated on the network
-	e.txNetworkGlobal.handleSetSelf(selfId, selfState)
-
+	//give a new endorsement for the selfState, so it was ready for broadcasting
 	selfState, err = endorser.EndorsePeerState(selfState)
 	if err != nil {
 		return err
@@ -104,7 +119,7 @@ func (e *TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
 }
 
 func (e *TxNetworkEntry) GetPeerStatus() (*pb.PeerTxState, string) {
-	return e.peers.QuerySelf()
+	return e.net.peers.QuerySelf()
 }
 
 func GetNetworkEntry(stub *gossip.GossipStub) (*TxNetworkEntry, bool) {

@@ -49,13 +49,22 @@ func (pe *PeerEngine) Run() error {
 		}
 	}
 
-	h, err := NewTxNetworkHandler(pe.TxNetworkEntry, endorser)
+	lastState, id := pe.GetPeerStatus()
+	if lastState == nil{
+		return fmt.Errorf("Engine is not set a self peer yet")
+	}
+
+	if id != pe.lastID{
+		//so the self peer is changed, we must reset caches
+		//use the starting as current cache
+		pe.lastCache = txPoint{lastState.Digest, lastState.Num}
+	}
+	pe.lastID = id
+
+	h, err := NewTxNetworkHandler(pe.lastCache.Series, pe.lastCache.Digest, endorser)
 	if err != nil {
 		return err
 	}
-
-	//take out the start position from txhandler, small hack ...
-	startSeries := h.lastSeries
 
 	go func(entry *txnetwork.TxNetworkEntry) {
 
@@ -70,7 +79,7 @@ func (pe *PeerEngine) Run() error {
 			pe.runStatus <-err
 		}
 
-		var epoch = startSeries
+		var epoch = pe.lastCache.Series
 		var chkps = make(map[uint]txPoint)
 		var nextChkPos = uint(startSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
 
@@ -88,6 +97,7 @@ func (pe *PeerEngine) Run() error {
 				nextChkPos = chk
 			}
 			
+			pe.lastCache = txPoint{out.lastDigest, out.lastSeries}
 			if epoch+epochInterval < out.lastSeries {
 				//first we search for a eariest checkpoint
 				start := uint(epoch/uint64(txnetwork.PeerTxQueueLen())) + 1

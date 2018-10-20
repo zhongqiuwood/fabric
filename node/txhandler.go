@@ -27,76 +27,17 @@ type txNetworkHandlerImpl struct {
 	finishedTxs     []*pb.Transaction
 }
 
-func NewTxNetworkHandler(entry *txnetwork.TxNetworkEntry, endorser cred.TxEndorser) (*txNetworkHandlerImpl, error) {
-
-	selfstatus, _ := entry.GetPeerStatus()
-	if selfstatus == nil {
-		return nil, fmt.Errorf("Self peer is not inited yet")
-	}
+func NewTxNetworkHandler(last uint64, digest []byte, endorser cred.TxEndorser) (*txNetworkHandlerImpl, error) {
 
 	ret := new(txNetworkHandlerImpl)
 	ret.output = make(chan txTask)
 	ret.defaultEndorser = endorser
-	ret.lastSeries = selfstatus.GetNum()
-	ret.lastDigest = selfstatus.GetDigest()
+	ret.lastSeries = last
+	ret.lastDigest = digest
 
 	txlogger.Infof("Start a txnetwork handler for peer at %d[%x]", ret.lastSeries, ret.lastDigest)
 
 	return ret, nil
-}
-
-func (t *txNetworkHandlerImpl) updateHotTx(txs *pb.HotTransactionBlock, lastDigest []byte, lastSeries uint64) {
-
-	if err := t.UpdateLocalHotTx(txs); err != nil {
-		txlogger.Error("Update hot transaction fail", err)
-	} else {
-		t.last = txPoint{lastDigest, lastSeries}
-		chk := uint(lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
-		if chk > t.nextChkPos {
-			//checkpoint current, and increase chkpoint pos
-			txlogger.Infof("Chkpoint %d reach, record [%d:%x]", t.nextChkPos, lastSeries, lastDigest)
-			t.chk[t.nextChkPos] = t.last
-			t.nextChkPos = chk
-		}
-	}
-}
-
-func (t *txNetworkHandlerImpl) updateEpoch() {
-
-	//first we search for a eariest checkpoint
-	start := uint(t.epoch.Series/uint64(txnetwork.PeerTxQueueLen())) + 1
-	end := uint(t.last.Series/uint64(txnetwork.PeerTxQueueLen())) + 1
-
-	for i := start; i < end; i++ {
-		if chk, ok := t.chk[i]; ok {
-			delete(t.chk, i)
-
-			state := &pb.PeerTxState{Digest: chk.Digest, Num: chk.Series}
-			var err error
-
-			if t.defaultEndorser != nil {
-				state, err = t.defaultEndorser.EndorsePeerState(state)
-				if err != nil {
-					txlogger.Errorf("Endorse new state [%d] fail: %s", chk.Series, err)
-					continue
-				}
-			}
-
-			err = t.UpdateLocalPeer(sate)
-			if err != nil {
-				txlogger.Errorf("Update new state [%d] fail: %s", chk.Series, err)
-			}
-
-			txlogger.Infof("Update epoch to chkpoint %d [%d:%x]", i, chk.Series, chk.Digest)
-			t.epoch = chk
-			return
-		}
-	}
-
-	txlogger.Warning("Can't not find available checkpoint, something may get wrong")
-	//reset epoch but not prune
-	t.epoch = t.last
-	t.chk = make(map[uint]txPoint)
 }
 
 //build (complete) tx

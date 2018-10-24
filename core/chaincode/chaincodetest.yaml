@@ -81,7 +81,7 @@ eca:
 cli:
 
     # The address that the cli process will use for callbacks from chaincodes
-    address: 0.0.0.0:7052
+    address: 127.0.0.1:7052
 
 
 
@@ -98,7 +98,7 @@ rest:
     enabled: true
 
     # The address that the REST service will listen on for incoming requests.
-    address: 0.0.0.0:7050
+    address: 127.0.0.1:7050
 
 
 ###############################################################################
@@ -175,9 +175,9 @@ peer:
 
 
     # The Address this Peer will listen on
-    listenAddress: 0.0.0.0:21212
+    listenAddress: 127.0.0.1:27055
     # The Address this Peer will bind to for providing services
-    address: 0.0.0.0:21212
+    address: 127.0.0.1:7055
     # Whether the Peer should programmatically determine the address to bind to.
     # This case is useful for docker containers.
     addressAutoDetect: false
@@ -226,7 +226,7 @@ peer:
 
         events:
             # The address that the Event service will be enabled on the validator
-            address: 0.0.0.0:7053
+            address: 127.0.0.1:7053
 
             # total number of events that could be buffered without blocking the
             # validator sends
@@ -241,10 +241,11 @@ peer:
     # TLS Settings for p2p communications
     tls:
         enabled:  true
-        cert:
-            file: testdata/server1.pem
-        key:
-            file: testdata/server1.key
+        file:
+            #we use a self-signature cert (expired at 2026)
+            cert: testdata/server1.pem
+            key: testdata/server1.key
+            rootcert: testdata/server1.pem
 
         # The server name use to verify the hostname returned by TLS handshake
         # The key cert was generated using
@@ -328,7 +329,8 @@ vm:
     # unix:///var/run/docker.sock
     # http://localhost:2375
     # https://localhost:2376
-    endpoint: unix:///var/run/docker.sock
+    # endpoint: unix:///var/run/docker.sock
+    endpoint: http://localhost:12375
 
     # settings for docker vms
     docker:
@@ -360,6 +362,7 @@ chaincode:
 
     golang:
 
+        withGOPATH: false
         # This is the basis for the Golang Dockerfile.  Additional commands will
         # be appended depedendent upon the chaincode specification.
         Dockerfile:  |

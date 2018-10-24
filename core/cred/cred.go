@@ -59,3 +59,26 @@ type TxPreHandler interface {
 	TransactionPreValidation(*pb.Transaction) (*pb.Transaction, error)
 	Release()
 }
+
+/*
+
+ -- entries for transaction's confidentiality ---
+
+*/
+
+// DataEncryptor is used to encrypt/decrypt chaincode's state data
+type DataEncryptor interface {
+	Encrypt([]byte) ([]byte, error)
+	Decrypt([]byte) ([]byte, error)
+}
+
+//YA-fabric 0.9
+//it is supposed to be created from something like a certfication but will not
+//get an implement in recent
+type TxConfidentialityHandler interface {
+	//decrypt the transaction
+	TransactionPreExecution(*pb.Transaction) (*pb.Transaction, error)
+	//returns a DataEncryptor linked to pair defined by
+	//the deploy transaction and the execute transaction.
+	GenDataEncryptor(deployTx, executeTx *pb.Transaction) (DataEncryptor, error)
+}

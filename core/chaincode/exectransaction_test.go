@@ -103,7 +103,7 @@ func initPeer() (net.Listener, error) {
 	}
 	grpcServer := grpc.NewServer(opts...)
 
-	peerAddress := viper.GetString("peer.address")
+	peerAddress := viper.GetString("peer.listenAddress")
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
 		return nil, fmt.Errorf("Error starting peer listener %s", err)
@@ -317,7 +317,7 @@ func executeDeployTransaction(t *testing.T, url string) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
 		t.Fail()
@@ -489,7 +489,7 @@ func TestExecuteInvokeTransaction(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -587,7 +587,7 @@ func TestExecuteQuery(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -670,7 +670,7 @@ func TestExecuteInvokeInvalidTransaction(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -731,7 +731,7 @@ func TestExecuteInvalidQuery(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -803,7 +803,7 @@ func TestChaincodeInvokeChaincode(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -918,7 +918,7 @@ func TestChaincodeInvokeChaincodeErrorCase(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -1140,7 +1140,7 @@ func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -1304,7 +1304,7 @@ func TestRangeQuery(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -1374,7 +1374,7 @@ func TestGetEvent(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {
@@ -1458,7 +1458,7 @@ func TestGetRows(t *testing.T) {
 
 	//use a different address than what we usually use for "peer"
 	//we override the peerAddress set in chaincode_support.go
-	peerAddress := "0.0.0.0:21212"
+	peerAddress := viper.GetString("peer.listenAddress")
 
 	lis, err := net.Listen("tcp", peerAddress)
 	if err != nil {

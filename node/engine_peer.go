@@ -30,6 +30,62 @@ func (pe *PeerEngine) updateEpoch(chk txPoint) error{
 	return pe.TxNetworkEntry.UpdateLocalPeer(state)
 }
 
+
+func (pe *PeerEngine) worker(entry *txnetwork.TxNetworkEntry, epoch uint64) {
+
+	var err error
+	defer func(){
+
+		if err != nil{
+			//maybe it should be fatal ...
+			logger.Errorf(" *** Peer Engine exit unexpectly: %s ***", err)
+		}
+
+		pe.runStatus <-err
+	}
+
+	var chkps = make(map[uint]txPoint)
+	var nextChkPos = uint(pe.lastCache.Series/uint64(txnetwork.PeerTxQueueLen())) + 1
+
+	for out := range h.output {
+		err = entry.UpdateLocalHotTx(&pb.HotTransactionBlock{out.txs, out.lastSeries + 1 - len(out.txs)})
+		if err != nil{
+			return
+		}
+
+		chk := uint(out.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
+		if chk > nextChkPos {
+			//checkpoint current, and increase chkpoint pos
+			txlogger.Infof("Chkpoint %d reach, record [%d:%x]", nextChkPos, out.lastSeries, out.lastDigest)
+			chkps[nextChkPos] = txPoint{out.lastDigest, out.lastSeries}
+			nextChkPos = chk
+		}
+		
+		pe.lastCache = txPoint{out.lastDigest, out.lastSeries}
+		if epoch+epochInterval < out.lastSeries {
+			//first we search for a eariest checkpoint
+			start := uint(epoch/uint64(txnetwork.PeerTxQueueLen())) + 1
+			end := uint(out.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
+
+			for i := start; i < end; i++ {
+				if chk, ok := chkps[i]; ok {
+					delete(chkps, i)
+					txlogger.Infof("Update epoch to chkpoint %d [%d:%x]", i, chk.Series, chk.Digest)
+					if err := pe.updateEpoch(chk); err != nil{
+						//we can torlence this problem, though ...
+						txlogger.Errorf("Update new epoch state [%d] fail: %s", chk.Series, err)
+					}else{
+						break
+					}
+					//epoch is forwarded, even we do not update succefully
+					epoch = chk.Series
+				}
+			}				
+		}			
+	}
+
+}
+
 func (pe *PeerEngine) Run() error {
 
 	if pe.runStatus != nil {
@@ -52,73 +108,20 @@ func (pe *PeerEngine) Run() error {
 	lastState, id := pe.GetPeerStatus()
 	if lastState == nil{
 		return fmt.Errorf("Engine is not set a self peer yet")
-	}
+	}	
 
 	if id != pe.lastID{
 		//so the self peer is changed, we must reset caches
 		//use the starting as current cache
-		pe.lastCache = txPoint{lastState.Digest, lastState.Num}
+		pe.lastCache = txPoint{lastState.GetDigest(), lastState.GetNum()}
+		pe.lastID = id
 	}
-	pe.lastID = id
-
+	
 	h, err := NewTxNetworkHandler(pe.lastCache.Series, pe.lastCache.Digest, endorser)
 	if err != nil {
 		return err
 	}
 
-	go func(entry *txnetwork.TxNetworkEntry) {
-
-		var err error
-		defer func(){
-
-			if err != nil{
-				//maybe it should be fatal ...
-				logger.Errorf(" *** Peer Engine exit unexpectly: %s ***", err)
-			}
-
-			pe.runStatus <-err
-		}
-
-		var epoch = pe.lastCache.Series
-		var chkps = make(map[uint]txPoint)
-		var nextChkPos = uint(startSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
-
-		for out := range h.output {
-			err = entry.UpdateLocalHotTx(&pb.HotTransactionBlock{out.txs, out.lastSeries + 1 - len(out.txs)})
-			if err != nil{
-				return
-			}
-
-			chk := uint(out.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
-			if chk > nextChkPos {
-				//checkpoint current, and increase chkpoint pos
-				txlogger.Infof("Chkpoint %d reach, record [%d:%x]", nextChkPos, out.lastSeries, out.lastDigest)
-				chkps[nextChkPos] = txPoint{out.lastDigest, out.lastSeries}
-				nextChkPos = chk
-			}
-			
-			pe.lastCache = txPoint{out.lastDigest, out.lastSeries}
-			if epoch+epochInterval < out.lastSeries {
-				//first we search for a eariest checkpoint
-				start := uint(epoch/uint64(txnetwork.PeerTxQueueLen())) + 1
-				end := uint(out.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
-
-				for i := start; i < end; i++ {
-					if chk, ok := chkps[i]; ok {
-						delete(chkps, i)
-						txlogger.Infof("Update epoch to chkpoint %d [%d:%x]", i, chk.Series, chk.Digest)
-						if err := pe.updateEpoch(chk); err != nil{
-							//we can torlence this problem, though ...
-							txlogger.Errorf("Update new epoch state [%d] fail: %s", chk.Series, err)
-						}else{
-							break
-						}
-						//epoch is forwarded, even we do not update succefully
-						epoch = chk.Series
-					}
-				}				
-			}			
-		}
-	}()
+	go pe.worker(h, lastState.GetNum())
 
 }

@@ -385,10 +385,34 @@ func (ledger *Ledger) TxBegin(txID string) {
 	ledger.state.TxBegin(txID)
 }
 
+// YA-fabric 0.9: this is a plan-to-be-deprecated method, only for compatible with
+// the old execute routine
+func (ledger *Ledger) ApplyTxExec(delta *statemgmt.StateDelta) {
+	ledger.state.ApplyTxDelta(delta)
+}
+
 // TxFinished - Marks the finish of the on-going transaction.
 // If txSuccessful is false, the state changes made by the transaction are discarded
 func (ledger *Ledger) TxFinished(txID string, txSuccessful bool) {
 	ledger.state.TxFinish(txID, txSuccessful)
+}
+
+// supporting for the concurrent executation of tx
+type TxExecStates struct {
+	*statemgmt.StateDelta
+}
+
+func (s TxExecStates) InitForInvoking(ledger *Ledger) {
+	s.StateDelta = statemgmt.NewStateDelta()
+}
+
+func (s TxExecStates) DeRef() *statemgmt.StateDelta {
+	return s.StateDelta
+}
+
+//overwrite statedelta's isempty
+func (s TxExecStates) IsEmpty() bool {
+	return s.StateDelta == nil || s.StateDelta.IsEmpty()
 }
 
 /////////////////// world-state related methods /////////////////////////////////////
@@ -415,8 +439,16 @@ func (ledger *Ledger) GetTempStateHashWithTxDeltaStateHashes() ([]byte, map[stri
 
 // GetState get state for chaincodeID and key. If committed is false, this first looks in memory
 // and if missing, pulls from db.  If committed is true, this pulls from the db only.
+// YA-fabric 0.9: Notice the commited has been deprecated and don't use this flag with false,
+// Use GetTransientState instead
 func (ledger *Ledger) GetState(chaincodeID string, key string, committed bool) ([]byte, error) {
 	return ledger.state.Get(chaincodeID, key, committed)
+}
+
+// GetState get state for chaincodeID and key. If committed is false, this first looks in memory
+// and if missing, pulls from db.  If committed is true, this pulls from the db only.
+func (ledger *Ledger) GetTransientState(chaincodeID string, key string, runningDelta *statemgmt.StateDelta) ([]byte, error) {
+	return ledger.state.GetTransient(chaincodeID, key, runningDelta)
 }
 
 // GetStateRangeScanIterator returns an iterator to get all the keys (and values) between startKey and endKey
@@ -424,8 +456,14 @@ func (ledger *Ledger) GetState(chaincodeID string, key string, committed bool) (
 // If committed is true, the key-values are retrieved only from the db. If committed is false, the results from db
 // are mergerd with the results in memory (giving preference to in-memory data)
 // The key-values in the returned iterator are not guaranteed to be in any specific order
+// YA-fabric 0.9: Notice the commited has been deprecated and don't use this flag with false,
+// Use GetTransientStateRangeScanIterator instead
 func (ledger *Ledger) GetStateRangeScanIterator(chaincodeID string, startKey string, endKey string, committed bool) (statemgmt.RangeScanIterator, error) {
 	return ledger.state.GetRangeScanIterator(chaincodeID, startKey, endKey, committed)
+}
+
+func (ledger *Ledger) GetTransientStateRangeScanIterator(chaincodeID string, startKey string, endKey string, runningDelta *statemgmt.StateDelta) (statemgmt.RangeScanIterator, error) {
+	return ledger.state.GetTransientRangeScanIterator(chaincodeID, startKey, endKey, runningDelta)
 }
 
 // SetState sets state to given value for chaincodeID and key. Does not immideatly writes to DB

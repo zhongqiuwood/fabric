@@ -28,43 +28,53 @@ import (
 	pb "github.com/abchain/fabric/protos"
 )
 
+type ExecuteResult struct {
+	State  ledger.TxExecStates
+	Events *pb.ChaincodeEvent
+	Resp   []byte
+}
+
 //Execute2 - like legacy execute, but not relay the global ledger object and supposed the transaction has
 //be make pre-exec
-func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSupport, t *pb.Transaction) ([]byte, *pb.ChaincodeEvent, error) {
+func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSupport, t *pb.Transaction) (*ExecuteResult, error) {
 	cID, cMsg, cds, err := chain.Preapre(t)
 	if nil != err {
-		return nil, nil, err
+		return nil, err
 	}
 
 	if t.Type == pb.Transaction_CHAINCODE_DEPLOY {
 		if err := chain.Deploy(ctxt, cds); err != nil {
-			return nil, nil, fmt.Errorf("Failed to deploy chaincode spec(%s)", err)
+			return nil, fmt.Errorf("Failed to deploy chaincode spec(%s)", err)
 		}
 	}
 
 	//will launch if necessary (and wait for ready)
 	err, chrte := chain.Launch(ctxt, ledger, cID, cds, t)
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to launch chaincode spec(%s)", err)
+		return nil, fmt.Errorf("Failed to launch chaincode spec(%s)", err)
 	}
 
 	//this should work because it worked above...
 	chaincode := cID.Name
-	markTxBegin(ledger, t)
-	resp, err := chain.Execute(ctxt, chrte, cMsg, t)
+	resp, exstate, err := chain.Execute(ctxt, chrte, cMsg, t, nil)
 	txSuccess := false
 	defer func() {
 		// **** for deploy, we add final checking ****
-		if t.Type == pb.Transaction_CHAINCODE_DEPLOY && chain.FinalDeploy(ctxt, txSuccess, cds, t, ledger) != nil {
-			txSuccess = false
+		if t.Type != pb.Transaction_CHAINCODE_DEPLOY {
+			return
 		}
-		markTxFinish(ledger, t, txSuccess)
+
+		if txSuccess {
+			exstate.Set(cds.ChaincodeSpec.ChaincodeID.Name, deployTxKey, []byte(t.GetTxid()), nil)
+		} else {
+			chain.FinalDeploy(ctxt, txSuccess, cds, t)
+		}
 	}()
 
 	if err != nil {
-		return nil, nil, fmt.Errorf("Failed to execute transaction or query(%s)", err)
+		return nil, fmt.Errorf("Failed to execute transaction or query(%s)", err)
 	} else if resp == nil {
-		return nil, nil, fmt.Errorf("Failed to receive a response for (%s)", t.Txid)
+		return nil, fmt.Errorf("Failed to receive a response for (%s)", t.Txid)
 	}
 
 	if resp.ChaincodeEvent != nil {
@@ -76,12 +86,12 @@ func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSuppo
 		// Success
 		txSuccess = true
 		//		chaincodeLogger.Debugf("tx %s exec done: %x, %v", shorttxid(t.Txid), resp.Payload, resp.ChaincodeEvent)
-		return resp.Payload, resp.ChaincodeEvent, nil
+		return &ExecuteResult{exstate, resp.ChaincodeEvent, resp.Payload}, nil
 	} else if resp.Type == pb.ChaincodeMessage_ERROR || resp.Type == pb.ChaincodeMessage_QUERY_ERROR {
 		// Rollback transaction
-		return nil, resp.ChaincodeEvent, fmt.Errorf("Transaction or query returned with failure: %s", string(resp.Payload))
+		return &ExecuteResult{exstate, resp.ChaincodeEvent, nil}, fmt.Errorf("Transaction or query returned with failure: %s", string(resp.Payload))
 	}
-	return resp.Payload, nil, fmt.Errorf("receive a response for (%s) but in invalid state(%d)", t.Txid, resp.Type)
+	return &ExecuteResult{exstate, nil, resp.Payload}, fmt.Errorf("receive a response for (%s) but in invalid state(%d)", t.Txid, resp.Type)
 
 }
 
@@ -103,7 +113,23 @@ func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) (
 		}
 	}
 
-	return Execute2(ctxt, ledger, chain, t)
+	markTxBegin(ledger, t)
+	result, err := Execute2(ctxt, ledger, chain, t)
+
+	defer func(err error) {
+
+		if result != nil && !result.State.IsEmpty() {
+			ledger.ApplyTxExec(result.State.DeRef())
+		}
+		txSuccess := err == nil
+		markTxFinish(ledger, t, txSuccess)
+	}(err)
+
+	if result != nil {
+		return result.Resp, result.Events, err
+	} else {
+		return nil, nil, err
+	}
 }
 
 //ExecuteTransactions - will execute transactions on the array one by one

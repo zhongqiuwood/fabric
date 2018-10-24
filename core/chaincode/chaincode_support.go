@@ -30,9 +30,10 @@ import (
 
 	"strings"
 
+	"github.com/abchain/fabric/config"
 	"github.com/abchain/fabric/core/container"
 	"github.com/abchain/fabric/core/container/ccintf"
-	"github.com/abchain/fabric/core/crypto"
+	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
@@ -51,6 +52,8 @@ const (
 	chaincodeExecTimeoutDefault    int    = 30000
 	chaincodeInstallPathDefault    string = "/opt/gopath/bin/"
 	peerAddressDefault             string = "0.0.0.0:7051"
+
+	TLSRootCertFile = "chaincodeCA.pem"
 )
 
 // chains is a map between different blockchains and their ChaincodeSupport.
@@ -96,23 +99,17 @@ const (
 	deployTxKey = "__YAFABRIC_deployTx"
 )
 
-func (chaincodeSupport *ChaincodeSupport) FinalDeploy(ctx context.Context, txsuccess bool, cds *pb.ChaincodeDeploymentSpec, t *pb.Transaction, ledger *ledger.Ledger) error {
+func (chaincodeSupport *ChaincodeSupport) FinalDeploy(ctx context.Context, txsuccess bool, cds *pb.ChaincodeDeploymentSpec, t *pb.Transaction) {
 
-	var err error
-	if !txsuccess {
-		err = fmt.Errorf("Deploy tx did not get success responds")
-	} else {
-		err = ledger.SetState(cds.ChaincodeSpec.ChaincodeID.Name, deployTxKey, []byte(t.GetTxid()))
+	if txsuccess {
+		return
 	}
 
-	if err != nil {
-		chaincodeLogger.Infof("stopping due to error while final deploy tx: %s", err)
-		errIgnore := chaincodeSupport.Stop(ctx, cds)
-		if errIgnore != nil {
-			chaincodeLogger.Debugf("error on stop %s(%s)", errIgnore, err)
-		}
+	chaincodeLogger.Infof("stopping due to error while final deploy tx")
+	errIgnore := chaincodeSupport.Stop(ctx, cds)
+	if errIgnore != nil {
+		chaincodeLogger.Debugf("error on stop %s", errIgnore)
 	}
-	return err
 }
 
 func (chaincodeSupport *ChaincodeSupport) extractDeployTx(chaincode string, ledger *ledger.Ledger) (*pb.Transaction, error) {
@@ -141,9 +138,9 @@ func (chaincodeSupport *ChaincodeSupport) extractDeployTx(chaincode string, ledg
 	if depTx == nil {
 		return nil, fmt.Errorf("deployment transaction does not exist for %s", chaincode)
 	}
-	if nil != chaincodeSupport.secHelper {
+	if nil != chaincodeSupport.txHandler {
 		var err error
-		depTx, err = chaincodeSupport.secHelper.TransactionPreExecution(depTx)
+		depTx, err = chaincodeSupport.txHandler.TransactionPreExecution(depTx)
 		// Note that t is now decrypted and is a deep clone of the original input t
 		if nil != err {
 			return nil, fmt.Errorf("failed tx preexecution%s - %s", chaincode, err)
@@ -160,39 +157,26 @@ func (chaincodeSupport *ChaincodeSupport) chaincodeHasBeenLaunched(chaincode str
 }
 
 // NewChaincodeSupport creates a new ChaincodeSupport instance
-func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEndpoint, error), userrunsCC bool, secHelper crypto.Peer) *ChaincodeSupport {
-	pnid := viper.GetString("peer.networkId")
-	pid := viper.GetString("peer.id")
+func NewChaincodeSupport(chainname ChainName, nodeName string, srvSpec *config.ServerSpec, userrunsCC bool, txH cred.TxConfidentialityHandler) *ChaincodeSupport {
 
 	s := &ChaincodeSupport{name: chainname,
 		runningChaincodes: &runningChaincodes{
 			chaincodeMap: make(map[string]*chaincodeRTEnv),
 		},
-		secHelper:     secHelper,
-		peerNetworkID: pnid,
-		peerID:        pid}
+		txHandler:   txH,
+		userRunsCC:  userrunsCC,
+		clientGuide: srvSpec.GetClient(),
+		nodeID:      nodeName}
+
+	//currently chaincode support only accept a file scheme for tls
+	if s.clientGuide.EnableTLS && s.clientGuide.TLSRootCertFile == "" {
+		chaincodeLogger.Fatalf("could not use tls scheme except for file: %v", s.clientGuide)
+		return nil
+	}
 
 	//initialize global chain
 	chains[chainname] = s
-
-	s.peerAddress = viper.GetString("chaincode.peer.address")
-	if s.peerAddress == "" {
-		peerEndpoint, err := getPeerEndpoint()
-		if err != nil {
-			chaincodeLogger.Errorf("Error getting PeerEndpoint, using peer.address: %s", err)
-			s.peerAddress = viper.GetString("peer.address")
-		} else {
-			s.peerAddress = peerEndpoint.Address
-		}
-		chaincodeLogger.Infof("Chaincode support using peerAddress: %s\n", s.peerAddress)
-	}
-
-	//peerAddress = viper.GetString("peer.address")
-	if s.peerAddress == "" {
-		s.peerAddress = peerAddressDefault
-	}
-
-	s.userRunsCC = userrunsCC
+	chaincodeLogger.Infof("Chaincode support %s using peerAddress: %s\n", chainname, s.clientGuide.Address)
 
 	//get chaincode startup timeout
 	tOut, err := strconv.Atoi(viper.GetString("chaincode.startuptimeout"))
@@ -216,13 +200,6 @@ func NewChaincodeSupport(chainname ChainName, getPeerEndpoint func() (*pb.PeerEn
 	s.chaincodeInstallPath = viper.GetString("chaincode.installpath")
 	if s.chaincodeInstallPath == "" {
 		s.chaincodeInstallPath = chaincodeInstallPathDefault
-	}
-
-	s.peerTLS = viper.GetBool("peer.tls.enabled")
-	if s.peerTLS {
-		s.peerTLSCertFile = util.CanonicalizeFilePath(viper.GetString("peer.tls.rootcert.file"))
-		//		s.peerTLSKeyFile = viper.GetString("peer.tls.key.file")
-		s.peerTLSSvrHostOrd = viper.GetString("peer.tls.serverhostoverride")
 	}
 
 	kadef := 0
@@ -258,14 +235,10 @@ type ChaincodeSupport struct {
 	ccExecTimeout        time.Duration
 	chaincodeInstallPath string
 	userRunsCC           bool
-	secHelper            crypto.Peer
-	peerNetworkID        string
-	peerID               string
-	peerTLS              bool
-	peerTLSCertFile      string
-	//	peerTLSKeyFile       string
-	peerTLSSvrHostOrd string
-	keepalive         time.Duration
+	txHandler            cred.TxConfidentialityHandler
+	nodeID               string
+	clientGuide          *config.ClientSpec
+	keepalive            time.Duration
 }
 
 // DuplicateChaincodeHandlerError returned if attempt to register same chaincodeID while a stream already exists.
@@ -359,7 +332,7 @@ func (chaincodeSupport *ChaincodeSupport) getArgsAndEnv(cID *pb.ChaincodeID, cLa
 	//if TLS is enabled, pass TLS material to chaincode
 	if chaincodeSupport.peerTLS {
 		envs = append(envs, "CORE_PEER_TLS_ENABLED=true")
-		envs = append(envs, "CORE_PEER_TLS_CERT_FILE="+chaincodeSupport.peerTLSCertFile)
+		envs = append(envs, "CORE_PEER_TLS_CERT_FILE="+TLSRootCertFile)
 		if chaincodeSupport.peerTLSSvrHostOrd != "" {
 			envs = append(envs, "CORE_PEER_TLS_SERVERHOSTOVERRIDE="+chaincodeSupport.peerTLSSvrHostOrd)
 		}
@@ -400,11 +373,11 @@ func (chaincodeSupport *ChaincodeSupport) launchAndWaitForRegister(ctxt context.
 		return err
 	}
 
-	chaincodeLogger.Debugf("start container: %s(networkid:%s,peerid:%s)", chaincode, chaincodeSupport.peerNetworkID, chaincodeSupport.peerID)
+	chaincodeLogger.Debugf("start container: %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
 
 	vmtype, _ := chaincodeSupport.getVMType(cds)
 
-	sir := container.StartImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.peerNetworkID, PeerID: chaincodeSupport.peerID}, Reader: targz, Args: args, Env: env}
+	sir := container.StartImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.name, PeerID: chaincodeSupport.nodeID}, Reader: targz, Args: args, Env: env}
 
 	ipcCtxt := context.WithValue(ctxt, ccintf.GetCCHandlerKey(), chaincodeSupport)
 
@@ -456,7 +429,7 @@ func (chaincodeSupport *ChaincodeSupport) Stop(context context.Context, cds *pb.
 	}
 
 	//stop the chaincode
-	sir := container.StopImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.peerNetworkID, PeerID: chaincodeSupport.peerID}, Timeout: 0}
+	sir := container.StopImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.name, PeerID: chaincodeSupport.nodeID}, Timeout: 0}
 
 	vmtype, _ := chaincodeSupport.getVMType(cds)
 
@@ -554,7 +527,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 		select {
 		case err = <-chrte.launchNotify:
 		case <-wctx.Done():
-			err = fmt.Errorf("Timeout expired while starting chaincode %s(networkid:%s,peerid:%s)", chaincode, chaincodeSupport.peerNetworkID, chaincodeSupport.peerID)
+			err = fmt.Errorf("Timeout expired while starting chaincode %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
 		}
 		if err != nil {
 			return err, chrte
@@ -563,7 +536,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 
 	//send ready (if not deploy) for ready state
 	if chrte.handler == nil {
-		err = fmt.Errorf("handler is not available though lauching [%s(networkid:%s,peerid:%s)] notify ok", chaincode, chaincodeSupport.peerNetworkID, chaincodeSupport.peerID)
+		err = fmt.Errorf("handler is not available though lauching [%s(chain:%s,nodeid:%s)] notify ok", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
 		return err, chrte
 	}
 	err = chrte.handler.readyChaincode(t, depTx)
@@ -574,9 +547,9 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 	return nil, chrte
 }
 
-// getSecHelper returns the security help set from NewChaincodeSupport
-func (chaincodeSupport *ChaincodeSupport) getSecHelper() crypto.Peer {
-	return chaincodeSupport.secHelper
+// returns the security help set from NewChaincodeSupport
+func (chaincodeSupport *ChaincodeSupport) getTxHandler() cred.TxConfidentialityHandler {
+	return chaincodeSupport.txHandler
 }
 
 //getVMType - just returns a string for now. Another possibility is to use a factory method to
@@ -638,11 +611,11 @@ func (chaincodeSupport *ChaincodeSupport) Deploy(context context.Context, cds *p
 	}
 
 	var targz io.Reader = bytes.NewBuffer(cds.CodePackage)
-	cir := &container.CreateImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.peerNetworkID, PeerID: chaincodeSupport.peerID}, Args: args, Reader: targz, Env: envs}
+	cir := &container.CreateImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.name, PeerID: chaincodeSupport.nodeID}, Args: args, Reader: targz, Env: envs}
 
 	vmtype, _ := chaincodeSupport.getVMType(cds)
 
-	chaincodeLogger.Debugf("deploying chaincode %s(networkid:%s,peerid:%s)", chaincode, chaincodeSupport.peerNetworkID, chaincodeSupport.peerID)
+	chaincodeLogger.Debugf("deploying chaincode %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
 
 	//create image and create container
 	_, err = container.VMCProcess(context, vmtype, cir)
@@ -682,9 +655,14 @@ func (chaincodeSupport *ChaincodeSupport) HandleChaincodeStream(ctx context.Cont
 }
 
 // Execute executes a transaction and waits for it to complete until a timeout value.
-func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *chaincodeRTEnv, cMsg *pb.ChaincodeInput, tx *pb.Transaction) (*pb.ChaincodeMessage, error) {
+func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *chaincodeRTEnv, cMsg *pb.ChaincodeInput, tx *pb.Transaction, outstate *ledger.TxExecStates) (*pb.ChaincodeMessage, ledger.TxExecStates, error) {
 
 	wctx, cf := context.WithTimeout(ctxt, chaincodeSupport.ccExecTimeout)
 	defer cf()
-	return chrte.handler.executeMessage(wctx, cMsg, tx)
+	if outstate == nil {
+		outstate = &ledger.TxExecStates{}
+	}
+	msg, newoutstate, err := chrte.handler.executeMessage(wctx, cMsg, tx, outstate)
+
+	return msg, newoutstate, err
 }

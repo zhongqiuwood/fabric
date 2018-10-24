@@ -24,6 +24,7 @@ import (
 
 	"github.com/spf13/viper"
 
+	cc "github.com/abchain/fabric/core/chaincode"
 	cutil "github.com/abchain/fabric/core/container/util"
 	pb "github.com/abchain/fabric/protos"
 )
@@ -66,7 +67,7 @@ func writeChaincodePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
 	//is not just language dependent but also container depenedent. So lets make this change per platform for now
 	//in the interest of avoiding over-engineering without proper abstraction
 	if viper.GetBool("peer.tls.enabled") {
-		newRunLine = fmt.Sprintf("%s\nCOPY src/certs/cert.pem %s", newRunLine, viper.GetString("peer.tls.cert.file"))
+		newRunLine = fmt.Sprintf("%s\nCOPY certs/%s %s", newRunLine, cc.TLSRootCertFile)
 	}
 
 	dockerFileContents := fmt.Sprintf("%s\n%s", cutil.GetDockerfileFromConfig("chaincode.golang.Dockerfile"), newRunLine)

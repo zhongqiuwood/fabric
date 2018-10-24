@@ -87,6 +87,10 @@ func (state *State) TxBegin(txID string) {
 	state.currentTxID = txID
 }
 
+func (state *State) ApplyTxDelta(delta *statemgmt.StateDelta) {
+	state.currentTxStateDelta = delta
+}
+
 // TxFinish marks the completion of on-going tx. If txID is not same as of the on-going tx, this call panics
 func (state *State) TxFinish(txID string, txSuccessful bool) {
 	logger.Debugf("txFinish() for txId [%s], txSuccessful=[%t]", txID, txSuccessful)
@@ -127,6 +131,20 @@ func (state *State) Get(chaincodeID string, key string, committed bool) ([]byte,
 	return state.stateImpl.Get(chaincodeID, key)
 }
 
+func (state *State) GetTransient(chaincodeID string, key string, runningDelta *statemgmt.StateDelta) ([]byte, error) {
+
+	valueHolder := runningDelta.Get(chaincodeID, key)
+	if valueHolder != nil {
+		return valueHolder.GetValue(), nil
+	}
+	valueHolder = state.stateDelta.Get(chaincodeID, key)
+	if valueHolder != nil {
+		return valueHolder.GetValue(), nil
+	}
+
+	return state.stateImpl.Get(chaincodeID, key)
+}
+
 // GetRangeScanIterator returns an iterator to get all the keys (and values) between startKey and endKey
 // (assuming lexical order of the keys) for a chaincodeID.
 func (state *State) GetRangeScanIterator(chaincodeID string, startKey string, endKey string, committed bool) (statemgmt.RangeScanIterator, error) {
@@ -140,6 +158,18 @@ func (state *State) GetRangeScanIterator(chaincodeID string, startKey string, en
 	}
 	return newCompositeRangeScanIterator(
 		statemgmt.NewStateDeltaRangeScanIterator(state.currentTxStateDelta, chaincodeID, startKey, endKey),
+		statemgmt.NewStateDeltaRangeScanIterator(state.stateDelta, chaincodeID, startKey, endKey),
+		stateImplItr), nil
+}
+
+func (state *State) GetTransientRangeScanIterator(chaincodeID string, startKey string, endKey string, runningDelta *statemgmt.StateDelta) (statemgmt.RangeScanIterator, error) {
+	stateImplItr, err := state.stateImpl.GetRangeScanIterator(chaincodeID, startKey, endKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return newCompositeRangeScanIterator(
+		statemgmt.NewStateDeltaRangeScanIterator(runningDelta, chaincodeID, startKey, endKey),
 		statemgmt.NewStateDeltaRangeScanIterator(state.stateDelta, chaincodeID, startKey, endKey),
 		stateImplItr), nil
 }

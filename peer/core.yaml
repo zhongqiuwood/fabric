@@ -206,10 +206,9 @@ peer:
         # enable for local rpc call
         localsrvabled: false
 
-        cert:
-            file: testdata/server1.pem
-        key:
-            file: testdata/server1.key
+        file:
+            cert: testdata/server1.pem
+            key: testdata/server1.key
         # The server name use to verify the hostname returned by TLS handshake
         serverhostoverride:
 

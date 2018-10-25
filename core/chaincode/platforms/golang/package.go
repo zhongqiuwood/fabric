@@ -22,16 +22,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/spf13/viper"
-
-	cc "github.com/abchain/fabric/core/chaincode"
-	cutil "github.com/abchain/fabric/core/container/util"
+	cutil "github.com/abchain/fabric/core/chaincode/util"
+	"github.com/abchain/fabric/core/config"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/spf13/viper"
 )
 
 //tw is expected to have the chaincode in it from GenerateHashcode. This method
 //will just package rest of the bytes
-func writeChaincodePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
+func writeChaincodePackage(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, tw *tar.Writer) error {
 
 	var urlLocation string
 	if strings.HasPrefix(spec.ChaincodeID.Path, "http://") {
@@ -67,7 +66,7 @@ func writeChaincodePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
 	//is not just language dependent but also container depenedent. So lets make this change per platform for now
 	//in the interest of avoiding over-engineering without proper abstraction
 	if viper.GetBool("peer.tls.enabled") {
-		newRunLine = fmt.Sprintf("%s\nCOPY certs/%s %s", newRunLine, cc.TLSRootCertFile)
+		newRunLine = fmt.Sprintf("%s\nCOPY certs/%s %s", newRunLine)
 	}
 
 	dockerFileContents := fmt.Sprintf("%s\n%s", cutil.GetDockerfileFromConfig("chaincode.golang.Dockerfile"), newRunLine)

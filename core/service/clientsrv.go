@@ -30,9 +30,9 @@ import (
 	"sync"
 
 	"github.com/abchain/fabric/core/chaincode"
+	"github.com/abchain/fabric/core/chaincode/container"
 	"github.com/abchain/fabric/core/chaincode/platforms"
 	"github.com/abchain/fabric/core/config"
-	"github.com/abchain/fabric/core/container"
 	crypto "github.com/abchain/fabric/core/crypto"
 	ecc "github.com/abchain/fabric/core/embedded_chaincode/api"
 	"github.com/abchain/fabric/core/gossip/txnetwork"

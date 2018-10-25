@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	ccintf "github.com/abchain/fabric/core/container/ccintf"
+	ccintf "github.com/abchain/fabric/core/chaincode/container/ccintf"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"

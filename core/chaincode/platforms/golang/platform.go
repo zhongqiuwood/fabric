@@ -19,11 +19,11 @@ package golang
 import (
 	"archive/tar"
 	"fmt"
+	"github.com/abchain/fabric/core/config"
+	pb "github.com/abchain/fabric/protos"
 	"net/url"
 	"os"
 	"path/filepath"
-
-	pb "github.com/abchain/fabric/protos"
 )
 
 // Platform for chaincodes written in Go
@@ -68,23 +68,23 @@ func (goPlatform *Platform) ValidateSpec(spec *pb.ChaincodeSpec) error {
 	return nil
 }
 
-// WritePackage writes the Go chaincode package
+// WritePackage writes the Go chaincode package (at client side)
 func (goPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
 
-	//Paicode: We respect the given chaincode name so it is easy to read 
+	//Paicode: We respect the given chaincode name so it is easy to read
 	hashName, err := generateHashcode(spec, tw)
-	if spec.ChaincodeID.Name == ""{
-		spec.ChaincodeID.Name = hashName
-	}
-	
 	if err != nil {
 		return err
 	}
 
-	err = writeChaincodePackage(spec, tw)
-	if err != nil {
-		return err
+	if spec.ChaincodeID.Name == "" {
+		spec.ChaincodeID.Name = hashName
 	}
 
 	return nil
+}
+
+// WriteRuntime write necessary content for running (at validator side)
+func (goPlatform *Platform) WriteRunTime(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, tw *tar.Writer) error {
+	return writeChaincodePackage(spec, clispec, tw)
 }

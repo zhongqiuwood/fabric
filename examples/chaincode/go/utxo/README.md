@@ -47,7 +47,7 @@ Stop the running peer.
 
 Build a peer docker image by running the following test. This will allow for easy testing of the chaincode by giving us the ability to reset the database to a clean state.
 ```
-go test github.com/abchain/fabric/core/container -run=BuildImage_Peer
+go test github.com/abchain/fabric/core/chaincode/container -run=BuildImage_Peer
 ```
 
 Using the Docker image that we just built, start a peer within a container in `chaincodedev` mode.

@@ -25,7 +25,7 @@ import (
 
 	"os"
 
-	cutil "github.com/abchain/fabric/core/container/util"
+	cutil "github.com/abchain/fabric/core/chaincode/util"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 )

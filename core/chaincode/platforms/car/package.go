@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	cutil "github.com/abchain/fabric/core/container/util"
+	cutil "github.com/abchain/fabric/core/chaincode/util"
 	pb "github.com/abchain/fabric/protos"
 )
 

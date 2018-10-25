@@ -27,9 +27,9 @@ import (
 	"path/filepath"
 
 	"github.com/abchain/fabric/core/chaincode"
+	"github.com/abchain/fabric/core/chaincode/container"
 	"github.com/abchain/fabric/core/chaincode/shim"
 	"github.com/abchain/fabric/core/chaincode/shim/crypto/attr"
-	"github.com/abchain/fabric/core/container"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/util"

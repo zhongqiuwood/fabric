@@ -125,8 +125,8 @@ with the following parameters:
 
 ::
 
-    go test github.com/abchain/fabric/core/container -run=BuildImage_Peer
-    go test github.com/abchain/fabric/core/container -run=BuildImage_Obcca
+    go test github.com/abchain/fabric/core/chaincode/container -run=BuildImage_Peer
+    go test github.com/abchain/fabric/core/chaincode/container -run=BuildImage_Obcca
 
 Building outside of Vagrant
 ---------------------------

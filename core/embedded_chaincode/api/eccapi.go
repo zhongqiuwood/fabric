@@ -2,8 +2,8 @@ package api
 
 import (
 	"fmt"
+	"github.com/abchain/fabric/core/chaincode/container/inproccontroller"
 	"github.com/abchain/fabric/core/chaincode/shim"
-	"github.com/abchain/fabric/core/container/inproccontroller"
 	"github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 )

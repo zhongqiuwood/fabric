@@ -30,9 +30,9 @@ import (
 
 	"strings"
 
-	"github.com/abchain/fabric/config"
-	"github.com/abchain/fabric/core/container"
-	"github.com/abchain/fabric/core/container/ccintf"
+	"github.com/abchain/fabric/core/chaincode/container"
+	"github.com/abchain/fabric/core/chaincode/container/ccintf"
+	"github.com/abchain/fabric/core/config"
 	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/util"
@@ -507,8 +507,21 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 	cLang := cds.ChaincodeSpec.Type
 	//launch container if it is a System container or not in dev mode
 	if !chaincodeSupport.userRunsCC || cds.ExecEnv == pb.ChaincodeDeploymentSpec_SYSTEM {
-		var targz io.Reader = bytes.NewBuffer(cds.CodePackage)
-		err = chaincodeSupport.launchAndWaitForRegister(wctx, cds, cID, cLang, targz)
+		var packrd *runtimeReader
+		if cds.ExecEnv != pb.ChaincodeDeploymentSpec_SYSTEM {
+			packrd, err = WriteRuntimePackage(cds.ChaincodeSpec, chaincodeSupport.clientGuide, cds.CodePackage)
+			if err != nil {
+				chaincodeLogger.Errorf("WriteRuntimePackage failed %s", err)
+				return err, chrte
+			}
+		}
+		err = chaincodeSupport.launchAndWaitForRegister(wctx, cds, cID, cLang, packrd.GetReader())
+		//first finish and trace the real reason in runtime reading
+		omiterr := packrd.Finish()
+		if omiterr != nil && omiterr != io.EOF {
+			chaincodeLogger.Errorf("WriteRuntimePackage failed, reason was %s", omiterr)
+		}
+
 		if err != nil {
 			chaincodeLogger.Errorf("launchAndWaitForRegister failed %s", err)
 			return err, chrte

@@ -28,8 +28,8 @@ import (
 
 	"path/filepath"
 
-	"github.com/abchain/fabric/core/container"
-	"github.com/abchain/fabric/core/container/ccintf"
+	"github.com/abchain/fabric/core/chaincode/container"
+	"github.com/abchain/fabric/core/chaincode/container/ccintf"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger"

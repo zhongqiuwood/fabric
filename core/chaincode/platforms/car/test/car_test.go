@@ -20,8 +20,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/abchain/fabric/core/chaincode/container"
 	"github.com/abchain/fabric/core/config"
-	"github.com/abchain/fabric/core/container"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 )

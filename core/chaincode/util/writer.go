@@ -157,7 +157,7 @@ func WriteJavaProjectToPackage(tw *tar.Writer, srcPath string) error {
 
 }
 
-//WriteFileToPackage writes a file to the tarball
+//WriteFileToPackage writes a file to the tarball (use dereference mode)
 func WriteFileToPackage(localpath string, packagepath string, tw *tar.Writer) error {
 	fd, err := os.Open(localpath)
 	if err != nil {
@@ -166,19 +166,25 @@ func WriteFileToPackage(localpath string, packagepath string, tw *tar.Writer) er
 	defer fd.Close()
 
 	is := bufio.NewReader(fd)
-	return WriteStreamToPackage(is, localpath, packagepath, tw)
+	return writeStreamToPackage(is, localpath, packagepath, tw)
 
 }
 
 //WriteStreamToPackage writes bytes (from a file reader) to the tarball
-func WriteStreamToPackage(is io.Reader, localpath string, packagepath string, tw *tar.Writer) error {
+func writeStreamToPackage(is io.Reader, localpath string, packagepath string, tw *tar.Writer) error {
 	info, err := os.Stat(localpath)
 	if err != nil {
 		return fmt.Errorf("%s: %s", localpath, err)
 	}
-	header, err := tar.FileInfoHeader(info, localpath)
+	header, err := tar.FileInfoHeader(info, "")
 	if err != nil {
 		return fmt.Errorf("Error getting FileInfoHeader: %s", err)
+	}
+
+	//deref
+	if header.Typeflag == tar.TypeLink {
+		header.Typeflag = tar.TypeReg
+		header.Size = info.Size()
 	}
 
 	//Let's take the variance out of the tar, make headers identical by using zero time
@@ -192,8 +198,10 @@ func WriteStreamToPackage(is io.Reader, localpath string, packagepath string, tw
 	if err = tw.WriteHeader(header); err != nil {
 		return fmt.Errorf("Error write header for (path: %s, oldname:%s,newname:%s,sz:%d) : %s", localpath, oldname, packagepath, header.Size, err)
 	}
-	if _, err := io.Copy(tw, is); err != nil {
+	if wsz, err := io.Copy(tw, is); err != nil {
 		return fmt.Errorf("Error copy (path: %s, oldname:%s,newname:%s,sz:%d) : %s", localpath, oldname, packagepath, header.Size, err)
+	} else if wsz != header.Size {
+		return fmt.Errorf("Error copy (expected size: %d but get %d copied): %s", header.Size, wsz, localpath)
 	}
 
 	return nil

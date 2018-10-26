@@ -28,6 +28,74 @@ import (
 	"github.com/spf13/viper"
 )
 
+func parseCodePath(path string) (effectpath string, ishttp bool) {
+
+	if strings.HasPrefix(path, "http://") {
+		ishttp = true
+		effectpath = path[7:]
+	} else if strings.HasPrefix(path, "https://") {
+		ishttp = true
+		effectpath = path[8:]
+	} else {
+		effectpath = path
+	}
+
+	effectpath = strings.TrimSuffix(effectpath, "/")
+
+	return
+}
+
+func (goPlatform *Platform) GetCodePath(path string) (rootpath string, packpath string, shouldclean bool, err error) {
+
+	packetpath, shouldclean = parseCodePath(path)
+	if shouldclean {
+		rootpath, err = getCodeFromHTTP(path)
+	} else {
+		rootpath, err = getCodeFromFS(path)
+	}
+
+	rootpath = filepath.Join(rootpath, "src")
+	return
+}
+
+func (goPlatform *Platform) WriteDockerRunTime(spec *pb.ChaincodeSpec, tw *tar.Writer) (dockertemplate string, err error) {
+
+	codeGopath, _ := parseCodePath(spec.ChaincodeID.GetPath())
+
+	toks := strings.Split(codeGopath, "/")
+	if toks == nil || len(toks) == 0 {
+		err = fmt.Errorf("cannot get path components from %s", codeGopath)
+		return
+	}
+
+	chaincodeGoName := toks[len(toks)-1]
+	if chaincodeGoName == "" {
+		err = fmt.Errorf("could not get chaincode name from path %s", codeGopath)
+		return
+	}
+
+	//write the whole GOPATH if specified
+	if viper.GetBool("chaincode.golang.withGOPATH") {
+		err = cutil.WriteGopathSrc(tw, codeGopath)
+		if err != nil {
+			err = fmt.Errorf("Error writing Chaincode package contents: %s", err)
+			return
+		}
+	}
+
+	//let the executable's name be chaincode ID's name
+	newRunLine := fmt.Sprintf("RUN go install %s && cp src/github.com/abchain/fabric/peer/core.yaml $GOPATH/bin && mv $GOPATH/bin/%s $GOPATH/bin/%s", urlLocation, chaincodeGoName, spec.ChaincodeID.Name)
+
+	dockertemplate = cutil.GetDockerfileFromConfig("chaincode.golang.Dockerfile")
+	if dockertemplate == "" {
+		err = fmt.Errorf("Invalid dockertemplate")
+		return
+	}
+	dockertemplate = fmt.Sprintf("%s\n%s", dockertemplate, newRunLine)
+
+	return
+}
+
 //tw is expected to have the chaincode in it from GenerateHashcode. This method
 //will just package rest of the bytes
 func writeChaincodePackage(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, tw *tar.Writer) error {
@@ -57,9 +125,6 @@ func writeChaincodePackage(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, t
 	if chaincodeGoName == "" {
 		return fmt.Errorf("could not get chaincode name from path %s", urlLocation)
 	}
-
-	//let the executable's name be chaincode ID's name
-	newRunLine := fmt.Sprintf("RUN go install %s && cp src/github.com/abchain/fabric/peer/core.yaml $GOPATH/bin && mv $GOPATH/bin/%s $GOPATH/bin/%s", urlLocation, chaincodeGoName, spec.ChaincodeID.Name)
 
 	//NOTE-this could have been abstracted away so we could use it for all platforms in a common manner
 	//However, it would still be docker specific. Hence any such abstraction has to be done in a manner that

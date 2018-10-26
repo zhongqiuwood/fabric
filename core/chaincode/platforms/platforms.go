@@ -31,9 +31,24 @@ import (
 // the given platform
 type Platform interface {
 	ValidateSpec(spec *pb.ChaincodeSpec) error
-	WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error
-	WriteRunTime(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, tw *tar.Writer) error
-	GetCodePath(string) (string, error)
+
+	/*
+		YA-fabric 0.9：
+		We have sepearted the platform-related chaincode deployment into two parts:
+		1. Generate a bytecode for chaincode, which can be used for different runtime
+		2. Generate data for a *specified* runtime, currently we have only docker, new
+		method should be added if we have introduced more
+	*/
+
+	//for step 1: codepath is divided into two parts, the packpath part is reserved in
+	//the chaincode bytecode
+	//shouldclean indicate the code path should be remove after being used
+	GetCodePath(string) (rootpath string, packpath string, shouldclean bool, error)
+	//for step 2: this suppose we have an archive of codes under the "ccfile" (magic string) 
+	//directory and platform should provided extra resources into the archive and a dockerfile
+	//template which can correctly build the chaincode
+	WriteDockerRunTime(spec *pb.ChaincodeSpec, tw *tar.Writer) (string, error)
+
 }
 
 // Find returns the platform interface for the given platform type
@@ -67,31 +82,18 @@ func ValidateSpec(spec *pb.ChaincodeSpec) error {
 
 }
 
-func WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
+func WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) (string, error) {
 
 	platform, err := Find(spec.Type)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	//We respect the given chaincode name so it is easy to read
-	hashName, err := generateHashcode(spec, tw, platform)
-	if err != nil {
-		return err
-	}
-
-	if spec.ChaincodeID.Name == "" {
-		spec.ChaincodeID.Name = hashName
-	}
-
-	err = platform.WritePackage(spec, tw)
-	if err != nil {
-		return nil, err
-	}
+	return generateHashcode(spec, tw, platform)
 }
 
 func WriteRunTime(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, tw *tar.Writer) error {
-
+	return nil
 }
 
 func GetArgsAndEnv(spec *pb.ChaincodeSpec, clispec *config.ClientSpec) (args []string, envs []string, err error) {

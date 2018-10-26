@@ -67,24 +67,3 @@ func (goPlatform *Platform) ValidateSpec(spec *pb.ChaincodeSpec) error {
 	}
 	return nil
 }
-
-// WritePackage writes the Go chaincode package (at client side)
-func (goPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
-
-	//Paicode: We respect the given chaincode name so it is easy to read
-	hashName, err := generateHashcode(spec, tw)
-	if err != nil {
-		return err
-	}
-
-	if spec.ChaincodeID.Name == "" {
-		spec.ChaincodeID.Name = hashName
-	}
-
-	return nil
-}
-
-// WriteRuntime write necessary content for running (at validator side)
-func (goPlatform *Platform) WriteRunTime(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, tw *tar.Writer) error {
-	return writeChaincodePackage(spec, clispec, tw)
-}

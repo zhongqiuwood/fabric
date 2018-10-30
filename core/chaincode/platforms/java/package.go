@@ -20,6 +20,7 @@ import (
 	"archive/tar"
 	"fmt"
 	"io/ioutil"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -113,4 +114,61 @@ func writeChaincodePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
 	}
 
 	return nil
+}
+
+// WritePackage writes the java chaincode package
+func (javaPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
+
+	var err error
+	spec.ChaincodeID.Name, err = generateHashcode(spec, tw)
+	if err != nil {
+		return err
+	}
+
+	err = writeChaincodePackage(spec, tw)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func getCodeFromHTTP(path string) (codegopath string, err error) {
+
+	var tmp string
+	tmp, err = ioutil.TempDir("", "javachaincode")
+
+	if err != nil {
+		return "", fmt.Errorf("Error creating temporary file: %s", err)
+	}
+	var out bytes.Buffer
+
+	cmd := exec.Command("git", "clone", path, tmp)
+	cmd.Stderr = &out
+	cmderr := cmd.Run()
+	if cmderr != nil {
+		return "", fmt.Errorf("Error cloning git repository %s", cmderr)
+	}
+
+	return tmp, nil
+
+}
+
+// WritePackage writes the java chaincode package
+func (javaPlatform *Platform) GetCodePath(path string) (rootpath string, packpath string, shouldclean bool, err error) {
+
+	var err error
+	if strings.HasPrefix(path, "http://") ||
+		strings.HasPrefix(path, "https://") {
+		shouldclean = true
+		rootpath, err = getCodeFromHTTP(path)
+	} else if !strings.HasPrefix(path, "/") {
+		wd := ""
+		wd, err = os.Getwd()
+		path = filepath.Join(wd, path)
+		path = strings.TrimSuffix(path, "/")
+		rootpath, packpath = filepath.Split(path)
+	}
+
+	return
 }

@@ -19,11 +19,10 @@ package golang
 import (
 	"archive/tar"
 	"fmt"
+	"path/filepath"
 	"strings"
-	"time"
 
 	cutil "github.com/abchain/fabric/core/chaincode/util"
-	"github.com/abchain/fabric/core/config"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 )
@@ -47,7 +46,7 @@ func parseCodePath(path string) (effectpath string, ishttp bool) {
 
 func (goPlatform *Platform) GetCodePath(path string) (rootpath string, packpath string, shouldclean bool, err error) {
 
-	packetpath, shouldclean = parseCodePath(path)
+	packpath, shouldclean = parseCodePath(path)
 	if shouldclean {
 		rootpath, err = getCodeFromHTTP(path)
 	} else {
@@ -83,71 +82,71 @@ func (goPlatform *Platform) WriteDockerRunTime(spec *pb.ChaincodeSpec, tw *tar.W
 		}
 	}
 
-	//let the executable's name be chaincode ID's name
-	newRunLine := fmt.Sprintf("RUN go install %s && cp src/github.com/abchain/fabric/peer/core.yaml $GOPATH/bin && mv $GOPATH/bin/%s $GOPATH/bin/%s", urlLocation, chaincodeGoName, spec.ChaincodeID.Name)
-
 	dockertemplate = cutil.GetDockerfileFromConfig("chaincode.golang.Dockerfile")
 	if dockertemplate == "" {
 		err = fmt.Errorf("Invalid dockertemplate")
 		return
 	}
-	dockertemplate = fmt.Sprintf("%s\n%s", dockertemplate, newRunLine)
+	//copy chaincode bytecode in "ccfile" (this is magic string) and build it
+	newRunLine := fmt.Sprintf(
+		`COPY ccfile $GOPATH/src
+		RUN go install %s && cp src/github.com/abchain/fabric/peer/core.yaml $GOPATH/bin && mv $GOPATH/bin/%s $GOPATH/bin/%s
+		`, codeGopath, chaincodeGoName, spec.ChaincodeID.Name)
+	dockertemplate = fmt.Sprintf("%s\n%s\n", dockertemplate, newRunLine)
 
 	return
 }
 
-//tw is expected to have the chaincode in it from GenerateHashcode. This method
-//will just package rest of the bytes
-func writeChaincodePackage(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, tw *tar.Writer) error {
+// func writeChaincodePackage(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, tw *tar.Writer) error {
 
-	var urlLocation string
-	if strings.HasPrefix(spec.ChaincodeID.Path, "http://") {
-		urlLocation = spec.ChaincodeID.Path[7:]
-	} else if strings.HasPrefix(spec.ChaincodeID.Path, "https://") {
-		urlLocation = spec.ChaincodeID.Path[8:]
-	} else {
-		urlLocation = spec.ChaincodeID.Path
-	}
+// 	var urlLocation string
+// 	if strings.HasPrefix(spec.ChaincodeID.Path, "http://") {
+// 		urlLocation = spec.ChaincodeID.Path[7:]
+// 	} else if strings.HasPrefix(spec.ChaincodeID.Path, "https://") {
+// 		urlLocation = spec.ChaincodeID.Path[8:]
+// 	} else {
+// 		urlLocation = spec.ChaincodeID.Path
+// 	}
 
-	if urlLocation == "" {
-		return fmt.Errorf("empty url location")
-	}
+// 	if urlLocation == "" {
+// 		return fmt.Errorf("empty url location")
+// 	}
 
-	if strings.LastIndex(urlLocation, "/") == len(urlLocation)-1 {
-		urlLocation = urlLocation[:len(urlLocation)-1]
-	}
-	toks := strings.Split(urlLocation, "/")
-	if toks == nil || len(toks) == 0 {
-		return fmt.Errorf("cannot get path components from %s", urlLocation)
-	}
+// 	if strings.LastIndex(urlLocation, "/") == len(urlLocation)-1 {
+// 		urlLocation = urlLocation[:len(urlLocation)-1]
+// 	}
+// 	toks := strings.Split(urlLocation, "/")
+// 	if toks == nil || len(toks) == 0 {
+// 		return fmt.Errorf("cannot get path components from %s", urlLocation)
+// 	}
 
-	chaincodeGoName := toks[len(toks)-1]
-	if chaincodeGoName == "" {
-		return fmt.Errorf("could not get chaincode name from path %s", urlLocation)
-	}
+// 	chaincodeGoName := toks[len(toks)-1]
+// 	if chaincodeGoName == "" {
+// 		return fmt.Errorf("could not get chaincode name from path %s", urlLocation)
+// 	}
 
-	//NOTE-this could have been abstracted away so we could use it for all platforms in a common manner
-	//However, it would still be docker specific. Hence any such abstraction has to be done in a manner that
-	//is not just language dependent but also container depenedent. So lets make this change per platform for now
-	//in the interest of avoiding over-engineering without proper abstraction
-	if viper.GetBool("peer.tls.enabled") {
-		newRunLine = fmt.Sprintf("%s\nCOPY certs/%s %s", newRunLine)
-	}
+// 	//NOTE-this could have been abstracted away so we could use it for all platforms in a common manner
+// 	//However, it would still be docker specific. Hence any such abstraction has to be done in a manner that
+// 	//is not just language dependent but also container depenedent. So lets make this change per platform for now
+// 	//in the interest of avoiding over-engineering without proper abstraction
+// 	if viper.GetBool("peer.tls.enabled") {
+// 		newRunLine = fmt.Sprintf("%s\nCOPY certs/%s %s", newRunLine)
+// 	}
 
-	dockerFileContents := fmt.Sprintf("%s\n%s", cutil.GetDockerfileFromConfig("chaincode.golang.Dockerfile"), newRunLine)
-	dockerFileSize := int64(len([]byte(dockerFileContents)))
+// 	dockerFileContents := fmt.Sprintf("%s\n%s", cutil.GetDockerfileFromConfig("chaincode.golang.Dockerfile"), newRunLine)
+// 	dockerFileSize := int64(len([]byte(dockerFileContents)))
 
-	//Make headers identical by using zero time
-	var zeroTime time.Time
-	tw.WriteHeader(&tar.Header{Name: "Dockerfile", Size: dockerFileSize, ModTime: zeroTime, AccessTime: zeroTime, ChangeTime: zeroTime})
-	tw.Write([]byte(dockerFileContents))
+// 	//Make headers identical by using zero time
+// 	var zeroTime time.Time
+// 	tw.WriteHeader(&tar.Header{Name: "Dockerfile", Size: dockerFileSize, ModTime: zeroTime, AccessTime: zeroTime, ChangeTime: zeroTime})
+// 	tw.Write([]byte(dockerFileContents))
 
-	//Do we really need to write the whole GOPATH besides target code? at least we should be able to control it by a switch
-	if viper.GetBool("chaincode.golang.withGOPATH") {
-		err := cutil.WriteGopathSrc(tw, urlLocation)
-		if err != nil {
-			return fmt.Errorf("Error writing Chaincode package contents: %s", err)
-		}
-	}
-	return nil
-}
+// 	//Do we really need to write the whole GOPATH besides target code? at least we should be able to control it by a switch
+// 	if viper.GetBool("chaincode.golang.withGOPATH") {
+// 		err := cutil.WriteGopathSrc(tw, urlLocation)
+// 		if err != nil {
+// 			return fmt.Errorf("Error writing Chaincode package contents: %s", err)
+// 		}
+// 	}
+// 	return nil
+// }

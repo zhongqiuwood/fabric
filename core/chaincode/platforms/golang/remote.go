@@ -1,12 +1,9 @@
 package golang
 
 import (
-	"archive/tar"
 	"bytes"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"os"
 	"os/exec"
@@ -14,17 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/protobuf/proto"
-	"github.com/op/go-logging"
 	"github.com/spf13/viper"
-
-	cutil "github.com/abchain/fabric/core/chaincode/util"
-	"github.com/abchain/fabric/core/util"
-	pb "github.com/abchain/fabric/protos"
 )
 
 func getCodeFromFS(path string) (string, error) {
-	logger.Debugf("getCodeFromFS %s", path)
 	gopath := os.Getenv("GOPATH")
 	if gopath == "" {
 		return "", fmt.Errorf("GOPATH not defined")
@@ -45,7 +35,6 @@ func getCodeFromFS(path string) (string, error) {
 func getCodeFromHTTP(path string) (codegopath string, err error) {
 	codegopath = ""
 	err = nil
-	logger.Debugf("getCodeFromHTTP %s", path)
 
 	// The following could be done with os.Getenv("GOPATH") but we need to change it later so this prepares for that next step
 	env := os.Environ()
@@ -91,7 +80,6 @@ func getCodeFromHTTP(path string) (codegopath string, err error) {
 	env[gopathenvIndex] = "GOPATH=" + codegopath + string(os.PathListSeparator) + origgopath
 
 	// Use a 'go get' command to pull the chaincode from the given repo
-	logger.Debugf("go get %s", path)
 	cmd := exec.Command("go", "get", path)
 	cmd.Env = env
 	var out bytes.Buffer

@@ -89,22 +89,18 @@ func archiveFilesInDir(rootDir string, dir string, tw *tar.Writer) error {
 	return nil
 }
 
-func isCodeExist(tmppath string) error {
+func checkCodeExist(tmppath string) (bool, error) {
 	file, err := os.Open(tmppath)
 	if err != nil {
-		return fmt.Errorf("Download failed %s", err)
+		return false, fmt.Errorf("Download failed %s", err)
 	}
 
 	fi, err := file.Stat()
 	if err != nil {
-		return fmt.Errorf("Could not stat file %s", err)
+		return false, fmt.Errorf("Could not stat file %s", err)
 	}
 
-	if !fi.IsDir() {
-		return fmt.Errorf("File %s is not dir\n", file.Name())
-	}
-
-	return nil
+	return fi.IsDir(), nil
 }
 
 //generateHashcode gets hashcode of the code under path. If path is a HTTP(s) url
@@ -146,8 +142,9 @@ func generateHashcode(spec *pb.ChaincodeSpec, tw *tar.Writer, pf Platform) (stri
 		return "", fmt.Errorf("Error getting code %s", err)
 	}
 
-	tmppath := filepath.Join(rootpath, codepath)
-	if err = isCodeExist(tmppath); err != nil {
+	var isDir bool
+	isDir, err = checkCodeExist(filepath.Join(rootpath, codepath))
+	if err != nil {
 		return "", fmt.Errorf("code does not exist %s", err)
 	}
 	ctorbytes, err := proto.Marshal(ctor)
@@ -164,14 +161,14 @@ func generateHashcode(spec *pb.ChaincodeSpec, tw *tar.Writer, pf Platform) (stri
 		writeInf = io.MultiWriter(archHasher, tw)
 	}
 
-	err = archiveFilesInDir(rootpath, codepath, writeInf)
-	if err != nil {
-		return "", fmt.Errorf("Could not archive (or hash) file for %s - %s", path, err)
+	if isDir {
+		err = archiveFilesInDir(rootpath, codepath, writeInf)
+	} else {
+		err = cutil.WriteFileToPackage(filepath.Join(rootpath, codepath), codepath, writeInf)
 	}
 
-	err = pf.WritePackage(spec, tw)
 	if err != nil {
-		return nil, fmt.Errorf("Could not add additional contents from platform: %s", err)
+		return "", fmt.Errorf("Could not archive (or hash) file for %s - %s", path, err)
 	}
 
 	hash = computeHash(archHasher.Sum(nil), hash)

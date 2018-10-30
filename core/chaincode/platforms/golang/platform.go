@@ -17,9 +17,7 @@ limitations under the License.
 package golang
 
 import (
-	"archive/tar"
 	"fmt"
-	"github.com/abchain/fabric/core/config"
 	pb "github.com/abchain/fabric/protos"
 	"net/url"
 	"os"

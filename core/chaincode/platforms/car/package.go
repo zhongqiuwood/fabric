@@ -23,76 +23,76 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
-	"time"
 
 	cutil "github.com/abchain/fabric/core/chaincode/util"
 	pb "github.com/abchain/fabric/protos"
 )
 
-func download(path string) (string, error) {
-	if strings.HasPrefix(path, "http://") {
-		// The file is remote, so we need to download it to a temporary location first
-
-		var tmp *os.File
-		var err error
-		tmp, err = ioutil.TempFile("", "car")
-		if err != nil {
-			return "", fmt.Errorf("Error creating temporary file: %s", err)
-		}
-		defer os.Remove(tmp.Name())
-		defer tmp.Close()
-
-		resp, err := http.Get(path)
-		if err != nil {
-			return "", fmt.Errorf("Error with HTTP GET: %s", err)
-		}
-		defer resp.Body.Close()
-
-		_, err = io.Copy(tmp, resp.Body)
-		if err != nil {
-			return "", fmt.Errorf("Error downloading bytes: %s", err)
-		}
-
-		return tmp.Name(), nil
-	}
-
-	return path, nil
-}
+var remoteFileName = "package.car"
 
 // WritePackage satisfies the platform interface for generating a docker package
 // that encapsulates the environment for a CAR based chaincode
-func (carPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
+func (carPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) (string, error) {
 
-	path, err := download(spec.ChaincodeID.Path)
-	if err != nil {
-		return err
-	}
-
-	spec.ChaincodeID.Name, err = generateHashcode(spec, path)
-	if err != nil {
-		return fmt.Errorf("Error generating hashcode: %s", err)
+	var fileName string
+	path := spec.ChaincodeID.Path
+	if strings.HasPrefix(path, "http://") {
+		fileName = remoteFileName
+	} else {
+		_, fileName = filepath.Split(path)
 	}
 
 	var buf []string
 
 	//let the executable's name be chaincode ID's name
 	buf = append(buf, cutil.GetDockerfileFromConfig("chaincode.car.Dockerfile"))
-	buf = append(buf, "COPY package.car /tmp/package.car")
+	buf = append(buf, fmt.Sprintf("COPY ccfile/%s /tmp/package.car"), fileName)
 	buf = append(buf, fmt.Sprintf("RUN chaintool buildcar /tmp/package.car -o $GOPATH/bin/%s && rm /tmp/package.car", spec.ChaincodeID.Name))
 
-	dockerFileContents := strings.Join(buf, "\n")
-	dockerFileSize := int64(len([]byte(dockerFileContents)))
+	return strings.Join(buf, "\n"), nil
+}
 
-	//Make headers identical by using zero time
-	var zeroTime time.Time
-	tw.WriteHeader(&tar.Header{Name: "Dockerfile", Size: dockerFileSize, ModTime: zeroTime, AccessTime: zeroTime, ChangeTime: zeroTime})
-	tw.Write([]byte(dockerFileContents))
+func (carPlatform *Platform) GetCodePath(path string) (rootpath string, packpath string, shouldclean bool, err error) {
 
-	err = cutil.WriteFileToPackage(path, "package.car", tw)
-	if err != nil {
-		return err
+	if strings.HasPrefix(path, "http://") {
+		// The file is remote, so we need to download it to a temporary location first
+		var tmp *os.File
+		var tmpDir string
+		tmpDir, err = ioutil.TempDir("", "car")
+		if err != nil {
+			err = fmt.Errorf("Error creating temporary directory: %s", err)
+			return
+		}
+
+		tmp, err = os.Create(filepath.Join(tmpDir, remoteFileName))
+		if err != nil {
+			err = fmt.Errorf("Error creating downloaded file in temporary directory: %s", err)
+			return
+		}
+		defer tmp.Close()
+
+		var resp *http.Response
+		resp, err = http.Get(path)
+		if err != nil {
+			err = fmt.Errorf("Error with HTTP GET: %s", err)
+			return
+		}
+		defer resp.Body.Close()
+
+		_, err = io.Copy(tmp, resp.Body)
+		if err != nil {
+			err = fmt.Errorf("Error downloading bytes: %s", err)
+			return
+		}
+
+		shouldclean = true
+		rootpath = tmpDir
+		packpath = remoteFileName
+		return
 	}
 
-	return nil
+	rootpath, packpath = filepath.Split(path)
+	return
 }

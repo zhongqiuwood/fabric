@@ -22,7 +22,7 @@ func (ts *tlsClientSpec) Init(vp *viper.Viper) {
 
 	ts.EnableTLS = vp.GetBool("enabled")
 	if !ts.EnableTLS {
-		return nil
+		return
 	}
 
 	//we also recognize the file scheme
@@ -37,7 +37,7 @@ func (ts *tlsSpec) Init(vp *viper.Viper) {
 
 	ts.tlsClientSpec.Init(vp)
 	if !ts.EnableTLS {
-		return nil
+		return
 	}
 
 	//we recognize the file scheme
@@ -63,5 +63,5 @@ func (ts *tlsClientSpec) GetClientTLSOptions() (credentials.TransportCredentials
 
 	return credentials.NewClientTLSFromFile(
 		util.CanonicalizeFilePath(ts.TLSRootCertFile),
-		TLSHostOverride)
+		ts.TLSHostOverride)
 }

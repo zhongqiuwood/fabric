@@ -64,20 +64,3 @@ func (javaPlatform *Platform) ValidateSpec(spec *pb.ChaincodeSpec) error {
 	//	}
 	return nil
 }
-
-// WritePackage writes the java chaincode package
-func (javaPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
-
-	var err error
-	spec.ChaincodeID.Name, err = generateHashcode(spec, tw)
-	if err != nil {
-		return err
-	}
-
-	err = writeChaincodePackage(spec, tw)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}

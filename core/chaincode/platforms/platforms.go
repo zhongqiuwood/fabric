@@ -43,6 +43,7 @@ type Platform interface {
 	//for step 1: codepath is divided into two parts, the packpath part is reserved in
 	//the chaincode bytecode
 	//shouldclean indicate the code path should be remove after being used
+	//the path argument MUST be the chaincodeID.Path in corresponding spec
 	GetCodePath(string) (rootpath string, packpath string, shouldclean bool, error)
 	//for step 2: this suppose we have an archive of codes under the "ccfile" (magic string) 
 	//directory and platform should provided extra resources into the archive and a dockerfile

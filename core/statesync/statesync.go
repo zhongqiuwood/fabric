@@ -16,51 +16,73 @@ import (
 	"github.com/spf13/viper"
 )
 
-var logger = logging.MustGetLogger("statesync")
+var logger = logging.MustGetLogger("statesyncstub")
 
 func init() {
-	stub.DefaultFactory = newStateSyncHandler
+	stub.DefaultSyncFactory = newStateSyncHandlerFactory
 }
 
-var stateSyncCore *StateSync
+var stateSyncCore *StateSyncStub
 var syncerErr error
 var once sync.Once
 
-func NewStateSync(p peer.Peer) {
-
-	once.Do(func() {
-		stateSyncCore, syncerErr = GetNewStateSync(p)
-		if syncerErr != nil {
-			logger.Error("Create new state syncer fail:", syncerErr)
-		}
-
-		ep, _ := p.GetPeerEndpoint()
-		//also set options for this peer
-		p.SetStreamOption("sync", StreamFilter{ep})
-	})
-}
-
-func GetNewStateSync(p peer.Peer) (*StateSync, error) {
-
-	stub := p.GetStreamStub("sync")
-	if stub == nil {
-		return nil, fmt.Errorf("peer have no sync streamstub")
-	}
-
-	return &StateSync{StreamStub: stub}, nil
-}
+//func NewStateSync(p peer.Peer) {
+//
+//	once.Do(func() {
+//		stateSyncCore, syncerErr = NewStateSyncWithPeer(p)
+//		if syncerErr != nil {
+//			logger.Error("Create new state syncer fail:", syncerErr)
+//		}
+//
+//		ep, _ := p.GetPeerEndpoint()
+//		//also set options for this peer
+//		p.SetStreamOption("sync", StreamFilter{ep})
+//	})
+//}
 
 // gives a reference to a singleton
-func GetStateSync() (*StateSync, error) {
+func GetStateSync() (*StateSyncStub, error) {
 	return stateSyncCore, syncerErr
 }
 
-type StateSync struct {
+type StateSyncStub struct {
+	self            *pb.PeerID
 	*pb.StreamStub
 	sync.RWMutex
 	curCorrrelation uint64
 	curTask         context.Context
 }
+
+
+func NewStateSyncWithPeer(p peer.Peer) *StateSyncStub {
+
+	self, err := p.GetPeerEndpoint()
+	if err != nil {
+		panic("No self endpoint")
+	}
+
+	gctx, _ := context.WithCancel(p.GetPeerCtx())
+	sycnStub := &StateSyncStub{
+		self: self.ID,
+		curTask: gctx,
+	}
+
+	err = p.AddStreamStub("sync", stub.DefaultSyncFactory, sycnStub)
+	if err != nil {
+		logger.Error("Bind sync stub to peer fail: ", err)
+		return nil
+	}
+
+	syncStreamStub := p.GetStreamStub("sync")
+	if syncStreamStub == nil {
+		logger.Error("peer have no sync streamstub")
+		return nil
+	}
+
+	sycnStub.StreamStub = syncStreamStub
+	return sycnStub
+}
+
 
 type ErrInProcess struct {
 	error
@@ -71,7 +93,7 @@ type ErrHandlerFatal struct {
 }
 
 //if busy, return current correlation Id, els return 0
-func (s *StateSync) IsBusy() uint64 {
+func (s *StateSyncStub) IsBusy() uint64 {
 
 	s.RLock()
 	defer s.RUnlock()
@@ -90,7 +112,7 @@ type stateSyncHandler struct {
 	client       *syncer
 }
 
-func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
+func newStateSyncHandlerFactory(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 	logger.Debug("create handler for peer", remoterId)
 
 	h := &stateSyncHandler{
@@ -102,7 +124,7 @@ func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 }
 
 
-func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
+func (s *StateSyncStub) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
 
 	var err error
 	s.Lock()
@@ -114,6 +136,10 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 	s.curTask = ctx
 	s.curCorrrelation++
 	s.Unlock()
+
+	// use stream stub get stream handler by PeerId
+	// down cast stream handler to stateSyncHandler
+	// call stateSyncHandler run
 	handler := s.PickHandler(peer)
 
 	if handler == nil {
@@ -127,12 +153,15 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 		return err
 	}
 
-	err = s.executeSync(ctx, handler, targetState)
+	peerSyncHandler, ok := handler.StreamHandlerImpl.(*stateSyncHandler)
 
-	if err != nil {
+	//err = s.executeSync(ctx, handler, targetState)
+	if !ok {
 		logger.Errorf("[%s]: Target peer <%v>, failed to execute sync: %s",
 			flogging.GoRDef, peer, err)
 	}
+
+	peerSyncHandler.run(ctx, targetState)
 
 	defer func() {
 		s.Lock()
@@ -143,15 +172,15 @@ func (s *StateSync) SyncToState(ctx context.Context, targetState []byte, opt *sy
 	return err
 }
 
-func (s *StateSync) executeSync(ctx context.Context, h *pb.StreamHandler, targetState []byte) error {
-
-	hh, ok := h.StreamHandlerImpl.(*stateSyncHandler)
-	if !ok {
-		panic("type error, not stateSyncHandler")
-	}
-
-	return hh.run(ctx, targetState)
-}
+//func (s *StateSyncStub) executeSync(ctx context.Context, handler *pb.StreamHandler, targetState []byte) error {
+//
+//	peerSyncHandler, ok := handler.StreamHandlerImpl.(*stateSyncHandler)
+//	if !ok {
+//		panic("type error, not stateSyncHandler")
+//	}
+//
+//	return peerSyncHandler.run(ctx, targetState)
+//}
 
 func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte) error {
 
@@ -358,7 +387,7 @@ func (h *stateSyncHandler) remotePeerIdName() string {
 
 func (h *stateSyncHandler) Stop() { return }
 
-func (h *stateSyncHandler) Tag() string { return "StateSync" }
+func (h *stateSyncHandler) Tag() string { return "StateSyncStub" }
 
 func (h *stateSyncHandler) EnableLoss() bool { return false }
 

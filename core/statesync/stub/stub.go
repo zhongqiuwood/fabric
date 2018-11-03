@@ -5,13 +5,16 @@ import (
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"github.com/abchain/fabric/core/peer"
 )
 
 type SyncFactory func(*pb.PeerID) pb.StreamHandlerImpl
 
-var DefaultFactory SyncFactory
+var DefaultSyncFactory SyncFactory
 
-func GetDefaultFactory() pb.StreamHandlerFactory { return DefaultFactory }
+func GetDefaultFactory() pb.StreamHandlerFactory {
+	return DefaultSyncFactory
+}
 
 func (t SyncFactory) NewStreamHandlerImpl(id *pb.PeerID, sstub *pb.StreamStub, initiated bool) (pb.StreamHandlerImpl, error) {
 	if t == nil {
@@ -34,6 +37,7 @@ func (t SyncFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, 
 	if err != nil {
 		return nil, err
 	}
+
 
 	return stream, nil
 }

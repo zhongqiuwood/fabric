@@ -18,21 +18,15 @@ package platforms
 
 import (
 	"archive/tar"
-	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
-	"time"
 
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
-	"github.com/spf13/viper"
 
 	cutil "github.com/abchain/fabric/core/chaincode/util"
 	"github.com/abchain/fabric/core/util"
@@ -109,7 +103,7 @@ func checkCodeExist(tmppath string) (bool, error) {
 //by the user is equivalent to the path. This method will treat the name
 //as codebytes and compute the hash from it. ie, user cannot run the chaincode
 //with the same (name, ctor, args)
-func generateHashcode(spec *pb.ChaincodeSpec, tw *tar.Writer, pf Platform) (string, error) {
+func generateHashcode(spec *pb.ChaincodeSpec, out io.Writer, pf Platform) (string, error) {
 	if spec == nil {
 		return "", fmt.Errorf("Cannot generate hashcode from nil spec")
 	}
@@ -132,7 +126,7 @@ func generateHashcode(spec *pb.ChaincodeSpec, tw *tar.Writer, pf Platform) (stri
 	var shouldclean bool
 	var err error
 	defer func() {
-		if shouldclean && codepath != "" {
+		if shouldclean {
 			os.RemoveAll(filepath.Join(rootpath, codepath))
 		}
 	}()
@@ -154,11 +148,11 @@ func generateHashcode(spec *pb.ChaincodeSpec, tw *tar.Writer, pf Platform) (stri
 	hash := util.GenerateHashFromSignature(codepath, ctorbytes)
 
 	archHasher := util.DefaultCryptoHash()
-	var writeInf io.Writer
-	if tw == nil {
-		writeInf = archHasher
+	var writeInf *tar.Writer
+	if out == nil {
+		writeInf = tar.NewWriter(archHasher)
 	} else {
-		writeInf = io.MultiWriter(archHasher, tw)
+		writeInf = tar.NewWriter(io.MultiWriter(archHasher, out))
 	}
 
 	if isDir {
@@ -167,8 +161,13 @@ func generateHashcode(spec *pb.ChaincodeSpec, tw *tar.Writer, pf Platform) (stri
 		err = cutil.WriteFileToPackage(filepath.Join(rootpath, codepath), codepath, writeInf)
 	}
 
+	//we flush, instead of close the tar archive so later the WriteRunTime can append it
+	if err == nil {
+		err = writeInf.Flush()
+	}
+
 	if err != nil {
-		return "", fmt.Errorf("Could not archive (or hash) file for %s - %s", path, err)
+		return "", fmt.Errorf("Could not archive (or hash) file for %s - %s: %s", rootpath, codepath, err)
 	}
 
 	hash = computeHash(archHasher.Sum(nil), hash)

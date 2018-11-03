@@ -24,113 +24,46 @@ import (
 	"strings"
 	"time"
 
+	"bytes"
 	"os"
+	"os/exec"
 
 	cutil "github.com/abchain/fabric/core/chaincode/util"
 	pb "github.com/abchain/fabric/protos"
-	"github.com/spf13/viper"
+	_ "github.com/spf13/viper"
 )
 
-var buildCmd = map[string]string{
-	"build.gradle": "gradle -b build.gradle clean && gradle -b build.gradle build",
-	"pom.xml":      "mvn -f pom.xml clean && mvn -f pom.xml package",
-}
+// var buildCmd = map[string]string{
+// 	"build.gradle": "gradle -b build.gradle clean && gradle -b build.gradle build",
+// 	"pom.xml":      "mvn -f pom.xml clean && mvn -f pom.xml package",
+// }
 
-//return the type of build gradle/maven based on the file
-//found in java chaincode project root
-//build.gradle - gradle  - returns the first found build type
-//pom.xml - maven
-func getBuildCmd(packagePath string) (string, error) {
-	files, err := ioutil.ReadDir(packagePath)
-	if err != nil {
-		return "", err
-	} else {
-		for _, f := range files {
-			if !f.IsDir() {
-				if buildCmd, ok := buildCmd[f.Name()]; ok == true {
-					return buildCmd, nil
-				}
-			}
-		}
-		return "", fmt.Errorf("Build file not found")
-	}
-}
+// TODO: we change getBuildCmd into a script and execute it in run-time env.
+// this default script is not verified yet
+var buildCmd = `
 
-//tw is expected to have the chaincode in it from GenerateHashcode.
-//This method will just package the dockerfile
-func writeChaincodePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
+`
+var zeroTime time.Time
 
-	var urlLocation string
-	var err error
+func (javaPlatform *Platform) WriteDockerRunTime(spec *pb.ChaincodeSpec, tw *tar.Writer) (dockertemplate string, err error) {
 
-	if strings.HasPrefix(spec.ChaincodeID.Path, "http://") ||
-		strings.HasPrefix(spec.ChaincodeID.Path, "https://") {
+	//write buildcmd script
+	tw.WriteHeader(&tar.Header{Name: "buildcmd",
+		Mode: 0777,
+		Size: int64(len(buildCmd)), ModTime: zeroTime,
+		AccessTime: zeroTime, ChangeTime: zeroTime})
+	tw.Write([]byte(buildCmd))
 
-		urlLocation, err = getCodeFromHTTP(spec.ChaincodeID.Path)
-		defer func() {
-			os.RemoveAll(urlLocation)
-		}()
-		if err != nil {
-			return err
-		}
-	} else {
-		urlLocation = spec.ChaincodeID.Path
-	}
-
-	if urlLocation == "" {
-		return fmt.Errorf("empty url location")
-	}
-
-	if strings.LastIndex(urlLocation, "/") == len(urlLocation)-1 {
-		urlLocation = urlLocation[:len(urlLocation)-1]
-	}
-
-	buildCmd, err := getBuildCmd(urlLocation)
-	if err != nil {
-		return err
-	}
-	var dockerFileContents string
 	var buf []string
+	buf = append(buf, cutil.GetDockerfileFromConfig("chaincode.java.Dockerfile"))
+	buf = append(buf, "COPY ccfile/ /root/chaincode")
+	buf = append(buf, "COPY buildcmd /root/chaincode")
+	buf = append(buf, "RUN  cd /root/chaincode && buildcmd")
+	buf = append(buf, "RUN  cp /root/chaincode/build/chaincode.jar /root")
+	buf = append(buf, "RUN  cp /root/chaincode/build/libs/* /root/libs")
+	dockertemplate = strings.Join(buf, "\n")
 
-	if viper.GetBool("security.enabled") {
-		//todo
-	} else {
-		buf = append(buf, cutil.GetDockerfileFromConfig("chaincode.java.Dockerfile"))
-		buf = append(buf, "COPY src /root/chaincode")
-		buf = append(buf, "RUN  cd /root/chaincode && "+buildCmd)
-		buf = append(buf, "RUN  cp /root/chaincode/build/chaincode.jar /root")
-		buf = append(buf, "RUN  cp /root/chaincode/build/libs/* /root/libs")
-	}
-
-	dockerFileContents = strings.Join(buf, "\n")
-	dockerFileSize := int64(len([]byte(dockerFileContents)))
-	//Make headers identical by using zero time
-	var zeroTime time.Time
-	tw.WriteHeader(&tar.Header{Name: "Dockerfile", Size: dockerFileSize, ModTime: zeroTime, AccessTime: zeroTime, ChangeTime: zeroTime})
-	tw.Write([]byte(dockerFileContents))
-	err = cutil.WriteJavaProjectToPackage(tw, urlLocation)
-	if err != nil {
-		return fmt.Errorf("Error writing Chaincode package contents: %s", err)
-	}
-
-	return nil
-}
-
-// WritePackage writes the java chaincode package
-func (javaPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) error {
-
-	var err error
-	spec.ChaincodeID.Name, err = generateHashcode(spec, tw)
-	if err != nil {
-		return err
-	}
-
-	err = writeChaincodePackage(spec, tw)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return
 }
 
 func getCodeFromHTTP(path string) (codegopath string, err error) {
@@ -157,7 +90,6 @@ func getCodeFromHTTP(path string) (codegopath string, err error) {
 // WritePackage writes the java chaincode package
 func (javaPlatform *Platform) GetCodePath(path string) (rootpath string, packpath string, shouldclean bool, err error) {
 
-	var err error
 	if strings.HasPrefix(path, "http://") ||
 		strings.HasPrefix(path, "https://") {
 		shouldclean = true

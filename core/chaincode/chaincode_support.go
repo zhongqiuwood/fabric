@@ -50,7 +50,6 @@ const (
 	NetworkModeChaincode           string = "net"
 	chaincodeStartupTimeoutDefault int    = 5000
 	chaincodeExecTimeoutDefault    int    = 30000
-	chaincodeInstallPathDefault    string = "/opt/gopath/bin/"
 	peerAddressDefault             string = "0.0.0.0:7051"
 
 	TLSRootCertFile = "chaincodeCA.pem"
@@ -196,12 +195,6 @@ func NewChaincodeSupport(chainname ChainName, nodeName string, srvSpec *config.S
 
 	s.ccExecTimeout = time.Duration(tOut) * time.Millisecond
 
-	//TODO I'm not sure if this needs to be on a per chain basis... too lowel and just needs to be a global default ?
-	s.chaincodeInstallPath = viper.GetString("chaincode.installpath")
-	if s.chaincodeInstallPath == "" {
-		s.chaincodeInstallPath = chaincodeInstallPathDefault
-	}
-
 	kadef := 0
 	if ka := viper.GetString("chaincode.keepalive"); ka == "" {
 		s.keepalive = time.Duration(kadef) * time.Second
@@ -228,17 +221,16 @@ func NewChaincodeSupport(chainname ChainName, nodeName string, srvSpec *config.S
 
 // ChaincodeSupport responsible for providing interfacing with chaincodes from the Peer.
 type ChaincodeSupport struct {
-	name                 ChainName
-	runningChaincodes    *runningChaincodes
-	peerAddress          string
-	ccStartupTimeout     time.Duration
-	ccExecTimeout        time.Duration
-	chaincodeInstallPath string
-	userRunsCC           bool
-	txHandler            cred.TxConfidentialityHandler
-	nodeID               string
-	clientGuide          *config.ClientSpec
-	keepalive            time.Duration
+	name              ChainName
+	runningChaincodes *runningChaincodes
+	peerAddress       string
+	ccStartupTimeout  time.Duration
+	ccExecTimeout     time.Duration
+	userRunsCC        bool
+	txHandler         cred.TxConfidentialityHandler
+	nodeID            string
+	clientGuide       *config.ClientSpec
+	keepalive         time.Duration
 }
 
 // DuplicateChaincodeHandlerError returned if attempt to register same chaincodeID while a stream already exists.

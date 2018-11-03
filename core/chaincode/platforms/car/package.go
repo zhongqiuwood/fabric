@@ -34,7 +34,7 @@ var remoteFileName = "package.car"
 
 // WritePackage satisfies the platform interface for generating a docker package
 // that encapsulates the environment for a CAR based chaincode
-func (carPlatform *Platform) WritePackage(spec *pb.ChaincodeSpec, tw *tar.Writer) (string, error) {
+func (carPlatform *Platform) WriteDockerRunTime(spec *pb.ChaincodeSpec, tw *tar.Writer) (string, error) {
 
 	var fileName string
 	path := spec.ChaincodeID.Path

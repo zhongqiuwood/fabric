@@ -17,7 +17,6 @@ limitations under the License.
 package java
 
 import (
-	"archive/tar"
 	"fmt"
 	"net/url"
 	"os"

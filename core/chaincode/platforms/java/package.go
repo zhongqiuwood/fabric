@@ -41,7 +41,73 @@ import (
 // TODO: we change getBuildCmd into a script and execute it in run-time env.
 // this default script is not verified yet
 var buildCmd = `
+#!/bin/bash
+set -e
 
+function getdir() {
+	for element in $(ls $1); do
+		dir_or_file=$1"/"$element
+		if [ -d $dir_or_file ]; then
+			getFile $dir_or_file
+		else
+			getFile $1
+		fi
+	done
+}
+
+function getFile() {
+	execPath=$1
+	for element in $(ls $1); do
+		filePath=$1"/"$element
+		if [ -f $filePath ]; then
+			for key in ${!map[@]}; do
+				if [ "$element" == "$key" ]; then
+					cd $execPath
+					echo "find file: $key ,path is :$filePath"
+					echo "执行命令：${map[$key]} ......"
+					${map[$key]}
+					exit 0
+				fi
+			done
+		fi
+	done
+}
+
+function parseArgs() {
+	index=0
+	arr[0]=a
+
+	for a in "$@"; do
+		arr[$index]=$a
+		let index+=1
+	done
+
+	for ((i = 1; i < $#; i = i + 2)); do
+		key=${arr[$i]}
+		value=${arr[$(($i + 1))]}
+		map["$key"]="$value"
+		echo "文件——>命令：$key——>${map[$key]}"
+	done
+}
+
+function printHelp() {
+	echo "---------------------------------------------------------------"
+	echo "用法示例： ./findFile.sh  [path] [fileName] [command]   ...."
+	echo "----------------------------------------------------------------"
+}
+
+declare -A map=()
+
+#  不小于3个参数
+if [ $# -lt 3 ]; then
+	echo "参数个数太少"
+	printHelp
+	exit 1
+else
+	parseArgs "$@"
+
+	getdir $1
+fi
 `
 var zeroTime time.Time
 

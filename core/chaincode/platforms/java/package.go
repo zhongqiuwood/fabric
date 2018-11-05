@@ -42,6 +42,7 @@ import (
 // this default script is not verified yet
 var buildCmd = `
 #!/bin/bash
+
 set -e
 
 function getdir() {
@@ -73,41 +74,11 @@ function getFile() {
 	done
 }
 
-function parseArgs() {
-	index=0
-	arr[0]=a
+declare -A map=(["build.gradle"]="gradle -b build.gradle clean && gradle -b build.gradle build" ["pom.xml"]="mvn -f pom.xml clean && mvn -f pom.xml package")
+ROOT_PATH="$GOPATH/src"
 
-	for a in "$@"; do
-		arr[$index]=$a
-		let index+=1
-	done
+getdir $ROOT_PATH
 
-	for ((i = 1; i < $#; i = i + 2)); do
-		key=${arr[$i]}
-		value=${arr[$(($i + 1))]}
-		map["$key"]="$value"
-		echo "文件——>命令：$key——>${map[$key]}"
-	done
-}
-
-function printHelp() {
-	echo "-----------------------------------------------------------------"
-	echo "用法示例： ./findFile.sh  [path] [fileName] [command]   ...."
-	echo "-----------------------------------------------------------------"
-}
-
-declare -A map=()
-
-#  至少3个参数
-if [ $# -lt 3 ]; then
-	echo "参数个数太少"
-	printHelp
-	exit 1
-else
-	parseArgs "$@"
-
-	getdir $1
-fi
 `
 var zeroTime time.Time
 

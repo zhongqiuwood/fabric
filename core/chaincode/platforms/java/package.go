@@ -41,6 +41,43 @@ import (
 // TODO: we change getBuildCmd into a script and execute it in run-time env.
 // this default script is not verified yet
 var buildCmd = `
+#!/bin/bash
+
+set -e
+
+function getdir() {
+	for element in $(ls $1); do
+		dir_or_file=$1"/"$element
+		if [ -d $dir_or_file ]; then
+			getFile $dir_or_file
+		else
+			getFile $1
+		fi
+	done
+}
+
+function getFile() {
+	execPath=$1
+	for element in $(ls $1); do
+		filePath=$1"/"$element
+		if [ -f $filePath ]; then
+			for key in ${!map[@]}; do
+				if [ "$element" == "$key" ]; then
+					cd $execPath
+					echo "find file: $key ,path is :$filePath"
+					echo "执行命令：${map[$key]} ......"
+					${map[$key]}
+					exit 0
+				fi
+			done
+		fi
+	done
+}
+
+declare -A map=(["build.gradle"]="gradle -b build.gradle clean && gradle -b build.gradle build" ["pom.xml"]="mvn -f pom.xml clean && mvn -f pom.xml package")
+ROOT_PATH="$GOPATH/src"
+
+getdir $ROOT_PATH
 
 `
 var zeroTime time.Time

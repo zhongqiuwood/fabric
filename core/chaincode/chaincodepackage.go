@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
-	"golang.org/x/net/context"
 	"io"
 	//	"io/ioutil"
 

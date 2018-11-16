@@ -5,7 +5,7 @@ package chaincode
 import (
 	"fmt"
 
-	"github.com/abchain/fabric/core/cred"
+	cred "github.com/abchain/fabric/core/cred"
 	prim "github.com/abchain/fabric/core/crypto/primitives"
 	pb "github.com/abchain/fabric/protos"
 )

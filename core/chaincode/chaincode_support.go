@@ -28,14 +28,12 @@ import (
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 
-	"strings"
-
 	"github.com/abchain/fabric/core/chaincode/container"
 	"github.com/abchain/fabric/core/chaincode/container/ccintf"
+	"github.com/abchain/fabric/core/chaincode/platforms"
 	"github.com/abchain/fabric/core/config"
 	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 )
 
@@ -318,39 +316,39 @@ func (chaincodeSupport *ChaincodeSupport) deregisterHandler(chaincodehandler *Ha
 
 }
 
-//get args and env given chaincodeID
-func (chaincodeSupport *ChaincodeSupport) getArgsAndEnv(cID *pb.ChaincodeID, cLang pb.ChaincodeSpec_Type) (args []string, envs []string, err error) {
-	envs = []string{"CORE_CHAINCODE_ID_NAME=" + cID.Name}
-	//if TLS is enabled, pass TLS material to chaincode
-	if chaincodeSupport.peerTLS {
-		envs = append(envs, "CORE_PEER_TLS_ENABLED=true")
-		envs = append(envs, "CORE_PEER_TLS_CERT_FILE="+TLSRootCertFile)
-		if chaincodeSupport.peerTLSSvrHostOrd != "" {
-			envs = append(envs, "CORE_PEER_TLS_SERVERHOSTOVERRIDE="+chaincodeSupport.peerTLSSvrHostOrd)
-		}
-	} else {
-		envs = append(envs, "CORE_PEER_TLS_ENABLED=false")
-	}
-	switch cLang {
-	case pb.ChaincodeSpec_GOLANG, pb.ChaincodeSpec_CAR:
-		//chaincode executable will be same as the name of the chaincode
-		args = []string{chaincodeSupport.chaincodeInstallPath + cID.Name, fmt.Sprintf("-peer.address=%s", chaincodeSupport.peerAddress)}
-		chaincodeLogger.Debugf("Executable is %s", args[0])
-	case pb.ChaincodeSpec_JAVA:
-		//TODO add security args
-		args = strings.Split(
-			fmt.Sprintf("java -jar chaincode.jar -a %s -i %s",
-				chaincodeSupport.peerAddress, cID.Name),
-			" ")
-		if chaincodeSupport.peerTLS {
-			args = append(args, " -s")
-		}
-		chaincodeLogger.Debugf("Executable is %s", args[0])
-	default:
-		return nil, nil, fmt.Errorf("Unknown chaincodeType: %s", cLang)
-	}
-	return args, envs, nil
-}
+// //get args and env given chaincodeID
+// func (chaincodeSupport *ChaincodeSupport) getArgsAndEnv(cID *pb.ChaincodeID, cLang pb.ChaincodeSpec_Type) (args []string, envs []string, err error) {
+// 	envs = []string{"CORE_CHAINCODE_ID_NAME=" + cID.Name}
+// 	//if TLS is enabled, pass TLS material to chaincode
+// 	if chaincodeSupport.peerTLS {
+// 		envs = append(envs, "CORE_PEER_TLS_ENABLED=true")
+// 		envs = append(envs, "CORE_PEER_TLS_CERT_FILE="+TLSRootCertFile)
+// 		if chaincodeSupport.peerTLSSvrHostOrd != "" {
+// 			envs = append(envs, "CORE_PEER_TLS_SERVERHOSTOVERRIDE="+chaincodeSupport.peerTLSSvrHostOrd)
+// 		}
+// 	} else {
+// 		envs = append(envs, "CORE_PEER_TLS_ENABLED=false")
+// 	}
+// 	switch cLang {
+// 	case pb.ChaincodeSpec_GOLANG, pb.ChaincodeSpec_CAR:
+// 		//chaincode executable will be same as the name of the chaincode
+// 		args = []string{chaincodeSupport.chaincodeInstallPath + cID.Name, fmt.Sprintf("-peer.address=%s", chaincodeSupport.peerAddress)}
+// 		chaincodeLogger.Debugf("Executable is %s", args[0])
+// 	case pb.ChaincodeSpec_JAVA:
+// 		//TODO add security args
+// 		args = strings.Split(
+// 			fmt.Sprintf("java -jar chaincode.jar -a %s -i %s",
+// 				chaincodeSupport.peerAddress, cID.Name),
+// 			" ")
+// 		if chaincodeSupport.peerTLS {
+// 			args = append(args, " -s")
+// 		}
+// 		chaincodeLogger.Debugf("Executable is %s", args[0])
+// 	default:
+// 		return nil, nil, fmt.Errorf("Unknown chaincodeType: %s", cLang)
+// 	}
+// 	return args, envs, nil
+// }
 
 // launchAndWaitForRegister will launch container if not already running. Use the targz to create the image if not found
 func (chaincodeSupport *ChaincodeSupport) launchAndWaitForRegister(ctxt context.Context, cds *pb.ChaincodeDeploymentSpec, cID *pb.ChaincodeID, cLang pb.ChaincodeSpec_Type, targz io.Reader) error {
@@ -360,7 +358,7 @@ func (chaincodeSupport *ChaincodeSupport) launchAndWaitForRegister(ctxt context.
 	}
 
 	//launch the chaincode
-	args, env, err := chaincodeSupport.getArgsAndEnv(cID, cLang)
+	args, env, err := platforms.GetArgsAndEnv(cds.ChaincodeSpec, chaincodeSupport.clientGuide)
 	if err != nil {
 		return err
 	}
@@ -369,7 +367,7 @@ func (chaincodeSupport *ChaincodeSupport) launchAndWaitForRegister(ctxt context.
 
 	vmtype, _ := chaincodeSupport.getVMType(cds)
 
-	sir := container.StartImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.name, PeerID: chaincodeSupport.nodeID}, Reader: targz, Args: args, Env: env}
+	sir := container.StartImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: string(chaincodeSupport.name), PeerID: chaincodeSupport.nodeID}, Reader: targz, Args: args, Env: env}
 
 	ipcCtxt := context.WithValue(ctxt, ccintf.GetCCHandlerKey(), chaincodeSupport)
 
@@ -421,7 +419,7 @@ func (chaincodeSupport *ChaincodeSupport) Stop(context context.Context, cds *pb.
 	}
 
 	//stop the chaincode
-	sir := container.StopImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.name, PeerID: chaincodeSupport.nodeID}, Timeout: 0}
+	sir := container.StopImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: string(chaincodeSupport.name), PeerID: chaincodeSupport.nodeID}, Timeout: 0}
 
 	vmtype, _ := chaincodeSupport.getVMType(cds)
 

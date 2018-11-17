@@ -17,9 +17,9 @@ func (handler *Handler) encryptOrDecrypt(encrypt bool, txctx *transactionContext
 	}
 
 	var enc cred.DataEncryptor
+	txid := txctx.transactionSecContext.GetTxid()
 	if txctx.encryptor == nil {
 		//create encryptor and cache it
-		txid := txctx.transactionSecContext.GetTxid()
 		var err error
 		if txctx.transactionSecContext.Type == pb.Transaction_CHAINCODE_DEPLOY {
 			if enc, err = txHandler.GenDataEncryptor(handler.deployTXSecContext, handler.deployTXSecContext); err != nil {
@@ -42,6 +42,7 @@ func (handler *Handler) encryptOrDecrypt(encrypt bool, txctx *transactionContext
 		enc = txctx.encryptor.(cred.DataEncryptor)
 	}
 
+	var err error
 	if encrypt {
 		payload, err = enc.Encrypt(payload)
 	} else {
@@ -64,5 +65,5 @@ func (handler *Handler) encrypt(tctx *transactionContext, payload []byte) ([]byt
 //with txnetwork we should not need binding (which is designed for resisting copy attacking)
 //anymore, we just add one for compatible
 func (handler *Handler) getSecurityBinding(tx *pb.Transaction) ([]byte, error) {
-	return prim.Hash(append(tx.Cert, tx.Nonce...))
+	return prim.Hash(append(tx.Cert, tx.Nonce...)), nil
 }

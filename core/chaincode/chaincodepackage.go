@@ -23,7 +23,7 @@ func GetChaincodePackageBytes(spec *pb.ChaincodeSpec) ([]byte, error) {
 	gw := gzip.NewWriter(inputbuf)
 	tw := tar.NewWriter(gw)
 
-	err = platforms.WritePackage(spec, tw)
+	_, err := platforms.WritePackage(spec, tw)
 	if err != nil {
 		return nil, err
 	}
@@ -46,32 +46,24 @@ func GetChaincodePackageBytes(spec *pb.ChaincodeSpec) ([]byte, error) {
 }
 
 type runtimeReader struct {
-	runtimePackReader io.PipeReader
+	*io.PipeReader
 	writePacketResult chan error
 }
 
 var runtimeCancel = fmt.Errorf("User Cancel")
 
-func (r *runtimeReader) GetReader() io.Reader {
-
-	if r == nil{
-		return nil
-	}
-	return r.runtimePackReader
-}
-
 func (r *runtimeReader) Finish() error {
-	if r == nil{
+	if r == nil {
 		return nil
 	}
-	if err := r.runtimePackReader.CloseWithError(runtimeCancel); err != nil {
+	if err := r.PipeReader.CloseWithError(runtimeCancel); err != nil {
 		return err
 	}
 	return <-r.writePacketResult
 }
 
 // Generate a package (in Writer) for (docker) controller
-func WriteRuntimePackage(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, chaincodebytes []byte) (*runtimeReader, error) {
+func WriteRuntimePackage(cds *pb.ChaincodeDeploymentSpec, clispec *config.ClientSpec, chaincodebytes []byte) (*runtimeReader, error) {
 
 	if chaincodebytes == nil {
 		return nil, fmt.Errorf("chaincode bytes is nil")
@@ -82,24 +74,30 @@ func WriteRuntimePackage(spec *pb.ChaincodeSpec, clispec *config.ClientSpec, cha
 		return nil, fmt.Errorf("Create unzip for ccbytes fail: %s", err)
 	}
 
-	rtW, rtR := io.Pipe()
-	gzW, gzR := io.Pipe()	
-	gzW = gzip.NewWriter(gzW)
+	rtR, rtW := io.Pipe()
+	gzR, gzW := io.Pipe()
 	rtReader := new(runtimeReader)
-	rtReader.runtimePackReader = gzR
+	rtReader.PipeReader = gzR
 	rtReader.writePacketResult = make(chan error)
 
 	totalR := io.MultiReader(codeTarball, rtR)
 
 	//we need to start two thread for the whole writing process, and trace the first one
-	go func(){
-		rtReader.writePacketResult <- platforms.WriteRuntimePackage(spec, clispec, rtW)
-	}
+	go func() {
+		wr := tar.NewWriter(rtW)
+		err := platforms.WriteRunTime(cds.ChaincodeSpec, clispec, wr)
+		if err == nil {
+			wr.Close()
+		}
+		rtReader.writePacketResult <- err
+	}()
 
-	go func(){
-		sz, err := io.Copy(gzW, totalR)
-		chaincodeLogger.Infof("Generate runtime package for cc [%v] in %d bytes, ret [%s]", spec.ChaincodeID, sz, err)
-	}
+	go func() {
+		wr := gzip.NewWriter(gzW)
+		sz, err := io.Copy(wr, totalR)
+		chaincodeLogger.Infof("Generate runtime package for cc [%v] in %d bytes, ret [%s]", cds.ChaincodeSpec.ChaincodeID, sz, err)
+		wr.Close()
+	}()
 
 	return rtReader, nil
 }

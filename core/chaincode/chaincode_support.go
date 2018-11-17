@@ -17,7 +17,6 @@ limitations under the License.
 package chaincode
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"strconv"
@@ -499,13 +498,13 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 	if !chaincodeSupport.userRunsCC || cds.ExecEnv == pb.ChaincodeDeploymentSpec_SYSTEM {
 		var packrd *runtimeReader
 		if cds.ExecEnv != pb.ChaincodeDeploymentSpec_SYSTEM {
-			packrd, err = WriteRuntimePackage(cds.ChaincodeSpec, chaincodeSupport.clientGuide, cds.CodePackage)
+			packrd, err = WriteRuntimePackage(cds, chaincodeSupport.clientGuide, cds.CodePackage)
 			if err != nil {
 				chaincodeLogger.Errorf("WriteRuntimePackage failed %s", err)
 				return err, chrte
 			}
 		}
-		err = chaincodeSupport.launchAndWaitForRegister(wctx, cds, cID, cLang, packrd.GetReader())
+		err = chaincodeSupport.launchAndWaitForRegister(wctx, cds, cID, cLang, packrd)
 		//first finish and trace the real reason in runtime reading
 		omiterr := packrd.Finish()
 		if omiterr != nil && omiterr != io.EOF {
@@ -588,46 +587,46 @@ func (chaincodeSupport *ChaincodeSupport) Preapre(t *pb.Transaction) (*pb.Chainc
 }
 
 // Deploy deploys the chaincode if not in development mode where user is running the chaincode.
-func (chaincodeSupport *ChaincodeSupport) Deploy(context context.Context, cds *pb.ChaincodeDeploymentSpec) error {
+// func (chaincodeSupport *ChaincodeSupport) Deploy(context context.Context, cds *pb.ChaincodeDeploymentSpec) error {
 
-	cID := cds.ChaincodeSpec.ChaincodeID
-	cLang := cds.ChaincodeSpec.Type
-	chaincode := cID.Name
+// 	cID := cds.ChaincodeSpec.ChaincodeID
+// 	cLang := cds.ChaincodeSpec.Type
+// 	chaincode := cID.Name
 
-	if chaincodeSupport.userRunsCC {
-		chaincodeLogger.Debug("user runs chaincode, not deploying chaincode")
-		return nil
-	}
+// 	if chaincodeSupport.userRunsCC {
+// 		chaincodeLogger.Debug("user runs chaincode, not deploying chaincode")
+// 		return nil
+// 	}
 
-	chaincodeSupport.runningChaincodes.Lock()
-	//if its in the map, there must be a connected stream...and we are trying to build the code ?!
-	if _, ok := chaincodeSupport.chaincodeHasBeenLaunched(chaincode); ok {
-		chaincodeLogger.Debugf("deploy ?!! there's a chaincode with that name running: %s", chaincode)
-		chaincodeSupport.runningChaincodes.Unlock()
-		return fmt.Errorf("deploy attempted but a chaincode with same name running %s", chaincode)
-	}
-	chaincodeSupport.runningChaincodes.Unlock()
+// 	chaincodeSupport.runningChaincodes.Lock()
+// 	//if its in the map, there must be a connected stream...and we are trying to build the code ?!
+// 	if _, ok := chaincodeSupport.chaincodeHasBeenLaunched(chaincode); ok {
+// 		chaincodeLogger.Debugf("deploy ?!! there's a chaincode with that name running: %s", chaincode)
+// 		chaincodeSupport.runningChaincodes.Unlock()
+// 		return fmt.Errorf("deploy attempted but a chaincode with same name running %s", chaincode)
+// 	}
+// 	chaincodeSupport.runningChaincodes.Unlock()
 
-	args, envs, err := chaincodeSupport.getArgsAndEnv(cID, cLang)
-	if err != nil {
-		return fmt.Errorf("error getting args for chaincode %s", err)
-	}
+// 	args, envs, err := chaincodeSupport.getArgsAndEnv(cID, cLang)
+// 	if err != nil {
+// 		return fmt.Errorf("error getting args for chaincode %s", err)
+// 	}
 
-	var targz io.Reader = bytes.NewBuffer(cds.CodePackage)
-	cir := &container.CreateImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.name, PeerID: chaincodeSupport.nodeID}, Args: args, Reader: targz, Env: envs}
+// 	var targz io.Reader = bytes.NewBuffer(cds.CodePackage)
+// 	cir := &container.CreateImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.name, PeerID: chaincodeSupport.nodeID}, Args: args, Reader: targz, Env: envs}
 
-	vmtype, _ := chaincodeSupport.getVMType(cds)
+// 	vmtype, _ := chaincodeSupport.getVMType(cds)
 
-	chaincodeLogger.Debugf("deploying chaincode %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
+// 	chaincodeLogger.Debugf("deploying chaincode %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
 
-	//create image and create container
-	_, err = container.VMCProcess(context, vmtype, cir)
-	if err != nil {
-		err = fmt.Errorf("Error starting container: %s", err)
-	}
+// 	//create image and create container
+// 	_, err = container.VMCProcess(context, vmtype, cir)
+// 	if err != nil {
+// 		err = fmt.Errorf("Error starting container: %s", err)
+// 	}
 
-	return err
-}
+// 	return err
+// }
 
 // Register the bidi stream entry point called by chaincode to register with the Peer.
 // registerHandler implements ccintf.HandleChaincodeStream for all vms to call with appropriate stream

@@ -37,16 +37,29 @@ type ExecuteResult struct {
 //Execute2 - like legacy execute, but not relay the global ledger object and supposed the transaction has
 //be make pre-exec
 func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSupport, t *pb.Transaction) (*ExecuteResult, error) {
+
+	if secHelper := chain.getTxHandler(); nil != secHelper {
+		var err error
+		t, err = secHelper.TransactionPreExecution(t)
+		// Note that t is now decrypted and is a deep clone of the original input t
+		if nil != err {
+			return nil, err
+		}
+	}
+
 	cID, cMsg, cds, err := chain.Preapre(t)
 	if nil != err {
 		return nil, err
 	}
 
-	if t.Type == pb.Transaction_CHAINCODE_DEPLOY {
-		if err := chain.Deploy(ctxt, cds); err != nil {
-			return nil, fmt.Errorf("Failed to deploy chaincode spec(%s)", err)
-		}
-	}
+	// YA-fabric: the condition on container side is complex enough so we could not make any assurance for creating image
+	// before we actually lauch it (chaincode container side may remove the image, fabric may not execute the deploy tx ...)
+	// so we simply skip this step now
+	// if t.Type == pb.Transaction_CHAINCODE_DEPLOY {
+	// 	if err := chain.Deploy(ctxt, cds); err != nil {
+	// 		return nil, fmt.Errorf("Failed to deploy chaincode spec(%s)", err)
+	// 	}
+	// }
 
 	//will launch if necessary (and wait for ready)
 	err, chrte := chain.Launch(ctxt, ledger, cID, cds, t)
@@ -102,15 +115,6 @@ func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) (
 	ledger, ledgerErr := ledger.GetLedger()
 	if ledgerErr != nil {
 		return nil, nil, fmt.Errorf("Failed to get handle to ledger (%s)", ledgerErr)
-	}
-
-	if secHelper := chain.getSecHelper(); nil != secHelper {
-		var err error
-		t, err = secHelper.TransactionPreExecution(t)
-		// Note that t is now decrypted and is a deep clone of the original input t
-		if nil != err {
-			return nil, nil, err
-		}
 	}
 
 	markTxBegin(ledger, t)

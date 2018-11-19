@@ -252,7 +252,7 @@ func VMCProcess(ctxt context.Context, vmtype string, req VMCReqIntf) (interface{
 	}
 
 	c := make(chan struct{})
-	var resp interface{}
+	var resp VMCResp
 	go func() {
 		defer close(c)
 
@@ -268,7 +268,7 @@ func VMCProcess(ctxt context.Context, vmtype string, req VMCReqIntf) (interface{
 
 	select {
 	case <-c:
-		return resp, nil
+		return resp.Resp, resp.Err
 	case <-ctxt.Done():
 		//TODO cancel req.do ... (needed) ?
 		<-c

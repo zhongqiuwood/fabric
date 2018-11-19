@@ -21,18 +21,12 @@ func GetChaincodePackageBytes(spec *pb.ChaincodeSpec) ([]byte, error) {
 
 	inputbuf := bytes.NewBuffer(nil)
 	gw := gzip.NewWriter(inputbuf)
-	tw := tar.NewWriter(gw)
 
-	_, err := platforms.WritePackage(spec, tw)
+	_, err := platforms.WritePackage(spec, gw)
 	if err != nil {
 		return nil, err
 	}
 
-	//notice we do not close but just flush the tar stream
-	//so we obtain an "opened" tar and it can be appended with
-	//the other contents in run-time, and chaincodebytes can
-	//include the most essential bytes now
-	tw.Flush()
 	gw.Close()
 
 	if err != nil {
@@ -56,16 +50,22 @@ func (r *runtimeReader) Finish() error {
 	if r == nil {
 		return nil
 	}
-	if err := r.PipeReader.CloseWithError(runtimeCancel); err != nil {
+
+	select {
+	case err := <-r.writePacketResult:
 		return err
+	default:
+		r.CloseWithError(runtimeCancel)
+		<-r.writePacketResult
+		return nil
 	}
-	return <-r.writePacketResult
+
 }
 
 // Generate a package (in Writer) for (docker) controller
-func WriteRuntimePackage(cds *pb.ChaincodeDeploymentSpec, clispec *config.ClientSpec, chaincodebytes []byte) (*runtimeReader, error) {
+func WriteRuntimePackage(cds *pb.ChaincodeDeploymentSpec, clispec *config.ClientSpec) (*runtimeReader, error) {
 
-	if chaincodebytes == nil {
+	if cds.CodePackage == nil {
 		return nil, fmt.Errorf("chaincode bytes is nil")
 	}
 
@@ -86,8 +86,12 @@ func WriteRuntimePackage(cds *pb.ChaincodeDeploymentSpec, clispec *config.Client
 	go func() {
 		wr := tar.NewWriter(rtW)
 		err := platforms.WriteRunTime(cds.ChaincodeSpec, clispec, wr)
+		chaincodeLogger.Debugf("Generate runtime part for cc [%v], ret [%v]", cds.ChaincodeSpec.ChaincodeID, err)
 		if err == nil {
 			wr.Close()
+			rtW.Close()
+		} else {
+			rtW.CloseWithError(err)
 		}
 		rtReader.writePacketResult <- err
 	}()
@@ -95,8 +99,16 @@ func WriteRuntimePackage(cds *pb.ChaincodeDeploymentSpec, clispec *config.Client
 	go func() {
 		wr := gzip.NewWriter(gzW)
 		sz, err := io.Copy(wr, totalR)
-		chaincodeLogger.Infof("Generate runtime package for cc [%v] in %d bytes, ret [%s]", cds.ChaincodeSpec.ChaincodeID, sz, err)
-		wr.Close()
+		chaincodeLogger.Debugf("Generate runtime package for cc [%v] in %d bytes, ret [%v]", cds.ChaincodeSpec.ChaincodeID, sz, err)
+		if err != nil {
+			gzW.CloseWithError(err)
+			//also trigger a cancel from reader side ...
+			rtR.CloseWithError(err)
+		} else {
+			wr.Close()
+			gzW.Close()
+		}
+
 	}()
 
 	return rtReader, nil

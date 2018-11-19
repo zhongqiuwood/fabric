@@ -16,7 +16,7 @@ func (s *ClientSpec) Init(vp *viper.Viper) error {
 	if s.Address == "" {
 		return fmt.Errorf("can not find address configuration")
 	}
-	logger.Debugf("Set client's address as [%s]")
+	logger.Debugf("Set client's address as [%s]", s.Address)
 
 	if vp.IsSet("tls") {
 		logger.Debugf("Read tls configuration for clientspec")

@@ -22,7 +22,7 @@ func getCodeFromFS(path string) (string, error) {
 
 	for _, candidate := range filepath.SplitList(gopath) {
 
-		codegopath := filepath.Join(candidate, path)
+		codegopath := filepath.Join(candidate, "src", path)
 		fs, err := os.Stat(codegopath)
 		if err == nil && fs.IsDir() {
 			return candidate, nil

@@ -39,14 +39,10 @@ func SetupTestLogging() {
 	level, err := logging.LogLevel(viper.GetString("logging.peer"))
 	if err == nil {
 		// No error, use the setting
-		logging.SetLevel(level, "main")
-		logging.SetLevel(level, "server")
-		logging.SetLevel(level, "peer")
+		logging.SetLevel(level, "")
 	} else {
 		chaincodeLogger.Warningf("Log level not recognized '%s', defaulting to %s: %s", viper.GetString("logging.peer"), logging.ERROR, err)
-		logging.SetLevel(logging.ERROR, "main")
-		logging.SetLevel(logging.ERROR, "server")
-		logging.SetLevel(logging.ERROR, "peer")
+		logging.SetLevel(logging.ERROR, "")
 	}
 }
 

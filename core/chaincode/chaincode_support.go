@@ -498,7 +498,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 	if !chaincodeSupport.userRunsCC || cds.ExecEnv == pb.ChaincodeDeploymentSpec_SYSTEM {
 		var packrd *runtimeReader
 		if cds.ExecEnv != pb.ChaincodeDeploymentSpec_SYSTEM {
-			packrd, err = WriteRuntimePackage(cds, chaincodeSupport.clientGuide, cds.CodePackage)
+			packrd, err = WriteRuntimePackage(cds, chaincodeSupport.clientGuide)
 			if err != nil {
 				chaincodeLogger.Errorf("WriteRuntimePackage failed %s", err)
 				return err, chrte
@@ -506,8 +506,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 		}
 		err = chaincodeSupport.launchAndWaitForRegister(wctx, cds, cID, cLang, packrd)
 		//first finish and trace the real reason in runtime reading
-		omiterr := packrd.Finish()
-		if omiterr != nil && omiterr != io.EOF {
+		if omiterr := packrd.Finish(); omiterr != nil {
 			chaincodeLogger.Errorf("WriteRuntimePackage failed, reason was %s", omiterr)
 		}
 

@@ -363,6 +363,7 @@ func (chaincodeSupport *ChaincodeSupport) launchAndWaitForRegister(ctxt context.
 	}
 
 	chaincodeLogger.Debugf("start container: %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
+	chaincodeLogger.Debugf("envs are %v, %v", args, env)
 
 	vmtype, _ := chaincodeSupport.getVMType(cds)
 
@@ -660,9 +661,6 @@ func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *c
 
 	wctx, cf := context.WithTimeout(ctxt, chaincodeSupport.ccExecTimeout)
 	defer cf()
-	if outstate == nil {
-		outstate = &ledger.TxExecStates{}
-	}
 	msg, newoutstate, err := chrte.handler.executeMessage(wctx, cMsg, tx, outstate)
 
 	return msg, newoutstate, err

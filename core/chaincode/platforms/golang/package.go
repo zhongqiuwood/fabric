@@ -25,6 +25,7 @@ import (
 	cutil "github.com/abchain/fabric/core/chaincode/util"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
+	"time"
 )
 
 func parseCodePath(path string) (effectpath string, ishttp bool) {
@@ -80,6 +81,10 @@ func (goPlatform *Platform) WriteDockerRunTime(spec *pb.ChaincodeSpec, tw *tar.W
 			err = fmt.Errorf("Error writing Chaincode package contents: %s", err)
 			return
 		}
+	} else {
+		nowTime := time.Now()
+		//a dummy, 0 byte file is written so our packet always include the "src" path
+		tw.WriteHeader(&tar.Header{Name: "src/dummy", ModTime: nowTime, AccessTime: nowTime, ChangeTime: nowTime})
 	}
 
 	dockertemplate = cutil.GetDockerfileFromConfig("chaincode.golang.Dockerfile")

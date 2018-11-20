@@ -402,7 +402,7 @@ type TxExecStates struct {
 	*statemgmt.StateDelta
 }
 
-func (s TxExecStates) InitForInvoking(ledger *Ledger) {
+func (s *TxExecStates) InitForInvoking(ledger *Ledger) {
 	s.StateDelta = statemgmt.NewStateDelta()
 }
 

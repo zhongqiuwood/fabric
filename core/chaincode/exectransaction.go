@@ -78,6 +78,9 @@ func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSuppo
 		}
 
 		if txSuccess {
+			if exstate.StateDelta == nil {
+				panic("Tx is not run by correct process")
+			}
 			exstate.Set(cds.ChaincodeSpec.ChaincodeID.Name, deployTxKey, []byte(t.GetTxid()), nil)
 		} else {
 			chain.FinalDeploy(ctxt, txSuccess, cds, t)

@@ -40,6 +40,7 @@ func InitTLSForPeer() credentials.TransportCredentials {
 	var sn string
 	if viper.GetString("peer.tls.serverhostoverride") != "" {
 		sn = viper.GetString("peer.tls.serverhostoverride")
+		commLogger.Warningf("host is overriden to %s", sn)
 	}
 	var creds credentials.TransportCredentials
 	if rootcert := viper.GetString("peer.tls.rootcert.file"); rootcert != "" {

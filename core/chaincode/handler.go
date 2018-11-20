@@ -358,11 +358,11 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 				return err
 			}
 
-			chaincodeLogger.Debugf("[%s]Sending new tx %s to shim", shorttxid(msg.Txid), msg.Type.String())
+			chaincodeLogger.Debugf("[%s]Sending new tx %s [tx:%v] to shim", shorttxid(msg.Txid), msg.Type.String(), tctxin.isTransaction)
 			ws.tctxs[txid] = tctxin
 			if tctxin.isTransaction {
 				ws.invokingTctx = tctxin
-				if tctxin.state.IsEmpty() {
+				if tctxin.state.StateDelta == nil {
 					//state may be come from another transaction
 					tctxin.state.InitForInvoking(ws.ledger)
 				}
@@ -1076,7 +1076,7 @@ func (handler *Handler) executeMessage(ctx context.Context, cMsg *pb.ChaincodeIn
 	select {
 	case resp = <-txctx.responseNotifier:
 	case <-ctx.Done():
-		err = ctx.Err()
+		err = fmt.Errorf("Tx exec timeout: %s", ctx.Err())
 		//make the chaincode give up faster
 		wsForTx.Acking <- msg.Txid
 		chaincodeLogger.Debugf("[%s]tx exec fail: timeout", shorttxid(msg.Txid))

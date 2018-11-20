@@ -142,7 +142,7 @@ func GetArgsAndEnv(spec *pb.ChaincodeSpec, clispec *config.ClientSpec) (args []s
 	envs = []string{"CORE_CHAINCODE_ID_NAME=" + cID.Name}
 	if clispec.EnableTLS {
 		envs = append(envs, "CORE_PEER_TLS_ENABLED=true")
-		envs = append(envs, "CORE_PEER_TLS_CERT_FILE=ca.crt")
+		envs = append(envs, "CORE_PEER_TLS_ROOTCERT_FILE=ca.crt")
 		if clispec.TLSHostOverride != "" {
 			envs = append(envs, "CORE_PEER_TLS_SERVERHOSTOVERRIDE="+clispec.TLSHostOverride)
 		}
@@ -151,8 +151,8 @@ func GetArgsAndEnv(spec *pb.ChaincodeSpec, clispec *config.ClientSpec) (args []s
 	switch cLang {
 	case pb.ChaincodeSpec_GOLANG, pb.ChaincodeSpec_CAR:
 		//chaincode executable will be same as the name of the chaincode, and install at
-		//the bin path of $GOPATH
-		args = []string{"$GOPATH/bin/" + cID.Name, fmt.Sprintf("-peer.address=%s", clispec.Address)}
+		//the bin path of working path (GOPATH)
+		args = []string{"bin/" + cID.Name, fmt.Sprintf("-peer.address=%s", clispec.Address)}
 	case pb.ChaincodeSpec_JAVA:
 		//TODO add security args
 		args = []string{"java",

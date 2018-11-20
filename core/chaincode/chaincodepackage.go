@@ -22,19 +22,28 @@ func GetChaincodePackageBytes(spec *pb.ChaincodeSpec) ([]byte, error) {
 	inputbuf := bytes.NewBuffer(nil)
 	gw := gzip.NewWriter(inputbuf)
 
-	_, err := platforms.WritePackage(spec, gw)
+	hashstr, err := platforms.WritePackage(spec, gw)
 	if err != nil {
 		return nil, err
 	}
 
 	gw.Close()
 
+	//if spec include no chaincode name, use hash (but shorter than 0.6)
+	if spec.ChaincodeID.GetName() == "" {
+		if len(hashstr) > 24 {
+			hashstr = hashstr[:24]
+		}
+		spec.ChaincodeID.Name = hashstr
+		chaincodeLogger.Infof("chaincode now have its name as %s", spec.ChaincodeID.Name)
+	}
+
 	if err != nil {
 		return nil, err
 	}
 
 	chaincodePkgBytes := inputbuf.Bytes()
-	chaincodeLogger.Infof("Generate chaincode package in %d bytes\n", len(chaincodePkgBytes))
+	chaincodeLogger.Infof("Generate chaincode package in %d byte", len(chaincodePkgBytes))
 	//	ioutil.WriteFile("chaincode_deployment.tar.gz", inputbuf.Bytes(), 0777)
 	return chaincodePkgBytes, nil
 }

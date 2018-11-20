@@ -1082,11 +1082,6 @@ func TestChaincodeQueryChaincodeWithSec(t *testing.T) {
 	testDBWrapper.CleanDB(t)
 	viper.Set("security.enabled", "true")
 
-	//Initialize crypto
-	if err := crypto.Init(); err != nil {
-		panic(fmt.Errorf("Failed initializing the crypto layer [%s]", err))
-	}
-
 	//set paths for memberservice to pick up
 	viper.Set("peer.fileSystemPath", filepath.Join(os.TempDir(), "hyperledger", "production"))
 	viper.Set("server.rootpath", filepath.Join(os.TempDir(), "ca"))
@@ -1325,5 +1320,9 @@ func TestGetRows(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	SetupTestConfig()
+	//Initialize crypto
+	if err := crypto.Init(); err != nil {
+		panic(fmt.Errorf("Failed initializing the crypto layer [%s]", err))
+	}
 	os.Exit(m.Run())
 }

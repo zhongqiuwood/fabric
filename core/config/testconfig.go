@@ -75,3 +75,42 @@ func SetupTestConfig(pathToOpenchainYaml string) {
 	configLogger.Debugf("setting Number of procs to %d, was %d\n", numProcsDesired, runtime.GOMAXPROCS(2))
 
 }
+
+type SetupTestConf struct {
+	Prefix     string
+	ConfigName string
+	YamlPath   string
+}
+
+func (c SetupTestConf) Setup() {
+
+	if c.Prefix == "" {
+		c.Prefix = "HYPERLEDGER"
+	}
+	if c.ConfigName == "" {
+		c.ConfigName = "core"
+	}
+	if c.YamlPath == "" {
+		c.YamlPath = "."
+	}
+
+	flag.Parse()
+
+	// Now set the configuration file
+	viper.SetEnvPrefix(c.Prefix)
+	viper.AutomaticEnv()
+	replacer := strings.NewReplacer(".", "_")
+	viper.SetEnvKeyReplacer(replacer)
+	viper.SetConfigName(c.ConfigName) // name of config file (without extension)
+	viper.AddConfigPath(c.YamlPath)   // path to look for the config file in
+	err := viper.ReadInConfig()       // Find and read the config file
+	if err != nil {                   // Handle errors reading the config file
+		panic(fmt.Errorf("Fatal error config file: %s \n", err))
+	}
+
+	SetupTestLogging()
+
+	// Set the number of maxprocs
+	var numProcsDesired = viper.GetInt("peer.gomaxprocs")
+	configLogger.Debugf("setting Number of procs to %d, was %d\n", numProcsDesired, runtime.GOMAXPROCS(2))
+}

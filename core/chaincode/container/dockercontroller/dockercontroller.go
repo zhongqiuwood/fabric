@@ -253,10 +253,11 @@ func (vm *DockerVM) Destroy(ctxt context.Context, ccid ccintf.CCID, force bool, 
 	}
 	id = strings.Replace(id, ":", "_", -1)
 
-	err = client.RemoveImageExtended(id, docker.RemoveImageOptions{Force: force, NoPrune: noprune})
+	//	err = client.RemoveImageExtended(id, docker.RemoveImageOptions{Force: force, NoPrune: noprune})
+	err = client.RemoveImage(id)
 
 	if err != nil {
-		dockerLogger.Errorf("error while destroying image: %s", err)
+		dockerLogger.Errorf("error while destroying image %s: %s", id, err)
 	} else {
 		dockerLogger.Debug("Destroyed image %s", id)
 	}

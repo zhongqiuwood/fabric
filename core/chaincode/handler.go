@@ -161,7 +161,7 @@ func (ws *workingStream) handleWriteState(msg *pb.ChaincodeMessage, tctx *transa
 	var err error
 
 	switch msg.Type {
-	case pb.ChaincodeMessage_PUT_STATE:
+	case pb.ChaincodeMessage_PUT_STATE, pb.ChaincodeMessage_DEL_STATE:
 		respmsg, err = handler.handlePutState(ledger, msg, tctx)
 	default:
 		err = fmt.Errorf("Unrecognized query msg type %s", msg.Type)
@@ -288,7 +288,7 @@ func (ws *workingStream) processStream(handler *Handler) (err error) {
 				return fmt.Errorf("Received nil message, ending chaincode support stream [%d]", ws.serialId)
 			}
 			chaincodeLogger.Debugf("[%s]Received message %s from shim", shorttxid(in.Txid), in.Type.String())
-			if in.Type.String() == pb.ChaincodeMessage_ERROR.String() {
+			if in.Type == pb.ChaincodeMessage_ERROR {
 				chaincodeLogger.Errorf("Got error: %s", string(in.Payload))
 			}
 
@@ -772,7 +772,7 @@ func (handler *Handler) handlePutState(ledgerObj *ledger.Ledger, msg *pb.Chainco
 	chaincodeID := handler.ChaincodeID.Name
 	var err error
 
-	if msg.Type.String() == pb.ChaincodeMessage_PUT_STATE.String() {
+	if msg.Type == pb.ChaincodeMessage_PUT_STATE {
 		putStateInfo := &pb.PutStateInfo{}
 		unmarshalErr := proto.Unmarshal(msg.Payload, putStateInfo)
 		if unmarshalErr != nil {
@@ -801,7 +801,7 @@ func (handler *Handler) handlePutState(ledgerObj *ledger.Ledger, msg *pb.Chainco
 				}
 			}
 		}
-	} else if msg.Type.String() == pb.ChaincodeMessage_DEL_STATE.String() {
+	} else if msg.Type == pb.ChaincodeMessage_DEL_STATE {
 		// Invoke ledger to delete state
 		key := string(msg.Payload)
 		var previousValue []byte

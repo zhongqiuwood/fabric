@@ -32,7 +32,6 @@ import (
 	"github.com/abchain/fabric/core/chaincode/container/ccintf"
 	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/crypto"
-	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/membersrvc/ca"
@@ -45,8 +44,6 @@ import (
 
 // attributes to request in the batch of tcerts while deploying, invoking or querying
 var attributes = []string{"company", "position"}
-
-var testDBWrapper = db.NewTestDBWrapper()
 
 func getNowMillis() int64 {
 	nanos := time.Now().UnixNano()
@@ -338,7 +335,7 @@ func executeDeployTransaction(t *testing.T, url string) {
 
 // Test deploy of a transaction
 func TestExecuteDeployTransaction(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 	executeDeployTransaction(t, "github.com/abchain/fabric/examples/chaincode/go/chaincode_example01")
 }
 
@@ -348,7 +345,7 @@ func TestGopathExecuteDeployTransaction(t *testing.T) {
 	// and a couple of elements - it doesn't matter what they are
 	os.Setenv("GOPATH", os.Getenv("GOPATH")+string(os.PathSeparator)+string(os.PathListSeparator)+"/tmp/foo"+string(os.PathListSeparator)+"/tmp/bar")
 	fmt.Printf("set GOPATH to: \"%s\"\n", os.Getenv("GOPATH"))
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 	executeDeployTransaction(t, "github.com/abchain/fabric/examples/chaincode/go/chaincode_example01")
 }
 
@@ -357,7 +354,7 @@ func TestHTTPExecuteDeployTransaction(t *testing.T) {
 	// The chaincode used here cannot be from the fabric repo
 	// itself or it won't be downloaded because it will be found
 	// in GOPATH, which would defeat the test
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 	executeDeployTransaction(t, "http://gopkg.in/mastersingh24/fabric-test-resources.v0")
 }
 
@@ -417,11 +414,11 @@ func invokeExample02Transaction(ctxt context.Context, cID *pb.ChaincodeID, args 
 
 	if destroyImage {
 		GetChain(DefaultChain).Stop(ctxt, &pb.ChaincodeDeploymentSpec{ChaincodeSpec: spec})
-		dir := container.DestroyImageReq{CCID: ccintf.CCID{ChaincodeSpec: spec, NetworkID: GetChain(DefaultChain).nodeID, PeerID: GetChain(DefaultChain).nodeID}, Force: true, NoPrune: true}
+		dir := container.DestroyImageReq{CCID: ccintf.CCID{ChaincodeSpec: spec, NetworkID: string(GetChain(DefaultChain).name), PeerID: GetChain(DefaultChain).nodeID}, Force: true, NoPrune: true}
 
 		_, err = container.VMCProcess(ctxt, container.DOCKER, dir)
 		if err != nil {
-			err = fmt.Errorf("Error destroying image: %s", err)
+			err = fmt.Errorf("Error destroying image of chaincode: %s", err)
 			return err
 		}
 	}
@@ -452,7 +449,7 @@ func invokeExample02Transaction(ctxt context.Context, cID *pb.ChaincodeID, args 
 }
 
 func TestExecuteInvokeTransaction(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	vp := viper.Sub("peer")
 	//TLS is on by default. This is the ONLY test that does NOT use TLS
@@ -460,8 +457,8 @@ func TestExecuteInvokeTransaction(t *testing.T) {
 
 	//turn OFF keepalive. All other tests use keepalive
 	keepalive := viper.Get("chaincode.keepalive")
-	defer viper.Set("chaincode.keepalive", keepalive)
-	viper.Set("chaincode.keepalive", "0")
+	defer viper.Sub("chaincode").Set("keepalive", keepalive)
+	viper.Sub("chaincode").Set("keepalive", "0")
 
 	lis, err := initPeer(vp)
 	if err != nil {
@@ -538,7 +535,7 @@ func exec(ctxt context.Context, chaincodeID string, numTrans int, numQueries int
 
 // Test the execution of a query.
 func TestExecuteQuery(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -601,7 +598,7 @@ func TestExecuteQuery(t *testing.T) {
 
 // Test the execution of an invalid transaction.
 func TestExecuteInvokeInvalidTransaction(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -640,7 +637,7 @@ func TestExecuteInvokeInvalidTransaction(t *testing.T) {
 
 // Test the execution of an invalid query.
 func TestExecuteInvalidQuery(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -692,7 +689,7 @@ func TestExecuteInvalidQuery(t *testing.T) {
 // Test the execution of a chaincode that invokes another chaincode.
 func TestChaincodeInvokeChaincode(t *testing.T) {
 	t.Logf("TestChaincodeInvokeChaincode starting")
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -787,7 +784,7 @@ func TestChaincodeInvokeChaincode(t *testing.T) {
 // Test the execution of a chaincode that invokes another chaincode with wrong parameters. Should receive error from
 // from the called chaincode
 func TestChaincodeInvokeChaincodeErrorCase(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -967,7 +964,7 @@ func chaincodeQueryChaincode(user string) error {
 
 // Test the execution of a chaincode query that queries another chaincode without security enabled
 func TestChaincodeQueryChaincode(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 	var peerLis net.Listener
 	var err error
 	if peerLis, err = initPeer(viper.Sub("peer")); err != nil {
@@ -989,7 +986,7 @@ func TestChaincodeQueryChaincode(t *testing.T) {
 // Test the execution of a chaincode that queries another chaincode with invalid parameter. Should receive error from
 // from the called chaincode
 func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -1079,11 +1076,10 @@ func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
 // Test the execution of a chaincode query that queries another chaincode with security enabled
 // NOTE: this really needs to be a behave test. Remove when we have support in behave for multiple chaincodes
 func TestChaincodeQueryChaincodeWithSec(t *testing.T) {
-	testDBWrapper.CleanDB(t)
-	viper.Set("security.enabled", "true")
+	ledger.InitTestLedger(t)
+	//viper.Set("security.enabled", "true")
 
 	//set paths for memberservice to pick up
-	viper.Set("peer.fileSystemPath", filepath.Join(os.TempDir(), "hyperledger", "production"))
 	viper.Set("server.rootpath", filepath.Join(os.TempDir(), "ca"))
 
 	var err error
@@ -1124,7 +1120,7 @@ func TestChaincodeQueryChaincodeWithSec(t *testing.T) {
 
 // Test the invocation of a transaction.
 func TestRangeQuery(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -1171,7 +1167,7 @@ func TestRangeQuery(t *testing.T) {
 }
 
 func TestGetEvent(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -1235,7 +1231,7 @@ func TestGetEvent(t *testing.T) {
 
 // TestGetRows gets large and small rows from a table and tests border conditions (FAB-860)
 func TestGetRows(t *testing.T) {
-	testDBWrapper.CleanDB(t)
+	ledger.InitTestLedger(t)
 
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
@@ -1324,5 +1320,6 @@ func TestMain(m *testing.M) {
 	if err := crypto.Init(); err != nil {
 		panic(fmt.Errorf("Failed initializing the crypto layer [%s]", err))
 	}
+	viper.Sub("peer").Set("fileSystemPath", filepath.Join(os.TempDir(), "hyperledger", "production"))
 	os.Exit(m.Run())
 }

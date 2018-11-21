@@ -46,6 +46,7 @@ const (
 	DevModeUserRunsChaincode       string = "dev"
 	NetworkModeChaincode           string = "net"
 	chaincodeStartupTimeoutDefault int    = 5000
+	chaincodeDeployTimeoutDefault  int    = 30000
 	chaincodeExecTimeoutDefault    int    = 30000
 	peerAddressDefault             string = "0.0.0.0:7051"
 
@@ -65,7 +66,8 @@ func init() {
 type chaincodeRTEnv struct {
 	handler      *Handler
 	launchNotify chan error
-	waitNotify   chan error
+	launchResult error
+	waitCtx      context.Context
 }
 
 // runningChaincodes contains maps of chaincodeIDs to their chaincodeRTEs
@@ -85,7 +87,6 @@ func (chaincodeSupport *ChaincodeSupport) preLaunchSetup(chaincode string) *chai
 	//register placeholder Handler.
 	ret := &chaincodeRTEnv{
 		launchNotify: make(chan error, 1),
-		waitNotify:   make(chan error, 1),
 	}
 	chaincodeSupport.runningChaincodes.chaincodeMap[chaincode] = ret
 	return ret
@@ -183,6 +184,15 @@ func NewChaincodeSupport(chainname ChainName, nodeName string, srvSpec *config.S
 
 	s.ccStartupTimeout = time.Duration(tOut) * time.Millisecond
 
+	//get chaincode deploy timeout
+	tOut, err = strconv.Atoi(viper.GetString("chaincode.deploytimeout"))
+	if err != nil { //what went wrong ?
+		tOut = chaincodeDeployTimeoutDefault
+		chaincodeLogger.Infof("could not retrive deploy timeout var...setting to %d secs\n", tOut/1000)
+	}
+
+	s.ccDeployTimeout = time.Duration(tOut) * time.Millisecond
+
 	//get chaincode exec timeout
 	tOut, err = strconv.Atoi(viper.GetString("chaincode.exectimeout"))
 	if err != nil { //what went wrong ?
@@ -222,6 +232,7 @@ type ChaincodeSupport struct {
 	runningChaincodes *runningChaincodes
 	peerAddress       string
 	ccStartupTimeout  time.Duration
+	ccDeployTimeout   time.Duration
 	ccExecTimeout     time.Duration
 	userRunsCC        bool
 	txHandler         cred.TxConfidentialityHandler
@@ -398,11 +409,13 @@ func (chaincodeSupport *ChaincodeSupport) finishLaunching(chaincode string, noti
 		// 	return false
 		// } else {
 	} else {
-		if rte.waitNotify == nil {
+
+		//sanity check
+		if rte.waitCtx == nil {
 			panic("another routine has make this calling, we have wrong code?")
 		}
-		rte.waitNotify <- notify
-		rte.waitNotify = nil //mark launching is over
+		rte.launchResult = notify
+		rte.waitCtx = nil
 	}
 
 	//if we get err notify, we must clear the rte even it has created a handler
@@ -436,40 +449,45 @@ func (chaincodeSupport *ChaincodeSupport) Stop(context context.Context, cds *pb.
 func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *ledger.Ledger, cID *pb.ChaincodeID, cds *pb.ChaincodeDeploymentSpec, t *pb.Transaction) (error, *chaincodeRTEnv) {
 
 	chaincode := cID.Name
-
 	chaincodeSupport.runningChaincodes.Lock()
 
 	//the first tx touch the corresponding run-time object is response for the actually
 	//launching and other tx just wait
 	if chrte, ok := chaincodeSupport.chaincodeHasBeenLaunched(chaincode); ok {
-		if chrte.waitNotify == nil {
+		if chrte.waitCtx == nil {
 			chaincodeLogger.Debugf("chaincode is running(no need to launch) : %s", chaincode)
 			chaincodeSupport.runningChaincodes.Unlock()
 			return nil, chrte
 		}
 		//all of us must wait here till the cc is really launched (or failed...)
 		chaincodeLogger.Debug("chainicode not in READY state...waiting")
-		//now we "chain" the notify so mutiple waitings
-		notifyChain := make(chan error, 1)
-		notfy := chrte.waitNotify
-		chrte.waitNotify = notifyChain
 		chaincodeSupport.runningChaincodes.Unlock()
 
-		//the waiting route get notify from the routine
-		//which actually responds for the lauching
-		ret := <-notfy
-		//and just chain it
-		notifyChain <- ret
-		chaincodeLogger.Debugf("wait chaincode %s for lauching: %s", chaincode, ret)
-		return ret, chrte
+		select {
+		case <-chrte.waitCtx.Done():
+		case <-ctx.Done():
+			return fmt.Errorf("Cancel: %s", ctx.Err()), nil
+		}
+
+		chaincodeLogger.Debugf("wait chaincode %s for lauching: [%s]", chaincode, chrte.launchResult)
+		if chrte.launchResult == nil {
+			return nil, chrte
+		} else {
+			return chrte.launchResult, nil
+		}
 	}
 
 	//the first one create rte and start its adventure ...
 	chrte := chaincodeSupport.preLaunchSetup(chaincode)
+	var waitCf context.CancelFunc
+	chrte.waitCtx, waitCf = context.WithCancel(ctx)
 	chaincodeSupport.runningChaincodes.Unlock()
 
 	var err error
 	var depTx *pb.Transaction
+
+	//so the launchResult in runtime will be set first
+	defer waitCf()
 	defer func() { chaincodeSupport.finishLaunching(chaincode, err) }()
 
 	if t.Type != pb.Transaction_CHAINCODE_DEPLOY {
@@ -491,9 +509,6 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 		}
 	}
 
-	//from here on : if we launch the container and get an error, we need to stop the container
-	wctx, wctxend := context.WithTimeout(ctx, chaincodeSupport.ccStartupTimeout)
-	defer wctxend()
 	cLang := cds.ChaincodeSpec.Type
 	//launch container if it is a System container or not in dev mode
 	if !chaincodeSupport.userRunsCC || cds.ExecEnv == pb.ChaincodeDeploymentSpec_SYSTEM {
@@ -505,6 +520,10 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 				return err, chrte
 			}
 		}
+
+		wctx, wctxend := context.WithTimeout(ctx, chaincodeSupport.ccDeployTimeout)
+		defer wctxend()
+
 		err = chaincodeSupport.launchAndWaitForRegister(wctx, cds, cID, cLang, packrd)
 		//first finish and trace the real reason in runtime reading
 		if omiterr := packrd.Finish(); omiterr != nil {
@@ -516,6 +535,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 			return err, chrte
 		}
 
+		//from here on : if we launch the container and get an error, we need to stop the container
 		defer func() {
 			if err != nil {
 				chaincodeLogger.Infof("stopping due to error while launching %s", err)
@@ -525,15 +545,19 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 				}
 			}
 		}()
-		//wait for REGISTER state
-		select {
-		case err = <-chrte.launchNotify:
-		case <-wctx.Done():
-			err = fmt.Errorf("Timeout expired while starting chaincode %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
-		}
-		if err != nil {
-			return err, chrte
-		}
+	}
+
+	wctx, wctxend := context.WithTimeout(ctx, chaincodeSupport.ccStartupTimeout)
+	defer wctxend()
+
+	//wait for REGISTER state
+	select {
+	case err = <-chrte.launchNotify:
+	case <-wctx.Done():
+		err = fmt.Errorf("Timeout expired while starting chaincode %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
+	}
+	if err != nil {
+		return err, chrte
 	}
 
 	//send ready (if not deploy) for ready state

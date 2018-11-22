@@ -118,4 +118,14 @@ func TestChaincodeImage(t *testing.T) {
 	if err != nil {
 		t.Fatal("finish have fail:", err)
 	}
+
+	dir := container.DestroyImageReq{CCID: ccintf.CCID{ChaincodeSpec: spec,
+		NetworkID: "default",
+		PeerID:    "test_node"}, Force: true, NoPrune: true}
+
+	_, err = container.VMCProcess(context.Background(), container.DOCKER, dir)
+	if err != nil {
+		t.Fatal("container vm rmi fail:", err)
+	}
+
 }

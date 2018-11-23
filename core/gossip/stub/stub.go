@@ -12,24 +12,39 @@ import (
 
 var logger = logging.MustGetLogger("gossip")
 
+//each call of NewGossipWithPeer will travel register collections to create the corresponding catalogy handlers
+var RegisterCat []func(*gossip.GossipStub)
+
 //create the corresponding streamstub and bind it with peer and service
-func InitGossipStream(bindPeer peer.Peer, bindSrv *grpc.Server) *pb.StreamStub {
+func InitGossipStub(bindPeer peer.Peer) *gossip.GossipStub {
 
 	gstub := gossip.NewGossipWithPeer(bindPeer)
 	if gstub == nil {
 		return nil
 	}
 
-	//bind server
-	pb.RegisterGossipServer(bindSrv, GossipFactory{gstub})
+	//gossipStub itself is also a posthandler
+	err := bindPeer.AddStreamStub("gossip", GossipFactory{gstub}, gstub)
+	if err != nil {
+		logger.Error("Bind gossip stub to peer fail: ", err)
+		return nil
+	}
 
-	return gstub.GetSStub()
+	gstub.StreamStub = bindPeer.GetStreamStub("gossip")
+	if gstub.StreamStub == nil {
+		//sanity check
+		panic("When streamstub is succefully added, it should not vanish here")
+	}
+
+	//reg all catalogs
+	for _, f := range RegisterCat {
+		f(gstub)
+	}
+
+	return gstub
 }
 
 func init() {
-	gossip.GossipFactory = func(gstub *gossip.GossipStub) pb.StreamHandlerFactory {
-		return GossipFactory{gstub}
-	}
 
 	gossip.ObtainHandler = func(h *pb.StreamHandler) gossip.GossipHandler {
 		hh, ok := h.StreamHandlerImpl.(*GossipHandlerImpl)

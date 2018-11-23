@@ -13,11 +13,13 @@ var logger = logging.MustGetLogger("gossip_cat")
 
 var global struct {
 	sync.Mutex
-	ind map[*gossip.GossipStub]*txNetworkGlobal
+	ind     map[*gossip.GossipStub]*txNetworkGlobal
+	entries map[*gossip.GossipStub]*TxNetworkEntry
 }
 
 func init() {
 	global.ind = make(map[*gossip.GossipStub]*txNetworkGlobal)
+	global.entries = make(map[*gossip.GossipStub]*TxNetworkEntry)
 }
 
 //txNetwork is a singleton related with stub
@@ -29,7 +31,7 @@ func getTxNetwork(stub *gossip.GossipStub) *txNetworkGlobal {
 		return n
 	}
 
-	ret := CreateTxNetworkGlobal()
+	ret := createNetworkGlobal()
 	global.ind[stub] = ret
 	return ret
 }

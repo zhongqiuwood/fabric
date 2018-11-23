@@ -47,13 +47,15 @@ func (tc *testCatalogy) DecodeUpdate(cpo gossip.CatalogPeerPolicies, msg proto.M
 	return model.TestUpdateDecode(msg), nil
 }
 
-func restoreGossipModule(old []func(*gossip.GossipStub)) {
-	gossip.RegisterCat = old
+var testRegisterCat []func(*gossip.GossipStub)
+
+func restoreGossipModule() {
+	testRegisterCat = nil
 }
 
 func initGossipModule(t *testing.T, pendingCat *testCatalogy, m *model.Model) {
 
-	gossip.RegisterCat = append(gossip.RegisterCat,
+	testRegisterCat = append(testRegisterCat,
 		func(stub *gossip.GossipStub) {
 
 			t.Log("Register cat func is called by stub", stub.GetSelf().GetName())
@@ -81,7 +83,7 @@ func newTestCatalogy(id string) *testCatalogy {
 
 func TestCatalogyInit(t *testing.T) {
 
-	defer restoreGossipModule(gossip.RegisterCat)
+	defer restoreGossipModule()
 
 	c1 := newTestCatalogy("alice")
 	c2 := newTestCatalogy("bob")
@@ -92,7 +94,7 @@ func TestCatalogyInit(t *testing.T) {
 	initGossipModule(t, c1, p1.CreateModel())
 	initGossipModule(t, c2, p2.CreateModel())
 
-	gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: c1.id}}))
+	newGossip(t, peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: c1.id}}), testRegisterCat)
 
 	if c1.handler == nil {
 		t.Fatal("cat alice is not inited ")
@@ -102,7 +104,7 @@ func TestCatalogyInit(t *testing.T) {
 		t.Fatal("cat bob is ghostly inited ")
 	}
 
-	gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: c2.id}}))
+	newGossip(t, peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: c2.id}}), testRegisterCat)
 
 	if c2.handler == nil {
 		t.Fatal("cat bob is not inited ")
@@ -111,13 +113,13 @@ func TestCatalogyInit(t *testing.T) {
 
 func preparePeerWithCatalogy(t *testing.T, cat *testCatalogy) (model.TestPeer, *pb.StreamStub) {
 
-	defer restoreGossipModule(gossip.RegisterCat)
+	defer restoreGossipModule()
 
 	tpeer := model.NewTestPeer(t, cat.id)
 
 	initGossipModule(t, cat, tpeer.CreateModel())
 
-	gs := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: cat.id}}))
+	gs := newGossip(t, peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: cat.id}}), testRegisterCat)
 
 	return tpeer, gs.GetSStub()
 }

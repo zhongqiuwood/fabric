@@ -5,6 +5,7 @@ import (
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"os"
 	"testing"
@@ -14,6 +15,19 @@ import (
 )
 
 var testParams []string
+
+func CreateSimplePeer() (string, *pb.PeerTxState) {
+	id := util.GenerateBytesUUID()
+	if len(id) < TxDigestVerifyLen {
+		panic("Wrong code generate uuid less than 16 bytes [128bit]")
+	}
+
+	return ToStringId(id), &pb.PeerTxState{
+		Digest: id[:TxDigestVerifyLen],
+		//add one byte to indicate this peer is endorsed
+		Endorsement: []byte{1},
+	}
+}
 
 func TestMain(m *testing.M) {
 	testParams = testutil.ParseTestParams()
@@ -29,7 +43,7 @@ func TestMain(m *testing.M) {
 
 func initGlobalStatus() *txNetworkGlobal {
 
-	return CreateTxNetworkGlobal()
+	return createNetworkGlobal()
 }
 
 func initTestLedgerWrapper(t *testing.T) *ledger.Ledger {

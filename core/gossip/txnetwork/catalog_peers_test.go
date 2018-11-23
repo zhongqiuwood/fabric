@@ -3,6 +3,7 @@ package txnetwork
 import (
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
+	"github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 	"testing"
@@ -211,7 +212,7 @@ func TestAsAWhole(t *testing.T) {
 
 	SetPeerTxQueueLen(3)
 
-	stub := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
+	stub := stub.InitGossipStub(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
 
 	globalM := stub.GetCatalogHandler(globalCatName).Model()
 	globalS := model.DumpScuttlebutt(globalM)
@@ -339,7 +340,7 @@ func TestSelfUpdateAsAWhole(t *testing.T) {
 
 	SetPeerTxQueueLen(3)
 
-	stub := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
+	stub := stub.InitGossipStub(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
 
 	globalM := stub.GetCatalogHandler(globalCatName).Model()
 	globalS := model.DumpScuttlebutt(globalM)

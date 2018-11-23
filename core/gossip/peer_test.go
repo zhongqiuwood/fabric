@@ -2,6 +2,7 @@ package gossip_test
 
 import (
 	"github.com/abchain/fabric/core/gossip"
+	"github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 	logging "github.com/op/go-logging"
@@ -17,10 +18,32 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+func newGossip(t *testing.T, p peer.Peer, regcat []func(*gossip.GossipStub)) *gossip.GossipStub {
+	gstub := gossip.NewGossipWithPeer(p)
+
+	//gossipStub itself is also a posthandler
+	err := p.AddStreamStub("gossip", stub.GossipFactory{gstub}, gstub)
+	if err != nil {
+		t.Fatal("Bind gossip stub to peer fail: ", err)
+	}
+
+	gstub.StreamStub = p.GetStreamStub("gossip")
+	if gstub.StreamStub == nil {
+		t.Fatal("When streamstub is succefully added, it should not vanish here")
+	}
+
+	//reg all catalogs
+	for _, f := range regcat {
+		f(gstub)
+	}
+
+	return gstub
+}
+
 func TestPeer(t *testing.T) {
 
-	sAlice := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "alice"}}))
-	sBob := gossip.NewGossipWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "bob"}}))
+	sAlice := newGossip(t, peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "alice"}}), nil)
+	sBob := newGossip(t, peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "bob"}}), nil)
 
 	wctx, endworks := context.WithCancel(context.Background())
 	defer endworks()
@@ -44,7 +67,7 @@ func TestPeer(t *testing.T) {
 		t.Fatal("no handler for Bob in Alice")
 	}
 
-	msg := &pb.Gossip{Catalog: "Notexist"}
+	msg := &pb.GossipMsg{Catalog: "Notexist"}
 	if err := hBob.SendMessage(msg); err != nil {
 		t.Fatal("Send msg fail", err)
 	}

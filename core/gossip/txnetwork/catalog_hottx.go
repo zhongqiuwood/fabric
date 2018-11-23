@@ -6,6 +6,7 @@ import (
 
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
+	"github.com/abchain/fabric/core/gossip/stub"
 	pb "github.com/abchain/fabric/protos"
 	proto "github.com/golang/protobuf/proto"
 )
@@ -553,7 +554,7 @@ type hotTxCat struct {
 }
 
 func init() {
-	gossip.RegisterCat = append(gossip.RegisterCat, initHotTx)
+	stub.RegisterCat = append(stub.RegisterCat, initHotTx)
 }
 
 func initHotTx(stub *gossip.GossipStub) {

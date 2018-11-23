@@ -34,20 +34,7 @@ func ToStringId(id []byte) string {
 	return fmt.Sprintf("%x", id)
 }
 
-func CreateSimplePeer() (string, *pb.PeerTxState) {
-	id := util.GenerateBytesUUID()
-	if len(id) < TxDigestVerifyLen {
-		panic("Wrong code generate uuid less than 16 bytes [128bit]")
-	}
-
-	return ToStringId(id), &pb.PeerTxState{
-		Digest: id[:TxDigestVerifyLen],
-		//add one byte to indicate this peer is endorsed
-		Endorsement: []byte{1},
-	}
-}
-
-func CreateTxNetworkGlobal() *txNetworkGlobal {
+func createNetworkGlobal() *txNetworkGlobal {
 
 	sid := util.GenerateBytesUUID()
 	if len(sid) < TxDigestVerifyLen {

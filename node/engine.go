@@ -60,3 +60,7 @@ type NodeEngine struct {
 func (ne *NodeEngine) DefaultLedger() *ledger.Ledger {
 	return ne.Ledgers[""]
 }
+
+func (ne *NodeEngine) DefaultPeer() *PeerEngine {
+	return ne.Peers[""]
+}

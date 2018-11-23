@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
+	"github.com/abchain/fabric/core/gossip/stub"
 	pb "github.com/abchain/fabric/protos"
 	proto "github.com/golang/protobuf/proto"
 	"time"
@@ -145,7 +146,7 @@ func (n newPeerNotify) OnConnectNewPeer(id *pb.PeerID) {
 }
 
 func init() {
-	gossip.RegisterCat = append(gossip.RegisterCat, initNetworkStatus)
+	stub.RegisterCat = append(stub.RegisterCat, initNetworkStatus)
 }
 
 func initNetworkStatus(stub *gossip.GossipStub) {

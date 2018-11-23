@@ -1,5 +1,10 @@
 package node
 
+import (
+	"github.com/abchain/fabric/core/config"
+	"github.com/spf13/viper"
+)
+
 // entry, ok := txnetwork.GetNetworkEntry(stub)
 // if !ok {
 // 	return nil, fmt.Errorf("Corresponding entry of given gossip network is not found: [%v]", stub)
@@ -15,3 +20,7 @@ package node
 // if err != nil{
 // 	return nil, fmt.Errorf("Corresponding entry of given gossip network is not found: [%v]", stub)
 // }
+
+func (pe *PeerEngine) Init(vp *viper.Viper) {
+
+}

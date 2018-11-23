@@ -31,8 +31,6 @@ func getGlobalSeq() uint64 {
 	return globalSeq
 }
 
-var GossipFactory func(*GossipStub) pb.StreamHandlerFactory
-
 //the simplified stream handler
 type GossipHandler interface {
 	HandleMessage(*pb.GossipMsg) error
@@ -103,9 +101,6 @@ func (g *GossipStub) NotifyNewPeer(peerid *pb.PeerID) {
 	}
 }
 
-//each call of NewGossipWithPeer will travel register collections to create the corresponding catalogy handlers
-var RegisterCat []func(*GossipStub)
-
 func NewGossipWithPeer(p peer.Peer) *GossipStub {
 
 	cache.Do(cacheConfiguration)
@@ -134,26 +129,7 @@ func NewGossipWithPeer(p peer.Peer) *GossipStub {
 		gossipStub.AccessControl, _ = nb.GetACL()
 	}
 
-	//gossipStub itself is also a posthandler
-	err = p.AddStreamStub("gossip", GossipFactory(gossipStub), gossipStub)
-	if err != nil {
-		logger.Error("Bind gossip stub to peer fail: ", err)
-		return nil
-	}
-
-	gossipStub.StreamStub = p.GetStreamStub("gossip")
-	if gossipStub.StreamStub == nil {
-		//sanity check
-		panic("When streamstub is succefully added, it should not vanish here")
-	}
-
-	//reg all catalogs
-	for _, f := range RegisterCat {
-		f(gossipStub)
-	}
-
 	logger.Infof("A Gossip module created on peer %s", self.ID)
-
 	return gossipStub
 
 }

@@ -5,16 +5,11 @@ import (
 	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
+	"github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
-	"sync"
 )
-
-var entryglobal struct {
-	sync.Mutex
-	ind map[*gossip.GossipStub]*TxNetworkEntry
-}
 
 type TxNetworkEntry struct {
 	*txNetworkEntry
@@ -122,29 +117,32 @@ func (e *TxNetworkEntry) GetPeerStatus() (*pb.PeerTxState, string) {
 	return e.net.peers.QuerySelf()
 }
 
-func GetNetworkEntry(stub *gossip.GossipStub) (*TxNetworkEntry, bool) {
+func GetNetworkEntry(stub *gossip.GossipStub) *TxNetworkEntry {
 
-	entryglobal.Lock()
-	defer entryglobal.Unlock()
-	e, ok := entryglobal.ind[stub]
-	return e, ok
+	global.Lock()
+	defer global.Unlock()
+	e, ok := global.entries[stub]
+	if !ok {
+		panic("It was impossible that entry is not existed: use a gossipstub not created by stub?")
+	}
+	return e
 }
 
 func init() {
-	entryglobal.ind = make(map[*gossip.GossipStub]*TxNetworkEntry)
-	gossip.RegisterCat = append(gossip.RegisterCat, initTxnetworkEntrance)
+	stub.RegisterCat = append(stub.RegisterCat, initTxnetworkEntrance)
 }
 
 func initTxnetworkEntrance(stub *gossip.GossipStub) {
 
-	entryglobal.Lock()
-	defer entryglobal.Unlock()
-
-	entryglobal.ind[stub] = &TxNetworkEntry{
+	self := &TxNetworkEntry{
 		newTxNetworkEntry(),
 		getTxNetwork(stub),
 		stub,
 	}
+
+	global.Lock()
+	defer global.Unlock()
+	global.entries[stub] = self
 }
 
 type TxNetworkHandler interface {

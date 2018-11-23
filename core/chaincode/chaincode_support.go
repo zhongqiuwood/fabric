@@ -82,6 +82,10 @@ func GetChain(name ChainName) *ChaincodeSupport {
 	return chains[name]
 }
 
+func GetDefaultChain() *ChaincodeSupport {
+	return chains[DefaultChain]
+}
+
 //call this under lock
 func (chaincodeSupport *ChaincodeSupport) preLaunchSetup(chaincode string) *chaincodeRTEnv {
 	//register placeholder Handler.

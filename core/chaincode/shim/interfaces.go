@@ -18,8 +18,8 @@ limitations under the License.
 package shim
 
 import (
-	"github.com/golang/protobuf/ptypes/timestamp"
 	"github.com/abchain/fabric/core/chaincode/shim/crypto/attr"
+	"github.com/golang/protobuf/ptypes/timestamp"
 )
 
 // Chaincode interface must be implemented by all chaincodes. The fabric runs
@@ -110,7 +110,9 @@ type ChaincodeStubInterface interface {
 	// all rows that have A, C and any value for D as their key. GetRows could
 	// also be called with A only to return all rows that have A and any value
 	// for C and D as their key.
-	GetRows(tableName string, key []Column) (<-chan Row, error)
+	// the returnning cancel function should be called before another operation is used
+	// original GetRows should be deprecated
+	GetRows(tableName string, key []Column) (<-chan Row, func(), error)
 
 	// DeleteRow deletes the row for the given key from the specified table.
 	DeleteRow(tableName string, key []Column) error

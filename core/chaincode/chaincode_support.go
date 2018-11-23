@@ -177,7 +177,7 @@ func NewChaincodeSupport(chainname ChainName, nodeName string, srvSpec *config.S
 
 	//get chaincode startup timeout
 	tOut, err := strconv.Atoi(viper.GetString("chaincode.startuptimeout"))
-	if err != nil { //what went wrong ?
+	if err != nil {
 		tOut = chaincodeStartupTimeoutDefault
 		chaincodeLogger.Infof("could not retrive startup timeout var...setting to %d secs\n", tOut/1000)
 	}
@@ -186,7 +186,7 @@ func NewChaincodeSupport(chainname ChainName, nodeName string, srvSpec *config.S
 
 	//get chaincode deploy timeout
 	tOut, err = strconv.Atoi(viper.GetString("chaincode.deploytimeout"))
-	if err != nil { //what went wrong ?
+	if err != nil {
 		tOut = chaincodeDeployTimeoutDefault
 		chaincodeLogger.Infof("could not retrive deploy timeout var...setting to %d secs\n", tOut/1000)
 	}
@@ -195,7 +195,7 @@ func NewChaincodeSupport(chainname ChainName, nodeName string, srvSpec *config.S
 
 	//get chaincode exec timeout
 	tOut, err = strconv.Atoi(viper.GetString("chaincode.exectimeout"))
-	if err != nil { //what went wrong ?
+	if err != nil {
 		tOut = chaincodeExecTimeoutDefault
 		chaincodeLogger.Infof("could not retrive exec timeout var...setting to %d secs\n", tOut/1000)
 	}
@@ -362,6 +362,11 @@ func (chaincodeSupport *ChaincodeSupport) deregisterHandler(chaincodehandler *Ha
 
 // launchAndWaitForRegister will launch container if not already running. Use the targz to create the image if not found
 func (chaincodeSupport *ChaincodeSupport) launchAndWaitForRegister(ctxt context.Context, cds *pb.ChaincodeDeploymentSpec, cID *pb.ChaincodeID, cLang pb.ChaincodeSpec_Type, targz io.Reader) error {
+
+	if chaincodeSupport.userRunsCC && cds.GetExecEnv() != pb.ChaincodeDeploymentSpec_SYSTEM {
+		return fmt.Errorf("chaincode is user-running and no need to launch")
+	}
+
 	chaincode := cID.Name
 	if chaincode == "" {
 		return fmt.Errorf("chaincode name not set")
@@ -426,6 +431,11 @@ func (chaincodeSupport *ChaincodeSupport) finishLaunching(chaincode string, noti
 
 //Stop stops a chaincode if running
 func (chaincodeSupport *ChaincodeSupport) Stop(context context.Context, cds *pb.ChaincodeDeploymentSpec) error {
+
+	if chaincodeSupport.userRunsCC && cds.GetExecEnv() != pb.ChaincodeDeploymentSpec_SYSTEM {
+		return fmt.Errorf("chaincode is user-running and no need to stop")
+	}
+
 	chaincode := cds.ChaincodeSpec.ChaincodeID.Name
 	if chaincode == "" {
 		return fmt.Errorf("chaincode name not set")
@@ -661,7 +671,9 @@ func (chaincodeSupport *ChaincodeSupport) Register(stream pb.ChaincodeSupport_Re
 
 func (chaincodeSupport *ChaincodeSupport) HandleChaincodeStream(ctx context.Context, stream ccintf.ChaincodeStream) error {
 	msg, err := stream.Recv()
-	if msg.Type != pb.ChaincodeMessage_REGISTER {
+	if err != nil {
+		return fmt.Errorf("Error in recv [%s]", err)
+	} else if msg.Type != pb.ChaincodeMessage_REGISTER {
 		return fmt.Errorf("Recv unexpected message type [%s] at the beginning of ccstream", msg.ChaincodeEvent)
 	}
 	chaincodeID := &pb.ChaincodeID{}

@@ -85,8 +85,9 @@ func (lrc *largeRowsetChaincode) Query(stub shim.ChaincodeStubInterface, functio
 	model := "LargeTable"
 
 	var rowChannel <-chan shim.Row
+	var cancelF func()
 
-	rowChannel, err = stub.GetRows(model, []shim.Column{})
+	rowChannel, cancelF, err = stub.GetRows(model, []shim.Column{})
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +110,7 @@ func (lrc *largeRowsetChaincode) Query(stub shim.ChaincodeStubInterface, functio
 			break
 		}
 	}
+	cancelF()
 
 	col1 := shim.Column{Value: &shim.Column_String_{String_: "Key_2"}}
 	_, err = stub.GetRow(model, []shim.Column{col1})

@@ -129,7 +129,7 @@ func initPeer(vp *viper.Viper) (net.Listener, error) {
 	// 	}
 	// }
 
-	pb.RegisterChaincodeSupportServer(grpcServer, NewChaincodeSupport(DefaultChain, "cc_test", conf, false, nil))
+	pb.RegisterChaincodeSupportServer(grpcServer, NewChaincodeSupport(DefaultChain, "cc_test", conf, usercc, nil))
 
 	go grpcServer.Serve(lis)
 
@@ -155,58 +155,58 @@ func getDeploymentSpec(context context.Context, spec *pb.ChaincodeSpec) (*pb.Cha
 func createDeployTransaction(dspec *pb.ChaincodeDeploymentSpec, uuid string) (*pb.Transaction, error) {
 	var tx *pb.Transaction
 	var err error
-	var sec crypto.Client
-	if dspec.ChaincodeSpec.SecureContext != "" {
-		sec, err = crypto.InitClient(dspec.ChaincodeSpec.SecureContext, nil)
-		defer crypto.CloseClient(sec)
+	// var sec crypto.Client
+	// if dspec.ChaincodeSpec.SecureContext != "" {
+	// 	sec, err = crypto.InitClient(dspec.ChaincodeSpec.SecureContext, nil)
+	// 	defer crypto.CloseClient(sec)
 
-		if nil != err {
-			return nil, err
-		}
+	// 	if nil != err {
+	// 		return nil, err
+	// 	}
 
-		tx, err = sec.NewChaincodeDeployTransaction(dspec, uuid, attributes...)
-		if nil != err {
-			return nil, err
-		}
-	} else {
-		tx, err = pb.NewChaincodeDeployTransaction(dspec, uuid)
-		if err != nil {
-			return nil, fmt.Errorf("Error deploying chaincode: %s ", err)
-		}
+	// 	tx, err = sec.NewChaincodeDeployTransaction(dspec, uuid, attributes...)
+	// 	if nil != err {
+	// 		return nil, err
+	// 	}
+	// } else {
+	tx, err = pb.NewChaincodeDeployTransaction(dspec, uuid)
+	if err != nil {
+		return nil, fmt.Errorf("Error deploying chaincode: %s ", err)
 	}
+	//}
 	return tx, nil
 }
 
 func createTransaction(invokeTx bool, spec *pb.ChaincodeInvocationSpec, uuid string) (*pb.Transaction, error) {
 	var tx *pb.Transaction
 	var err error
-	var sec crypto.Client
-	if nil != sec {
-		sec, err = crypto.InitClient(spec.ChaincodeSpec.SecureContext, nil)
-		defer crypto.CloseClient(sec)
-		if nil != err {
-			return nil, err
-		}
-		if invokeTx {
-			tx, err = sec.NewChaincodeExecute(spec, uuid, attributes...)
-		} else {
-			tx, err = sec.NewChaincodeQuery(spec, uuid, attributes...)
-		}
-		if nil != err {
-			return nil, err
-		}
+	// var sec crypto.Client
+	// if nil != sec {
+	// 	sec, err = crypto.InitClient(spec.ChaincodeSpec.SecureContext, nil)
+	// 	defer crypto.CloseClient(sec)
+	// 	if nil != err {
+	// 		return nil, err
+	// 	}
+	// 	if invokeTx {
+	// 		tx, err = sec.NewChaincodeExecute(spec, uuid, attributes...)
+	// 	} else {
+	// 		tx, err = sec.NewChaincodeQuery(spec, uuid, attributes...)
+	// 	}
+	// 	if nil != err {
+	// 		return nil, err
+	// 	}
+	// } else {
+	var t pb.Transaction_Type
+	if invokeTx {
+		t = pb.Transaction_CHAINCODE_INVOKE
 	} else {
-		var t pb.Transaction_Type
-		if invokeTx {
-			t = pb.Transaction_CHAINCODE_INVOKE
-		} else {
-			t = pb.Transaction_CHAINCODE_QUERY
-		}
-		tx, err = pb.NewChaincodeExecute(spec, uuid, t)
-		if nil != err {
-			return nil, err
-		}
+		t = pb.Transaction_CHAINCODE_QUERY
 	}
+	tx, err = pb.NewChaincodeExecute(spec, uuid, t)
+	if nil != err {
+		return nil, err
+	}
+	//}
 	return tx, nil
 }
 
@@ -475,7 +475,8 @@ func TestExecuteInvokeTransaction(t *testing.T) {
 	chaincodeID := &pb.ChaincodeID{Path: url}
 
 	args := []string{"a", "b", "10"}
-	err = invokeExample02Transaction(ctxt, chaincodeID, args, true)
+
+	err = invokeExample02Transaction(ctxt, chaincodeID, args, !usercc)
 	if err != nil {
 		t.Fail()
 		t.Logf("Error invoking transaction: %s", err)
@@ -1075,48 +1076,50 @@ func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
 
 // Test the execution of a chaincode query that queries another chaincode with security enabled
 // NOTE: this really needs to be a behave test. Remove when we have support in behave for multiple chaincodes
-func TestChaincodeQueryChaincodeWithSec(t *testing.T) {
-	ledger.InitTestLedger(t)
-	//viper.Set("security.enabled", "true")
+// YA-fabric 0.9: we have abandoned this test
 
-	//set paths for memberservice to pick up
-	viper.Set("server.rootpath", filepath.Join(os.TempDir(), "ca"))
+// func TestChaincodeQueryChaincodeWithSec(t *testing.T) {
+// 	ledger.InitTestLedger(t)
+// 	//viper.Set("security.enabled", "true")
 
-	var err error
-	var memSrvcLis net.Listener
-	if memSrvcLis, err = initMemSrvc(); err != nil {
-		t.Fail()
-		t.Logf("Error registering user  %s", err)
-		return
-	}
+// 	//set paths for memberservice to pick up
+// 	viper.Set("server.rootpath", filepath.Join(os.TempDir(), "ca"))
 
-	defer finitMemSrvc(memSrvcLis)
+// 	var err error
+// 	var memSrvcLis net.Listener
+// 	if memSrvcLis, err = initMemSrvc(); err != nil {
+// 		t.Fail()
+// 		t.Logf("Error registering user  %s", err)
+// 		return
+// 	}
 
-	time.Sleep(2 * time.Second)
+// 	defer finitMemSrvc(memSrvcLis)
 
-	var peerLis net.Listener
-	if peerLis, err = initPeer(viper.Sub("peer")); err != nil {
-		t.Fail()
-		t.Logf("Error registering user  %s", err)
-		return
-	} else {
-		defer finitPeer(peerLis)
-	}
+// 	time.Sleep(2 * time.Second)
 
-	if err = crypto.RegisterClient("jim", nil, "jim", "6avZQLwcUe9b"); err != nil {
-		t.Fail()
-		t.Logf("Error registering user  %s", err)
-		return
-	}
+// 	var peerLis net.Listener
+// 	if peerLis, err = initPeer(viper.Sub("peer")); err != nil {
+// 		t.Fail()
+// 		t.Logf("Error registering user  %s", err)
+// 		return
+// 	} else {
+// 		defer finitPeer(peerLis)
+// 	}
 
-	//login as jim and test chaincode-chaincode interaction with security
-	if err = chaincodeQueryChaincode("jim"); err != nil {
-		t.Fail()
-		t.Logf("Error executing test %s", err)
-		return
-	}
+// 	if err = crypto.RegisterClient("jim", nil, "jim", "6avZQLwcUe9b"); err != nil {
+// 		t.Fail()
+// 		t.Logf("Error registering user  %s", err)
+// 		return
+// 	}
 
-}
+// 	//login as jim and test chaincode-chaincode interaction with security
+// 	if err = chaincodeQueryChaincode("jim"); err != nil {
+// 		t.Fail()
+// 		t.Logf("Error executing test %s", err)
+// 		return
+// 	}
+
+// }
 
 // Test the invocation of a transaction.
 func TestRangeQuery(t *testing.T) {
@@ -1233,6 +1236,8 @@ func TestGetEvent(t *testing.T) {
 func TestGetRows(t *testing.T) {
 	ledger.InitTestLedger(t)
 
+	//build rows require large time
+	viper.Set("chaincode.exectimeout", 300000)
 	lis, err := initPeer(viper.Sub("peer"))
 	if err != nil {
 		t.Fail()
@@ -1314,12 +1319,15 @@ func TestGetRows(t *testing.T) {
 
 }
 
+var usercc bool
+
 func TestMain(m *testing.M) {
 	SetupTestConfig()
 	//Initialize crypto
 	if err := crypto.Init(); err != nil {
 		panic(fmt.Errorf("Failed initializing the crypto layer [%s]", err))
 	}
+	usercc = viper.GetString("chaincode.mode") == "dev"
 	viper.Sub("peer").Set("fileSystemPath", filepath.Join(os.TempDir(), "hyperledger", "production"))
 	os.Exit(m.Run())
 }

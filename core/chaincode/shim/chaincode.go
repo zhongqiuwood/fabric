@@ -46,6 +46,7 @@ var chaincodeLogger = logging.MustGetLogger("shim")
 // Handler to shim that handles all control logic.
 
 var peerAddress string
+var loglevel string
 
 // ChaincodeStub is an object passed to chaincode for shim side handling of
 // APIs.
@@ -65,7 +66,6 @@ func Start(cc Chaincode) error {
 	format := logging.MustStringFormatter("%{time:15:04:05.000} [%{module}] %{level:.4s} : %{message}")
 	backend := logging.NewLogBackend(os.Stderr, "", 0)
 	backendFormatter := logging.NewBackendFormatter(backend, format)
-	logging.SetBackend(backendFormatter).SetLevel(logging.Level(shimLoggingLevel), "shim")
 
 	viper.SetEnvPrefix("CORE")
 	viper.AutomaticEnv()
@@ -73,8 +73,17 @@ func Start(cc Chaincode) error {
 	viper.SetEnvKeyReplacer(replacer)
 
 	flag.StringVar(&peerAddress, "peer.address", "", "peer address")
-
+	flag.StringVar(&loglevel, "logging.level", "", "log level")
 	flag.Parse()
+
+	lvl := logging.Level(shimLoggingLevel)
+
+	if loglevel != "" {
+		if l, err := logging.LogLevel(loglevel); err == nil {
+			lvl = l
+		}
+	}
+	logging.SetBackend(backendFormatter).SetLevel(lvl, "shim")
 
 	chaincodeLogger.Debugf("Peer address: %s", getPeerAddress())
 
@@ -162,75 +171,34 @@ func chatWithPeer(chaincodename string, stream PeerChaincodeStream, cc Chaincode
 	// Register on the stream
 	chaincodeLogger.Debugf("[%s] Registering.. sending %s",
 		chaincodename, pb.ChaincodeMessage_REGISTER)
-	handler.serialSend(&pb.ChaincodeMessage{Type: pb.ChaincodeMessage_REGISTER, Payload: payload})
-	waitc := make(chan struct{})
-	go func() {
-		defer close(waitc)
-		msgAvail := make(chan *pb.ChaincodeMessage)
-		var nsInfo *nextStateInfo
-		var in *pb.ChaincodeMessage
-		recv := true
-		for {
-			in = nil
-			err = nil
-			nsInfo = nil
-			if recv {
-				recv = false
-				go func() {
-					var in2 *pb.ChaincodeMessage
-					in2, err = stream.Recv()
-					msgAvail <- in2
-				}()
-			}
-			select {
-			case in = <-msgAvail:
-				if err == io.EOF {
-					chaincodeLogger.Debugf("Received EOF, ending chaincode stream, %s", err)
-					return
-				} else if err != nil {
-					chaincodeLogger.Errorf("Received error from server: %s, ending chaincode stream", err)
-					return
-				} else if in == nil {
-					err = fmt.Errorf("Received nil message, ending chaincode stream")
-					chaincodeLogger.Debug("Received nil message, ending chaincode stream")
-					return
-				}
-				chaincodeLogger.Debugf("[%s][%s]Received message %s from shim", chaincodename,
-					shorttxid(in.Txid), in.Type.String())
-				recv = true
-			case nsInfo = <-handler.nextState:
-				in = nsInfo.msg
-				if in == nil {
-					panic("nil msg")
-				}
-				chaincodeLogger.Debugf("[%s][%s]Move state message %s",
-					chaincodename, shorttxid(in.Txid), in.Type.String())
-			}
+	err = stream.Send(&pb.ChaincodeMessage{Type: pb.ChaincodeMessage_REGISTER, Payload: payload})
+	if err != nil {
+		return fmt.Errorf("First send of REGISTER fail: %s", err)
+	}
 
-			// Call FSM.handleMessage()
-			err = handler.handleMessage(in)
-			if err != nil {
-				err = fmt.Errorf("Error handling message: %s", err)
-				return
-			}
-
-			//keepalive messages are PONGs to the fabric's PINGs
-			if (nsInfo != nil && nsInfo.sendToCC) || (in.Type == pb.ChaincodeMessage_KEEPALIVE) {
-				if in.Type == pb.ChaincodeMessage_KEEPALIVE {
-					chaincodeLogger.Debug("[%s]Sending KEEPALIVE response", chaincodename)
-				} else {
-					chaincodeLogger.Debugf("[%s][%s]send state message %s",
-						chaincodename, shorttxid(in.Txid), in.Type.String())
-				}
-				if err = handler.serialSend(in); err != nil {
-					err = fmt.Errorf("Error sending %s: %s", in.Type.String(), err)
-					return
-				}
-			}
+	for {
+		in, err := stream.Recv()
+		if err == io.EOF {
+			chaincodeLogger.Debugf("Received EOF, ending chaincode stream, %s", err)
+			return nil
+		} else if err != nil {
+			chaincodeLogger.Errorf("Received error from server: %s, ending chaincode stream", err)
+			return err
+		} else if in == nil {
+			err = fmt.Errorf("Received nil message, ending chaincode stream")
+			chaincodeLogger.Debug("Received nil message, ending chaincode stream")
+			return err
 		}
-	}()
-	<-waitc
-	return err
+		chaincodeLogger.Debugf("[%s][%s]Received message %s from shim", chaincodename,
+			shorttxid(in.Txid), in.Type)
+		err = handler.handleMessage(in)
+		if err != nil {
+			err = fmt.Errorf("Error handling message: %s", err)
+			return err
+		}
+
+	}
+	return nil
 }
 
 // -- init stub ---
@@ -558,16 +526,23 @@ func (stub *ChaincodeStub) GetRow(tableName string, key []Column) (Row, error) {
 // all rows that have A, C and any value for D as their key. GetRows could
 // also be called with A only to return all rows that have A and any value
 // for C and D as their key.
-func (stub *ChaincodeStub) GetRows(tableName string, key []Column) (<-chan Row, error) {
+
+// YA-fabric 0.9 Note: GetRows is problematic: you can not jump to another operation but not
+// clean the returnned channel, or a channel confliction may occur. we add an cancel function
+// to resolve this problem
+
+var dummyF = func() {}
+
+func (stub *ChaincodeStub) GetRows(tableName string, key []Column) (<-chan Row, func(), error) {
 
 	keyString, err := buildKeyString(tableName, key)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	table, err := stub.getTable(tableName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Need to check for special case where table has a single column
@@ -575,46 +550,58 @@ func (stub *ChaincodeStub) GetRows(tableName string, key []Column) (<-chan Row, 
 
 		row, err := stub.GetRow(tableName, key)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		rows := make(chan Row)
 		go func() {
 			rows <- row
 			close(rows)
 		}()
-		return rows, nil
+		return rows, dummyF, nil
 	}
 
 	iter, err := stub.RangeQueryState(keyString+"1", keyString+":")
 	if err != nil {
-		return nil, fmt.Errorf("Error fetching rows: %s", err)
+		return nil, nil, fmt.Errorf("Error fetching rows: %s", err)
 	}
 
 	rows := make(chan Row)
+	exitNotify := make(chan interface{})
+	cancelFunc := func() {
+		close(exitNotify)
+		ok := true
+		for ok {
+			_, ok = <-rows
+		}
+	}
 
 	go func() {
 		defer func() {
-			recover()
+			iter.Close()
+			close(rows)
 		}()
 		for iter.HasNext() {
 			_, rowBytes, err := iter.Next()
 			if err != nil {
-				close(rows)
+				return
 			}
 
 			var row Row
 			err = proto.Unmarshal(rowBytes, &row)
 			if err != nil {
-				close(rows)
+				return
 			}
 
-			rows <- row
-
+			select {
+			case <-exitNotify:
+				return
+			case rows <- row:
+			}
 		}
-		close(rows)
+
 	}()
 
-	return rows, nil
+	return rows, cancelFunc, nil
 
 }
 

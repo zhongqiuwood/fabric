@@ -23,7 +23,6 @@ import (
 
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
-	"github.com/looplab/fsm"
 )
 
 // PeerChaincodeStream interface for stream between Peer and chaincode instance.
@@ -33,13 +32,8 @@ type PeerChaincodeStream interface {
 	CloseSend() error
 }
 
-type nextStateInfo struct {
-	msg      *pb.ChaincodeMessage
-	sendToCC bool
-}
-
-func (handler *Handler) triggerNextState(msg *pb.ChaincodeMessage, send bool) {
-	handler.nextState <- &nextStateInfo{msg, send}
+func (handler *Handler) triggerNextState(msg *pb.ChaincodeMessage) {
+	handler.serialSend(msg)
 }
 
 // Handler handler implementation for shim side of chaincode.
@@ -49,14 +43,13 @@ type Handler struct {
 	serialLock sync.Mutex
 	To         string
 	ChatStream PeerChaincodeStream
-	FSM        *fsm.FSM
+	handlingF  func(msg *pb.ChaincodeMessage) error
 	cc         Chaincode
 	// Multiple queries (and one transaction) with different txids can be executing in parallel for this chaincode
 	// responseChannel is the channel on which responses are communicated by the shim to the chaincodeStub.
-	responseChannel map[string]chan pb.ChaincodeMessage
+	responseChannel map[string]chan *pb.ChaincodeMessage
 	// Track which TXIDs are transactions and which are queries, to decide whether get/put state and invoke chaincode are allowed.
 	isTransaction map[string]bool
-	nextState     chan *nextStateInfo
 }
 
 func shorttxid(txid string) string {
@@ -76,7 +69,7 @@ func (handler *Handler) serialSend(msg *pb.ChaincodeMessage) error {
 	return nil
 }
 
-func (handler *Handler) createChannel(txid string) (chan pb.ChaincodeMessage, error) {
+func (handler *Handler) createChannel(txid string) (chan *pb.ChaincodeMessage, error) {
 	handler.Lock()
 	defer handler.Unlock()
 	if handler.responseChannel == nil {
@@ -85,7 +78,7 @@ func (handler *Handler) createChannel(txid string) (chan pb.ChaincodeMessage, er
 	if handler.responseChannel[txid] != nil {
 		return nil, fmt.Errorf("[%s]Channel exists", shorttxid(txid))
 	}
-	c := make(chan pb.ChaincodeMessage)
+	c := make(chan *pb.ChaincodeMessage)
 	handler.responseChannel[txid] = c
 	return c, nil
 }
@@ -101,13 +94,13 @@ func (handler *Handler) sendChannel(msg *pb.ChaincodeMessage) error {
 	}
 
 	chaincodeLogger.Debugf("[%s]before send", shorttxid(msg.Txid))
-	handler.responseChannel[msg.Txid] <- *msg
+	handler.responseChannel[msg.Txid] <- msg
 	chaincodeLogger.Debugf("[%s]after send", shorttxid(msg.Txid))
 
 	return nil
 }
 
-func (handler *Handler) receiveChannel(c chan pb.ChaincodeMessage) (pb.ChaincodeMessage, bool) {
+func (handler *Handler) receiveChannel(c chan *pb.ChaincodeMessage) (*pb.ChaincodeMessage, bool) {
 	msg, val := <-c
 	return msg, val
 }
@@ -151,50 +144,10 @@ func newChaincodeHandler(peerChatStream PeerChaincodeStream, chaincode Chaincode
 		ChatStream: peerChatStream,
 		cc:         chaincode,
 	}
-	v.responseChannel = make(map[string]chan pb.ChaincodeMessage)
+	v.responseChannel = make(map[string]chan *pb.ChaincodeMessage)
 	v.isTransaction = make(map[string]bool)
-	v.nextState = make(chan *nextStateInfo)
-
-	// Create the shim side FSM
-	v.FSM = fsm.NewFSM(
-		"created",
-		fsm.Events{
-			{Name: pb.ChaincodeMessage_REGISTERED.String(), Src: []string{"created"}, Dst: "established"},
-			{Name: pb.ChaincodeMessage_INIT.String(), Src: []string{"established"}, Dst: "init"},
-			{Name: pb.ChaincodeMessage_READY.String(), Src: []string{"established"}, Dst: "ready"},
-			{Name: pb.ChaincodeMessage_ERROR.String(), Src: []string{"init"}, Dst: "established"},
-			{Name: pb.ChaincodeMessage_RESPONSE.String(), Src: []string{"init"}, Dst: "init"},
-			{Name: pb.ChaincodeMessage_COMPLETED.String(), Src: []string{"init"}, Dst: "ready"},
-			{Name: pb.ChaincodeMessage_TRANSACTION.String(), Src: []string{"ready"}, Dst: "transaction"},
-			{Name: pb.ChaincodeMessage_COMPLETED.String(), Src: []string{"transaction"}, Dst: "ready"},
-			{Name: pb.ChaincodeMessage_ERROR.String(), Src: []string{"transaction"}, Dst: "ready"},
-			{Name: pb.ChaincodeMessage_RESPONSE.String(), Src: []string{"transaction"}, Dst: "transaction"},
-			{Name: pb.ChaincodeMessage_QUERY.String(), Src: []string{"transaction"}, Dst: "transaction"},
-			{Name: pb.ChaincodeMessage_QUERY.String(), Src: []string{"ready"}, Dst: "ready"},
-			{Name: pb.ChaincodeMessage_RESPONSE.String(), Src: []string{"ready"}, Dst: "ready"},
-		},
-		fsm.Callbacks{
-			"before_" + pb.ChaincodeMessage_REGISTERED.String(): func(e *fsm.Event) { v.beforeRegistered(e) },
-			//"after_" + pb.ChaincodeMessage_INIT.String(): func(e *fsm.Event) { v.beforeInit(e) },
-			//"after_" + pb.ChaincodeMessage_TRANSACTION.String(): func(e *fsm.Event) { v.beforeTransaction(e) },
-			"after_" + pb.ChaincodeMessage_RESPONSE.String(): func(e *fsm.Event) { v.afterResponse(e) },
-			"after_" + pb.ChaincodeMessage_ERROR.String():    func(e *fsm.Event) { v.afterError(e) },
-			"enter_init":                                     func(e *fsm.Event) { v.enterInitState(e) },
-			"enter_transaction":                              func(e *fsm.Event) { v.enterTransactionState(e) },
-			//"enter_ready":                                     func(e *fsm.Event) { v.enterReadyState(e) },
-			"before_" + pb.ChaincodeMessage_QUERY.String(): func(e *fsm.Event) { v.beforeQuery(e) }, //only checks for QUERY
-		},
-	)
+	v.handlingF = v.handleMessage_InitPhase
 	return v
-}
-
-// beforeRegistered is called to handle the REGISTERED message.
-func (handler *Handler) beforeRegistered(e *fsm.Event) {
-	if _, ok := e.Args[0].(*pb.ChaincodeMessage); !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-	chaincodeLogger.Debugf("Received %s, ready for invocations", pb.ChaincodeMessage_REGISTERED)
 }
 
 // handleInit handles request to initialize chaincode.
@@ -205,10 +158,8 @@ func (handler *Handler) handleInit(msg *pb.ChaincodeMessage) {
 	go func() {
 		var nextStateMsg *pb.ChaincodeMessage
 
-		send := true
-
 		defer func() {
-			handler.triggerNextState(nextStateMsg, send)
+			handler.triggerNextState(nextStateMsg)
 		}()
 
 		// Get the function and args from Payload
@@ -250,21 +201,6 @@ func (handler *Handler) handleInit(msg *pb.ChaincodeMessage) {
 	}()
 }
 
-// enterInitState will initialize the chaincode if entering init from established.
-func (handler *Handler) enterInitState(e *fsm.Event) {
-	chaincodeLogger.Debugf("Entered state %s", handler.FSM.Current())
-	msg, ok := e.Args[0].(*pb.ChaincodeMessage)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-	chaincodeLogger.Debugf("[%s]Received %s, initializing chaincode", shorttxid(msg.Txid), msg.Type.String())
-	if msg.Type.String() == pb.ChaincodeMessage_INIT.String() {
-		// Call the chaincode's Run function to initialize
-		handler.handleInit(msg)
-	}
-}
-
 // handleTransaction Handles request to execute a transaction.
 func (handler *Handler) handleTransaction(msg *pb.ChaincodeMessage) {
 	// The defer followed by triggering a go routine dance is needed to ensure that the previous state transition
@@ -274,10 +210,8 @@ func (handler *Handler) handleTransaction(msg *pb.ChaincodeMessage) {
 		//better not be nil
 		var nextStateMsg *pb.ChaincodeMessage
 
-		send := true
-
 		defer func() {
-			handler.triggerNextState(nextStateMsg, send)
+			handler.triggerNextState(nextStateMsg)
 		}()
 
 		// Get the function and args from Payload
@@ -326,7 +260,7 @@ func (handler *Handler) handleQuery(msg *pb.ChaincodeMessage) {
 		var serialSendMsg *pb.ChaincodeMessage
 
 		defer func() {
-			handler.serialSend(serialSendMsg)
+			handler.triggerNextState(serialSendMsg)
 		}()
 
 		// Get the function and args from Payload
@@ -368,87 +302,13 @@ func (handler *Handler) handleQuery(msg *pb.ChaincodeMessage) {
 	}()
 }
 
-// enterTransactionState will execute chaincode's Run if coming from a TRANSACTION event.
-func (handler *Handler) enterTransactionState(e *fsm.Event) {
-	msg, ok := e.Args[0].(*pb.ChaincodeMessage)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-	chaincodeLogger.Debugf("[%s]Received %s, invoking transaction on chaincode(Src:%s, Dst:%s)", shorttxid(msg.Txid), msg.Type.String(), e.Src, e.Dst)
-	if msg.Type.String() == pb.ChaincodeMessage_TRANSACTION.String() {
-		// Call the chaincode's Run function to invoke transaction
-		handler.handleTransaction(msg)
-	}
-}
-
-// enterReadyState will need to handle COMPLETED event by sending message to the peer
-//func (handler *Handler) enterReadyState(e *fsm.Event) {
-
-// afterCompleted will need to handle COMPLETED event by sending message to the peer
-func (handler *Handler) afterCompleted(e *fsm.Event) {
-	msg, ok := e.Args[0].(*pb.ChaincodeMessage)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-	chaincodeLogger.Debugf("[%s]sending COMPLETED to validator for tid", shorttxid(msg.Txid))
-	if err := handler.serialSend(msg); err != nil {
-		e.Cancel(fmt.Errorf("send COMPLETED failed %s", err))
-	}
-}
-
-// beforeQuery is invoked when a query message is received from the validator
-func (handler *Handler) beforeQuery(e *fsm.Event) {
-	if e.Args != nil {
-		msg, ok := e.Args[0].(*pb.ChaincodeMessage)
-		if !ok {
-			e.Cancel(fmt.Errorf("Received unexpected message type"))
-			return
-		}
-		handler.handleQuery(msg)
-	}
-}
-
-// afterResponse is called to deliver a response or error to the chaincode stub.
-func (handler *Handler) afterResponse(e *fsm.Event) {
-	msg, ok := e.Args[0].(*pb.ChaincodeMessage)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-
-	if err := handler.sendChannel(msg); err != nil {
-		chaincodeLogger.Errorf("[%s]error sending %s (state:%s): %s", shorttxid(msg.Txid), msg.Type, handler.FSM.Current(), err)
-	} else {
-		chaincodeLogger.Debugf("[%s]Received %s, communicated (state:%s)", shorttxid(msg.Txid), msg.Type, handler.FSM.Current())
-	}
-}
-
-func (handler *Handler) afterError(e *fsm.Event) {
-	msg, ok := e.Args[0].(*pb.ChaincodeMessage)
-	if !ok {
-		e.Cancel(fmt.Errorf("Received unexpected message type"))
-		return
-	}
-
-	/* TODO- revisit. This may no longer be needed with the serialized/streamlined messaging model
-	 * There are two situations in which the ERROR event can be triggered:
-	 * 1. When an error is encountered within handleInit or handleTransaction - some issue at the chaincode side; In this case there will be no responseChannel and the message has been sent to the validator.
-	 * 2. The chaincode has initiated a request (get/put/del state) to the validator and is expecting a response on the responseChannel; If ERROR is received from validator, this needs to be notified on the responseChannel.
-	 */
-	if err := handler.sendChannel(msg); err == nil {
-		chaincodeLogger.Debugf("[%s]Error received from validator %s, communicated(state:%s)", shorttxid(msg.Txid), msg.Type, handler.FSM.Current())
-	}
-}
-
 // TODO: Implement method to get and put entire state map and not one key at a time?
 // handleGetState communicates with the validator to fetch the requested state information from the ledger.
 func (handler *Handler) handleGetState(key string, txid string) ([]byte, error) {
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
-		chaincodeLogger.Debug("Another state request pending for this Txid. Cannot process.")
+		chaincodeLogger.Debug("[%s]GS:Another state request pending for this Txid. Cannot process.", shorttxid(txid))
 		return nil, uniqueReqErr
 	}
 
@@ -504,7 +364,7 @@ func (handler *Handler) handlePutState(key string, value []byte, txid string) er
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
-		chaincodeLogger.Errorf("[%s]Another state request pending for this Txid. Cannot process.", shorttxid(txid))
+		chaincodeLogger.Errorf("[%s]PS:Another state request pending for this Txid. Cannot process.", shorttxid(txid))
 		return uniqueReqErr
 	}
 
@@ -552,7 +412,7 @@ func (handler *Handler) handleDelState(key string, txid string) error {
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
-		chaincodeLogger.Errorf("[%s]Another state request pending for this Txid. Cannot process create createChannel.", shorttxid(txid))
+		chaincodeLogger.Errorf("[%s]DS:Another state request pending for this Txid. Cannot process create createChannel.", shorttxid(txid))
 		return uniqueReqErr
 	}
 
@@ -594,7 +454,7 @@ func (handler *Handler) handleRangeQueryState(startKey, endKey string, txid stri
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
-		chaincodeLogger.Debugf("[%s]Another state request pending for this Txid. Cannot process.", shorttxid(txid))
+		chaincodeLogger.Debugf("[%s]RNQ:Another state request pending for this Txid. Cannot process.", shorttxid(txid))
 		return nil, uniqueReqErr
 	}
 
@@ -648,7 +508,7 @@ func (handler *Handler) handleRangeQueryStateNext(id, txid string) (*pb.RangeQue
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
-		chaincodeLogger.Debugf("[%s]Another state request pending for this Txid. Cannot process.", shorttxid(txid))
+		chaincodeLogger.Debugf("[%s]RNQN:Another state request pending for this Txid. Cannot process.", shorttxid(txid))
 		return nil, uniqueReqErr
 	}
 
@@ -702,7 +562,7 @@ func (handler *Handler) handleRangeQueryStateClose(id, txid string) (*pb.RangeQu
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
-		chaincodeLogger.Debugf("[%s]Another state request pending for this Txid. Cannot process.", shorttxid(txid))
+		chaincodeLogger.Debugf("[%s]RNQC:Another state request pending for this Txid. Cannot process.", shorttxid(txid))
 		return nil, uniqueReqErr
 	}
 
@@ -877,44 +737,57 @@ func (handler *Handler) handleQueryChaincode(chaincodeName string, args [][]byte
 	return nil, errors.New("Incorrect chaincode message received")
 }
 
-// handleMessage message handles loop for shim side of chaincode/validator stream.
-func (handler *Handler) handleMessage(msg *pb.ChaincodeMessage) error {
-	if msg.Type == pb.ChaincodeMessage_KEEPALIVE {
-		// Received a keep alive message, we don't do anything with it for now
-		// and it does not touch the state machine
-		return nil
+func (handler *Handler) handleMessage_InitPhase(msg *pb.ChaincodeMessage) error {
+
+	switch msg.Type {
+	case pb.ChaincodeMessage_REGISTERED: //omit it
+	case pb.ChaincodeMessage_INIT:
+		handler.handleInit(msg)
+		fallthrough
+	case pb.ChaincodeMessage_READY:
+		//handler can come into tx phase simply after init, no matter it success or not
+		//(it was fabric's response to considering the resp and dispatch more request)
+		handler.handlingF = handler.handleMessage_OpPhase
+	default:
+		return fmt.Errorf("[%s]Received %s which is not allowed", shorttxid(msg.Txid), msg.Type)
 	}
-	chaincodeLogger.Debugf("[%s]Handling ChaincodeMessage of type: %s(state:%s)", shorttxid(msg.Txid), msg.Type, handler.FSM.Current())
-	if handler.FSM.Cannot(msg.Type.String()) {
-		errStr := fmt.Sprintf("[%s]Chaincode handler FSM cannot handle message (%s) with payload size (%d) while in state: %s", msg.Txid, msg.Type.String(), len(msg.Payload), handler.FSM.Current())
-		err := errors.New(errStr)
-		payload := []byte(err.Error())
-		errorMsg := &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR, Payload: payload, Txid: msg.Txid}
-		handler.serialSend(errorMsg)
-		return err
-	}
-	err := handler.FSM.Event(msg.Type.String(), msg)
-	return filterError(err)
+
+	return nil
 }
 
-// filterError filters the errors to allow NoTransitionError and CanceledError to not propagate for cases where embedded Err == nil.
-func filterError(errFromFSMEvent error) error {
-	if errFromFSMEvent != nil {
-		if noTransitionErr, ok := errFromFSMEvent.(*fsm.NoTransitionError); ok {
-			if noTransitionErr.Err != nil {
-				// Only allow NoTransitionError's, all others are considered true error.
-				return errFromFSMEvent
-			}
-		}
-		if canceledErr, ok := errFromFSMEvent.(*fsm.CanceledError); ok {
-			if canceledErr.Err != nil {
-				// Only allow NoTransitionError's, all others are considered true error.
-				return canceledErr
-				//t.Error("expected only 'NoTransitionError'")
-			}
-			chaincodeLogger.Debugf("Ignoring CanceledError: %s", canceledErr)
-		}
+func (handler *Handler) handleMessage_OpPhase(msg *pb.ChaincodeMessage) error {
+	switch msg.Type {
+	case pb.ChaincodeMessage_TRANSACTION:
+		handler.handleTransaction(msg)
+	case pb.ChaincodeMessage_QUERY:
+		handler.handleQuery(msg)
+	default:
+		return fmt.Errorf("[%s]Received %s which is not allowed", shorttxid(msg.Txid), msg.Type)
 	}
+
+	return nil
+}
+
+// handleMessage message handles loop for shim side of chaincode/validator stream.
+func (handler *Handler) handleMessage(msg *pb.ChaincodeMessage) error {
+
+	switch msg.Type {
+	case pb.ChaincodeMessage_KEEPALIVE:
+		// Received a keep alive message, we don't do anything with it for now
+		// and it does not touch the state machine, just response the original message
+		return handler.serialSend(msg)
+	case pb.ChaincodeMessage_RESPONSE, pb.ChaincodeMessage_ERROR:
+		if err := handler.sendChannel(msg); err != nil {
+			chaincodeLogger.Errorf("[%s]error sending %s :%s", shorttxid(msg.Txid), msg.Type, err)
+			return err
+		} else {
+			chaincodeLogger.Debugf("[%s]Received %s, communicated", shorttxid(msg.Txid), msg.Type)
+			return nil
+		}
+	default:
+		return handler.handlingF(msg)
+	}
+
 	return nil
 }
 

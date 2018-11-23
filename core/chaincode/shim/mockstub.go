@@ -249,8 +249,8 @@ func (stub *MockStub) GetRow(tableName string, key []Column) (Row, error) {
 }
 
 // Not implemented
-func (stub *MockStub) GetRows(tableName string, key []Column) (<-chan Row, error) {
-	return nil, nil
+func (stub *MockStub) GetRows(tableName string, key []Column) (<-chan Row, func(), error) {
+	return nil, nil, nil
 }
 
 // Not implemented

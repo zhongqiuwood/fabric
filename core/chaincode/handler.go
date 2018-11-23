@@ -165,7 +165,7 @@ func (ws *workingStream) handleWriteState(msg *pb.ChaincodeMessage, tctx *transa
 	var err error
 
 	switch msg.Type {
-	case pb.ChaincodeMessage_PUT_STATE: //, pb.ChaincodeMessage_DEL_STATE:
+	case pb.ChaincodeMessage_PUT_STATE, pb.ChaincodeMessage_DEL_STATE:
 		respmsg, err = handler.handlePutState(ledger, msg, tctx)
 	default:
 		err = fmt.Errorf("Unrecognized query msg type %s", msg.Type)
@@ -241,17 +241,6 @@ func (ws *workingStream) handleMessage(msg *pb.ChaincodeMessage, tctx *transacti
 	default:
 		panic(fmt.Errorf("Unrecognized msg type: %s", msg.Type))
 	}
-}
-
-func (ws *workingStream) recvMsg(msgAvail chan *pb.ChaincodeMessage) {
-	in, err := ws.Recv()
-
-	if err == io.EOF {
-		chaincodeLogger.Debugf("Received EOF, ending chaincode support stream, %s", err)
-	} else if err != nil {
-		chaincodeLogger.Errorf("Error handling chaincode support stream: %s", err)
-	}
-	msgAvail <- in
 }
 
 func (ws *workingStream) processStream(handler *Handler) (err error) {

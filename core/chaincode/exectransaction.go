@@ -107,7 +107,7 @@ func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSuppo
 		// Rollback transaction
 		return &ExecuteResult{exstate, resp.ChaincodeEvent, nil}, fmt.Errorf("Transaction or query returned with failure: %s", string(resp.Payload))
 	}
-	return &ExecuteResult{exstate, nil, resp.Payload}, fmt.Errorf("receive a response for (%s) but in invalid state(%d)", t.Txid, resp.Type)
+	return nil, fmt.Errorf("receive a response for (%s) but in invalid state(%d)", t.Txid, resp.Type)
 
 }
 

@@ -224,6 +224,8 @@ func (vm *DockerVM) stopInternal(ctxt context.Context, client *docker.Client, id
 	} else {
 		dockerLogger.Debugf("Stopped container %s", id)
 	}
+
+	//TODO: should we need to kill (Stop include killing)
 	if !dontkill {
 		err = client.KillContainer(docker.KillContainerOptions{ID: id})
 		if err != nil {
@@ -232,6 +234,7 @@ func (vm *DockerVM) stopInternal(ctxt context.Context, client *docker.Client, id
 			dockerLogger.Debugf("Killed container %s", id)
 		}
 	}
+
 	if !dontremove {
 		err = client.RemoveContainer(docker.RemoveContainerOptions{ID: id, Force: true})
 		if err != nil {

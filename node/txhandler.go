@@ -61,7 +61,7 @@ func handleTx(lastDigest []byte, tx *pb.Transaction, endorser cred.TxEndorser) (
 	return tx
 }
 
-func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) {
+func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) error {
 
 	txlogger.Debugf("start handling %d txs", len(txs))
 

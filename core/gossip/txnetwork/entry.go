@@ -146,7 +146,7 @@ func initTxnetworkEntrance(stub *gossip.GossipStub) {
 }
 
 type TxNetworkHandler interface {
-	HandleTxs(tx []*PendingTransaction)
+	HandleTxs(tx []*PendingTransaction) error
 	Release()
 }
 
@@ -168,6 +168,7 @@ func newTxNetworkEntry() *txNetworkEntry {
 func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 
 	var txBuffer [maxOutputBatch]*PendingTransaction
+	var err error
 	txs := txBuffer[:0]
 
 	logger.Infof("Start a worker for txnetwork entry with handler %x", h)
@@ -176,6 +177,11 @@ func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 		h.Release()
 	}()
 	for {
+
+		if err != nil {
+			logger.Error("Tx handling encounter failure:", err)
+			return
+		}
 
 		if len(txs) == 0 {
 			//wait for an item
@@ -186,7 +192,7 @@ func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 				return
 			}
 		} else if len(txs) >= maxOutputBatch {
-			h.HandleTxs(txs)
+			err = h.HandleTxs(txs)
 			txs = txBuffer[:0]
 		} else {
 			//wait more item or handle we have
@@ -196,7 +202,7 @@ func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 			case <-ctx.Done():
 				return
 			default:
-				h.HandleTxs(txs)
+				err = h.HandleTxs(txs)
 				txs = txBuffer[:0]
 			}
 		}

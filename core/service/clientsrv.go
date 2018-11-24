@@ -33,6 +33,7 @@ import (
 	"github.com/abchain/fabric/core/chaincode/container"
 	"github.com/abchain/fabric/core/chaincode/platforms"
 	"github.com/abchain/fabric/core/config"
+	"github.com/abchain/fabric/core/cred"
 	crypto "github.com/abchain/fabric/core/crypto"
 	ecc "github.com/abchain/fabric/core/embedded_chaincode/api"
 	"github.com/abchain/fabric/core/gossip/txnetwork"
@@ -59,34 +60,7 @@ func NewDevopsServer(peer peer.Peer) *Devops {
 
 	clisrvLogger.Info("Devops use txnetwork")
 
-	entryItem, exist := txnetwork.GetNetworkEntry(peer.GetStreamStub("gossip"))
-	if !exist {
-		panic("No txnetwork inited, code is malformed")
-	}
-
-	d.txnet = entryItem.GetEntry()
-
-	//start txnetwork handler route
-	if d.isSecurityEnabled {
-		endorser := viper.GetString("security.endorseID")
-		if endorser == "" {
-			clisrvLogger.Warning("No default endorser is used, some transaction may not be endorsed")
-		} else if h, err := NewTxNetworkHandler(entryItem, endorser); err != nil {
-			clisrvLogger.Warning("Can not create default endorser, some transaction may not be endorsed:", err)
-		} else {
-			entryItem.Start(peer.GetPeerCtx(), h)
-			return d
-		}
-	}
-
-	epochInterval = uint64(txnetwork.PeerTxQueueLimit() / 4)
-	clisrvLogger.Infof("Set tx epoch interval into %d", epochInterval)
-
-	if h, err := NewTxNetworkHandlerNoSec(entryItem); err != nil {
-		clisrvLogger.Fatal("Can not create txnetwork", err)
-	} else {
-		entryItem.Start(peer.GetPeerCtx(), h)
-	}
+	d.txnet = txnetwork.GetNetworkEntry(peer.GetStreamStub("gossip"))
 
 	return d
 }
@@ -100,7 +74,7 @@ type bindingMap struct {
 // Devops implementation of Devops services
 type Devops struct {
 	peer              peer.Peer
-	txnet             txnetwork.TxNetwork
+	txnet             *txnetwork.TxNetworkEntry
 	isSecurityEnabled bool
 	bindingMap        *bindingMap
 }

@@ -616,7 +616,7 @@ func TestServerOpenchainREST_API_Chaincode_Deploy(t *testing.T) {
 		"params": {
 			"type": 1,
 			"chaincodeID": {
-				"path": "github.com/abchain/fabric/core/rest/test_chaincode"
+				"path": "github.com/abchain/fabric/node/rest/test_chaincode"
 			},
 			"ctorMsg": {
 				"args": ["` +
@@ -639,7 +639,7 @@ func TestServerOpenchainREST_API_Chaincode_Deploy(t *testing.T) {
 		"params": {
 			"type": 1,
 			"chaincodeID": {
-				"path": "github.com/abchain/fabric/core/rest/test_chaincode"
+				"path": "github.com/abchain/fabric/node/rest/test_chaincode"
 			},
 			"ctorMsg": {
 				"args": ["` +

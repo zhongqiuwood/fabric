@@ -13,6 +13,7 @@ It is generated from these files:
 	fabric.proto
 	gossip.proto
 	server_admin.proto
+	sync.proto
 
 It has these top-level messages:
 	BlockNumber
@@ -57,6 +58,12 @@ It has these top-level messages:
 	HelloMessage
 	Message
 	Response
+	GossipMsg
+	HotTransactionBlock
+	PeerTxState
+	Gossip_Tx
+	Gossip_TxState
+	ServerStatus
 	GlobalState
 	BlockState
 	SyncBlockRange
@@ -69,12 +76,6 @@ It has these top-level messages:
 	SyncMsg
 	SyncStateQuery
 	SyncStateResp
-	GossipMsg
-	HotTransactionBlock
-	PeerTxState
-	Gossip_Tx
-	Gossip_TxState
-	ServerStatus
 */
 package protos
 

@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"fmt"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 )
@@ -18,6 +19,9 @@ type Credentials struct {
 	PeerValidator PeerCreds
 	TxEndorserDef TxEndorserFactory
 	TxValidator   TxHandlerFactory
+
+	//additional selectable endorser
+	TxEndorsers map[string]TxEndorserFactory
 }
 
 /*
@@ -81,4 +85,18 @@ type TxConfidentialityHandler interface {
 	//returns a DataEncryptor linked to pair defined by
 	//the deploy transaction and the execute transaction.
 	GenDataEncryptor(deployTx, executeTx *pb.Transaction) (DataEncryptor, error)
+}
+
+func (cred *Credentials) SelectEndorser(name string) (TxEndorserFactory, error) {
+
+	if cred.TxEndorsers != nil {
+		opt, ok := cred.TxEndorsers[name]
+		if ok {
+			return opt, nil
+		}
+	}
+
+	//TODO: we can create external type of endorser if being configured to
+	return nil, fmt.Errorf("Specified endorser %s is not exist", name)
+
 }

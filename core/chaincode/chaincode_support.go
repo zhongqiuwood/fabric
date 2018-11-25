@@ -113,6 +113,10 @@ func (chaincodeSupport *ChaincodeSupport) FinalDeploy(ctx context.Context, txsuc
 	}
 }
 
+func checkDeployTxID(chaincode string, ledger *ledger.Ledger) ([]byte, error) {
+	return ledger.GetState(chaincode, deployTxKey, true)
+}
+
 func (chaincodeSupport *ChaincodeSupport) extractDeployTx(chaincode string, ledger *ledger.Ledger) (*pb.Transaction, error) {
 	if chaincodeSupport.userRunsCC {
 		chaincodeLogger.Error("You are attempting to perform an action other than Deploy on Chaincode that is not ready and you are in developer mode. Did you forget to Deploy your chaincode?")
@@ -121,7 +125,7 @@ func (chaincodeSupport *ChaincodeSupport) extractDeployTx(chaincode string, ledg
 	var depTxId []byte
 	var depTx *pb.Transaction
 	var ledgerErr error
-	depTxId, ledgerErr = ledger.GetState(chaincode, deployTxKey, true)
+	depTxId, ledgerErr = checkDeployTxID(chaincode, ledger)
 	if ledgerErr != nil {
 		return nil, fmt.Errorf("Failed to get deploy key in ledger (%s)", ledgerErr)
 	} else if depTxId == nil {
@@ -520,6 +524,16 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 		err := proto.Unmarshal(depTx.Payload, cds)
 		if err != nil {
 			return fmt.Errorf("failed to unmarshal deployment transactions for %s - %s", chaincode, err), chrte
+		}
+	} else {
+		//TODO: we never check the old-style deployment (no deploy name, just the txid) any more?
+		var depTxid []byte
+		depTxid, err = checkDeployTxID(chaincode, ledger)
+		if err != nil {
+			return err, chrte
+		}
+		if depTxid != nil {
+			return fmt.Errorf("Try to redeploy existed chaincode [%s]", chaincode), chrte
 		}
 	}
 

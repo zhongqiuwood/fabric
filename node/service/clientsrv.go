@@ -26,25 +26,23 @@ import (
 	"github.com/abchain/fabric/core/chaincode"
 	"github.com/abchain/fabric/core/chaincode/platforms"
 	"github.com/abchain/fabric/core/config"
-	"github.com/abchain/fabric/core/cred"
 	ecc "github.com/abchain/fabric/core/embedded_chaincode/api"
-	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/node"
 	pb "github.com/abchain/fabric/protos"
 )
 
 var clisrvLogger = logging.MustGetLogger("server")
 
 // NewDevopsServer creates and returns a new Devops server instance.
-func NewDevopsServer(txn *txnetwork.TxNetworkEntry, cred *credentials.Credentials) *Devops {
+func NewDevopsServer(p *node.PeerEngine) *Devops {
 
-	if config.SecurityEnabled() && cred == nil {
-		panic("create cliserver without credentials while enforce security")
+	if config.SecurityEnabled() && p.Credentials == nil {
+		panic("peer node has no credentials while we enforce security")
 	}
 
 	d := new(Devops)
-	d.cred = cred
-	d.txnet = txn
+	d.peer = p
 
 	clisrvLogger.Info("Devops use txnetwork")
 
@@ -53,8 +51,7 @@ func NewDevopsServer(txn *txnetwork.TxNetworkEntry, cred *credentials.Credential
 
 // Devops implementation of Devops services
 type Devops struct {
-	cred  *credentials.Credentials
-	txnet *txnetwork.TxNetworkEntry
+	peer *node.PeerEngine
 }
 
 // TODO: login should become part of the cred
@@ -163,7 +160,7 @@ func (d *Devops) deliverTx(ctx context.Context, tx *pb.Transaction, spec *pb.Cha
 	var err error
 	if config.SecurityEnabled() && spec.SecureContext != "" {
 
-		ed, err := d.cred.SelectEndorser(spec.SecureContext)
+		ed, err := d.peer.SelectEndorser(spec.SecureContext)
 		if err != nil {
 			return nil, fmt.Errorf("Obtain endorser failure: %s", err)
 		}
@@ -173,11 +170,11 @@ func (d *Devops) deliverTx(ctx context.Context, tx *pb.Transaction, spec *pb.Cha
 			return nil, fmt.Errorf("Create tx endorser failure: %s", err)
 		}
 
-		resp = d.txnet.ExecuteTransaction(ctx, tx, txed)
+		resp = d.peer.ExecuteTransaction(ctx, tx, txed)
 
 	} else {
 		//we simply omit securecontext even it was specified
-		resp = d.txnet.ExecuteTransaction(ctx, tx, nil)
+		resp = d.peer.ExecuteTransaction(ctx, tx, nil)
 	}
 
 	if resp.Status == pb.Response_FAILURE {

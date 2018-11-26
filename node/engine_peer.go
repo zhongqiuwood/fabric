@@ -109,9 +109,14 @@ func (pe *PeerEngine) Run() error {
 	}
 
 	if id != pe.lastID {
-		//so the self peer is changed, we must reset caches
-		//use the starting as current cache
+		//ok, we start a new handler
 		pe.lastCache = txPoint{lastState.GetDigest(), lastState.GetNum()}
+		//this is malformed: the laststate from txnetwork IS NOT the actual series
+		//which current peer has achieved to and a branched tx-chain may be encountered
+		if series := lastState.GetNum(); series != 0 {
+			txlogger.Warningf("We try to start a new peer with a running-state (series %d)", series)
+			pe.lastCache.Series = series
+		}
 		pe.lastID = id
 	}
 

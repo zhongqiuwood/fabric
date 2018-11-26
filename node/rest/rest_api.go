@@ -41,8 +41,8 @@ import (
 	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/crypto/primitives"
-	"github.com/abchain/fabric/core/service"
 	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/node/service"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/ptypes/empty"
 )

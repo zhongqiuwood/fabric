@@ -13,29 +13,28 @@ var (
 	txlogger      = logging.MustGetLogger("txhandler")
 )
 
-type txTask struct {
-	txs        []*pb.Transaction
-	lastDigest []byte
-	lastSeries uint64
-}
+const chkpcnt = 32
 
 type txNetworkHandlerImpl struct {
-	output          chan txTask
+	*txnetwork.TxNetworkEntry
+	OnExit chan struct{}
+
 	defaultEndorser cred.TxEndorser
 	lastSeries      uint64
 	lastDigest      []byte
-	finishedTxs     []*pb.Transaction
+	chkpoints       [chkpcnt]*txPoint
 }
 
-func NewTxNetworkHandler(last uint64, digest []byte, endorser cred.TxEndorser) (*txNetworkHandlerImpl, error) {
+func NewTxNetworkHandler(txnet *txnetwork.TxNetworkEntry, last uint64, digest []byte, endorser cred.TxEndorser) (*txNetworkHandlerImpl, error) {
 
 	ret := new(txNetworkHandlerImpl)
-	ret.output = make(chan txTask)
+	ret.TxNetworkEntry = txnet
 	ret.defaultEndorser = endorser
 	ret.lastSeries = last
 	ret.lastDigest = digest
+	ret.OnExit = make(chan struct{})
 
-	txlogger.Infof("Start a txnetwork handler for peer at %d[%x]", ret.lastSeries, ret.lastDigest)
+	txlogger.Infof("Start a txnetwork handler for txnetwork at %d[%x]", ret.lastSeries, ret.lastDigest)
 
 	return ret, nil
 }
@@ -64,6 +63,8 @@ func handleTx(lastDigest []byte, tx *pb.Transaction, endorser cred.TxEndorser) (
 func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) error {
 
 	txlogger.Debugf("start handling %d txs", len(txs))
+	lastDigest := t.lastDigest
+	var htxs []*pb.Transaction
 
 	var err error
 	for _, tx := range txs {
@@ -77,9 +78,8 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) er
 		}
 
 		if htx, err := handleTx(lastDigest, tx.Transaction, endorser); err == nil {
-			t.lastDigest = txnetwork.GetTxDigest(htx)
-			t.lastSeries = t.lastSeries + 1
-			t.finishedTxs = append(t.finishedTxs, htx)
+			htxs = append(htxs, htx)
+			lastDigest = txnetwork.GetTxDigest(htx)
 			tx.Respond(&pb.Response{pb.Response_SUCCESS, []byte(htx.GetTxid())})
 		} else {
 			txlogger.Errorf("building complete tx fail: %s, corresponding tx skipped", err)
@@ -87,19 +87,60 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) er
 		}
 	}
 
-	select {
-	case t.output <- txTask{t.finishedTxs, t.lastDigest, t.lastSeries}:
-		t.finishedTxs = nil
-	default:
-		//recv side is not ready ...
+	if len(htxs) == 0 {
+		txlogger.Warningf("can't build any tx from %d incoming pending txs", len(txs))
+		return nil
 	}
 
-	// t.updateHotTx(outtxs, lastDigest, lastSeries)
+	lastSeries := t.lastSeries + len(htxs)
+	nextChkPos := uint(t.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
 
-	// if t.epoch.Series+epochInterval < lastSeries {
-	// 	t.updateEpoch()
-	// }
+	if err = t.UpdateLocalHotTx(&pb.HotTransactionBlock{htxs, lastSeries}); err == nil {
+		t.lastSeries = lastSeries
+		t.lastDigest = lastDigest
+	} else {
+		txlogger.Errorf("updating completed txs into network fail: %s", err)
+		//TODO: though rare, should we drop the running thread? or tracking it by some ways?
+		return nil
+	}
 
+	//update checkpoint and epoch
+	chk := uint(t.lastSeries/uint64(txnetwork.PeerTxQueueLen()))
+	if chk >= nextChkPos {
+		//checkpoint current, and increase chkpoint pos
+		txlogger.Infof("Chkpoint %d reach, record [%d:%x]", nextChkPos, t.lastSeries, t.lastDigest)
+		t.chkpoints[chk%chkpcnt] = &txPoint{t.lastDigest, t.lastSeries}
+
+		//when we have passed an epoch border, try to update the epoch
+		if t.lastSeries > epochInterval{
+			epochPoint := uint((t.lastSeries - epochInterval)/uint64(txnetwork.PeerTxQueueLen()))
+			if t.chkpoints[epochPoint%chkpcnt] != nil
+		}
+	}
+
+	pe.lastCache = txPoint{out.lastDigest, out.lastSeries}
+	if epoch+epochInterval < out.lastSeries {
+		//first we search for a eariest checkpoint
+		start := uint(epoch/uint64(txnetwork.PeerTxQueueLen())) + 1
+		end := uint(out.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
+
+		for i := start; i < end; i++ {
+			if chk, ok := chkps[i]; ok {
+				delete(chkps, i)
+				txlogger.Infof("Update epoch to chkpoint %d [%d:%x]", i, chk.Series, chk.Digest)
+				if err := pe.updateEpoch(chk); err != nil {
+					//we can torlence this problem, though ...
+					txlogger.Errorf("Update new epoch state [%d] fail: %s", chk.Series, err)
+				} else {
+					break
+				}
+				//epoch is forwarded, even we do not update succefully
+				epoch = chk.Series
+			}
+		}
+	}
+
+	return nil
 }
 
 func (t *txNetworkHandlerImpl) Release() {
@@ -109,6 +150,6 @@ func (t *txNetworkHandlerImpl) Release() {
 		t.defaultEndorser.Release()
 	}
 
-	close(t.output)
+	close(t.OnExit)
 
 }

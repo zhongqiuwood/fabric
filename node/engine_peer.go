@@ -2,11 +2,9 @@ package node
 
 import (
 	"fmt"
-	cred "github.com/abchain/fabric/core/cred"
-	"github.com/abchain/fabric/core/gossip/txnetwork"
-	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/peer"
+	_ "github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
+	"golang.org/x/net/context"
 )
 
 type txPoint struct {
@@ -29,78 +27,35 @@ func (pe *PeerEngine) updateEpoch(chk txPoint) error {
 	return pe.TxNetworkEntry.UpdateLocalPeer(state)
 }
 
-func (pe *PeerEngine) worker(entry *txnetwork.TxNetworkEntry, epoch uint64) {
+func (pe *PeerEngine) IsRunning() (bool, error) {
 
-	var err error
-	defer func() {
+	if pe.exitNotify == nil {
+		return false, fmt.Errorf("Engine is not inited")
+	}
 
-		if err != nil {
-			//maybe it should be fatal ...
-			logger.Errorf(" *** Peer Engine exit unexpectly: %s ***", err)
-		}
-
-		pe.runStatus <- err
-	}()
-
-	var chkps = make(map[uint]txPoint)
-	var nextChkPos = uint(pe.lastCache.Series/uint64(txnetwork.PeerTxQueueLen())) + 1
-
-	for out := range h.output {
-		err = entry.UpdateLocalHotTx(&pb.HotTransactionBlock{out.txs, out.lastSeries + 1 - len(out.txs)})
-		if err != nil {
-			return
-		}
-
-		chk := uint(out.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
-		if chk > nextChkPos {
-			//checkpoint current, and increase chkpoint pos
-			txlogger.Infof("Chkpoint %d reach, record [%d:%x]", nextChkPos, out.lastSeries, out.lastDigest)
-			chkps[nextChkPos] = txPoint{out.lastDigest, out.lastSeries}
-			nextChkPos = chk
-		}
-
-		pe.lastCache = txPoint{out.lastDigest, out.lastSeries}
-		if epoch+epochInterval < out.lastSeries {
-			//first we search for a eariest checkpoint
-			start := uint(epoch/uint64(txnetwork.PeerTxQueueLen())) + 1
-			end := uint(out.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
-
-			for i := start; i < end; i++ {
-				if chk, ok := chkps[i]; ok {
-					delete(chkps, i)
-					txlogger.Infof("Update epoch to chkpoint %d [%d:%x]", i, chk.Series, chk.Digest)
-					if err := pe.updateEpoch(chk); err != nil {
-						//we can torlence this problem, though ...
-						txlogger.Errorf("Update new epoch state [%d] fail: %s", chk.Series, err)
-					} else {
-						break
-					}
-					//epoch is forwarded, even we do not update succefully
-					epoch = chk.Series
-				}
-			}
-		}
+	select {
+	case <-pe.exitNotify:
+		return false, pe.runStatus
+	default:
+		return true, nil
 	}
 
 }
 
-func (pe *PeerEngine) Run() error {
+func (pe *PeerEngine) Stop() {
 
-	if pe.runStatus != nil {
-		return fmt.Errorf("Engine is still running")
+	if pe.stopFunc == nil {
+		return
 	}
 
-	pe.runStatus = make(chan error)
+	pe.stopFunc()
+	<-pe.exitNotify
+}
 
-	var endorser cred.TxEndorser
-	var err error
-	if pe.TxEndorserDef != nil {
-		//in most case we generate a default endorser with empty attributes,
-		//but it was also ok to create it with some attr.
-		endorser, err = pe.TxEndorserDef.GetEndorser(pe.defaultAttr...)
-		if err != nil {
-			return err
-		}
+func (pe *PeerEngine) Run() error {
+
+	if isrun, _ := pe.IsRunning(); isrun {
+		return fmt.Errorf("Engine is still running")
 	}
 
 	lastState, id := pe.GetPeerStatus()
@@ -120,11 +75,30 @@ func (pe *PeerEngine) Run() error {
 		pe.lastID = id
 	}
 
-	h, err := NewTxNetworkHandler(pe.lastCache.Series, pe.lastCache.Digest, endorser)
+	h, err := NewTxNetworkHandler(pe.TxNetworkEntry, pe.lastCache, pe.TxEndorserDef, pe.defaultAttr)
 	if err != nil {
 		return err
 	}
 
-	go pe.worker(h, lastState.GetNum())
+	pe.exitNotify = make(chan interface{})
+	//run guard thread
+	go func() {
+		select {
+		case <-h.OnExit:
+			pe.runStatus = fmt.Errorf("txnetwork stopped")
+			pe.lastCache.Series = h.lastSeries
+			pe.lastCache.Digest = h.lastDigest
+		case <-pe.GetPeerCtx().Done():
+			pe.runStatus = fmt.Errorf("Global exit: %s", pe.GetPeerCtx().Err())
+		}
 
+		close(pe.exitNotify)
+
+	}()
+
+	var wctx context.Context
+	wctx, pe.stopFunc = context.WithCancel(pe.GetPeerCtx())
+	pe.Start(wctx, h)
+
+	return nil
 }

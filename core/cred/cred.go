@@ -1,7 +1,6 @@
 package credentials
 
 import (
-	"fmt"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 )
@@ -15,18 +14,9 @@ var logger = logging.MustGetLogger("credential")
 	(and somewhat like the mxing of bccsp & msp in fabric 1.0)
 */
 
-type Credentials struct {
-	PeerValidator PeerCreds
-	TxEndorserDef TxEndorserFactory
-	TxValidator   TxHandlerFactory
-
-	//additional selectable endorser
-	TxEndorsers map[string]TxEndorserFactory
-}
-
 /*
 
- -- entries for peer's credentials ---
+ -- entries for per-peer (per-network)'s credentials ---
 
 */
 
@@ -34,23 +24,6 @@ type PeerCreds interface {
 	SelfPeerId() string
 	PeerIdCred() []byte
 	VerifyPeer(string, []byte) error
-}
-
-/*
-
- -- entries for transaction's credentials ---
-
-*/
-type TxEndorserFactory interface {
-	EndorserId() []byte //notice the endorserid is bytes
-	//EndorsePeerState need to consider the exist endorsment field and decide update it or not
-	EndorsePeerState(*pb.PeerTxState) (*pb.PeerTxState, error)
-	GetEndorser(attr ...string) (TxEndorser, error)
-}
-
-type TxEndorser interface {
-	EndorseTransaction(*pb.Transaction) (*pb.Transaction, error)
-	Release()
 }
 
 type TxHandlerFactory interface {
@@ -66,7 +39,24 @@ type TxPreHandler interface {
 
 /*
 
- -- entries for transaction's confidentiality ---
+ -- entries for per-user's credentials, user can be actived in mutiple networks---
+
+*/
+type TxEndorserFactory interface {
+	EndorserId() []byte //notice the endorserid is bytes
+	//EndorsePeerState need to consider the exist endorsment field and decide update it or not
+	EndorsePeerState(*pb.PeerTxState) (*pb.PeerTxState, error)
+	GetEndorser(attr ...string) (TxEndorser, error)
+}
+
+type TxEndorser interface {
+	EndorseTransaction(*pb.Transaction) (*pb.Transaction, error)
+	Release()
+}
+
+/*
+
+ -- entries for per-platform's confidentiality ---
 
 */
 
@@ -85,18 +75,4 @@ type TxConfidentialityHandler interface {
 	//returns a DataEncryptor linked to pair defined by
 	//the deploy transaction and the execute transaction.
 	GenDataEncryptor(deployTx, executeTx *pb.Transaction) (DataEncryptor, error)
-}
-
-func (cred *Credentials) SelectEndorser(name string) (TxEndorserFactory, error) {
-
-	if cred.TxEndorsers != nil {
-		opt, ok := cred.TxEndorsers[name]
-		if ok {
-			return opt, nil
-		}
-	}
-
-	//TODO: we can create external type of endorser if being configured to
-	return nil, fmt.Errorf("Specified endorser %s is not exist", name)
-
 }

@@ -2,8 +2,9 @@ package node
 
 import (
 	"fmt"
+	cred "github.com/abchain/fabric/core/cred"
 	_ "github.com/abchain/fabric/core/peer"
-	pb "github.com/abchain/fabric/protos"
+	_ "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 )
 
@@ -12,19 +13,19 @@ type txPoint struct {
 	Series uint64
 }
 
-func (pe *PeerEngine) updateEpoch(chk txPoint) error {
-
-	state := &pb.PeerTxState{Digest: chk.Digest, Num: chk.Series}
-	var err error
-
-	if pe.TxEndorserDef != nil {
-		state, err = pe.TxEndorserDef.EndorsePeerState(state)
-		if err != nil {
-			return err
-		}
+func (pe *PeerEngine) GenTxEndorser() cred.TxEndorser {
+	if pe.defaultEndorser == nil {
+		return nil
 	}
 
-	return pe.TxNetworkEntry.UpdateLocalPeer(state)
+	ret, err := pe.defaultEndorser.GetEndorser(pe.defaultAttr...)
+	if err != nil {
+		txlogger.Error("Can not obtain tx endorser:", err)
+		return nil
+	}
+
+	return ret
+
 }
 
 func (pe *PeerEngine) IsRunning() (bool, error) {
@@ -75,10 +76,7 @@ func (pe *PeerEngine) Run() error {
 		pe.lastID = id
 	}
 
-	h, err := NewTxNetworkHandler(pe.TxNetworkEntry, pe.lastCache, pe.TxEndorserDef, pe.defaultAttr)
-	if err != nil {
-		return err
-	}
+	h := NewTxNetworkHandler(pe)
 
 	pe.exitNotify = make(chan interface{})
 	//run guard thread

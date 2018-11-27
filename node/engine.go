@@ -16,6 +16,7 @@ package node
 */
 
 import (
+	"fmt"
 	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger"
@@ -33,7 +34,8 @@ type PeerEngine struct {
 	*txnetwork.TxNetworkEntry
 	peer.Peer
 
-	defaultAttr []string
+	defaultEndorser cred.TxEndorserFactory
+	defaultAttr     []string
 
 	//all the received transactions can be read out from different topic,
 	//according to the configuration in transation filter
@@ -44,8 +46,7 @@ type PeerEngine struct {
 	srvPoint *servicePoint
 
 	//run-time vars
-	lastID        string
-	queryEndorser cred.TxEndorser
+	lastID string
 
 	lastCache  txPoint
 	exitNotify chan interface{}
@@ -73,8 +74,8 @@ func (ne *NodeEngine) DefaultPeer() *PeerEngine {
 
 func (ne *NodeEngine) SelectEndorser(name string) (cred.TxEndorserFactory, error) {
 
-	if ne.TxEndorsers != nil {
-		opt, ok := ne.TxEndorsers[name]
+	if ne.Endorsers != nil {
+		opt, ok := ne.Endorsers[name]
 		if ok {
 			return opt, nil
 		}

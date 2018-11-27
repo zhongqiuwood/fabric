@@ -26,24 +26,19 @@ type txNetworkHandlerImpl struct {
 	chkpoints        [chkpcnt]*txPoint
 }
 
-func NewTxNetworkHandler(txnet *txnetwork.TxNetworkEntry, last txPoint, endorser cred.TxEndorserFactory, endorseAttr []string) (*txNetworkHandlerImpl, error) {
+func NewTxNetworkHandler(engine *PeerEngine) *txNetworkHandlerImpl {
 
 	ret := new(txNetworkHandlerImpl)
-	ret.TxNetworkEntry = txnet
-	ret.endorser = endorser
-	ret.lastSeries = last.Series
-	ret.lastDigest = last.Digest
-
-	var err error
-	ret.defaultTxEndorse, err = endorser.GetEndorser(endorseAttr...)
-	if err != nil {
-		return nil, err
-	}
+	ret.TxNetworkEntry = engine.TxNetworkEntry
+	ret.endorser = engine.defaultEndorser
+	ret.defaultTxEndorse = engine.GenTxEndorser()
+	ret.lastSeries = engine.lastCache.Series
+	ret.lastDigest = engine.lastCache.Digest
 	ret.OnExit = make(chan struct{})
 
 	txlogger.Infof("Start a txnetwork handler for txnetwork at %d[%x]", ret.lastSeries, ret.lastDigest)
 
-	return ret, nil
+	return ret
 }
 
 //build (complete) tx

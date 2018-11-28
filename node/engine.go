@@ -37,10 +37,6 @@ type PeerEngine struct {
 	defaultEndorser cred.TxEndorserFactory
 	defaultAttr     []string
 
-	//all the received transactions can be read out from different topic,
-	//according to the configuration in transation filter
-	TxTopic map[string]litekfk.Topic
-
 	//don't access ledger from PeerEngine, visit it in NodeEngine instead
 	ledger   *ledger.Ledger
 	srvPoint *servicePoint
@@ -62,6 +58,9 @@ type NodeEngine struct {
 	Ledgers   map[string]*ledger.Ledger
 	Peers     map[string]*PeerEngine
 	Endorsers map[string]cred.TxEndorserFactory
+	//all the received transactions can be read out from different topic,
+	//according to the configuration in transation filter
+	TxTopic map[string]litekfk.Topic
 }
 
 func (ne *NodeEngine) DefaultLedger() *ledger.Ledger {

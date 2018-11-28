@@ -17,6 +17,9 @@ limitations under the License.
 package discovery
 
 import (
+	"github.com/abchain/fabric/core/config"
+	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 	"math/rand"
 	"sync"
 	"time"
@@ -28,23 +31,32 @@ type Discovery interface {
 	AddNode(string) bool           // Add an address to the discovery list
 	RemoveNode(string) bool        // Remove an address from the discovery list
 	GetAllNodes() []string         // Return all addresses this peer maintains
+	GetRandomNode() string         // Return n random addresses for this peer to connect t
 	GetRandomNodes(n int) []string // Return n random addresses for this peer to connect to
 	FindNode(string) bool          // Find a node in the discovery list
+	DiscoveryPersistor
+}
+
+type DiscoveryPersistor interface {
+	LoadDiscoveryList() error
+	StoreDiscoveryList() error
 }
 
 // DiscoveryImpl is an implementation of Discovery
 type DiscoveryImpl struct {
 	sync.RWMutex
-	nodes  map[string]bool
-	seq    []string
-	random *rand.Rand
+	nodes     map[string]bool
+	seq       []string
+	random    *rand.Rand
+	persistor config.Persistor
 }
 
 // NewDiscoveryImpl is a constructor of a Discovery implementation
-func NewDiscoveryImpl() *DiscoveryImpl {
+func NewDiscoveryImpl(persistor config.Persistor) *DiscoveryImpl {
 	di := DiscoveryImpl{}
 	di.nodes = make(map[string]bool)
 	di.random = rand.New(rand.NewSource(time.Now().Unix()))
+	di.persistor = persistor
 	return &di
 }
 
@@ -83,22 +95,20 @@ func (di *DiscoveryImpl) GetAllNodes() []string {
 	return addresses
 }
 
-// GetRandomNodes returns n random nodes
-func (di *DiscoveryImpl) GetRandomNodes(n int) []string {
-	var pick string
-	randomNodes := make([]string, n)
+func (di *DiscoveryImpl) GetRandomNode() string {
 	di.RLock()
 	defer di.RUnlock()
-	for i := 0; i < n; i++ {
-		for {
-			pick = di.seq[di.random.Intn(len(di.nodes))]
-			if di.nodes[pick] && !inArray(pick, randomNodes) {
-				break
-			}
-		}
-		randomNodes[i] = pick
+	if nodeslen := len(di.nodes); nodeslen > 0 {
+		return di.seq[di.random.Intn(nodeslen)]
+	} else {
+		return ""
 	}
-	return randomNodes
+}
+
+// GetRandomNodes returns n random nodes
+// YA-fabric 0.9: it has a stupid implement so now it just return 1 random node
+func (di *DiscoveryImpl) GetRandomNodes(n int) []string {
+	return []string{di.GetRandomNode()}
 }
 
 // FindNode returns true if its address is stored in the discovery list
@@ -116,4 +126,43 @@ func inArray(element string, array []string) bool {
 		}
 	}
 	return false
+}
+
+// StoreDiscoveryList enables a peer to persist the discovery list to the database
+func (di *DiscoveryImpl) StoreDiscoveryList() error {
+	if di.persistor == nil {
+		return nil
+	}
+	var err error
+	addresses := di.GetAllNodes()
+	raw, err := proto.Marshal(&pb.PeersAddresses{Addresses: addresses})
+	if err != nil {
+		return err
+	}
+	return di.persistor.Store("discovery", raw)
+}
+
+// LoadDiscoveryList enables a peer to load the discovery list from the database
+func (di *DiscoveryImpl) LoadDiscoveryList() error {
+	if di.persistor == nil {
+		return nil
+	}
+	var err error
+	packed, err := di.persistor.Load("discovery")
+	if err != nil {
+		return err
+	}
+	addresses := &pb.PeersAddresses{}
+	err = proto.Unmarshal(packed, addresses)
+	if err != nil {
+		return err
+	}
+	di.Lock()
+	defer di.Unlock()
+	for _, address := range addresses.GetAddresses() {
+		di.seq = append(di.seq, address)
+		di.nodes[address] = true
+	}
+	return nil
+
 }

@@ -34,161 +34,86 @@ import (
 	"net"
 	"strings"
 
-	"github.com/abchain/fabric/core/comm"
 	"github.com/abchain/fabric/core/config"
 	"github.com/spf13/viper"
 
 	pb "github.com/abchain/fabric/protos"
 )
 
-// Is the configuration cached?
-var configurationCached = false
-
-// Cached values and error values of the computed constants getLocalAddress(),
-// getValidatorStreamAddress(), and getPeerEndpoint()
-var localAddress string
-var localAddressError error
-var peerEndpoint *pb.PeerEndpoint
-var peerEndpointError error
-
-// Cached values of commonly used configuration constants.
-var syncStateSnapshotChannelSize int
-var syncStateDeltasChannelSize int
-var syncBlocksChannelSize int
-var validatorEnabled bool
-
-// CacheConfiguration computes and caches commonly-used constants and
-// computed constants as package variables. Routines which were previously
-// global have been embedded here to preserve the original abstraction.
-func CacheConfiguration() (err error) {
-
-	// getLocalAddress returns the address:port the local peer is operating on.  Affected by env:peer.addressAutoDetect
-	getLocalAddress := func() (peerAddress string, err error) {
-		if viper.GetBool("peer.addressAutoDetect") {
-			// Need to get the port from the peer.address setting, and append to the determined host IP
-			_, port, err := net.SplitHostPort(viper.GetString("peer.address"))
-			if err != nil {
-				err = fmt.Errorf("Error auto detecting Peer's address: %s", err)
-				return "", err
-			}
-			peerAddress = net.JoinHostPort(GetLocalIP(), port)
-			peerLogger.Infof("Auto detected peer address: %s", peerAddress)
-		} else {
-			peerAddress = viper.GetString("peer.address")
-		}
-		return
+type PeerConfig struct {
+	IsValidator bool
+	config.ServerSpec
+	PeerEndpoint *pb.PeerEndpoint
+	AutoDetect   bool
+	Discovery    struct {
+		Roots   []string
+		Persist bool
+		Hidden  bool
+		Disable bool
 	}
+}
 
-	// getPeerEndpoint returns the PeerEndpoint for this Peer instance.  Affected by env:peer.addressAutoDetect
-	getPeerEndpoint := func() (*pb.PeerEndpoint, error) {
-		var peerAddress string
-		var peerType pb.PeerEndpoint_Type
-		peerAddress, err := getLocalAddress()
+func NewPeerConfig(forValidator bool, vp *viper.Viper) (*PeerConfig, error) {
+
+	cfg := new(PeerConfig)
+	cfg.IsValidator = forValidator
+	if err := cfg.Configuration(vp); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func (c *PeerConfig) Configuration(vp *viper.Viper) error {
+	if err := c.ServerSpec.Init(vp); err != nil {
+		return fmt.Errorf("Error init server spec: %s", err)
+	}
+	c.AutoDetect = viper.GetBool("addressAutoDetect")
+	if c.AutoDetect {
+		// Need to get the port from the peer.address setting, and append to the determined host IP
+		_, port, err := net.SplitHostPort(c.ExternalAddr)
 		if err != nil {
-			return nil, err
+			return fmt.Errorf("Error auto detecting Peer's address: %s", err)
 		}
-		if viper.GetBool("peer.validator.enabled") {
-			peerType = pb.PeerEndpoint_VALIDATOR
+		c.ExternalAddr = net.JoinHostPort(GetLocalIP(), port)
+		peerLogger.Infof("Auto detected peer address: %s", c.ExternalAddr)
+	}
+
+	c.Discovery.Roots = strings.Split(viper.GetString("discovery.rootnode"), ",")
+	if len(c.Discovery.Roots) == 1 && c.Discovery.Roots[0] == "" {
+		c.Discovery.Roots = []string{}
+	}
+	c.Discovery.Persist = viper.GetBool("discovery.persist")
+	c.Discovery.Hidden = viper.GetBool("discovery.hidden")
+	c.Discovery.Disable = viper.GetBool("discovery.disable")
+
+	var peerType pb.PeerEndpoint_Type
+	if c.IsValidator {
+		peerType = pb.PeerEndpoint_VALIDATOR
+	} else {
+		peerType = pb.PeerEndpoint_NON_VALIDATOR
+	}
+
+	// automatic correction for the ID prefix
+	var peerPrefix = ""
+	if c.Discovery.Hidden {
+		if c.Discovery.Disable {
+			peerPrefix = "NVP" // Non-validator peer
 		} else {
-			peerType = pb.PeerEndpoint_NON_VALIDATOR
+			peerPrefix = "NSP" // name service peer
 		}
-
-		// automatic correction for the ID prefix
-		var peerPrefix = ""
-		var peerID = viper.GetString("peer.id")
-		if comm.DiscoveryHidden() {
-			if comm.DiscoveryDisable() {
-				peerPrefix = "NVP" // Non-validator peer
-			} else {
-				peerPrefix = "NSP" // name service peer
-			}
-		} else {
-			if comm.DiscoveryDisable() {
-				peerPrefix = "BRP" // bridge peer
-			} else {
-				peerPrefix = "" // normal peer
-			}
+	} else {
+		if c.Discovery.Disable {
+			peerPrefix = "BRP" // bridge peer
 		}
-		if len(peerPrefix) > 0 && strings.Compare(peerPrefix, peerID[0:3]) != 0 {
-			peerID = peerPrefix + peerID
-		}
-
-		return &pb.PeerEndpoint{ID: &pb.PeerID{Name: peerID}, Address: peerAddress, Type: peerType}, nil
+	}
+	var peerID = viper.GetString("id")
+	if len(peerID) > 3 && strings.Compare(peerPrefix, peerID[:3]) != 0 {
+		peerID = peerPrefix + peerID
 	}
 
-	localAddress, localAddressError = getLocalAddress()
-	peerEndpoint, peerEndpointError = getPeerEndpoint()
-
-	syncStateSnapshotChannelSize = viper.GetInt("peer.sync.state.snapshot.channelSize")
-	syncStateDeltasChannelSize = viper.GetInt("peer.sync.state.deltas.channelSize")
-	syncBlocksChannelSize = viper.GetInt("peer.sync.blocks.channelSize")
-	validatorEnabled = viper.GetBool("peer.validator.enabled")
-
-	configurationCached = true
-
-	if localAddressError != nil {
-		return localAddressError
-	} else if peerEndpointError != nil {
-		return peerEndpointError
-	}
-	return
-}
-
-// cacheConfiguration logs an error if error checks have failed.
-func cacheConfiguration() {
-	if err := CacheConfiguration(); err != nil {
-		peerLogger.Errorf("Execution continues after CacheConfiguration() failure : %s", err)
-	}
-}
-
-//Functional forms
-
-// GetLocalAddress returns the peer.address property
-func GetLocalAddress() (string, error) {
-	if !configurationCached {
-		cacheConfiguration()
-	}
-	return localAddress, localAddressError
-}
-
-// GetPeerEndpoint returns peerEndpoint from cached configuration
-func GetPeerEndpoint() (*pb.PeerEndpoint, error) {
-	if !configurationCached {
-		cacheConfiguration()
-	}
-	return peerEndpoint, peerEndpointError
-}
-
-// SyncStateSnapshotChannelSize returns the peer.sync.state.snapshot.channelSize property
-func SyncStateSnapshotChannelSize() int {
-	if !configurationCached {
-		cacheConfiguration()
-	}
-	return syncStateSnapshotChannelSize
-}
-
-// SyncStateDeltasChannelSize returns the peer.sync.state.deltas.channelSize property
-func SyncStateDeltasChannelSize() int {
-	if !configurationCached {
-		cacheConfiguration()
-	}
-	return syncStateDeltasChannelSize
-}
-
-// SyncBlocksChannelSize returns the peer.sync.blocks.channelSize property
-func SyncBlocksChannelSize() int {
-	if !configurationCached {
-		cacheConfiguration()
-	}
-	return syncBlocksChannelSize
-}
-
-// ValidatorEnabled returns the peer.validator.enabled property
-func ValidatorEnabled() bool {
-	if !configurationCached {
-		cacheConfiguration()
-	}
-	return validatorEnabled
+	c.PeerEndpoint = &pb.PeerEndpoint{ID: &pb.PeerID{Name: peerID}, Address: c.ExternalAddr, Type: peerType}
+	peerLogger.Infof("Init peer endpoint: %s", c.PeerEndpoint)
+	return nil
 }
 
 // SecurityEnabled returns the securityEnabled property from cached configuration

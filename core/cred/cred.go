@@ -21,9 +21,9 @@ var logger = logging.MustGetLogger("credential")
 */
 
 type PeerCreds interface {
-	SelfPeerId() string
+	CredID() []byte
 	PeerIdCred() []byte
-	VerifyPeer(string, []byte) error
+	VerifyPeer(credid []byte, sign []byte, payload []byte) error
 }
 
 type TxHandlerFactory interface {

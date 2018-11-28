@@ -19,7 +19,6 @@ package executor
 import (
 	"github.com/abchain/fabric/consensus"
 	"github.com/abchain/fabric/consensus/util/events"
-	"github.com/abchain/fabric/core/peer/statetransfer"
 	pb "github.com/abchain/fabric/protos"
 
 	"github.com/op/go-logging"
@@ -37,11 +36,19 @@ type PartialStack interface {
 	GetBlockchainInfo() *pb.BlockchainInfo
 }
 
+type Coordinator interface {
+	Start() // Start the block transfer go routine
+	Stop()  // Stop up the block transfer go routine
+
+	// SyncToTarget attempts to move the state to the given target, returning an error, and whether this target might succeed if attempted at a later time
+	SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (error, bool)
+}
+
 type coordinatorImpl struct {
 	manager         events.Manager              // Maintains event thread and sends events to the coordinator
 	rawExecutor     PartialStack                // Does the real interaction with the ledger
 	consumer        consensus.ExecutionConsumer // The consumer of this coordinator which receives the callbacks
-	stc             statetransfer.Coordinator   // State transfer instance
+	stc             Coordinator                 // State transfer instance
 	batchInProgress bool                        // Are we mid execution batch
 	skipInProgress  bool                        // Are we mid state transfer
 }

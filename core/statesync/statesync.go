@@ -10,10 +10,10 @@ import (
 	"github.com/golang/protobuf/proto"
 	"github.com/looplab/fsm"
 	"github.com/op/go-logging"
+	"github.com/spf13/viper"
 	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"sync"
-	"github.com/spf13/viper"
 )
 
 var logger = logging.MustGetLogger("statesyncstub")
@@ -46,13 +46,12 @@ func GetStateSync() (*StateSyncStub, error) {
 }
 
 type StateSyncStub struct {
-	self            *pb.PeerID
+	self *pb.PeerID
 	*pb.StreamStub
 	sync.RWMutex
 	curCorrrelation uint64
 	curTask         context.Context
 }
-
 
 func NewStateSyncWithPeer(p peer.Peer) *StateSyncStub {
 
@@ -63,7 +62,7 @@ func NewStateSyncWithPeer(p peer.Peer) *StateSyncStub {
 
 	gctx, _ := context.WithCancel(p.GetPeerCtx())
 	sycnStub := &StateSyncStub{
-		self: self.ID,
+		self:    self.ID,
 		curTask: gctx,
 	}
 
@@ -82,7 +81,6 @@ func NewStateSyncWithPeer(p peer.Peer) *StateSyncStub {
 	sycnStub.StreamStub = syncStreamStub
 	return sycnStub
 }
-
 
 type ErrInProcess struct {
 	error
@@ -122,7 +120,6 @@ func newStateSyncHandlerFactory(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 	h.fsmHandler = newFsmHandler(h)
 	return h
 }
-
 
 func (s *StateSyncStub) SyncToState(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
 

@@ -5,7 +5,6 @@ import (
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"github.com/abchain/fabric/core/peer"
 )
 
 type SyncFactory func(*pb.PeerID) pb.StreamHandlerImpl
@@ -30,9 +29,9 @@ func (t SyncFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, 
 		return nil, fmt.Errorf("No default factory")
 	}
 
-	serverClient := pb.NewPeerClient(conn)
+	serverClient := pb.NewSyncClient(conn)
 	ctx := context.Background()
-	stream, err := serverClient.SyncIn(ctx)
+	stream, err := serverClient.Data(ctx)
 
 	if err != nil {
 		return nil, err

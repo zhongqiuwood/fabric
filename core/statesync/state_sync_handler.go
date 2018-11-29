@@ -158,7 +158,7 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 		data = tmp
 	}
 
-	stream := syncHandler.base
+	stream := syncHandler.streamHandler
 
 	err := stream.SendMessage(&pb.SyncMsg{
 		Type:    msgType,

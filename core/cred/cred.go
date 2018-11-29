@@ -20,10 +20,15 @@ var logger = logging.MustGetLogger("credential")
 
 */
 
+//peer creds also include the endorse entry because it should be sole per-network
+//peer's cred should also derive a default TxHandlerFactory
 type PeerCreds interface {
-	CredID() []byte
-	PeerIdCred() []byte
-	VerifyPeer(credid []byte, sign []byte, payload []byte) error
+	PeerPki() []byte
+	PeerCred() []byte
+	EndorsePeerMsg(msg *pb.Message) (*pb.Message, error)
+	VerifyPeerMsg(pki []byte, msg *pb.Message) error
+	VerifyPeerCred([]byte) error
+	DeriveTxCred() TxHandlerFactory
 }
 
 type TxHandlerFactory interface {

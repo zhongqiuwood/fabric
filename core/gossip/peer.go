@@ -41,7 +41,6 @@ type GossipHandler interface {
 type GossipStub struct {
 	self            *pb.PeerID
 	disc            peer.Discoverer
-	sec             peer.SecurityAccessor
 	catalogHandlers map[string]CatalogHandler
 	newPeerNotify   []CatalogHandlerEx
 
@@ -65,10 +64,6 @@ func (g *GossipStub) GetSStub() *pb.StreamStub {
 
 func (g *GossipStub) GetStubContext() context.Context {
 	return g.globalCtx
-}
-
-func (g *GossipStub) GetSecurity() peer.SecurityAccessor {
-	return g.sec
 }
 
 func (g *GossipStub) GetCatalogHandler(cat string) CatalogHandler {
@@ -116,7 +111,6 @@ func NewGossipWithPeer(p peer.Peer) *GossipStub {
 		self:            self.ID,
 		catalogHandlers: make(map[string]CatalogHandler),
 		//		StreamStub:      p.GetStreamStub("gossip"),
-		sec:       p,
 		globalCtx: gctx,
 	}
 

@@ -10,6 +10,8 @@ import (
 	"golang.org/x/net/context"
 )
 
+//passing endorser will be released by function and should not be reused
+
 func (ne *NodeEngine) QueryTransaction(ctx context.Context,
 	tx *pb.Transaction, endorser cred.TxEndorser, l *ledger.Ledger, remote ...*PeerEngine) (resp *pb.Response) {
 

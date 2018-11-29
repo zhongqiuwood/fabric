@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"github.com/abchain/fabric/core/config"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -19,6 +20,37 @@ type servicePoint struct {
 	*grpc.Server
 	lPort     net.Listener
 	srvStatus chan error
+}
+
+func (ep *servicePoint) InitWithConfig(conf *config.ServerSpec) error {
+
+	if err := ep.SetPort(conf.Address); err != nil {
+		return err
+	}
+
+	var opts []grpc.ServerOption
+
+	//tls
+	if conf.EnableTLS {
+
+		creds, err := conf.GetServerTLSOptions()
+		if err != nil {
+			serviceLogger.Errorf("Failed to generate peer's credentials: %v", err)
+			return err
+		}
+		opts = append(opts, grpc.Creds(creds))
+
+	}
+
+	//other options (msg size, etc ...)
+	msgMaxsize := conf.MessageSize
+	if msgMaxsize > 1024*1024*4 {
+		//in p2p network we usually require a sync channel of recv and send
+		opts = append(opts, grpc.MaxRecvMsgSize(msgMaxsize), grpc.MaxSendMsgSize(msgMaxsize))
+	}
+
+	ep.Server = grpc.NewServer(opts...)
+	return nil
 }
 
 //standard init read all configurations from viper, inwhich we use a subtree of *peer*

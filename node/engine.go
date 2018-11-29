@@ -58,6 +58,10 @@ type NodeEngine struct {
 	Ledgers   map[string]*ledger.Ledger
 	Peers     map[string]*PeerEngine
 	Endorsers map[string]cred.TxEndorserFactory
+	Cred      struct {
+		Peer cred.PeerCreds
+		Tx   cred.TxHandlerFactory
+	}
 	//all the received transactions can be read out from different topic,
 	//according to the configuration in transation filter
 	TxTopic map[string]litekfk.Topic

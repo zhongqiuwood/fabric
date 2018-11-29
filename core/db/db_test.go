@@ -33,6 +33,7 @@ func TestMain(m *testing.M) {
 }
 
 func TestGetDBPathEmptyPath(t *testing.T) {
+	dbPathSetting = ""
 	originalSetting := viper.GetString("peer.fileSystemPath")
 	viper.Set("peer.fileSystemPath", "")
 	defer func() {
@@ -79,6 +80,18 @@ func TestWriteAndRead(t *testing.T) {
 	defer deleteTestDBPath()
 	defer Stop()
 	performBasicReadWrite(originalDB, t)
+}
+
+func TestStandaloneDB(t *testing.T) {
+	deleteTestDBPath()
+	db, err := StartDB("test", viper.Sub("peer.db"))
+	if err != nil {
+		t.Fatal("start db fail", err)
+	}
+	defer deleteTestDBPath()
+	defer StopDB(db)
+	defer Stop()
+	performBasicReadWrite(db, t)
 }
 
 // This test verifies that when a new column family is added to the DB

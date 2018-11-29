@@ -34,7 +34,6 @@ import (
 	"github.com/abchain/fabric/core/config"
 	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/discovery"
-	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer/acl"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
@@ -598,25 +597,26 @@ func (p *Impl) GetPeerEndpoint() (*pb.PeerEndpoint, error) {
 	var ep pb.PeerEndpoint
 	//we use an partial copy of the cached endpoint
 	ep = *p.self
-	if securityEnabled() {
+	if p.secHelper != nil {
 		// Set the PkiID on the PeerEndpoint if security is enabled
-		ep.PkiID = p.secHelper.PeerIdCred()
+		ep.PkiID = p.secHelper.PeerPki()
 	}
 	return &ep, nil
 }
 
 func (p *Impl) newHelloMessage() (*pb.HelloMessage, error) {
 
-	l, err := ledger.GetLedger()
+	ep, err := p.GetPeerEndpoint()
 	if err != nil {
-		return nil, fmt.Errorf("Error on get ledger: %s", err)
+		return nil, err
 	}
 
-	blockChainInfo, err := l.GetBlockchainInfo()
-	if err != nil {
-		return nil, fmt.Errorf("Error creating hello message, error getting block chain info: %s", err)
+	if p.secHelper != nil {
+		return &pb.HelloMessage{PeerEndpoint: ep, PeerCredential: p.secHelper.PeerCred()}, nil
+	} else {
+		return &pb.HelloMessage{PeerEndpoint: ep}, nil
 	}
-	return &pb.HelloMessage{PeerEndpoint: p.self, BlockchainInfo: blockChainInfo}, nil
+
 }
 
 // NewOpenchainDiscoveryHello constructs a new HelloMessage for sending
@@ -640,13 +640,12 @@ func (p *Impl) NewOpenchainDiscoveryHello() (*pb.Message, error) {
 
 // signMessage modifies the passed in Message by setting the Signature based upon the Payload.
 func (p *Impl) signMessageMutating(msg *pb.Message) error {
-	if securityEnabled() {
-		sig, err := p.secHelper.Sign(msg.Payload)
+	if p.secHelper != nil {
+		var err error
+		msg, err = p.secHelper.EndorsePeerMsg(msg)
 		if err != nil {
 			return fmt.Errorf("Error signing Openchain Message: %s", err)
 		}
-		// Set the signature in the message
-		msg.Signature = sig
 	}
 	return nil
 }

@@ -27,7 +27,7 @@ import (
 	"github.com/abchain/fabric/consensus/executor"
 	"github.com/abchain/fabric/consensus/helper/persist"
 	"github.com/abchain/fabric/core/chaincode"
-	crypto "github.com/abchain/fabric/core/crypto"
+	//	crypto "github.com/abchain/fabric/core/crypto"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
@@ -35,12 +35,12 @@ import (
 
 // Helper contains the reference to the peer's MessageHandlerCoordinator
 type Helper struct {
-	consenter    consensus.Consenter
-	self         peer.Peer
-	coordinator  peer.Neighbour
-	secOn        bool
-	valid        bool // Whether we believe the state is up to date
-	secHelper    crypto.Peer
+	consenter   consensus.Consenter
+	self        peer.Peer
+	coordinator peer.Neighbour
+	secOn       bool
+	valid       bool // Whether we believe the state is up to date
+	//	secHelper    crypto.Peer
 	curBatch     []*pb.Transaction       // TODO, remove after issue 579
 	curBatchErrs []*pb.TransactionResult // TODO, remove after issue 579
 	persist.PersisHelper
@@ -55,8 +55,8 @@ func NewHelper(mhp PeerStack) *Helper {
 		self:        mhp.Peer,
 		coordinator: mhp.Neighbour,
 		secOn:       viper.GetBool("security.enabled"),
-		secHelper:   mhp.GetSecHelper(),
-		valid:       true, // Assume our state is consistent until we are told otherwise, actual consensus (pbft) will invalidate this immediately, but noops will not
+		//		secHelper:   mhp.GetSecHelper(),
+		valid: true, // Assume our state is consistent until we are told otherwise, actual consensus (pbft) will invalidate this immediately, but noops will not
 	}
 
 	h.executor = executor.NewImpl(h, h, mhp)
@@ -124,9 +124,9 @@ func (h *Helper) Unicast(msg *pb.Message, receiverHandle *pb.PeerID) error {
 
 // Sign a message with this validator's signing key
 func (h *Helper) Sign(msg []byte) ([]byte, error) {
-	if h.secOn {
-		return h.secHelper.Sign(msg)
-	}
+	// if h.secOn {
+	// 	return h.secHelper.Sign(msg)
+	// }
 	logger.Debug("Security is disabled")
 	return msg, nil
 }
@@ -135,27 +135,27 @@ func (h *Helper) Sign(msg []byte) ([]byte, error) {
 // If replicaID is nil, use this validator's verification key
 // If the signature is valid, the function should return nil
 func (h *Helper) Verify(replicaID *pb.PeerID, signature []byte, message []byte) error {
-	if !h.secOn {
-		logger.Debug("Security is disabled")
-		return nil
-	}
-
-	logger.Debugf("Verify message from: %v", replicaID.Name)
-	_, network, err := h.GetNetworkInfo()
-	if err != nil {
-		return fmt.Errorf("Couldn't retrieve validating network's endpoints: %v", err)
-	}
-
-	// check that the sender is a valid replica
-	// if so, call crypto verify() with that endpoint's pkiID
-	for _, endpoint := range network {
-		logger.Debugf("Endpoint name: %v", endpoint.ID.Name)
-		if *replicaID == *endpoint.ID {
-			cryptoID := endpoint.PkiID
-			return h.secHelper.Verify(cryptoID, signature, message)
+	//	if !h.secOn {
+	logger.Debug("Security is disabled")
+	return nil
+	//	}
+	/*
+		logger.Debugf("Verify message from: %v", replicaID.Name)
+		_, network, err := h.GetNetworkInfo()
+		if err != nil {
+			return fmt.Errorf("Couldn't retrieve validating network's endpoints: %v", err)
 		}
-	}
-	return fmt.Errorf("Could not verify message from %s (unknown peer)", replicaID.Name)
+
+		// check that the sender is a valid replica
+		// if so, call crypto verify() with that endpoint's pkiID
+		for _, endpoint := range network {
+			logger.Debugf("Endpoint name: %v", endpoint.ID.Name)
+			if *replicaID == *endpoint.ID {
+				cryptoID := endpoint.PkiID
+				return h.secHelper.Verify(cryptoID, signature, message)
+			}
+		}
+		return fmt.Errorf("Could not verify message from %s (unknown peer)", replicaID.Name)*/
 }
 
 // BeginTxBatch gets invoked when the next round

@@ -15,11 +15,13 @@ type dummyH struct {
 
 func (h *dummyH) Release() {}
 
-func (h *dummyH) HandleTxs(tx []*PendingTransaction) {
+func (h *dummyH) HandleTxs(tx []*PendingTransaction) error {
 
 	h.Logf("Add %d txs", len(tx))
 	h.tx = append(h.tx, tx...)
 	h.callTimes++
+
+	return nil
 
 }
 

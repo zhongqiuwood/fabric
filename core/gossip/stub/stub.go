@@ -16,7 +16,7 @@ var logger = logging.MustGetLogger("gossip")
 var RegisterCat []func(*gossip.GossipStub)
 
 //create the corresponding streamstub and bind it with peer and service
-func InitGossipStub(bindPeer peer.Peer) *gossip.GossipStub {
+func InitGossipStub(bindPeer peer.Peer, srv *grpc.Server) *gossip.GossipStub {
 
 	gstub := gossip.NewGossipWithPeer(bindPeer)
 	if gstub == nil {
@@ -40,6 +40,8 @@ func InitGossipStub(bindPeer peer.Peer) *gossip.GossipStub {
 	for _, f := range RegisterCat {
 		f(gstub)
 	}
+
+	pb.RegisterGossipServer(srv, GossipFactory{gstub})
 
 	return gstub
 }

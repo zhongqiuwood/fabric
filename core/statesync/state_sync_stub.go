@@ -24,6 +24,10 @@ type StateSyncStub struct {
 	curTask context.Context
 }
 
+type ErrInProcess struct {
+	error
+}
+
 func NewStateSyncStubWithPeer(p peer.Peer) *StateSyncStub {
 
 	self, err := p.GetPeerEndpoint()
@@ -53,34 +57,12 @@ func NewStateSyncStubWithPeer(p peer.Peer) *StateSyncStub {
 	return sycnStub
 }
 
-type ErrInProcess struct {
-	error
-}
-
-type ErrHandlerFatal struct {
-	error
-}
-
-//if busy, return current correlation Id, els return 0
-func (s *StateSyncStub) IsBusy() uint64 {
-
-	s.RLock()
-	defer s.RUnlock()
-
-	if s.curTask == nil {
-		return uint64(0)
-	} else {
-		return s.curCorrrelation
-	}
-}
-
-
 func (s *StateSyncStub) SyncToState(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (err error, result bool) {
 
 	result = false
 
 	for _, peer := range peerIDs {
-		err = s.SyncToStateByPeer(context.TODO(), blockHash, nil, peer)
+		err = s.SyncToStateByPeer(context.Background(), blockHash, nil, peer)
 		if err == nil {
 			result = true
 			break
@@ -149,3 +131,16 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 	return err
 }
 
+
+//if busy, return current correlation Id, els return 0
+func (s *StateSyncStub) IsBusy() uint64 {
+
+	s.RLock()
+	defer s.RUnlock()
+
+	if s.curTask == nil {
+		return uint64(0)
+	} else {
+		return s.curCorrrelation
+	}
+}

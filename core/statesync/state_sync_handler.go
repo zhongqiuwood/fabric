@@ -25,6 +25,10 @@ type stateSyncHandler struct {
 	streamHandler *pb.StreamHandler
 }
 
+type ErrHandlerFatal struct {
+	error
+}
+
 func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
 	logger.Debug("create handler for peer", remoterId)
 

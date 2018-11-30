@@ -215,6 +215,7 @@ func (g *txNetworkPeers) RemovePeer(id string) bool {
 		logger.Infof("gossip peer [%s] is removed", id)
 		g.lruQueue.Remove(item)
 		delete(g.lruIndex, id)
+		g.peerHandler.RemovePreHandler(id)
 	}
 	return ok
 }

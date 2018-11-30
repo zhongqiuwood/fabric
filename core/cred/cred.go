@@ -34,7 +34,8 @@ type PeerCreds interface {
 type TxHandlerFactory interface {
 	ValidatePeerStatus(id string, status *pb.PeerTxState) error
 	GetPreHandler(id string) (TxPreHandler, error)
-	RemovePreHandler(string)
+	//notify all of the preparing for a specified id (i.e. caches) can be complete released
+	RemovePreHandler(id string)
 }
 
 type TxPreHandler interface {

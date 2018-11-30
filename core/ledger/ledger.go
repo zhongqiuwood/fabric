@@ -116,7 +116,7 @@ func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 
 	state := state.NewState(db)
 
-	ver := gledger.GetVersion()
+	ver := db.GetDBVersion()
 	if ver >= 1 {
 		err = sanityCheck(db)
 		if err != nil {
@@ -537,6 +537,10 @@ func (ledger *Ledger) ApplyStateDelta(id interface{}, delta *statemgmt.StateDelt
 	ledger.currentID = id
 	ledger.state.ApplyStateDelta(delta)
 	return nil
+}
+
+func (ledger *Ledger) ApplyStateDeltaDirect(delta *statemgmt.StateDelta) {
+	ledger.state.MergeStateDelta(delta)
 }
 
 // ----- Will be deprecated ----

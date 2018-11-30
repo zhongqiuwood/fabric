@@ -323,13 +323,22 @@ func (txdb *GlobalDataDB) addGSCritical(parentStateHash []byte,
 	data, _ = txdb.get(txdb.globalCF, statehash)
 
 	if data != nil {
-		if !txdb.useCycleGraph {
-			return nil, StateDuplicatedError{fmt.Errorf("state [%x] exist", statehash)}
-		}
 
 		gs, err := protos.UnmarshallGS(data)
 		if err != nil {
 			return nil, fmt.Errorf("state of [%x] was ruined: %s", statehash, err)
+		}
+
+		for _, parentHash := range gs.ParentNodeStateHash {
+			if bytes.Compare(parentHash, parentStateHash) == 0 {
+				//we have a duplicated addition (both current and parent is existed and connected)
+				return nil, nil
+			}
+		}
+
+		//or it was not allowed in DAG
+		if !txdb.useCycleGraph {
+			return nil, StateDuplicatedError{fmt.Errorf("state [%x] exist", statehash)}
 		}
 
 		wb.MergeCF(txdb.globalCF, statehash,
@@ -629,11 +638,12 @@ func (txdb *GlobalDataDB) PutGenesisGlobalState(statehash []byte) error {
 		if err != nil {
 			return err
 		}
-		err = txdb.PutValue(GlobalCF, []byte("DUMMYGS#"), v)
+		dummykey := bytes.Join([][]byte{[]byte("DUMMYGS#"), statehash}, nil)
+		err = txdb.PutValue(GlobalCF, dummykey, v)
 		if err != nil {
 			return err
 		}
-		newgs.ParentNodeStateHash = [][]byte{[]byte("DUMMYGS#")}
+		newgs.ParentNodeStateHash = [][]byte{dummykey}
 	}
 
 	v, err := newgs.Bytes()

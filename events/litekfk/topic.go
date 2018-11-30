@@ -61,12 +61,13 @@ func (cr *clientReg) AssignClient() client {
 
 type topicUnit struct {
 	sync.RWMutex
-	conf    *topicConfiguration
-	data    *list.List
-	dryRun  bool
-	passed  *readerPos
-	start   *readerPos
-	clients clientReg
+	conf        *topicConfiguration
+	data        *list.List
+	dryRun      bool
+	passed      *readerPos
+	start       *readerPos
+	clients     clientReg
+	batchSignal *sync.Cond
 }
 
 func InitTopic(conf *topicConfiguration) *topicUnit {
@@ -85,6 +86,7 @@ func InitTopic(conf *topicConfiguration) *topicUnit {
 
 	ret.passed = &readerPos{Element: pos}
 	ret.start = &readerPos{Element: pos}
+	ret.batchSignal = sync.NewCond(ret)
 
 	return ret
 }
@@ -99,6 +101,20 @@ func (t *topicUnit) getStart() *readerPos {
 func (t *topicUnit) getTail() *readerPos {
 	t.RLock()
 	defer t.RUnlock()
+
+	return &readerPos{
+		Element: t.data.Back(),
+		logpos:  t.data.Back().Value.(*batch).wriPos,
+	}
+}
+
+func (t *topicUnit) getTailAndWait(curr uint64) *readerPos {
+	t.Lock()
+	defer t.Unlock()
+
+	if t.data.Back().Value.(*batch).series <= curr {
+		t.batchSignal.Wait()
+	}
 
 	return &readerPos{
 		Element: t.data.Back(),
@@ -129,10 +145,8 @@ func (t *topicUnit) setPassed(n *readerPos) {
 	t.passed = n
 }
 
+//only used by Write
 func (t *topicUnit) addBatch() (ret *batch) {
-
-	t.Lock()
-	defer t.Unlock()
 
 	ret = &batch{
 		series:  t.data.Back().Value.(*batch).series + 1,
@@ -203,10 +217,13 @@ func (t *topicUnit) Write(i interface{}) error {
 	blk.wriPos++
 
 	if blk.wriPos == t.conf.batchsize {
-		t.Unlock()
-		blk = t.addBatch()
-		t.Lock()
+		t.addBatch()
+		defer t.batchSignal.Broadcast()
 	}
 
 	return nil
+}
+
+func (t *topicUnit) ReleaseWaiting() {
+	t.batchSignal.Broadcast()
 }

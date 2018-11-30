@@ -242,6 +242,20 @@ func (r *reader) ReadBatch() ([]interface{}, error) {
 	}
 }
 
+//try to read full batch (at least one more item has been written after current batch)
+//this method do not ensure returning the full batch data (it can still be an EOF error)
+//this method will locked and the only way to quit is calling the ReleaseWaiting in topic
+func (r *reader) ReadFullBatch() ([]interface{}, error) {
+
+	r.end = r.target.getTailAndWait(r.current.series).toCache()
+	//detect eof by our way
+	if r.current.series >= r.end.series {
+		return nil, ErrEOF
+	}
+
+	return r.ReadBatch()
+}
+
 type readTx struct {
 	*reader
 	txerr error

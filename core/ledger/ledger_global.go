@@ -42,10 +42,6 @@ func GetLedgerGlobal() (*LedgerGlobal, error) {
 	return ledger_g, ledger_gError
 }
 
-func (ledger *LedgerGlobal) GetVersion() int {
-	return db.GetGlobalDBHandle().GetDBVersion()
-}
-
 /////////////////// global state related methods /////////////////////////////////////
 func (ledger *LedgerGlobal) GetGlobalState(statehash []byte) *protos.GlobalState {
 	return db.GetGlobalDBHandle().GetGlobalState(statehash)

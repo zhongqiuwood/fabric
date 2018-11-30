@@ -3,9 +3,13 @@ package node
 import (
 	"fmt"
 	"github.com/abchain/fabric/core/config"
+	"github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/cred/driver"
+	"github.com/abchain/fabric/core/db"
 	gossip_stub "github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/core/gossip/txnetwork"
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/spf13/viper"
 )
@@ -59,18 +63,62 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		return fmt.Errorf("Init peer fail", err)
 	}
 
-	pe.srvPoint = new(servicePoint)
-	if err = pe.srvPoint.InitWithConfig(cfg); err != nil {
+	srvPoint := new(servicePoint)
+	if err = srvPoint.InitWithConfig(cfg); err != nil {
 		return fmt.Errorf("Init serverpoint fail", err)
 	}
+	node.srvPoints = append(node.srvPoints, srvPoint)
 
-	if gstub := gossip_stub.InitGossipStub(pe.Peer, pe.srvPoint.Server); gstub == nil {
+	//init gossip network
+	if gstub := gossip_stub.InitGossipStub(pe.Peer, srvPoint.Server); gstub == nil {
 		return fmt.Errorf("Can not create gossip server", err)
 	} else {
-		pe.TxNetworkEntry = txnework.GetNetworkEntry(gstub)
+		pe.TxNetworkEntry = txnetwork.GetNetworkEntry(gstub)
 	}
 
-	//TODO: create sync entry
+	//build tx validator
+	networkTxCred := []credentials.TxHandlerFactory{credrv.TxValidator}
+	if hv, ok := node.peerTxHandlers[tag]; ok {
+		networkTxCred = append(networkTxCred, hv)
+	}
+	networkTxCred = append(networkTxCred, node.globalTxHandlers...)
+	pe.TxNetworkEntry.InitCred(credentials.MutipleTxHandler(networkTxCred...))
+
+	//TODO: create and init sync entry
+
+	//test ledger configuration
+	if useledger := vp.GetString("ledger"); useledger == "" || useledger == "default" {
+		//use default ledger, do nothing
+	} else if useledger == "sole" {
+		//create a new ledger tagged by the peer, add it to node
+		l, ok := node.Ledgers[useledger]
+		if !ok {
+			tagdb, err := db.StartDB(useledger, vp.Sub("db"))
+			if err != nil {
+				return fmt.Errorf("Try to create db %s fail: %s", useledger, err)
+			}
+			l, err = ledger.GetNewLedger(tagdb)
+			if err != nil {
+				return fmt.Errorf("Try to create ledger %s fail: %s", useledger, err)
+			}
+			err = genesis.MakeGenesisForLedger(l, "", nil)
+			if err != nil {
+				return fmt.Errorf("Try to create genesis block for ledger %s fail: %s", useledger, err)
+			}
+
+			node.Ledgers[useledger] = l
+			logger.Info("Create default ledger [%s] for peer [%s]", useledger, tag)
+		}
+		pe.TxNetworkEntry.InitLedger(l)
+
+	} else {
+		//select a ledger created before (by node or other peer), throw error if not found
+		l, ok := node.Ledgers[useledger]
+		if !ok {
+			return fmt.Errorf("Could not find specified ledger [%s]", useledger)
+		}
+		pe.TxNetworkEntry.InitLedger(l)
+	}
 
 	return nil
 }

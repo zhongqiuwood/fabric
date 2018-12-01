@@ -52,23 +52,25 @@ func GetGlobalDBHandle() *GlobalDataDB {
 }
 
 func DefaultOption() (opts *gorocksdb.Options) {
+	return DBOptions(viper.Sub("peer.db"))
+}
+
+func DBOptions(vp *viper.Viper) (opts *gorocksdb.Options) {
 	opts = gorocksdb.NewDefaultOptions()
 
-	dbLogger.Info("Create new default option")
-
-	maxLogFileSize := viper.GetInt("peer.db.maxLogFileSize")
+	maxLogFileSize := viper.GetInt("maxLogFileSize")
 	if maxLogFileSize > 0 {
 		dbLogger.Infof("Setting rocksdb maxLogFileSize to %d", maxLogFileSize)
 		opts.SetMaxLogFileSize(maxLogFileSize)
 	}
 
-	keepLogFileNum := viper.GetInt("peer.db.keepLogFileNum")
+	keepLogFileNum := viper.GetInt("keepLogFileNum")
 	if keepLogFileNum > 0 {
 		dbLogger.Infof("Setting rocksdb keepLogFileNum to %d", keepLogFileNum)
 		opts.SetKeepLogFileNum(keepLogFileNum)
 	}
 
-	logLevelStr := viper.GetString("peer.db.loglevel")
+	logLevelStr := viper.GetString("loglevel")
 	logLevel, ok := rocksDBLogLevelMap[logLevelStr]
 
 	if ok {
@@ -82,56 +84,114 @@ func DefaultOption() (opts *gorocksdb.Options) {
 	return
 }
 
-// Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
-func Start() {
+//if global db is not opened, it is also created
+func startDBInner(odb *OpenchainDB, opts *gorocksdb.Options, forcePath bool) error {
 
-	opts := DefaultOption()
 	clearOpt := func() {
 		globalDataDB.OpenOpt = nil
-		originalDB.db.OpenOpt = nil
+		odb.db.OpenOpt = nil
 	}
-	defer opts.Destroy()
 	defer clearOpt()
 
-	globalDataDB.OpenOpt = opts
-	err := globalDataDB.open(getDBPath("txdb"))
-	if err != nil {
-		panic(err)
+	//detect if global db is opened
+	if globalDataDB.globalOpt == nil {
+		globalDataDB.OpenOpt = opts
+		err := globalDataDB.open(getDBPath("txdb"))
+		if err != nil {
+			return fmt.Errorf("open global db fail: %s", err)
+		}
 	}
 
-	k, err := globalDataDB.get(globalDataDB.persistCF, []byte(currentDBKey))
+	k, err := globalDataDB.get(globalDataDB.persistCF, odb.getDBKey(currentDBKey))
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("get db [%s]'s path fail: %s", odb.dbTag, err)
 	}
 
-	orgDBPath := getDBPath(activeDbName(k))
+	var orgDBPath string
+	if k == nil {
+		if forcePath {
+			orgDBPath = getDBPath("db")
+		} else {
+			newtag := util.GenerateUUID()
+			err = globalDataDB.put(globalDataDB.persistCF, odb.getDBKey(currentDBKey), []byte(newtag))
+			if err != nil {
+				return fmt.Errorf("Save storage tag for db <%s> fail: %s", odb.dbTag, newtag)
+			}
+			orgDBPath = getDBPath("db_" + odb.dbTag + newtag)
+		}
+	} else {
+		orgDBPath = getDBPath("db_" + odb.dbTag + string(k))
+	}
 
 	//check if db is just created
 	roOpt := gorocksdb.NewDefaultOptions()
 	defer roOpt.Destroy()
 	roDB, err := gorocksdb.OpenDbForReadOnly(roOpt, orgDBPath, false)
 	if err != nil {
-		dbLogger.Info("New DB is open")
-		err = globalDataDB.UpdateDBVersion(DBVersion)
+		err = odb.UpdateDBVersion(DBVersion)
 		if err != nil {
-			panic(err)
+			return fmt.Errorf("set db [%s]'s version fail: %s", odb.dbTag, err)
 		}
 	} else {
 		roDB.Close()
+		dbLogger.Infof("DB [%s] at %s is created before", odb.dbTag, orgDBPath)
 	}
 
-	originalDB.db.OpenOpt = opts
-	err = originalDB.db.open(orgDBPath)
+	if odb.db == nil {
+		odb.db = new(ocDB)
+	}
+
+	odb.db.OpenOpt = opts
+	err = odb.db.open(orgDBPath)
 	if err != nil {
+		return fmt.Errorf("open db [%s] fail: %s", odb.dbTag, err)
+	}
+
+	return nil
+}
+
+func StartDB(tag string, vp *viper.Viper) (*OpenchainDB, error) {
+
+	opts := DBOptions(vp)
+	defer opts.Destroy()
+
+	ret := new(OpenchainDB)
+	ret.dbTag = tag
+	if err := startDBInner(ret, opts, false); err != nil {
+		return nil, err
+	}
+
+	return ret, nil
+}
+
+// Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
+func Start() {
+
+	opts := DefaultOption()
+	defer opts.Destroy()
+
+	if err := startDBInner(originalDB, opts, true); err != nil {
 		panic(err)
 	}
-
 }
 
 // Stop the db. Note this method has no guarantee correct behavior concurrent invocation.
 func Stop() {
-	originalDB.db.close()
+
+	StopDB(originalDB)
 	globalDataDB.close()
+
+	if globalDataDB.globalOpt != nil {
+		globalDataDB.globalOpt.Destroy()
+		globalDataDB.globalOpt = nil
+	}
+}
+
+func StopDB(odb *OpenchainDB) {
+	if odb.db != nil {
+		odb.db.close()
+		odb.db = nil
+	}
 }
 
 func DropDB(path string) error {
@@ -352,14 +412,24 @@ func (openchainDB *baseHandler) getFromSnapshot(snapshot *gorocksdb.Snapshot,
 	return data, nil
 }
 
-func getDBPath(dbname string) string {
+var dbPathSetting = ""
 
-	dbPath := viper.GetString("peer.fileSystemPath")
-	//though null string is OK, we still avoid this problem
-	if dbPath == "" {
-		panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
+func InitDBPath(path string) {
+	dbLogger.Infof("DBPath has been set as [%s]", path)
+	dbPathSetting = path
+}
+
+func getDBPath(dbname string) string {
+	if dbPathSetting == "" {
+		dbPathSetting = viper.GetString("peer.fileSystemPath")
+		dbLogger.Warningf("DBPath has been set by deprecated configuration to [%s]", dbPathSetting)
+		//though null string is OK, we still avoid this problem
+		if dbPathSetting == "" {
+			panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
+		}
 	}
-	dbPath = util.CanonicalizePath(dbPath)
+
+	dbPath := util.CanonicalizePath(dbPathSetting)
 	if util.MkdirIfNotExist(dbPath) {
 		dbLogger.Infof("dbpath %s not exist, we have created it", dbPath)
 	}

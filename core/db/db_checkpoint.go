@@ -4,28 +4,17 @@ import (
 	"fmt"
 	"github.com/abchain/fabric/core/util"
 	_ "github.com/abchain/fabric/protos"
-	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
 	"path/filepath"
 )
 
 var CurrentDBPathKey = []byte("blockCount")
 
-func getCheckPointPath(dbname string) string {
-	chkpPath := filepath.Join(util.CanonicalizeFilePath(viper.GetString("peer.fileSystemPath")),
-		"checkpoint")
-
+func getCheckPointPath(statehashname string) string {
+	chkpPath := getDBPath("checkpoint")
 	util.MkdirIfNotExist(chkpPath)
 
-	return util.CanonicalizePath(chkpPath) + dbname
-}
-
-func activeDbName(tag []byte) string {
-	if tag == nil {
-		return "db"
-	} else {
-		return "db_" + string(tag)
-	}
+	return filepath.Join(chkpPath, statehashname)
 }
 
 func encodeStatehash(statehash []byte) string {
@@ -57,7 +46,14 @@ func (oc *OpenchainDB) CheckpointCurrent(statehash []byte) error {
 		return err
 	}
 
-	err = globalDataDB.PutValue(PersistCF, []byte(checkpointNamePrefix+statename), statehash)
+	var chkpkey []byte
+	if oc.dbTag == "" {
+		chkpkey = []byte(checkpointNamePrefix + statename)
+	} else {
+		chkpkey = []byte(oc.dbTag + "." + checkpointNamePrefix + statename)
+	}
+
+	err = globalDataDB.PutValue(PersistCF, chkpkey, statehash)
 	if err != nil {
 		return err
 	}
@@ -96,8 +92,8 @@ func (oc *OpenchainDB) StateSwitch(statehash []byte) error {
 	}
 	defer clear()
 
-	newtag := []byte(util.GenerateUUID())
-	newdbPath := getDBPath(activeDbName(newtag))
+	newtag := util.GenerateUUID()
+	newdbPath := getDBPath("db_" + oc.dbTag + newtag)
 	dbLogger.Infof("[%s] Create new state db on %s", printGID, newdbPath)
 
 	//copy this checkpoint to active db path
@@ -106,8 +102,8 @@ func (oc *OpenchainDB) StateSwitch(statehash []byte) error {
 		return err
 	}
 
-	//write the new db tag, if we fail here, we just have an dsicarded path
-	err = globalDataDB.put(globalDataDB.persistCF, []byte(currentDBKey), newtag)
+	//write the new db tag, if we fail here, we just have an discarded path
+	err = globalDataDB.put(globalDataDB.persistCF, oc.getDBKey(currentDBKey), []byte(newtag))
 	if err != nil {
 		dbLogger.Errorf("[%s] Can't write globaldb: <%s>. Fail to create new state db at %s",
 			printGID, err, newdbPath)

@@ -138,9 +138,14 @@ func (d *Handler) beforeHello(e *fsm.Event) {
 	peerLogger.Debugf("Received %s from endpoint=%s", e.Event, helloMessage)
 
 	// If security enabled, need to verify the signature on the hello message
-	if securityEnabled() {
-		if err := d.Coordinator.secHelper.VerifyPeer(helloMessage.PeerEndpoint.PkiID, msg.Signature, msg.Payload); err != nil {
+	if d.Coordinator.secHelper != nil {
+		if err := d.Coordinator.secHelper.VerifyPeerMsg(helloMessage.PeerEndpoint.PkiID, msg); err != nil {
 			e.Cancel(fmt.Errorf("Error Verifying signature for received HelloMessage: %s", err))
+			return
+		}
+
+		if err := d.Coordinator.secHelper.VerifyPeerCred(helloMessage.GetPeerCredential()); err != nil {
+			e.Cancel(fmt.Errorf("Error Verifying credential (cert) for incoming peer [%v]: %s", d.ToPeerEndpoint.GetID(), err))
 			return
 		}
 		peerLogger.Debugf("Verified signature for %s", e.Event)

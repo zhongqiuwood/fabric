@@ -323,13 +323,22 @@ func (txdb *GlobalDataDB) addGSCritical(parentStateHash []byte,
 	data, _ = txdb.get(txdb.globalCF, statehash)
 
 	if data != nil {
-		if !txdb.useCycleGraph {
-			return nil, StateDuplicatedError{fmt.Errorf("state [%x] exist", statehash)}
-		}
 
 		gs, err := protos.UnmarshallGS(data)
 		if err != nil {
 			return nil, fmt.Errorf("state of [%x] was ruined: %s", statehash, err)
+		}
+
+		for _, parentHash := range gs.ParentNodeStateHash {
+			if bytes.Compare(parentHash, parentStateHash) == 0 {
+				//we have a duplicated addition (both current and parent is existed and connected)
+				return nil, nil
+			}
+		}
+
+		//or it was not allowed in DAG
+		if !txdb.useCycleGraph {
+			return nil, StateDuplicatedError{fmt.Errorf("state [%x] exist", statehash)}
 		}
 
 		wb.MergeCF(txdb.globalCF, statehash,
@@ -561,14 +570,19 @@ func (txdb *GlobalDataDB) GetTransactions(txids []string) []*protos.Transaction 
 	return txs
 }
 
-func (openchainDB *GlobalDataDB) ListCheckpoints() (ret [][]byte) {
+func (openchainDB *GlobalDataDB) ListCheckpointsByTag(tag string) (ret [][]byte) {
 
 	ret = make([][]byte, 0)
 
 	it := openchainDB.GetIterator(PersistCF)
 	defer it.Close()
 
-	prefix := []byte(checkpointNamePrefix)
+	var prefix []byte
+	if tag == "" {
+		prefix = []byte(checkpointNamePrefix)
+	} else {
+		prefix = []byte(tag + "." + checkpointNamePrefix)
+	}
 
 	for it.Seek([]byte(prefix)); it.ValidForPrefix(prefix); it.Next() {
 		//Value/Key() in iterator need not to be Free() but its Data()
@@ -580,17 +594,19 @@ func (openchainDB *GlobalDataDB) ListCheckpoints() (ret [][]byte) {
 	return
 }
 
+//list the default db's checkpoints
+func (openchainDB *GlobalDataDB) ListCheckpoints() (ret [][]byte) {
+	return openchainDB.ListCheckpointsByTag("")
+}
+
 func (openchainDB *GlobalDataDB) GetDBVersion() int {
+	dbLogger.Warning("You are calling a deprecated method for the version of default db")
 	v, _ := openchainDB.GetValue(PersistCF, []byte(currentVersionKey))
 	if len(v) == 0 {
 		return 0
 	}
 
 	return int(v[0])
-}
-
-func (openchainDB *GlobalDataDB) UpdateDBVersion(v int) error {
-	return openchainDB.PutValue(PersistCF, []byte(currentVersionKey), []byte{byte(v)})
 }
 
 func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator {
@@ -622,11 +638,12 @@ func (txdb *GlobalDataDB) PutGenesisGlobalState(statehash []byte) error {
 		if err != nil {
 			return err
 		}
-		err = txdb.PutValue(GlobalCF, []byte("DUMMYGS#"), v)
+		dummykey := bytes.Join([][]byte{[]byte("DUMMYGS#"), statehash}, nil)
+		err = txdb.PutValue(GlobalCF, dummykey, v)
 		if err != nil {
 			return err
 		}
-		newgs.ParentNodeStateHash = [][]byte{[]byte("DUMMYGS#")}
+		newgs.ParentNodeStateHash = [][]byte{dummykey}
 	}
 
 	v, err := newgs.Bytes()

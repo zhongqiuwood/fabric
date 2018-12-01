@@ -35,14 +35,10 @@ import (
 var clisrvLogger = logging.MustGetLogger("server")
 
 // NewDevopsServer creates and returns a new Devops server instance.
-func NewDevopsServer(p *node.PeerEngine) *Devops {
-
-	if config.SecurityEnabled() && p.Credentials == nil {
-		panic("peer node has no credentials while we enforce security")
-	}
+func NewDevopsServer(p *node.NodeEngine) *Devops {
 
 	d := new(Devops)
-	d.peer = p
+	d.node = p
 
 	clisrvLogger.Info("Devops use txnetwork")
 
@@ -51,7 +47,7 @@ func NewDevopsServer(p *node.PeerEngine) *Devops {
 
 // Devops implementation of Devops services
 type Devops struct {
-	peer *node.PeerEngine
+	node *node.NodeEngine
 }
 
 // TODO: login should become part of the cred
@@ -160,7 +156,7 @@ func (d *Devops) deliverTx(ctx context.Context, tx *pb.Transaction, spec *pb.Cha
 	var err error
 	if config.SecurityEnabled() && spec.SecureContext != "" {
 
-		ed, err := d.peer.SelectEndorser(spec.SecureContext)
+		ed, err := d.node.SelectEndorser(spec.SecureContext)
 		if err != nil {
 			return nil, fmt.Errorf("Obtain endorser failure: %s", err)
 		}
@@ -170,11 +166,19 @@ func (d *Devops) deliverTx(ctx context.Context, tx *pb.Transaction, spec *pb.Cha
 			return nil, fmt.Errorf("Create tx endorser failure: %s", err)
 		}
 
-		resp = d.peer.ExecuteTransaction(ctx, tx, txed)
+		if invoke {
+			resp = d.node.ExecuteTransaction(ctx, tx, txed, d.node.DefaultPeer())[0]
+		} else {
+			resp = d.node.QueryTransaction(ctx, tx, txed, d.node.DefaultLedger(), d.node.DefaultPeer())
+		}
 
 	} else {
 		//we simply omit securecontext even it was specified
-		resp = d.peer.ExecuteTransaction(ctx, tx, nil)
+		if invoke {
+			resp = d.node.ExecuteTransaction(ctx, tx, nil, d.node.DefaultPeer())[0]
+		} else {
+			resp = d.node.QueryTransaction(ctx, tx, nil, d.node.DefaultLedger(), d.node.DefaultPeer())
+		}
 	}
 
 	if resp.Status == pb.Response_FAILURE {

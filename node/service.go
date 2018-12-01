@@ -2,6 +2,7 @@ package node
 
 import (
 	"fmt"
+	"github.com/abchain/fabric/core/config"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"google.golang.org/grpc"
@@ -18,7 +19,37 @@ var servers []*grpc.Server
 type servicePoint struct {
 	*grpc.Server
 	lPort     net.Listener
-	srvStatus chan error
+	srvStatus error
+}
+
+func (ep *servicePoint) InitWithConfig(conf *config.ServerSpec) error {
+
+	if err := ep.SetPort(conf.Address); err != nil {
+		return err
+	}
+
+	var opts []grpc.ServerOption
+
+	//tls
+	if conf.EnableTLS {
+
+		creds, err := conf.GetServerTLSOptions()
+		if err != nil {
+			return fmt.Errorf("Failed to generate peer's credentials: %v", err)
+		}
+		opts = append(opts, grpc.Creds(creds))
+
+	}
+
+	//other options (msg size, etc ...)
+	msgMaxsize := conf.MessageSize
+	if msgMaxsize > 1024*1024*4 {
+		//in p2p network we usually require a sync channel of recv and send
+		opts = append(opts, grpc.MaxRecvMsgSize(msgMaxsize), grpc.MaxSendMsgSize(msgMaxsize))
+	}
+
+	ep.Server = grpc.NewServer(opts...)
+	return nil
 }
 
 //standard init read all configurations from viper, inwhich we use a subtree of *peer*
@@ -44,8 +75,7 @@ func (ep *servicePoint) Init(conf *viper.Viper) error {
 			util.CanonicalizeFilePath(conf.GetString("tls.key.file")))
 
 		if err != nil {
-			serviceLogger.Errorf("Failed to generate peer's credentials: %v", err)
-			return err
+			return fmt.Errorf("Failed to generate peer's credentials: %v", err)
 		}
 		opts = append(opts, grpc.Creds(creds))
 
@@ -67,59 +97,33 @@ func (ep *servicePoint) SetPort(listenAddr string) error {
 	var err error
 	ep.lPort, err = net.Listen("tcp", listenAddr)
 	if err != nil {
-		serviceLogger.Errorf("Failed to listen on %s: %v", listenAddr, err)
-		return err
+		return fmt.Errorf("Failed to listen on %s: %v", listenAddr, err)
 	}
 	ep.Server = grpc.NewServer()
 	return nil
 }
 
-func (ep *servicePoint) Start() error {
+func (ep *servicePoint) Start(notify chan<- *servicePoint) error {
 
 	if ep.Server == nil {
 		return fmt.Errorf("Server is not inited")
 	}
 
-	serviceLogger.Infof("Starting service with address=%s", ep.lPort.Addr())
-	ep.srvStatus = make(chan error, 1)
 	go func() {
-		ep.srvStatus <- ep.Serve(ep.lPort)
-		serviceLogger.Info("grpc server exited")
+		ep.srvStatus = ep.Serve(ep.lPort)
+		notify <- ep
 	}()
 
 	return nil
 }
 
-var ServiceRunning = fmt.Errorf("Service is still running")
-
-func (ep *servicePoint) Status() error {
-
-	if ep.srvStatus == nil {
-		return fmt.Errorf("Service not running")
-	}
-
-	select {
-	case e := <-ep.srvStatus:
-		//so the function is re-entriable
-		ep.srvStatus <- e
-		return e
-	default:
-		return ServiceRunning
-	}
-}
-
 func (ep *servicePoint) Stop() error {
 	if ep.Server == nil {
 		return fmt.Errorf("Server is not inited")
-	} else if ep.srvStatus == nil {
-		return fmt.Errorf("Service not running")
 	}
 
-	defer func() {
-		ep.srvStatus = nil
-	}()
-
-	return ep.Stop()
+	ep.Server.Stop()
+	return nil
 }
 
 //we still reserved the global APIs for node-wide services

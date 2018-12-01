@@ -54,11 +54,11 @@ type coordinatorImpl struct {
 }
 
 // NewCoordinatorImpl creates a new executor.Coordinator
-func NewImpl(consumer consensus.ExecutionConsumer, rawExecutor PartialStack, stps statetransfer.PartialStack) consensus.Executor {
+func NewImpl(consumer consensus.ExecutionConsumer, rawExecutor PartialStack, stc Coordinator) consensus.Executor {
 	co := &coordinatorImpl{
 		rawExecutor: rawExecutor,
 		consumer:    consumer,
-		stc:         statetransfer.NewCoordinatorImpl(stps, nil),
+		stc:         stc,
 		manager:     events.NewManagerImpl(),
 	}
 	co.manager.SetReceiver(co)

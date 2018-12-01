@@ -14,7 +14,7 @@ const dbVersion = db.DBVersion
 
 func UpgradeLedger(odb *db.OpenchainDB, checkonly bool) error {
 
-	v := db.GetGlobalDBHandle().GetDBVersion()
+	v := odb.GetDBVersion()
 	ledgerLogger.Info("Current DB Version is", v)
 
 	if v == dbVersion {
@@ -57,7 +57,7 @@ func UpgradeLedger(odb *db.OpenchainDB, checkonly bool) error {
 	}
 
 	//done, write new version
-	err = db.GetGlobalDBHandle().UpdateDBVersion(dbVersion)
+	err = odb.UpdateDBVersion(dbVersion)
 	if err != nil {
 		return fmt.Errorf("Final write db version fail: %s", err)
 	}

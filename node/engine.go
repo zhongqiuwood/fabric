@@ -37,10 +37,6 @@ type PeerEngine struct {
 	defaultEndorser cred.TxEndorserFactory
 	defaultAttr     []string
 
-	//don't access ledger from PeerEngine, visit it in NodeEngine instead
-	ledger   *ledger.Ledger
-	srvPoint *servicePoint
-
 	//run-time vars
 	lastID string
 
@@ -58,9 +54,19 @@ type NodeEngine struct {
 	Ledgers   map[string]*ledger.Ledger
 	Peers     map[string]*PeerEngine
 	Endorsers map[string]cred.TxEndorserFactory
-	//all the received transactions can be read out from different topic,
+	Cred      struct {
+		Peer cred.PeerCreds
+		Tx   cred.TxHandlerFactory
+	}
+	//all the received transactions can be read out from different topic by its chaincode name,
 	//according to the configuration in transation filter
 	TxTopic map[string]litekfk.Topic
+
+	srvPoints []*servicePoint
+
+	//additional tx hooks
+	globalTxHandlers []cred.TxHandlerFactory
+	peerTxHandlers   map[string]cred.TxHandlerFactory
 }
 
 func (ne *NodeEngine) DefaultLedger() *ledger.Ledger {

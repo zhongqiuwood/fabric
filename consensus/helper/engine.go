@@ -114,11 +114,11 @@ type PeerStack struct {
 }
 
 // GetEngine returns initialized peer.Engine
-func GetEngine(peer peer.Peer) (peer.Engine, error) {
+func GetEngine(peer peer.Peer) error {
 
 	coord, err := peer.GetNeighbour()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	engineOnce.Do(func() {
@@ -138,5 +138,5 @@ func GetEngine(peer peer.Peer) (peer.Engine, error) {
 			}
 		}()
 	})
-	return engine, err
+	return err
 }

@@ -55,3 +55,37 @@ func MakeGenesis() error {
 	})
 	return makeGenesisError
 }
+
+func MakeGenesisForLedger(l *ledger.Ledger, chaincode string, initValue map[string][]byte) error {
+
+	if l.GetBlockchainSize() == 0 {
+		genesisLogger.Info("Creating genesis block for ledger %s", chaincode)
+
+		s := new(ledger.TxExecStates)
+		s.InitForInvoking(l)
+		if chaincode == "" {
+			chaincode = "default_gensis_CC"
+		}
+		if initValue == nil {
+			initValue = map[string][]byte{"_genesis_": []byte{42, 42, 42}}
+		}
+		for k, v := range initValue {
+			s.Set(chaincode, k, v, nil)
+		}
+
+		l.ApplyStateDeltaDirect(s.DeRef())
+		if gensisstate, err := l.GetCurrentStateHash(); err != nil {
+			return err
+		} else if err = db.GetGlobalDBHandle().PutGenesisGlobalState(gensisstate); err != nil {
+			return err
+		}
+
+		if err := l.BeginTxBatch(0); err == nil {
+			return l.CommitTxBatch(0, nil, nil, nil)
+		} else {
+			return err
+		}
+	}
+	return nil
+
+}

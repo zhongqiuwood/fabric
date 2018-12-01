@@ -56,7 +56,8 @@ type ocDB struct {
 }
 
 type OpenchainDB struct {
-	db *ocDB
+	db    *ocDB
+	dbTag string
 	sync.RWMutex
 }
 
@@ -95,6 +96,27 @@ func (openchainDB *ocDB) open(dbpath string) error {
 	openchainDB.extendedLock = make(chan int, maxOpenedExtend)
 
 	return nil
+}
+
+func (openchainDB *OpenchainDB) getDBKey(kc string) []byte {
+	if openchainDB.dbTag == "" {
+		return []byte(kc)
+	} else {
+		return []byte(openchainDB.dbTag + "." + kc)
+	}
+}
+
+func (openchainDB *OpenchainDB) GetDBVersion() int {
+
+	v, _ := globalDataDB.get(globalDataDB.persistCF, openchainDB.getDBKey(currentVersionKey))
+	if len(v) == 0 {
+		return 0
+	}
+	return int(v[0])
+}
+
+func (openchainDB *OpenchainDB) UpdateDBVersion(v int) error {
+	return globalDataDB.put(globalDataDB.persistCF, openchainDB.getDBKey(currentVersionKey), []byte{byte(v)})
 }
 
 // override methods with rwlock
@@ -373,4 +395,3 @@ func (e *DBSnapshot) GetFromStateDeltaCFSnapshot(key []byte) ([]byte, error) {
 	}
 	return e.getFromSnapshot(e.snapshot, e.StateDeltaCF, key)
 }
-

@@ -362,6 +362,12 @@ func (state *State) ApplyStateDelta(delta *statemgmt.StateDelta) {
 	state.updateStateImpl = true
 }
 
+//similar to ApplyStateDelta but it merge, instead of change the state
+func (state *State) MergeStateDelta(delta *statemgmt.StateDelta) {
+	state.stateDelta.ApplyChanges(delta)
+	state.updateStateImpl = true
+}
+
 // ----- Deprecated ------
 // CommitStateDelta commits the changes from state.ApplyStateDelta to the
 // DB.

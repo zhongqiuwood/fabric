@@ -11,6 +11,7 @@ import (
 type ServerSpec struct {
 	Address      string
 	ExternalAddr string
+	MessageSize  int
 	tlsSpec
 }
 
@@ -32,6 +33,8 @@ func (s *ServerSpec) Init(vp *viper.Viper) error {
 		logger.Debugf("Read tls configuration for serverspec")
 		s.tlsSpec.Init(vp.Sub("tls"))
 	}
+
+	s.MessageSize = vp.GetInt("messagesizelimit")
 
 	return nil
 }

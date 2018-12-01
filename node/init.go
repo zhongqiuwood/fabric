@@ -19,6 +19,68 @@ func (ne *NodeEngine) GenCredDriver() *cred_driver.Credentials_PeerDriver {
 	return &cred_driver.Credentials_PeerDriver{drv.Clone(), nil, ne.Endorsers}
 }
 
+//ne will fully respect an old-fashion (fabric 0.6) config file
+func (ne *NodeEngine) Init() error {
+
+	fpath := viper.GetString("node.fileSystemPath")
+	//if not set, use the old fashion one (peer.fileSystemPath)
+	if fpath != "" {
+		db.InitDBPath(fpath)
+	}
+
+	//create ledgers
+	ledgerTags := viper.GetStringSlice("node.ledgers")
+	var defaultTag string
+	for _, tag := range ledgerTags {
+
+		vp := viper.Sub("ledgers." + tag)
+		if vp.GetBool("default") {
+			if defaultTag != "" {
+				logger.Warningf("Duplicated default tag found [%s vs %s], later will be used", defaultTag, tag)
+			}
+			defaultTag = tag
+		}
+
+		if _, err := ne.addLedger(vp, tag); err != nil {
+			return fmt.Errorf("Init ledger %s in node fail: %s", tag, err)
+		}
+		logger.Info("Init ledger %s", tag)
+	}
+
+	//select default ledger, if not, use first one, or just create one from peer setting
+
+	//create peers
+	peerTags := viper.GetStringSlice("node.peers")
+
+	//other infrastructures ...
+
+	//if we have only default peer, use its server point
+
+}
+
+func (ne *NodeEngine) addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, error) {
+
+	if l, ok := ne.Ledgers[tag]; ok {
+		return l, nil
+	}
+
+	tagdb, err := db.StartDB(tag, vp.Sub("db"))
+	if err != nil {
+		return nil, fmt.Errorf("Try to create db fail: %s", err)
+	}
+	l, err := ledger.GetNewLedger(tagdb)
+	if err != nil {
+		return nil, fmt.Errorf("Try to create ledger fail: %s", err)
+	}
+	err = genesis.MakeGenesisForLedger(l, "", nil)
+	if err != nil {
+		return nil, fmt.Errorf("Try to create genesis block for ledger fail: %s", err)
+	}
+
+	ne.Ledgers[tag] = l
+	return l, nil
+}
+
 // entry, ok := txnetwork.GetNetworkEntry(stub)
 // if !ok {
 // 	return nil, fmt.Errorf("Corresponding entry of given gossip network is not found: [%v]", stub)
@@ -91,24 +153,11 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		//use default ledger, do nothing
 	} else if useledger == "sole" {
 		//create a new ledger tagged by the peer, add it to node
-		l, ok := node.Ledgers[useledger]
-		if !ok {
-			tagdb, err := db.StartDB(useledger, vp.Sub("db"))
-			if err != nil {
-				return fmt.Errorf("Try to create db %s fail: %s", useledger, err)
-			}
-			l, err = ledger.GetNewLedger(tagdb)
-			if err != nil {
-				return fmt.Errorf("Try to create ledger %s fail: %s", useledger, err)
-			}
-			err = genesis.MakeGenesisForLedger(l, "", nil)
-			if err != nil {
-				return fmt.Errorf("Try to create genesis block for ledger %s fail: %s", useledger, err)
-			}
-
-			node.Ledgers[useledger] = l
-			logger.Info("Create default ledger [%s] for peer [%s]", useledger, tag)
+		l, err := node.addLedger(vp, useledger)
+		if err != nil {
+			return fmt.Errorf("Create peer's default ledger [%s] fail: %s", useledger, err)
 		}
+		logger.Info("Create default ledger [%s] for peer [%s]", useledger, tag)
 		pe.TxNetworkEntry.InitLedger(l)
 
 	} else {

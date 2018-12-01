@@ -12,7 +12,7 @@ import (
 
 type NodeConfig struct {
 	Settings map[string]interface{}
-	PostRun  func() error
+	PostRun  func(interface{}) error
 }
 
 //mimic peer.main()

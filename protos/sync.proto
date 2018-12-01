@@ -111,8 +111,13 @@ message SyncMsg {
 
 ////////////////////////////////
 message SyncStateQuery {
-  uint32  id = 1;
-  uint64  blockHeight = 2;
+    uint32  id = 1;
+    uint64  blockHeight = 2;
+}
+
+message SyncStart {
+    uint32  id = 1;
+    string  ledgerName = 2;
 }
 
 message SyncStateResp {

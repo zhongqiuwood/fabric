@@ -62,7 +62,8 @@ func (s *StateSyncStub) SyncToState(blockNumber uint64, blockHash []byte, peerID
 	result = false
 
 	for _, peer := range peerIDs {
-		err = s.SyncToStateByPeer(context.Background(), blockHash, nil, peer)
+		err = s.SyncToStateByPeer(context.Background(), blockHash,
+			nil, peer, "")
 		if err == nil {
 			result = true
 			break
@@ -81,7 +82,8 @@ func (s *StateSyncStub) Stop() {
 
 }
 
-func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
+func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt,
+	peer *pb.PeerID, ledgerName string) error {
 
 	var err error
 	s.Lock()
@@ -120,7 +122,7 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 			flogging.GoRDef, peer)
 	}
 
-	peerSyncHandler.run(ctx, targetState)
+	peerSyncHandler.run(ctx, targetState, ledgerName)
 
 	defer func() {
 		s.Lock()

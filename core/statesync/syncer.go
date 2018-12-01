@@ -18,6 +18,7 @@ type syncer struct {
 	context.Context
 	parent     *stateSyncHandler
 	ledger     *ledger.Ledger
+	ledgerName	string
 	blocksResp chan *pb.SyncBlocks
 
 	positionResp chan *pb.SyncStateResp
@@ -42,8 +43,9 @@ type syncer struct {
 }
 
 
-func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
+func newSyncer(ctx context.Context, h *stateSyncHandler, ledgerName string) (sts *syncer) {
 
+	// todo: get ledger by name
 	l, _ := ledger.GetLedger()
 
 	sts = &syncer{positionResp: make(chan *pb.SyncStateResp),
@@ -156,7 +158,9 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 	endBlockNumber := uint64(0)
 
 	sts.parent.fsmHandler.Event(enterSyncBegin)
-	err := sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_START, nil)
+
+	msg := &pb.SyncStart{LedgerName:sts.ledgerName}
+	err := sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_START, msg)
 
 	if err != nil {
 		return 0, 0, err

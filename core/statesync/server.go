@@ -14,11 +14,12 @@ type stateServer struct {
 	correlationId uint64
 }
 
-func newStateServer(h *stateSyncHandler) (s *stateServer) {
+func newStateServer(h *stateSyncHandler, ledgerName string) (s *stateServer) {
 
 	s = &stateServer{
 		parent: h,
 	}
+	// todo: get ledger by name
 	l, _ := ledger.GetLedger()
 	s.ledger = l.CreateSnapshot()
 	return

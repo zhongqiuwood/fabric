@@ -7,6 +7,8 @@ import (
 	"github.com/abchain/fabric/core/cred/driver"
 	"github.com/abchain/fabric/core/db"
 	gossip_stub "github.com/abchain/fabric/core/gossip/stub"
+	sync_stub "github.com/abchain/fabric/core/statesync"
+
 	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/genesis"
@@ -85,6 +87,8 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 	pe.TxNetworkEntry.InitCred(credentials.MutipleTxHandler(networkTxCred...))
 
 	//TODO: create and init sync entry
+	syncStub := sync_stub.NewStateSyncStubWithPeer(pe.Peer)
+	_ = syncStub.SyncToStateByPeer()
 
 	//test ledger configuration
 	if useledger := vp.GetString("ledger"); useledger == "" || useledger == "default" {

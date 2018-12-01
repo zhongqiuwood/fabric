@@ -36,7 +36,7 @@ import (
 	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
-	"github.com/abchain/fabric/core/service"
+	"github.com/abchain/fabric/node/service"
 	"github.com/abchain/fabric/core/statesync"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/events/producer"
@@ -69,7 +69,7 @@ var nodeStartCmd = &cobra.Command{
 	},
 }
 
-func StartNode(postrun func() error) error {
+func StartNode(postrun func(interface{}) error) error {
 
 	fpath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
 	if fpath != "" {
@@ -265,7 +265,7 @@ func StartNode(postrun func() error) error {
 	defer StopServices()
 
 	if postrun != nil {
-		err = postrun()
+		err = postrun(peerServer)
 		if err != nil {
 			logger.Info("Post run fail, exit immediately ...", err)
 			return err

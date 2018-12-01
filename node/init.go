@@ -48,6 +48,21 @@ func (ne *NodeEngine) Init() error {
 	}
 
 	//select default ledger, if not, use first one, or just create one from peer setting
+	if len(ne.Ledgers) > 0 {
+
+		if defaultTag == "" {
+			for k, _ := range ne.Ledgers {
+				defaultTag = k
+				break
+			}
+		}
+
+		ledger.SetDefaultLedger(ne.Ledgers[defaultTag])
+		ne.Ledgers[""] = ne.Ledgers[defaultTag]
+	} else {
+
+		logger.Warningf("No ledger created, use old-fashion default one")
+	}
 
 	//create peers
 	peerTags := viper.GetStringSlice("node.peers")
@@ -68,6 +83,12 @@ func (ne *NodeEngine) addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, er
 	if err != nil {
 		return nil, fmt.Errorf("Try to create db fail: %s", err)
 	}
+
+	err = ledger.UpgradeLedger(tagdb, false)
+	if err != nil {
+		return nil, fmt.Errorf("Upgrade ledger fail: %s", err)
+	}
+
 	l, err := ledger.GetNewLedger(tagdb)
 	if err != nil {
 		return nil, fmt.Errorf("Try to create ledger fail: %s", err)

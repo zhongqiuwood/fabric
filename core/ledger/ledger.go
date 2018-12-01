@@ -89,6 +89,10 @@ var ledger *Ledger
 var ledgerError error
 var once sync.Once
 
+func SetDefaultLedger(l *Ledger) {
+	once.Do(func() { ledgerError = l })
+}
+
 // GetLedger - gives a reference to a 'singleton' ledger
 func GetLedger() (*Ledger, error) {
 	once.Do(func() {

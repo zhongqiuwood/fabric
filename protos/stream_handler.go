@@ -416,7 +416,7 @@ func (s *StreamStub) HandleServer(stream grpc.ServerStream) error {
 		return err
 	}
 
-	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, false)
+	himpl, err := s.NewStreamHandlerImpl(remotePeerid, s, false) //HandleServer
 
 	if err != nil {
 		return err

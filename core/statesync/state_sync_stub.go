@@ -4,7 +4,6 @@ import (
 	"fmt"
 	_ "github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
-	"github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
@@ -22,6 +21,7 @@ type StateSyncStub struct {
 	sync.RWMutex
 	curCorrrelation uint64
 	curTask context.Context
+	ledgerName string
 }
 
 type ErrInProcess struct {
@@ -36,24 +36,12 @@ func NewStateSyncStubWithPeer(p peer.Peer) *StateSyncStub {
 	}
 
 	gctx, _ := context.WithCancel(p.GetPeerCtx())
+
 	sycnStub := &StateSyncStub{
 		self:    self.ID,
 		curTask: gctx,
 	}
 
-	err = p.AddStreamStub("sync", stub.DefaultSyncFactory, sycnStub)
-	if err != nil {
-		logger.Error("Bind sync stub to peer fail: ", err)
-		return nil
-	}
-
-	syncStreamStub := p.GetStreamStub("sync")
-	if syncStreamStub == nil {
-		logger.Error("peer have no sync streamstub")
-		return nil
-	}
-
-	sycnStub.StreamStub = syncStreamStub
 	return sycnStub
 }
 
@@ -80,6 +68,12 @@ func (s *StateSyncStub) Start() {
 
 func (s *StateSyncStub) Stop() {
 
+}
+
+func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID) pb.StreamHandlerImpl {
+
+	impl := newStateSyncHandler(id, s.ledgerName)
+	return impl
 }
 
 func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt,

@@ -339,7 +339,7 @@ func (p *Impl) RegisterHandler(ctx context.Context, initiated bool, messageHandl
 
 			go func(conn *grpc.ClientConn, stub *pb.StreamStub, name string) {
 				peerLogger.Debugf("start <%s> streamhandler for peer %s", name, key.GetName())
-				err, retf := stub.HandleClient(conn, key)
+				err, retf := stub.HandleClient(conn, key) // housekeeping for handling message
 				defer retf()
 				clidone <- err
 			}(v.(*grpc.ClientConn), stub, name)

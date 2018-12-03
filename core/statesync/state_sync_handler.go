@@ -3,7 +3,6 @@ package statesync
 import (
 	"fmt"
 	_ "github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
@@ -14,7 +13,6 @@ import (
 )
 
 func init() {
-	stub.DefaultSyncFactory = newStateSyncHandler
 }
 
 type stateSyncHandler struct {
@@ -22,14 +20,21 @@ type stateSyncHandler struct {
 	fsmHandler   *fsm.FSM
 	server       *stateServer
 	client       *syncer
-	streamHandler *pb.StreamHandler
+	streamStub   *pb.StreamStub
+	ledgerName    string
 }
 
-func newStateSyncHandler(remoterId *pb.PeerID) pb.StreamHandlerImpl {
+type ErrHandlerFatal struct {
+	error
+}
+
+func newStateSyncHandler(remoterId *pb.PeerID, ledgerName string, sstub *pb.StreamStub) pb.StreamHandlerImpl {
 	logger.Debug("create handler for peer", remoterId)
 
 	h := &stateSyncHandler{
 		remotePeerId: remoterId,
+		streamStub: sstub,
+		ledgerName: ledgerName,
 	}
 	h.fsmHandler = newFsmHandler(h)
 	return h
@@ -100,7 +105,9 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 //---------------------------------------------------------------------------
 func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 
-	syncMsg := syncHandler.onRecvSyncMsg(e, nil)
+	msg := &pb.SyncStart{}
+
+	syncMsg := syncHandler.onRecvSyncMsg(e, msg)
 
 	if syncMsg == nil {
 		return
@@ -154,7 +161,11 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 		data = tmp
 	}
 
-	stream := syncHandler.base
+	stream := syncHandler.streamStub.PickHandler(syncHandler.remotePeerId)
+
+	if stream == nil {
+		return fmt.Errorf("Failed to pick handler: %s", syncHandler.remotePeerId)
+	}
 
 	err := stream.SendMessage(&pb.SyncMsg{
 		Type:    msgType,

@@ -32,3 +32,4 @@ build/
 #/scripts
 
 dbscan
+*_stdout_*

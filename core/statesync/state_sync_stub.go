@@ -4,7 +4,6 @@ import (
 	"fmt"
 	_ "github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
-	"github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
@@ -22,9 +21,14 @@ type StateSyncStub struct {
 	sync.RWMutex
 	curCorrrelation uint64
 	curTask context.Context
+	ledgerName string
 }
 
-func NewStateSyncStubWithPeer(p peer.Peer) *StateSyncStub {
+type ErrInProcess struct {
+	error
+}
+
+func NewStateSyncStubWithPeer(p peer.Peer, ledgerName string) *StateSyncStub {
 
 	self, err := p.GetPeerEndpoint()
 	if err != nil {
@@ -32,55 +36,23 @@ func NewStateSyncStubWithPeer(p peer.Peer) *StateSyncStub {
 	}
 
 	gctx, _ := context.WithCancel(p.GetPeerCtx())
+
 	sycnStub := &StateSyncStub{
 		self:    self.ID,
 		curTask: gctx,
+		ledgerName: ledgerName,
 	}
 
-	err = p.AddStreamStub("sync", stub.DefaultSyncFactory, sycnStub)
-	if err != nil {
-		logger.Error("Bind sync stub to peer fail: ", err)
-		return nil
-	}
 
-	syncStreamStub := p.GetStreamStub("sync")
-	if syncStreamStub == nil {
-		logger.Error("peer have no sync streamstub")
-		return nil
-	}
-
-	sycnStub.StreamStub = syncStreamStub
 	return sycnStub
 }
-
-type ErrInProcess struct {
-	error
-}
-
-type ErrHandlerFatal struct {
-	error
-}
-
-//if busy, return current correlation Id, els return 0
-func (s *StateSyncStub) IsBusy() uint64 {
-
-	s.RLock()
-	defer s.RUnlock()
-
-	if s.curTask == nil {
-		return uint64(0)
-	} else {
-		return s.curCorrrelation
-	}
-}
-
 
 func (s *StateSyncStub) SyncToState(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (err error, result bool) {
 
 	result = false
 
 	for _, peer := range peerIDs {
-		err = s.SyncToStateByPeer(context.TODO(), blockHash, nil, peer)
+		err = s.SyncToStateByPeer(context.Background(), blockHash,nil, peer)
 		if err == nil {
 			result = true
 			break
@@ -99,7 +71,13 @@ func (s *StateSyncStub) Stop() {
 
 }
 
-func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt, peer *pb.PeerID) error {
+func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID, sstub *pb.StreamStub) pb.StreamHandlerImpl {
+
+	return newStateSyncHandler(id, s.ledgerName, sstub)
+}
+
+func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt,
+	peer *pb.PeerID) error {
 
 	var err error
 	s.Lock()
@@ -130,8 +108,6 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 
 	peerSyncHandler, ok := handler.StreamHandlerImpl.(*stateSyncHandler)
 
-	peerSyncHandler.streamHandler = handler
-
 	if !ok {
 		return fmt.Errorf("[%s]: Target peer <%v>, " +
 			"failed to convert StreamHandlerImpl to stateSyncHandler",
@@ -149,3 +125,16 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 	return err
 }
 
+
+//if busy, return current correlation Id, els return 0
+func (s *StateSyncStub) IsBusy() uint64 {
+
+	s.RLock()
+	defer s.RUnlock()
+
+	if s.curTask == nil {
+		return uint64(0)
+	} else {
+		return s.curCorrrelation
+	}
+}

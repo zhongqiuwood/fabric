@@ -19,7 +19,7 @@ func TestMain(m *testing.M) {
 func TestPeerSync(t *testing.T) {
 
 	sAlice := statesync.NewStateSyncStubWithPeer(
-		peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "alice"}}))
+		peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "alice"}}), "")
 
 	ctx, endworks := context.WithCancel(context.Background())
 	defer endworks()

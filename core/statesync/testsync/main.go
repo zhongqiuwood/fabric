@@ -10,7 +10,6 @@ import (
 	"time"
 	"github.com/abchain/fabric/core/embedded_chaincode/api"
 	"github.com/abchain/fabric/examples/chaincode/go/embedded/simple_chaincode"
-	"github.com/abchain/fabric/core/peer"
 	"context"
 )
 
@@ -21,13 +20,12 @@ func main() {
 
 	runtest := func() error {
 
-		err := api.RegisterECC(&api.EmbeddedChaincode{"example02", new(simple_chaincode.SimpleChaincode)})
+		err := api.RegisterECC(&api.EmbeddedChaincode{"example02",
+		new(simple_chaincode.SimpleChaincode)})
 
 		if err != nil {
 			return err
 		}
-
-		var peer peer.Peer
 
 		syncTarget := viper.GetString("peer.syncTarget")
 		if len(syncTarget) > 0 {
@@ -35,7 +33,7 @@ func main() {
 			logger.Infof("Start state sync test after 10s. Sync target: %s", syncTarget)
 			time.Sleep(10 * time.Second)
 
-			syncStub := statesync.NewStateSyncStubWithPeer(peer)
+			syncStub := statesync.NewStateSyncStubWithPeer(nil, "")
 
 			err = syncStub.SyncToStateByPeer(context.TODO(), nil, nil, &pb.PeerID{syncTarget})
 

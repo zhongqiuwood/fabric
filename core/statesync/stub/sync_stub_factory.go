@@ -38,7 +38,7 @@ func InitStateSyncStub(bindPeer peer.Peer, ledgerName string, srv *grpc.Server) 
 
 func (t SyncFactory) NewStreamHandlerImpl(id *pb.PeerID, sstub *pb.StreamStub, initiated bool) (pb.StreamHandlerImpl, error) {
 
-	return t.stateSyncStub.CreateSyncHandler(id), nil
+	return t.stateSyncStub.CreateSyncHandler(id, sstub), nil
 }
 
 func (t SyncFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, error) {

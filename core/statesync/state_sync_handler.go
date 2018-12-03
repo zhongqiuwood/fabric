@@ -20,7 +20,7 @@ type stateSyncHandler struct {
 	fsmHandler   *fsm.FSM
 	server       *stateServer
 	client       *syncer
-	streamHandler *pb.StreamHandler
+	streamStub   *pb.StreamStub
 	ledgerName string
 }
 
@@ -28,11 +28,12 @@ type ErrHandlerFatal struct {
 	error
 }
 
-func newStateSyncHandler(remoterId *pb.PeerID, ledgerName string) pb.StreamHandlerImpl {
+func newStateSyncHandler(remoterId *pb.PeerID, ledgerName string, sstub *pb.StreamStub) pb.StreamHandlerImpl {
 	logger.Debug("create handler for peer", remoterId)
 
 	h := &stateSyncHandler{
 		remotePeerId: remoterId,
+		streamStub:sstub,
 	}
 	h.ledgerName = ledgerName
 	h.fsmHandler = newFsmHandler(h)
@@ -160,7 +161,11 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 		data = tmp
 	}
 
-	stream := syncHandler.streamHandler
+	stream := syncHandler.streamStub.PickHandler(syncHandler.remotePeerId)
+
+	if stream == nil {
+		return fmt.Errorf("Failed to pick handler: %s", syncHandler.remotePeerId)
+	}
 
 	err := stream.SendMessage(&pb.SyncMsg{
 		Type:    msgType,
@@ -220,6 +225,11 @@ func (h *stateSyncHandler) dumpStateUpdate(stateUpdate string) {
 
 func (h *stateSyncHandler) remotePeerIdName() string {
 	return h.remotePeerId.GetName()
+}
+
+
+func (h *stateSyncHandler) SetStreamHandler(s pb.IStreamHandler)  {
+	h.streamHandler = s
 }
 
 func (h *stateSyncHandler) Stop() { return }

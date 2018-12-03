@@ -70,10 +70,9 @@ func (s *StateSyncStub) Stop() {
 
 }
 
-func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID) pb.StreamHandlerImpl {
+func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID, sstub *pb.StreamStub) pb.StreamHandlerImpl {
 
-	impl := newStateSyncHandler(id, s.ledgerName)
-	return impl
+	return newStateSyncHandler(id, s.ledgerName, sstub)
 }
 
 func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt,
@@ -107,8 +106,6 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 	}
 
 	peerSyncHandler, ok := handler.StreamHandlerImpl.(*stateSyncHandler)
-
-	peerSyncHandler.streamHandler = handler
 
 	if !ok {
 		return fmt.Errorf("[%s]: Target peer <%v>, " +

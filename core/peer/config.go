@@ -30,8 +30,6 @@ limitations under the License.
 package peer
 
 import (
-	"fmt"
-	"net"
 	"strings"
 
 	"github.com/abchain/fabric/core/config"
@@ -41,10 +39,8 @@ import (
 )
 
 type PeerConfig struct {
-	IsValidator bool
-	config.ServerSpec
+	IsValidator  bool
 	PeerEndpoint *pb.PeerEndpoint
-	AutoDetect   bool
 	Discovery    struct {
 		Roots   []string
 		Persist bool
@@ -53,31 +49,17 @@ type PeerConfig struct {
 	}
 }
 
-func NewPeerConfig(forValidator bool, vp *viper.Viper) (*PeerConfig, error) {
+func NewPeerConfig(forValidator bool, vp *viper.Viper, spec *config.ServerSpec) (*PeerConfig, error) {
 
 	cfg := new(PeerConfig)
 	cfg.IsValidator = forValidator
-	if err := cfg.Configuration(vp); err != nil {
+	if err := cfg.Configuration(vp, spec); err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-func (c *PeerConfig) Configuration(vp *viper.Viper) error {
-	if err := c.ServerSpec.Init(vp); err != nil {
-		return fmt.Errorf("Error init server spec: %s", err)
-	}
-	c.AutoDetect = viper.GetBool("addressAutoDetect")
-	if c.AutoDetect {
-		// Need to get the port from the peer.address setting, and append to the determined host IP
-		_, port, err := net.SplitHostPort(c.ExternalAddr)
-		if err != nil {
-			return fmt.Errorf("Error auto detecting Peer's address: %s", err)
-		}
-		c.ExternalAddr = net.JoinHostPort(GetLocalIP(), port)
-		peerLogger.Infof("Auto detected peer address: %s", c.ExternalAddr)
-	}
-
+func (c *PeerConfig) Configuration(vp *viper.Viper, spec *config.ServerSpec) error {
 	c.Discovery.Roots = strings.Split(viper.GetString("discovery.rootnode"), ",")
 	if len(c.Discovery.Roots) == 1 && c.Discovery.Roots[0] == "" {
 		c.Discovery.Roots = []string{}
@@ -111,7 +93,7 @@ func (c *PeerConfig) Configuration(vp *viper.Viper) error {
 		peerID = peerPrefix + peerID
 	}
 
-	c.PeerEndpoint = &pb.PeerEndpoint{ID: &pb.PeerID{Name: peerID}, Address: c.ExternalAddr, Type: peerType}
+	c.PeerEndpoint = &pb.PeerEndpoint{ID: &pb.PeerID{Name: peerID}, Address: spec.ExternalAddr, Type: peerType}
 	peerLogger.Infof("Init peer endpoint: %s", c.PeerEndpoint)
 	return nil
 }

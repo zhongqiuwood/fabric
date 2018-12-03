@@ -17,6 +17,7 @@ limitations under the License.
 package service
 
 import (
+	"errors"
 	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"os"
@@ -66,12 +67,14 @@ func (*ServerAdmin) StartServer(context.Context, *empty.Empty) (*pb.ServerStatus
 
 // StopServer stops the server
 func (*ServerAdmin) StopServer(context.Context, *empty.Empty) (*pb.ServerStatus, error) {
-	status := &pb.ServerStatus{Status: pb.ServerStatus_STOPPED}
-	clisrvLogger.Debugf("returning status: %s", status)
+	return nil, errors.New("Not allowed")
 
-	pidFile := util.CanonicalizePath(viper.GetString("peer.fileSystemPath")) + "peer.pid"
-	clisrvLogger.Debugf("Remove pid file  %s", pidFile)
-	os.Remove(pidFile)
-	defer os.Exit(0)
-	return status, nil
+	// status := &pb.ServerStatus{Status: pb.ServerStatus_STOPPED}
+	// clisrvLogger.Debugf("returning status: %s", status)
+
+	// pidFile := util.CanonicalizePath(viper.GetString("peer.fileSystemPath")) + "peer.pid"
+	// clisrvLogger.Debugf("Remove pid file  %s", pidFile)
+	// os.Remove(pidFile)
+	// defer os.Exit(0)
+	// return status, nil
 }

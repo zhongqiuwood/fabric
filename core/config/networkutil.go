@@ -1,10 +1,12 @@
-package peer
+package config
 
 import (
 	"net"
 )
 
 // GetLocalIP returns the non loopback local IP of the host
+// TODO: this should be a singleton service (the result can be reused) and should use more way to
+// obtain the real "external" IP for server
 func GetLocalIP() string {
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {

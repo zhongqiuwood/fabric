@@ -36,6 +36,7 @@ type PeerEngine struct {
 
 	defaultEndorser cred.TxEndorserFactory
 	defaultAttr     []string
+	srvPoint        *servicePoint
 
 	//run-time vars
 	lastID string
@@ -51,6 +52,7 @@ type PeerEngine struct {
 	ledger here
 */
 type NodeEngine struct {
+	Name      string
 	Ledgers   map[string]*ledger.Ledger
 	Peers     map[string]*PeerEngine
 	Endorsers map[string]cred.TxEndorserFactory

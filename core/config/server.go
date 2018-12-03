@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"github.com/spf13/viper"
+	"net"
 )
 
 //a server's specification: including the listen address,
@@ -12,6 +13,7 @@ type ServerSpec struct {
 	Address      string
 	ExternalAddr string
 	MessageSize  int
+	AutoDetect   bool
 	tlsSpec
 }
 
@@ -21,6 +23,17 @@ func (s *ServerSpec) Init(vp *viper.Viper) error {
 	s.ExternalAddr = vp.GetString("address")
 	if s.ExternalAddr == "" {
 		return fmt.Errorf("can not find address configuration")
+	}
+
+	s.AutoDetect = viper.GetBool("addressAutoDetect")
+	if s.AutoDetect {
+		// Need to get the port from the peer.address setting, and append to the determined host IP
+		_, port, err := net.SplitHostPort(s.ExternalAddr)
+		if err != nil {
+			return fmt.Errorf("Error auto detecting Peer's address: %s", err)
+		}
+		s.ExternalAddr = net.JoinHostPort(GetLocalIP(), port)
+		logger.Infof("Auto detected peer address: %s", s.ExternalAddr)
 	}
 
 	s.Address = vp.GetString("listenAddress")

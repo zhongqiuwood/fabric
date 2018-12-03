@@ -18,11 +18,14 @@ var servers []*grpc.Server
 
 type servicePoint struct {
 	*grpc.Server
+	spec      *config.ServerSpec
 	lPort     net.Listener
 	srvStatus error
 }
 
 func (ep *servicePoint) InitWithConfig(conf *config.ServerSpec) error {
+
+	ep.spec = conf
 
 	if err := ep.SetPort(conf.Address); err != nil {
 		return err
@@ -56,40 +59,12 @@ func (ep *servicePoint) InitWithConfig(conf *config.ServerSpec) error {
 //in the 0.6's configurations
 func (ep *servicePoint) Init(conf *viper.Viper) error {
 
-	addr := conf.GetString("listenAddress")
-	if addr == "" {
-		return fmt.Errorf("Peer's listening address for service not specified")
-	}
-
-	if err := ep.SetPort(addr); err != nil {
+	spec := new(config.ServerSpec)
+	if err := spec.Init(vp); err != nil {
 		return err
 	}
 
-	var opts []grpc.ServerOption
-
-	//tls
-	if conf.GetBool("tls.enable") {
-
-		creds, err := credentials.NewServerTLSFromFile(
-			util.CanonicalizeFilePath(conf.GetString("tls.cert.file")),
-			util.CanonicalizeFilePath(conf.GetString("tls.key.file")))
-
-		if err != nil {
-			return fmt.Errorf("Failed to generate peer's credentials: %v", err)
-		}
-		opts = append(opts, grpc.Creds(creds))
-
-	}
-
-	//other options (msg size, etc ...)
-	msgMaxsize := conf.GetInt("messagesizelimit")
-	if msgMaxsize > 1024*1024*4 {
-		//in p2p network we usually require a sync channel of recv and send
-		opts = append(opts, grpc.MaxRecvMsgSize(msgMaxsize), grpc.MaxSendMsgSize(msgMaxsize))
-	}
-
-	ep.Server = grpc.NewServer(opts...)
-	return nil
+	return ep.InitWithConfig(spec)
 }
 
 //some routines for create a simple grpc server (currently only port, no tls and other options enable)

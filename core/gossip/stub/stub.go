@@ -85,7 +85,7 @@ type GossipFactory struct {
 
 func (t GossipFactory) NewStreamHandlerImpl(id *pb.PeerID, sstub *pb.StreamStub, initiated bool) (pb.StreamHandlerImpl, error) {
 
-	return &GossipHandlerImpl{t.GossipStub.CreateGossipHandler(id)}, nil
+	return &GossipHandlerImpl{t.CreateGossipHandler(id)}, nil
 }
 
 func (t GossipFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, error) {

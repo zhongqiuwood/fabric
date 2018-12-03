@@ -92,3 +92,21 @@ func (ne *NodeEngine) SelectEndorser(name string) (cred.TxEndorserFactory, error
 	return nil, fmt.Errorf("Specified endorser %s is not exist", name)
 
 }
+
+func (ne *NodeEngine) SelectLedger(name string) (*ledger.Ledger, error) {
+
+	if ne.Ledgers != nil {
+		l, ok := ne.Ledgers[name]
+		if ok {
+			return l, nil
+		}
+	}
+
+	//TODO: we can create external type of endorser if being configured to
+	return nil, fmt.Errorf("Specified ledger %s is not exist", name)
+
+}
+
+func (ne *NodeEngine) AddServicePoint(s ServicePoint) {
+	ne.srvPoints = append(ne.srvPoints, s.servicePoint)
+}

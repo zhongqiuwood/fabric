@@ -57,10 +57,10 @@ type State struct {
 }
 
 // NewState constructs a new State. This Initializes encapsulated state implementation
-func NewState(db *db.OpenchainDB) *State {
-	initConfig()
-	logger.Infof("Initializing state implementation [%s]", stateImplName)
-	switch stateImplName {
+func NewState(db *db.OpenchainDB, config *stateConfig) *State {
+
+	logger.Infof("Initializing state implementation [%s]", config.stateImplName)
+	switch config.stateImplName {
 	case buckettreeType:
 		stateImpl = buckettree.NewStateImpl(db)
 	case trieType:
@@ -70,12 +70,12 @@ func NewState(db *db.OpenchainDB) *State {
 	default:
 		panic("Should not reach here. Configs should have checked for the stateImplName being a valid names ")
 	}
-	err := stateImpl.Initialize(stateImplConfigs)
+	err := stateImpl.Initialize(config.stateImplConfigs)
 	if err != nil {
 		panic(fmt.Errorf("Error during initialization of state implementation: %s", err))
 	}
 	return &State{db, stateImpl, statemgmt.NewStateDelta(), statemgmt.NewStateDelta(), "", make(map[string][]byte),
-		false, uint64(deltaHistorySize)}
+		false, uint64(config.deltaHistorySize)}
 }
 
 // TxBegin marks begin of a new tx. If a tx is already in progress, this call panics
@@ -332,12 +332,6 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.
 	}
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 
-	//we consider this indicate NOT index delta (we never index delta for gensis block)
-	if blockNumber == 0 {
-		logger.Debug("state.addChangesForPersistence()...finished")
-		return
-	}
-
 	serializedStateDelta := state.stateDelta.Marshal()
 	cf := writeBatch.GetDBHandle().StateDeltaCF
 	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
@@ -371,11 +365,15 @@ func (state *State) MergeStateDelta(delta *statemgmt.StateDelta) {
 // ----- Deprecated ------
 // CommitStateDelta commits the changes from state.ApplyStateDelta to the
 // DB.
-func (state *State) CommitStateDelta(blockNumber uint64) error {
+func (state *State) CommitStateDelta() error {
 
+	if state.updateStateImpl {
+		state.stateImpl.PrepareWorkingSet(state.stateDelta)
+		state.updateStateImpl = false
+	}
 	writeBatch := state.NewWriteBatch()
 	defer writeBatch.Destroy()
-	state.AddChangesForPersistence(blockNumber, writeBatch)
+	state.stateImpl.AddChangesForPersistence(writeBatch)
 	return writeBatch.BatchCommit()
 }
 

@@ -22,7 +22,7 @@ type Credentials_PeerDriver struct {
 }
 
 func (drv *Credentials_PeerCredBase) Clone() *Credentials_PeerCredBase {
-	return nil
+	return &Credentials_PeerCredBase{}
 }
 
 /*

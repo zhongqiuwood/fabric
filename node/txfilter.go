@@ -1,6 +1,7 @@
 package node
 
 import (
+	cred "github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
 )
@@ -10,13 +11,13 @@ type txFilter struct {
 }
 
 func (f *txFilter) ValidatePeerStatus(id string, status *pb.PeerTxState) error {
-
+	return nil
 }
 
 func (f *txFilter) TransactionPreValidation(*pb.Transaction) (*pb.Transaction, error) {
-
+	return nil, nil
 }
 
-func (f *txFilter) GetPreHandler(id string) (TxPreHandler, error) { return f, nil }
-func (f *txFilter) RemovePreHandler(id string)                    {}
-func (f *txFilter) Release()                                      {}
+func (f *txFilter) GetPreHandler(id string) (cred.TxPreHandler, error) { return f, nil }
+func (f *txFilter) RemovePreHandler(id string)                         {}
+func (f *txFilter) Release()                                           {}

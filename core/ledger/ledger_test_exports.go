@@ -36,7 +36,7 @@ func InitTestLedger(t *testing.T) *Ledger {
 	testutil.AssertNoError(t, err, "Error while constructing txpool")
 	//replace global ledger singleton
 	ledger_g = &LedgerGlobal{txpool}
-	newLedger, err := GetNewLedger(testDBWrapper.GetDB())
+	newLedger, err := GetNewLedger(testDBWrapper.GetDB(), nil)
 	testutil.AssertNoError(t, err, "Error while constructing ledger")
 	gensisstate, err := newLedger.GetCurrentStateHash()
 	testutil.AssertNoError(t, err, "Error while get gensis state")

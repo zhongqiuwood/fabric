@@ -60,6 +60,7 @@ type StreamPostHandler interface {
 type Neighbour interface {
 	Broadcast(*pb.Message, pb.PeerEndpoint_Type) []error
 	Unicast(*pb.Message, *pb.PeerID) error
+	GetPeerEndpoint() (*pb.PeerEndpoint, error) //for convinient, we also include this method
 	GetPeers() (*pb.PeersMessage, error)
 	GetDiscoverer() (Discoverer, error)
 	GetACL() (acl.AccessControl, error)

@@ -18,12 +18,9 @@ package service
 
 import (
 	"errors"
-	"github.com/spf13/viper"
 	"golang.org/x/net/context"
-	"os"
 	"runtime"
 
-	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/ptypes/empty"
 )

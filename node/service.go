@@ -23,6 +23,23 @@ type servicePoint struct {
 	srvStatus error
 }
 
+type ServicePoint struct {
+	*servicePoint
+}
+
+func (ep ServicePoint) Spec() *config.ServerSpec {
+	return ep.spec
+}
+
+func CreateServerPoint(conf *viper.Viper) (ServicePoint, error) {
+	srvp := new(servicePoint)
+	err := srvp.Init(conf)
+	if err != nil {
+		return ServicePoint{}, err
+	}
+	return ServicePoint{srvp}, nil
+}
+
 func (ep *servicePoint) InitWithConfig(conf *config.ServerSpec) error {
 
 	ep.spec = conf
@@ -60,7 +77,7 @@ func (ep *servicePoint) InitWithConfig(conf *config.ServerSpec) error {
 func (ep *servicePoint) Init(conf *viper.Viper) error {
 
 	spec := new(config.ServerSpec)
-	if err := spec.Init(vp); err != nil {
+	if err := spec.Init(conf); err != nil {
 		return err
 	}
 

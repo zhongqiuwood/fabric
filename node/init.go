@@ -2,8 +2,7 @@ package node
 
 import (
 	"fmt"
-	"github.com/abchain/fabric/core/chaincode"
-	"github.com/abchain/fabric/core/config"
+	_ "github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/cred/driver"
 	"github.com/abchain/fabric/core/db"
@@ -12,7 +11,6 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
-	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 )
 
@@ -59,10 +57,12 @@ func (ne *NodeEngine) Init() error {
 			}
 		}
 
-		logger.Info("Default ledger is %s", tag)
+		logger.Info("Default ledger is %s", defaultTag)
 		ledger.SetDefaultLedger(ne.Ledgers[defaultTag])
 		ne.Ledgers[""] = ne.Ledgers[defaultTag]
 	} else {
+		//start default db
+		db.Start()
 		if l, err := ledger.GetLedger(); err != nil {
 			return fmt.Errorf("Init default ledger fail: %s", err)
 		} else {
@@ -72,6 +72,14 @@ func (ne *NodeEngine) Init() error {
 	}
 
 	//create base credentials
+	creddrv := new(cred_driver.Credentials_PeerDriver)
+	if err := creddrv.Drive(viper.Sub("node")); err == nil {
+		ne.Cred.Peer = creddrv.PeerValidator
+		ne.Cred.Tx = creddrv.TxValidator
+	} else {
+		logger.Info("No credentials availiable in node")
+	}
+	//TODO: create endorsers
 
 	//create peers
 	peerTags := viper.GetStringSlice("node.peers")
@@ -86,7 +94,7 @@ func (ne *NodeEngine) Init() error {
 		}
 
 		p := new(PeerEngine)
-		if _, err := p.Init(vp, ne, tag); err != nil {
+		if err := p.Init(vp, ne, tag); err != nil {
 			return fmt.Errorf("Create peer %s fail: %s", tag, err)
 		}
 		ne.Peers[tag] = p
@@ -101,50 +109,21 @@ func (ne *NodeEngine) Init() error {
 			}
 		}
 
-		logger.Info("Default peer is %s", tag)
+		logger.Info("Default peer is %s", defaultTag)
 		ne.Peers[""] = ne.Peers[defaultTag]
 	} else {
 		//try to create peer in "peer" block
 		vp := viper.Sub("peer")
 		p := new(PeerEngine)
-		if _, err := p.Init(vp, ne, ""); err != nil {
+		if err := p.Init(vp, ne, ""); err != nil {
 			return fmt.Errorf("Create default peer fail: %s", err)
 		}
 		logger.Info("Create old-fashion, default peer")
 		ne.Peers[""] = p
 	}
 
-	//other infrastructures ... (if no setting, use default peer's server point)
+	return nil
 
-	//chaincode: TODO: support mutiple chaincode platforms
-	ccsrv := new(servicePoint)
-	if err := ccsrv.Init(viper.Sub("chaincode")); err != nil {
-		logger.Infof("Can not create server spec for chaincode: [%s], merge it into peer", err)
-		ccsrv = ne.DefaultPeer().srvPoint
-	} else {
-		ne.srvPoints = append(ne.srvPoints, ccsrv)
-	}
-
-	userRunsCC := false
-	if viper.GetString("chaincode.mode") == chaincode.DevModeUserRunsChaincode {
-		userRunsCC = true
-	}
-
-	pb.RegisterChaincodeSupportServer(ccsrv.Server,
-		//TODO: cred should provide confidienty handler
-		chaincode.NewChaincodeSupport(chaincode.DefaultChain, ne.Name, ccsrv.spec, userRunsCC, nil))
-
-	apisrv := new(ServicePoint)
-	//api, and "service" configuration in YA-fabric 0.7/0.8 is abandoned
-	if viper.IsSet("node.api") {
-		if err := apisrv.Init(viper.Sub("node.api")); err != nil {
-			return fmt.Errorf("Error setting for API service: %s", err)
-		}
-	}
-
-	//rest
-
-	//event hub
 }
 
 func (ne *NodeEngine) addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, error) {
@@ -164,7 +143,7 @@ func (ne *NodeEngine) addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, er
 		return nil, fmt.Errorf("Upgrade ledger fail: %s", err)
 	}
 
-	l, err := ledger.GetNewLedger(tagdb)
+	l, err := ledger.GetNewLedger(tagdb, ledger.NewLedgerConfig(vp))
 	if err != nil {
 		return nil, fmt.Errorf("Try to create ledger fail: %s", err)
 	}
@@ -176,22 +155,6 @@ func (ne *NodeEngine) addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, er
 	ne.Ledgers[tag] = l
 	return l, nil
 }
-
-// entry, ok := txnetwork.GetNetworkEntry(stub)
-// if !ok {
-// 	return nil, fmt.Errorf("Corresponding entry of given gossip network is not found: [%v]", stub)
-// }
-
-// var err error
-// if endorser == nil {
-// 	err = entry.ResetPeerSimple(util.GenerateBytesUUID())
-// } else {
-// 	err = entry.ResetPeer(endorser)
-// }
-
-// if err != nil{
-// 	return nil, fmt.Errorf("Corresponding entry of given gossip network is not found: [%v]", stub)
-// }
 
 func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error {
 

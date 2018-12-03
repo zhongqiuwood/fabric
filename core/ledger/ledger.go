@@ -90,7 +90,7 @@ var ledgerError error
 var once sync.Once
 
 func SetDefaultLedger(l *Ledger) {
-	once.Do(func() { ledgerError = l })
+	once.Do(func() { ledger = l })
 }
 
 // GetLedger - gives a reference to a 'singleton' ledger
@@ -99,14 +99,14 @@ func GetLedger() (*Ledger, error) {
 		//check version before obtain ledger ...
 		ledgerError = UpgradeLedger(db.GetDBHandle(), true)
 		if ledgerError == nil {
-			ledger, ledgerError = GetNewLedger(db.GetDBHandle())
+			ledger, ledgerError = GetNewLedger(db.GetDBHandle(), nil)
 		}
 	})
 	return ledger, ledgerError
 }
 
 // GetNewLedger - gives a reference to a new ledger TODO need better approach
-func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
+func GetNewLedger(db *db.OpenchainDB, config *ledgerConfig) (*Ledger, error) {
 
 	gledger, err := GetLedgerGlobal()
 	if err != nil {
@@ -118,7 +118,16 @@ func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 		return nil, err
 	}
 
-	state := state.NewState(db)
+	var st *state.State
+	if config != nil {
+		sconf, err := state.NewStateConfig(config.Viper)
+		if err != nil {
+			return nil, err
+		}
+		st = state.NewState(db, sconf)
+	} else {
+		st = state.NewState(db, state.DefaultConfig())
+	}
 
 	ver := db.GetDBVersion()
 	if ver >= 1 {
@@ -128,7 +137,7 @@ func GetNewLedger(db *db.OpenchainDB) (*Ledger, error) {
 		}
 	}
 
-	return &Ledger{gledger, blockchain, state, nil, nil, ver}, nil
+	return &Ledger{gledger, blockchain, st, nil, nil, ver}, nil
 }
 
 //we need this check and correction for handling the inconsistent between two db (global
@@ -551,7 +560,13 @@ func (ledger *Ledger) ApplyStateDeltaDirect(delta *statemgmt.StateDelta) {
 // CommitStateDelta will commit the state delta passed to ledger.ApplyStateDelta
 // to the DB
 func (ledger *Ledger) CommitStateDelta(id interface{}) error {
-	return ledger.CommitAndIndexStateDelta(id, 0)
+	err := ledger.checkValidIDCommitORRollback(id)
+	if err != nil {
+		return err
+	}
+	defer ledger.resetForNextTxGroup(true)
+
+	return ledger.state.CommitStateDelta()
 }
 
 // CommitStateDelta will commit the state delta passed to ledger.ApplyStateDelta
@@ -562,7 +577,11 @@ func (ledger *Ledger) CommitAndIndexStateDelta(id interface{}, blockNumber uint6
 		return err
 	}
 	defer ledger.resetForNextTxGroup(true)
-	return ledger.state.CommitStateDelta(blockNumber)
+
+	writeBatch := ledger.state.NewWriteBatch()
+	defer writeBatch.Destroy()
+	ledger.state.AddChangesForPersistence(blockNumber, writeBatch)
+	return writeBatch.BatchCommit()
 }
 
 // RollbackStateDelta will discard the state delta passed

@@ -23,32 +23,52 @@ import (
 	"github.com/spf13/viper"
 )
 
-var loadConfigOnce sync.Once
-
-var stateImplName stateImplType
-var stateImplConfigs map[string]interface{}
-var deltaHistorySize int
-
-func initConfig() {
-	loadConfigOnce.Do(func() { loadConfig() })
+type stateConfig struct {
+	stateImplName    stateImplType
+	stateImplConfigs map[string]interface{}
+	deltaHistorySize int
 }
 
-func loadConfig() {
+func NewStateConfig(vp *viper.Viper) (*stateConfig, error) {
+	ret := new(stateConfig)
+	err := ret.loadConfig(vp)
+	return ret, err
+}
+
+var loadConfigOnce sync.Once
+var defconf *stateConfig
+
+func DefaultConfig() *stateConfig {
+
+	loadConfigOnce.Do(
+		func() {
+			var err error
+			defconf, err = NewStateConfig(viper.Sub("ledger"))
+			if err != nil {
+				panic(err)
+			}
+		})
+
+	return defconf
+}
+
+func (c *stateConfig) loadConfig(vp *viper.Viper) error {
 	logger.Info("Loading configurations...")
-	stateImplName = stateImplType(viper.GetString("ledger.state.dataStructure.name"))
-	stateImplConfigs = viper.GetStringMap("ledger.state.dataStructure.configs")
-	deltaHistorySize = viper.GetInt("ledger.state.deltaHistorySize")
+	c.stateImplName = stateImplType(vp.GetString("state.dataStructure.name"))
+	c.stateImplConfigs = vp.GetStringMap("state.dataStructure.configs")
+	c.deltaHistorySize = vp.GetInt("state.deltaHistorySize")
 	logger.Infof("Configurations loaded. stateImplName=[%s], stateImplConfigs=%v, deltaHistorySize=[%d]",
-		stateImplName, stateImplConfigs, deltaHistorySize)
+		c.stateImplName, c.stateImplConfigs, c.deltaHistorySize)
 
-	if len(stateImplName) == 0 {
-		stateImplName = defaultStateImpl
-		stateImplConfigs = nil
-	} else if stateImplName != buckettreeType && stateImplName != trieType && stateImplName != rawType {
-		panic(fmt.Errorf("Error during initialization of state implementation. State data structure '%s' is not valid.", stateImplName))
+	if len(c.stateImplName) == 0 {
+		c.stateImplName = defaultStateImpl
+		c.stateImplConfigs = nil
+	} else if c.stateImplName != buckettreeType && c.stateImplName != trieType && c.stateImplName != rawType {
+		return fmt.Errorf("Error during initialization of state implementation. State data structure '%s' is not valid.", c.stateImplName)
 	}
 
-	if deltaHistorySize < 0 {
-		panic(fmt.Errorf("Delta history size must be greater than or equal to 0. Current value is %d.", deltaHistorySize))
+	if c.deltaHistorySize < 0 {
+		return fmt.Errorf("Delta history size must be greater than or equal to 0. Current value is %d.", c.deltaHistorySize)
 	}
+	return nil
 }

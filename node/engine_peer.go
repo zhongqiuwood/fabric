@@ -13,6 +13,10 @@ type txPoint struct {
 	Series uint64
 }
 
+func (pe *PeerEngine) GetServerPoint() ServicePoint {
+	return ServicePoint{pe.srvPoint}
+}
+
 func (pe *PeerEngine) GenTxEndorser() cred.TxEndorser {
 	if pe.defaultEndorser == nil {
 		return nil

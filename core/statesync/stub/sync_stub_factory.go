@@ -15,7 +15,7 @@ type SyncFactory struct {
 
 func InitStateSyncStub(bindPeer peer.Peer, ledgerName string, srv *grpc.Server) *statesync.StateSyncStub {
 
-	sstub := statesync.NewStateSyncStubWithPeer(bindPeer)
+	sstub := statesync.NewStateSyncStubWithPeer(bindPeer, ledgerName)
 	if sstub == nil {
 		return nil
 	}

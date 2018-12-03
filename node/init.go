@@ -87,8 +87,7 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 	pe.TxNetworkEntry.InitCred(credentials.MutipleTxHandler(networkTxCred...))
 
 	//TODO: create and init sync entry
-	syncStub := sync_stub.InitStateSyncStub(pe.Peer, "ledgerName", srvPoint.Server)
-	_ = syncStub
+	_ = sync_stub.InitStateSyncStub(pe.Peer, "ledgerName", srvPoint.Server)
 
 	//test ledger configuration
 	if useledger := vp.GetString("ledger"); useledger == "" || useledger == "default" {

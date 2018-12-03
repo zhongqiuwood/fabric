@@ -43,11 +43,11 @@ type syncer struct {
 }
 
 
-func newSyncer(ctx context.Context, h *stateSyncHandler, ledgerName string) (sts *syncer) {
+func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 
 	// todo: get ledger by name
+	// l := NodeEngine.GetLedger(h.ledgerName)
 	l, _ := ledger.GetLedger()
-
 	sts = &syncer{positionResp: make(chan *pb.SyncStateResp),
 		ledger:  l,
 		Context: ctx,

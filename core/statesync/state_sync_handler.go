@@ -34,15 +34,15 @@ func newStateSyncHandler(remoterId *pb.PeerID, ledgerName string, sstub *pb.Stre
 	h := &stateSyncHandler{
 		remotePeerId: remoterId,
 		streamStub:sstub,
+		ledgerName: ledgerName,
 	}
-	h.ledgerName = ledgerName
 	h.fsmHandler = newFsmHandler(h)
 	return h
 }
 
-func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte, ledgerName string) error {
+func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte) error {
 
-	syncHandler.client = newSyncer(ctx, syncHandler, ledgerName)
+	syncHandler.client = newSyncer(ctx, syncHandler)
 
 	defer logger.Infof("[%s]: Exit. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
 	defer syncHandler.fini()
@@ -113,7 +113,7 @@ func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 		return
 	}
 
-	syncHandler.server = newStateServer(syncHandler, msg.LedgerName)
+	syncHandler.server = newStateServer(syncHandler)
 
 	syncHandler.server.correlationId = syncMsg.CorrelationId
 
@@ -225,11 +225,6 @@ func (h *stateSyncHandler) dumpStateUpdate(stateUpdate string) {
 
 func (h *stateSyncHandler) remotePeerIdName() string {
 	return h.remotePeerId.GetName()
-}
-
-
-func (h *stateSyncHandler) SetStreamHandler(s pb.IStreamHandler)  {
-	h.streamHandler = s
 }
 
 func (h *stateSyncHandler) Stop() { return }

@@ -69,7 +69,7 @@ var nodeStartCmd = &cobra.Command{
 	},
 }
 
-func StartNode(postrun func(interface{}) error) error {
+func StartNode(postrun func() error) error {
 
 	fpath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
 	if fpath != "" {
@@ -265,7 +265,7 @@ func StartNode(postrun func(interface{}) error) error {
 	defer StopServices()
 
 	if postrun != nil {
-		err = postrun(peerServer)
+		err = postrun()
 		if err != nil {
 			logger.Info("Post run fail, exit immediately ...", err)
 			return err

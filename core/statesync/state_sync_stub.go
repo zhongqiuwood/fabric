@@ -28,7 +28,7 @@ type ErrInProcess struct {
 	error
 }
 
-func NewStateSyncStubWithPeer(p peer.Peer) *StateSyncStub {
+func NewStateSyncStubWithPeer(p peer.Peer, ledgerName string) *StateSyncStub {
 
 	self, err := p.GetPeerEndpoint()
 	if err != nil {
@@ -40,7 +40,9 @@ func NewStateSyncStubWithPeer(p peer.Peer) *StateSyncStub {
 	sycnStub := &StateSyncStub{
 		self:    self.ID,
 		curTask: gctx,
+		ledgerName: ledgerName,
 	}
+
 
 	return sycnStub
 }
@@ -50,8 +52,7 @@ func (s *StateSyncStub) SyncToState(blockNumber uint64, blockHash []byte, peerID
 	result = false
 
 	for _, peer := range peerIDs {
-		err = s.SyncToStateByPeer(context.Background(), blockHash,
-			nil, peer, "")
+		err = s.SyncToStateByPeer(context.Background(), blockHash,nil, peer)
 		if err == nil {
 			result = true
 			break
@@ -76,7 +77,7 @@ func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID, sstub *pb.StreamStub) p
 }
 
 func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt,
-	peer *pb.PeerID, ledgerName string) error {
+	peer *pb.PeerID) error {
 
 	var err error
 	s.Lock()
@@ -113,7 +114,7 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 			flogging.GoRDef, peer)
 	}
 
-	peerSyncHandler.run(ctx, targetState, ledgerName)
+	peerSyncHandler.run(ctx, targetState)
 
 	defer func() {
 		s.Lock()

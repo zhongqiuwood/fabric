@@ -21,7 +21,7 @@ type stateSyncHandler struct {
 	server       *stateServer
 	client       *syncer
 	streamStub   *pb.StreamStub
-	ledgerName string
+	ledgerName    string
 }
 
 type ErrHandlerFatal struct {
@@ -33,7 +33,7 @@ func newStateSyncHandler(remoterId *pb.PeerID, ledgerName string, sstub *pb.Stre
 
 	h := &stateSyncHandler{
 		remotePeerId: remoterId,
-		streamStub:sstub,
+		streamStub: sstub,
 		ledgerName: ledgerName,
 	}
 	h.fsmHandler = newFsmHandler(h)

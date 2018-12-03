@@ -8,9 +8,9 @@ FILEPATHBASE=/var/hyperledger
 function startpeer {
 
     index=$1
-    let ADDRPORT=${PEERADDRBASE}+${index}*100
-    let LOCADDRPORT=${PEERLOCALADDRBASE}+${index}*100
-    let EVENTADDRPORT=${EVENTADDRBASE}+${index}*100
+    ((ADDRPORT = PEERADDRBASE + index * 100))
+    ((LOCADDRPORT = PEERLOCALADDRBASE + index * 100))
+    ((EVENTADDRPORT = EVENTADDRBASE + index * 100))
 
     export CORE_PEER_LISTENADDRESS=127.0.0.1:${ADDRPORT}
     export CORE_PEER_ADDRESS=${CORE_PEER_LISTENADDRESS}
@@ -22,6 +22,7 @@ function startpeer {
     export LOG_STDOUT_FILE=_stdout_${CORE_PEER_ID}.json
     ./txnetwork >> ${LOG_STDOUT_FILE} 2>>${LOG_STDOUT_FILE} &
 }
+
 
 function main {
     ./killbyname.sh txnetwork

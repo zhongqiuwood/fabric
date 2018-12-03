@@ -75,6 +75,7 @@ It has these top-level messages:
 	SyncBlockState
 	SyncMsg
 	SyncStateQuery
+	SyncStart
 	SyncStateResp
 */
 package protos

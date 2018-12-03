@@ -19,6 +19,10 @@ func newStateServer(h *stateSyncHandler) (s *stateServer) {
 	s = &stateServer{
 		parent: h,
 	}
+
+	// todo: get ledger by name
+	//l := NodeEngine.GetLedger(h.ledgerName)
+
 	l, _ := ledger.GetLedger()
 	s.ledger = l.CreateSnapshot()
 	return

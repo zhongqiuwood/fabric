@@ -18,13 +18,13 @@ func TestMain(m *testing.M) {
 
 func TestPeerSync(t *testing.T) {
 
-	sAlice := statesync.NewStateSyncWithPeer(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "alice"}}))
+	sAlice := statesync.NewStateSyncStubWithPeer(
+		peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "alice"}}), "")
 
 	ctx, endworks := context.WithCancel(context.Background())
 	defer endworks()
 
-	sAlice.SyncToState(ctx, []byte("targetStatehash"), nil, &pb.PeerID{Name: "bob"})
-
+	sAlice.SyncToStateByPeer(ctx, []byte("targetStatehash"), nil, &pb.PeerID{Name: "bob"})
 
 	time.Sleep(time.Second)
 }

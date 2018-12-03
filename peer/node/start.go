@@ -36,7 +36,7 @@ import (
 	"github.com/abchain/fabric/core/gossip"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
-	"github.com/abchain/fabric/core/service"
+	"github.com/abchain/fabric/node/service"
 	"github.com/abchain/fabric/core/statesync"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/events/producer"

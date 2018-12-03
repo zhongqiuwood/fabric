@@ -10,6 +10,7 @@ import (
 	"time"
 	"github.com/abchain/fabric/core/embedded_chaincode/api"
 	"github.com/abchain/fabric/examples/chaincode/go/embedded/simple_chaincode"
+	"context"
 )
 
 var logger = logging.MustGetLogger("synctest")
@@ -19,7 +20,8 @@ func main() {
 
 	runtest := func() error {
 
-		err := api.RegisterECC(&api.EmbeddedChaincode{"example02", new(simple_chaincode.SimpleChaincode)})
+		err := api.RegisterECC(&api.EmbeddedChaincode{"example02",
+		new(simple_chaincode.SimpleChaincode)})
 
 		if err != nil {
 			return err
@@ -31,8 +33,9 @@ func main() {
 			logger.Infof("Start state sync test after 10s. Sync target: %s", syncTarget)
 			time.Sleep(10 * time.Second)
 
-			sync, _ := statesync.GetStateSync()
-			err = sync.SyncToState(nil, nil, nil, &pb.PeerID{syncTarget})
+			syncStub := statesync.NewStateSyncStubWithPeer(nil, "")
+
+			err = syncStub.SyncToStateByPeer(context.TODO(), nil, nil, &pb.PeerID{syncTarget})
 
 			if err != nil {
 				return fmt.Errorf("Stop running with sync result: %s", err)

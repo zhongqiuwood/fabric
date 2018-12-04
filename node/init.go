@@ -2,7 +2,7 @@ package node
 
 import (
 	"fmt"
-	_ "github.com/abchain/fabric/core/config"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/cred"
 	"github.com/abchain/fabric/core/cred/driver"
 	"github.com/abchain/fabric/core/db"
@@ -15,6 +15,17 @@ import (
 	"github.com/abchain/fabric/core/peer"
 	"github.com/spf13/viper"
 )
+
+func CreateNode() *NodeEngine {
+	ret := new(NodeEngine)
+
+	ret.Ledgers = make(map[string]*ledger.Ledger)
+	ret.Peers = make(map[string]*PeerEngine)
+	ret.Endorsers = make(map[string]credentials.TxEndorserFactory)
+	ret.peerTxHandlers = make(map[string]credentials.TxHandlerFactory)
+
+	return ret
+}
 
 func (ne *NodeEngine) GenCredDriver() *cred_driver.Credentials_PeerDriver {
 	drv := cred_driver.Credentials_PeerCredBase{ne.Cred.Peer, ne.Cred.Tx}
@@ -35,7 +46,7 @@ func (ne *NodeEngine) Init() error {
 	var defaultTag string
 	for _, tag := range ledgerTags {
 
-		vp := viper.Sub("ledgers." + tag)
+		vp := config.SubViper("ledgers." + tag)
 		if vp.GetBool("default") {
 			if defaultTag != "" {
 				logger.Warningf("Duplicated default tag found [%s vs %s], later will be used", defaultTag, tag)
@@ -46,7 +57,7 @@ func (ne *NodeEngine) Init() error {
 		if _, err := ne.addLedger(vp, tag); err != nil {
 			return fmt.Errorf("Init ledger %s in node fail: %s", tag, err)
 		}
-		logger.Info("Init ledger %s", tag)
+		logger.Info("Init ledger:", tag)
 	}
 
 	//select default ledger, if not, use first one, or just create one from peer setting
@@ -59,7 +70,7 @@ func (ne *NodeEngine) Init() error {
 			}
 		}
 
-		logger.Info("Default ledger is %s", defaultTag)
+		logger.Info("Default ledger is:", defaultTag)
 		ledger.SetDefaultLedger(ne.Ledgers[defaultTag])
 		ne.Ledgers[""] = ne.Ledgers[defaultTag]
 	} else {
@@ -75,11 +86,11 @@ func (ne *NodeEngine) Init() error {
 
 	//create base credentials
 	creddrv := new(cred_driver.Credentials_PeerDriver)
-	if err := creddrv.Drive(viper.Sub("node")); err == nil {
+	if err := creddrv.Drive(config.SubViper("node")); err == nil {
 		ne.Cred.Peer = creddrv.PeerValidator
 		ne.Cred.Tx = creddrv.TxValidator
 	} else {
-		logger.Info("No credentials availiable in node")
+		logger.Info("No credentials availiable in node:", err)
 	}
 	//TODO: create endorsers
 
@@ -100,7 +111,7 @@ func (ne *NodeEngine) Init() error {
 			return fmt.Errorf("Create peer %s fail: %s", tag, err)
 		}
 		ne.Peers[tag] = p
-		logger.Info("Create peer %s", tag)
+		logger.Info("Create peer:", tag)
 	}
 
 	if len(ne.Peers) > 0 {
@@ -111,11 +122,11 @@ func (ne *NodeEngine) Init() error {
 			}
 		}
 
-		logger.Info("Default peer is %s", defaultTag)
+		logger.Info("Default peer is:", defaultTag)
 		ne.Peers[""] = ne.Peers[defaultTag]
 	} else {
 		//try to create peer in "peer" block
-		vp := viper.Sub("peer")
+		vp := config.SubViper("peer")
 		p := new(PeerEngine)
 		if err := p.Init(vp, ne, ""); err != nil {
 			return fmt.Errorf("Create default peer fail: %s", err)
@@ -134,7 +145,7 @@ func (ne *NodeEngine) addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, er
 		return l, nil
 	}
 
-	tagdb, err := db.StartDB(tag, vp.Sub("db"))
+	tagdb, err := db.StartDB(tag, config.SubViper("db", vp))
 	if err != nil {
 		return nil, fmt.Errorf("Try to create db fail: %s", err)
 	}
@@ -163,33 +174,38 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 	var err error
 	credrv := node.GenCredDriver()
 	if err = credrv.Drive(vp); err != nil {
-		return fmt.Errorf("Init credential fail", err)
+		if node.EnforceSec {
+			return fmt.Errorf("Init credential fail: %s", err)
+		} else {
+			logger.Warningf("Drive cred fail: %s, no security is available", err)
+		}
+
 	}
 	pe.defaultEndorser = credrv.TxEndorserDef
 
 	pe.srvPoint = new(servicePoint)
 	if err = pe.srvPoint.Init(vp); err != nil {
-		return fmt.Errorf("Init serverpoint fail", err)
+		return fmt.Errorf("Init serverpoint fail: %s", err)
 	}
 	node.srvPoints = append(node.srvPoints, pe.srvPoint)
 
-	isValidator := viper.GetBool("validator.enable")
+	isValidator := vp.GetBool("validator.enabled")
 	if isValidator {
-		logger.Info("Peer [%s] is set to be validator", tag)
+		logger.Infof("Peer [%s] is set to be validator", tag)
 	}
 
 	var peercfg *peer.PeerConfig
 	if peercfg, err = peer.NewPeerConfig(isValidator, vp, pe.srvPoint.spec); err != nil {
-		return fmt.Errorf("Init peer config fail", err)
+		return fmt.Errorf("Init peer config fail: %s", err)
 	}
 
 	if pe.Peer, err = peer.CreateNewPeer(credrv.PeerValidator, peercfg); err != nil {
-		return fmt.Errorf("Init peer fail", err)
+		return fmt.Errorf("Init peer fail: %s", err)
 	}
 
 	//init gossip network
 	if gstub := gossip_stub.InitGossipStub(pe.Peer, pe.srvPoint.Server); gstub == nil {
-		return fmt.Errorf("Can not create gossip server", err)
+		return fmt.Errorf("Can not create gossip server: %s", err)
 	} else {
 		pe.TxNetworkEntry = txnetwork.GetNetworkEntry(gstub)
 	}

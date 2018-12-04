@@ -59,7 +59,7 @@ func MakeGenesis() error {
 func MakeGenesisForLedger(l *ledger.Ledger, chaincode string, initValue map[string][]byte) error {
 
 	if l.GetBlockchainSize() == 0 {
-		genesisLogger.Info("Creating genesis block for ledger %s", chaincode)
+		genesisLogger.Info("Creating genesis block for ledger", chaincode)
 
 		s := new(ledger.TxExecStates)
 		s.InitForInvoking(l)

@@ -1,8 +1,8 @@
-package config
+package db
 
-import (
-	"github.com/abchain/fabric/core/db"
-)
+//some per-def prefix
+const PeerStoreKeyPrefix = "peer."
+const RawLegacyPBFTPrefix = "consensus.chkpt."
 
 // Persistor enables module to persist and restore data to the database
 type Persistor interface {
@@ -25,14 +25,14 @@ func (p *persistor) buildStoreKey(key string) []byte {
 
 // Store enables a peer to persist the given key,value pair to the database
 func (p *persistor) Store(key string, value []byte) error {
-	dbhandler := db.GetGlobalDBHandle()
+	dbhandler := GetGlobalDBHandle()
 
 	//dbg.Infof("add db.PersistCF: <%s> --> <%x>", key, value)
-	return dbhandler.PutValue(db.PersistCF, p.buildStoreKey(key), value)
+	return dbhandler.PutValue(PersistCF, p.buildStoreKey(key), value)
 }
 
 // Load enables a peer to read the value that corresponds to the given database key
 func (p *persistor) Load(key string) ([]byte, error) {
-	dbhandler := db.GetGlobalDBHandle()
-	return dbhandler.GetValue(db.PersistCF, p.buildStoreKey(key))
+	dbhandler := GetGlobalDBHandle()
+	return dbhandler.GetValue(PersistCF, p.buildStoreKey(key))
 }

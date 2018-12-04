@@ -30,10 +30,10 @@ limitations under the License.
 package peer
 
 import (
-	"strings"
-
 	"github.com/abchain/fabric/core/config"
 	"github.com/spf13/viper"
+	"strings"
+	"time"
 
 	pb "github.com/abchain/fabric/protos"
 )
@@ -42,10 +42,12 @@ type PeerConfig struct {
 	IsValidator  bool
 	PeerEndpoint *pb.PeerEndpoint
 	Discovery    struct {
-		Roots   []string
-		Persist bool
-		Hidden  bool
-		Disable bool
+		Roots       []string
+		Persist     bool
+		Hidden      bool
+		Disable     bool
+		TouchPeriod time.Duration
+		MaxNodes    int
 	}
 }
 
@@ -60,13 +62,15 @@ func NewPeerConfig(forValidator bool, vp *viper.Viper, spec *config.ServerSpec) 
 }
 
 func (c *PeerConfig) Configuration(vp *viper.Viper, spec *config.ServerSpec) error {
-	c.Discovery.Roots = strings.Split(viper.GetString("discovery.rootnode"), ",")
+	c.Discovery.Roots = strings.Split(vp.GetString("discovery.rootnode"), ",")
 	if len(c.Discovery.Roots) == 1 && c.Discovery.Roots[0] == "" {
 		c.Discovery.Roots = []string{}
 	}
-	c.Discovery.Persist = viper.GetBool("discovery.persist")
-	c.Discovery.Hidden = viper.GetBool("discovery.hidden")
-	c.Discovery.Disable = viper.GetBool("discovery.disable")
+	c.Discovery.Persist = vp.GetBool("discovery.persist")
+	c.Discovery.Hidden = vp.GetBool("discovery.hidden")
+	c.Discovery.Disable = vp.GetBool("discovery.disable")
+	c.Discovery.TouchPeriod = vp.GetDuration("discovery.touchPeriod")
+	c.Discovery.MaxNodes = vp.GetInt("discovery.touchMaxNodes")
 
 	var peerType pb.PeerEndpoint_Type
 	if c.IsValidator {
@@ -88,7 +92,7 @@ func (c *PeerConfig) Configuration(vp *viper.Viper, spec *config.ServerSpec) err
 			peerPrefix = "BRP" // bridge peer
 		}
 	}
-	var peerID = viper.GetString("id")
+	var peerID = vp.GetString("id")
 	if len(peerID) > 3 && strings.Compare(peerPrefix, peerID[:3]) != 0 {
 		peerID = peerPrefix + peerID
 	}

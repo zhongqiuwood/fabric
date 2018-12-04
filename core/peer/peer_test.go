@@ -33,10 +33,15 @@ import (
 
 var peerClientConn *grpc.ClientConn
 
-func TestMain(m *testing.M) {
-	config.SetupTestConfig("./../../peer")
+// NewPeerClientConnection Returns a new grpc.ClientConn to the configured local PEER.
+func newPeerClientConnection() (*grpc.ClientConn, error) {
+	return NewPeerClientConnectionWithAddress(viper.GetString("peer.cliaddress"))
+}
 
-	tmpConn, err := NewPeerClientConnection()
+func TestMain(m *testing.M) {
+	config.SetupTestConfig(".")
+
+	tmpConn, err := newPeerClientConnection()
 	if err != nil {
 		fmt.Printf("error connection to server at host:port = %s\n", viper.GetString("peer.cliaddress"))
 		os.Exit(1)

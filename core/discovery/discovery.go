@@ -17,7 +17,7 @@ limitations under the License.
 package discovery
 
 import (
-	"github.com/abchain/fabric/core/config"
+	"github.com/abchain/fabric/core/db"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
 	"math/rand"
@@ -48,11 +48,11 @@ type DiscoveryImpl struct {
 	nodes     map[string]bool
 	seq       []string
 	random    *rand.Rand
-	persistor config.Persistor
+	persistor db.Persistor
 }
 
 // NewDiscoveryImpl is a constructor of a Discovery implementation
-func NewDiscoveryImpl(persistor config.Persistor) *DiscoveryImpl {
+func NewDiscoveryImpl(persistor db.Persistor) *DiscoveryImpl {
 	di := DiscoveryImpl{}
 	di.nodes = make(map[string]bool)
 	di.random = rand.New(rand.NewSource(time.Now().Unix()))

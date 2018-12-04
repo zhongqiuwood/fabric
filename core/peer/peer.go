@@ -28,11 +28,10 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/op/go-logging"
-	"github.com/spf13/viper"
 
 	"github.com/abchain/fabric/core/comm"
-	"github.com/abchain/fabric/core/config"
 	cred "github.com/abchain/fabric/core/cred"
+	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/discovery"
 	"github.com/abchain/fabric/core/peer/acl"
 	"github.com/abchain/fabric/core/util"
@@ -75,11 +74,6 @@ type ChatStream interface {
 
 var peerLogger = logging.MustGetLogger("peer")
 
-// NewPeerClientConnection Returns a new grpc.ClientConn to the configured local PEER.
-func NewPeerClientConnection() (*grpc.ClientConn, error) {
-	return NewPeerClientConnectionWithAddress(viper.GetString("peer.localaddr"))
-}
-
 // NewPeerClientConnectionWithAddress Returns a new grpc.ClientConn to the configured PEER.
 func NewPeerClientConnectionWithAddress(peerAddress string) (*grpc.ClientConn, error) {
 	if comm.TLSEnabledForLocalSrv() {
@@ -110,9 +104,13 @@ type Impl struct {
 
 	secHelper     cred.PeerCreds
 	reconnectOnce sync.Once
-	discHelper    discovery.Discovery
-	aclHelper     acl.AccessControl
-	persistor     config.Persistor
+	discHelper    struct {
+		discovery.Discovery
+		touchPeriod   time.Duration
+		touchMaxNodes int
+	}
+	aclHelper acl.AccessControl
+	persistor db.Persistor
 }
 
 type LegacyMessageHandler interface {
@@ -139,6 +137,7 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 	pctx, endf := context.WithCancel(PeerGlobalParentCtx)
 	peer.pctx = pctx
 	peer.onEnd = endf
+	peer.persistor = db.NewPersistor(db.PeerStoreKeyPrefix)
 
 	//mapping of all streamstubs above:
 	peer.streamStubs = make(map[string]*pb.StreamStub)
@@ -473,10 +472,9 @@ func (p *Impl) SendTransactionsToPeer(peerAddress string, transaction *pb.Transa
 }
 
 func (p *Impl) ensureConnected() {
-	touchPeriod := viper.GetDuration("peer.discovery.touchPeriod")
-	touchMaxNodes := viper.GetInt("peer.discovery.touchMaxNodes")
-	tickChan := time.NewTicker(touchPeriod).C
-	peerLogger.Debugf("Starting Peer reconnect service (touch service), with period = %s", touchPeriod)
+
+	tickChan := time.NewTicker(p.discHelper.touchPeriod).C
+	peerLogger.Debugf("Starting Peer reconnect service (touch service), with period = %s", p.discHelper.touchPeriod)
 	for {
 		// Simply loop and check if need to reconnect
 		<-tickChan
@@ -488,8 +486,8 @@ func (p *Impl) ensureConnected() {
 		if len(peersMsg.Peers) < len(allNodes) {
 			peerLogger.Warning("Touch service indicates dropped connections, attempting to reconnect...")
 			delta := util.FindMissingElements(allNodes, getPeerAddresses(peersMsg))
-			if len(delta) > touchMaxNodes {
-				delta = delta[:touchMaxNodes]
+			if len(delta) > p.discHelper.touchMaxNodes {
+				delta = delta[:p.discHelper.touchMaxNodes]
 			}
 			p.chatWithSomePeers(delta)
 		} else {
@@ -656,14 +654,21 @@ func (p *Impl) initDiscovery(cfg *PeerConfig) []string {
 
 	if !cfg.Discovery.Persist {
 		peerLogger.Warning("Discovery list will not be persisted to disk")
-		p.discHelper = discovery.NewDiscoveryImpl(nil)
+		p.discHelper.Discovery = discovery.NewDiscoveryImpl(nil)
 	} else {
-		p.discHelper = discovery.NewDiscoveryImpl(p.persistor)
+		p.discHelper.Discovery = discovery.NewDiscoveryImpl(p.persistor)
 		err := p.discHelper.LoadDiscoveryList()
 		if err != nil {
 			peerLogger.Errorf("load discoverylist fail: %s", err)
 		}
 	}
+
+	p.discHelper.touchPeriod = cfg.Discovery.TouchPeriod
+	if p.discHelper.touchPeriod.Seconds() < 5.0 {
+		peerLogger.Warningf("obtain too small touch peroid: %v, set to 5s", p.discHelper.touchPeriod)
+		p.discHelper.touchPeriod = time.Second * 5
+	}
+	p.discHelper.touchMaxNodes = cfg.Discovery.MaxNodes
 
 	addresses := p.discHelper.GetAllNodes()
 	peerLogger.Debugf("Retrieved discovery list from disk: %v", addresses)

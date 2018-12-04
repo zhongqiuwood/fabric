@@ -3,6 +3,7 @@ package startnode
 import (
 	"fmt"
 	"github.com/abchain/fabric/core/chaincode"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/events/producer"
 	"github.com/abchain/fabric/node"
 	api "github.com/abchain/fabric/node/service"
@@ -20,11 +21,18 @@ func GetNode() *node.NodeEngine { return theNode }
 
 func InitFabricNode(name string) error {
 
+	if theNode != nil {
+		panic("Doudble call of init")
+	}
+
+	config.CacheViper()
+	theNode = node.CreateNode()
+
 	//create node and other infrastructures ... (if no setting, use default peer's server point)
 	theNode.Name = name
 
 	//chaincode: TODO: support mutiple chaincode platforms
-	ccsrv, err := node.CreateServerPoint(viper.Sub("chaincode"))
+	ccsrv, err := node.CreateServerPoint(config.SubViper("chaincode"))
 	if err != nil {
 		logger.Infof("Can not create server spec for chaincode: [%s], merge it into peer", err)
 		ccsrv = theNode.DefaultPeer().GetServerPoint()
@@ -45,20 +53,20 @@ func InitFabricNode(name string) error {
 	var evtConf *viper.Viper
 	//api, also bind the event hub, and "service" configuration in YA-fabric 0.7/0.8 is abandoned
 	if viper.IsSet("node.api") {
-		if apisrv, err = node.CreateServerPoint(viper.Sub("node.api")); err != nil {
+		if apisrv, err = node.CreateServerPoint(config.SubViper("node.api")); err != nil {
 			return fmt.Errorf("Error setting for API service: %s", err)
 		}
 		theNode.AddServicePoint(apisrv)
 		evtsrv = apisrv
-		evtConf = viper.Sub("node.api.events")
+		evtConf = config.SubViper("node.api.events")
 	} else {
 		//for old fashion, we just bind it into deafult peer
 		apisrv = theNode.DefaultPeer().GetServerPoint()
 		//and respect the event configuration
-		if evtsrv, err = node.CreateServerPoint(viper.Sub("peer.validator.events")); err != nil {
+		if evtsrv, err = node.CreateServerPoint(config.SubViper("peer.validator.events")); err != nil {
 			return fmt.Errorf("Error setting for event service: %s", err)
 		}
-		evtConf = viper.Sub("peer.validator.events")
+		evtConf = config.SubViper("peer.validator.events")
 	}
 
 	pb.RegisterAdminServer(apisrv.Server, api.NewAdminServer())

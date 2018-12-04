@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/util"
 	flog "github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
@@ -52,7 +53,7 @@ func GetGlobalDBHandle() *GlobalDataDB {
 }
 
 func DefaultOption() (opts *gorocksdb.Options) {
-	return DBOptions(viper.Sub("peer.db"))
+	return DBOptions(config.SubViper("peer.db"))
 }
 
 func DBOptions(vp *viper.Viper) (opts *gorocksdb.Options) {

@@ -305,7 +305,7 @@ func closeListenerAndSleep(l net.Listener) {
 
 func executeDeployTransaction(t *testing.T, url string) {
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -451,14 +451,14 @@ func invokeExample02Transaction(ctxt context.Context, cID *pb.ChaincodeID, args 
 func TestExecuteInvokeTransaction(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	vp := viper.Sub("peer")
+	vp := config.SubViper("peer")
 	//TLS is on by default. This is the ONLY test that does NOT use TLS
 	vp.Set("tls.enabled", false)
 
 	//turn OFF keepalive. All other tests use keepalive
 	keepalive := viper.Get("chaincode.keepalive")
-	defer viper.Sub("chaincode").Set("keepalive", keepalive)
-	viper.Sub("chaincode").Set("keepalive", "0")
+	defer viper.Set("chaincode.keepalive", keepalive)
+	viper.Set("chaincode.keepalive", "0")
 
 	lis, err := initPeer(vp)
 	if err != nil {
@@ -538,7 +538,7 @@ func exec(ctxt context.Context, chaincodeID string, numTrans int, numQueries int
 func TestExecuteQuery(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -601,7 +601,7 @@ func TestExecuteQuery(t *testing.T) {
 func TestExecuteInvokeInvalidTransaction(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -640,7 +640,7 @@ func TestExecuteInvokeInvalidTransaction(t *testing.T) {
 func TestExecuteInvalidQuery(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -692,7 +692,7 @@ func TestChaincodeInvokeChaincode(t *testing.T) {
 	t.Logf("TestChaincodeInvokeChaincode starting")
 	ledger.InitTestLedger(t)
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -787,7 +787,7 @@ func TestChaincodeInvokeChaincode(t *testing.T) {
 func TestChaincodeInvokeChaincodeErrorCase(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -968,7 +968,7 @@ func TestChaincodeQueryChaincode(t *testing.T) {
 	ledger.InitTestLedger(t)
 	var peerLis net.Listener
 	var err error
-	if peerLis, err = initPeer(viper.Sub("peer")); err != nil {
+	if peerLis, err = initPeer(config.SubViper("peer")); err != nil {
 		t.Fail()
 		t.Logf("Error registering user  %s", err)
 		return
@@ -989,7 +989,7 @@ func TestChaincodeQueryChaincode(t *testing.T) {
 func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -1098,7 +1098,7 @@ func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
 // 	time.Sleep(2 * time.Second)
 
 // 	var peerLis net.Listener
-// 	if peerLis, err = initPeer(viper.Sub("peer")); err != nil {
+// 	if peerLis, err = initPeer(config.SubViper("peer")); err != nil {
 // 		t.Fail()
 // 		t.Logf("Error registering user  %s", err)
 // 		return
@@ -1125,7 +1125,7 @@ func TestChaincodeQueryChaincodeErrorCase(t *testing.T) {
 func TestRangeQuery(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -1172,7 +1172,7 @@ func TestRangeQuery(t *testing.T) {
 func TestGetEvent(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -1238,7 +1238,7 @@ func TestGetRows(t *testing.T) {
 
 	//build rows require large time
 	viper.Set("chaincode.exectimeout", 300000)
-	lis, err := initPeer(viper.Sub("peer"))
+	lis, err := initPeer(config.SubViper("peer"))
 	if err != nil {
 		t.Fail()
 		t.Logf("Error starting peer listener %s", err)
@@ -1327,7 +1327,8 @@ func TestMain(m *testing.M) {
 	if err := crypto.Init(); err != nil {
 		panic(fmt.Errorf("Failed initializing the crypto layer [%s]", err))
 	}
+	config.CacheViper()
 	usercc = viper.GetString("chaincode.mode") == "dev"
-	viper.Sub("peer").Set("fileSystemPath", filepath.Join(os.TempDir(), "hyperledger", "production"))
+	viper.Set("peer.fileSystemPath", filepath.Join(os.TempDir(), "hyperledger", "production"))
 	os.Exit(m.Run())
 }

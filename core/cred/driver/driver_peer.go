@@ -1,6 +1,7 @@
 package cred_driver
 
 import (
+	"fmt"
 	cred "github.com/abchain/fabric/core/cred"
 	"github.com/spf13/viper"
 )
@@ -38,5 +39,5 @@ func (drv *Credentials_PeerCredBase) Clone() *Credentials_PeerCredBase {
 	the peer credential
 */
 func (drv *Credentials_PeerDriver) Drive(vp *viper.Viper) error {
-	return nil
+	return fmt.Errorf("Not availiable")
 }

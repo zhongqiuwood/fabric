@@ -44,7 +44,7 @@ func (s *ServerSpec) Init(vp *viper.Viper) error {
 
 	if vp.IsSet("tls") {
 		logger.Debugf("Read tls configuration for serverspec")
-		s.tlsSpec.Init(vp.Sub("tls"))
+		s.tlsSpec.Init(SubViper("tls", vp))
 	}
 
 	s.MessageSize = vp.GetInt("messagesizelimit")

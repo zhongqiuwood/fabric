@@ -6,7 +6,6 @@ import (
 	"github.com/abchain/fabric/core/chaincode/platforms"
 	"github.com/abchain/fabric/core/config"
 	pb "github.com/abchain/fabric/protos"
-	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"io"
 	"os"
@@ -26,7 +25,7 @@ func TestGeneratePackage(t *testing.T) {
 	}
 
 	cli := new(config.ClientSpec)
-	err = cli.Init(viper.Sub("peer"))
+	err = cli.Init(config.SubViper("peer"))
 	if err != nil || !cli.EnableTLS {
 		t.Fatal("Load spec fail:", err)
 	}
@@ -76,7 +75,7 @@ func TestChaincodeImage(t *testing.T) {
 		CtorMsg:     &pb.ChaincodeInput{Args: [][]byte{[]byte("init")}}}
 
 	cli := new(config.ClientSpec)
-	err := cli.Init(viper.Sub("peer"))
+	err := cli.Init(config.SubViper("peer"))
 	if err != nil || !cli.EnableTLS {
 		t.Fatal("Load spec fail:", err)
 	}

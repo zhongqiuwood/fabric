@@ -18,9 +18,9 @@ package state
 
 import (
 	"fmt"
-	"sync"
-
+	"github.com/abchain/fabric/core/config"
 	"github.com/spf13/viper"
+	"sync"
 )
 
 type stateConfig struct {
@@ -43,7 +43,7 @@ func DefaultConfig() *stateConfig {
 	loadConfigOnce.Do(
 		func() {
 			var err error
-			defconf, err = NewStateConfig(viper.Sub("ledger"))
+			defconf, err = NewStateConfig(config.SubViper("ledger"))
 			if err != nil {
 				panic(err)
 			}

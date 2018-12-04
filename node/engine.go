@@ -52,11 +52,12 @@ type PeerEngine struct {
 	ledger here
 */
 type NodeEngine struct {
-	Name      string
-	Ledgers   map[string]*ledger.Ledger
-	Peers     map[string]*PeerEngine
-	Endorsers map[string]cred.TxEndorserFactory
-	Cred      struct {
+	Name       string
+	EnforceSec bool
+	Ledgers    map[string]*ledger.Ledger
+	Peers      map[string]*PeerEngine
+	Endorsers  map[string]cred.TxEndorserFactory
+	Cred       struct {
 		Peer cred.PeerCreds
 		Tx   cred.TxHandlerFactory
 	}

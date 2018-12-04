@@ -20,7 +20,7 @@ func (s *ClientSpec) Init(vp *viper.Viper) error {
 
 	if vp.IsSet("tls") {
 		logger.Debugf("Read tls configuration for clientspec")
-		s.tlsClientSpec.Init(vp.Sub("tls"))
+		s.tlsClientSpec.Init(SubViper("tls", vp))
 	}
 
 	return nil

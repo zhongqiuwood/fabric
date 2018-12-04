@@ -254,7 +254,7 @@ chkpt: the checkpoint it have known, which is just expressed by the blockchain i
 
 */
 
-var rawLegacyPBFTPrefix = []byte("consensus.chkpt.")
+var rawLegacyPBFTPrefix = []byte(db.RawLegacyPBFTPrefix)
 
 func updateLegacyPBFTChkp(odb *db.OpenchainDB, itr *db.DBIterator, r *reconstructInfo) error {
 
@@ -364,7 +364,7 @@ func updateDBToV1(odb *db.OpenchainDB) error {
 			//we do not need to move consensus kv
 		} else {
 			//treat it as peer persisted data and move
-			newk := bytes.Join([][]byte{[]byte(PeerStoreKeyPrefix), k}, nil)
+			newk := bytes.Join([][]byte{[]byte(db.PeerStoreKeyPrefix), k}, nil)
 			wb.PutCF(cf, newk, itr.Value().Data())
 			peerKeyMove++
 

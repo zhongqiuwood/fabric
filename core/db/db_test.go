@@ -18,6 +18,7 @@ package db
 
 import (
 	"bytes"
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/util"
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
@@ -84,7 +85,7 @@ func TestWriteAndRead(t *testing.T) {
 
 func TestStandaloneDB(t *testing.T) {
 	deleteTestDBPath()
-	db, err := StartDB("test", viper.Sub("peer.db"))
+	db, err := StartDB("test", config.SubViper("peer.db"))
 	if err != nil {
 		t.Fatal("start db fail", err)
 	}

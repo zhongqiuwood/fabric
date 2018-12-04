@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
-	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 )
 
@@ -334,7 +334,7 @@ func concurrentInvokeLongTransaction(ctxt context.Context, cID *pb.ChaincodeID, 
 func TestConcurrentExecuteInvokeTransaction(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	vp := viper.Sub("peer")
+	vp := config.SubViper("peer")
 	lis, err := initPeer(vp)
 	if err != nil {
 		t.Fail()
@@ -406,7 +406,7 @@ func TestConcurrentExecuteInvokeTransaction(t *testing.T) {
 func TestConcurrentExecuteInvokeLongTransaction(t *testing.T) {
 	ledger.InitTestLedger(t)
 
-	vp := viper.Sub("peer")
+	vp := config.SubViper("peer")
 	lis, err := initPeer(vp)
 	if err != nil {
 		t.Fail()

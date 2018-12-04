@@ -25,7 +25,6 @@ import (
 
 	"github.com/golang/protobuf/proto"
 	"github.com/looplab/fsm"
-	"github.com/spf13/viper"
 
 	pb "github.com/abchain/fabric/protos"
 )
@@ -261,11 +260,6 @@ func (d *Handler) beforePeers(e *fsm.Event) {
 	peerLogger.Debugf("Received PeersMessage with Peers: %s", peersMessage)
 	d.Coordinator.PeersDiscovered(peersMessage)
 
-	// // Can be used to demonstrate Broadcast function
-	// if viper.GetString("peer.id") == "jdoe" {
-	// 	d.Coordinator.Broadcast(&pb.Message{Type: pb.Message_UNDEFINED})
-	// }
-
 }
 
 // HandleMessage handles the Openchain messages for the Peer.
@@ -302,8 +296,7 @@ func (d *Handler) SendMessage(msg *pb.Message) error {
 // start starts the Peer server function
 func (d *Handler) start() error {
 
-	discPeriod := viper.GetDuration("peer.discovery.period")
-	tickChan := time.NewTicker(discPeriod).C
+	tickChan := time.NewTicker(d.Coordinator.discHelper.touchPeriod).C
 	peerLogger.Debug("Starting Peer discovery service")
 	for {
 		select {

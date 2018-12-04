@@ -18,11 +18,24 @@ func TestLegacyInit(t *testing.T) {
 	}
 
 	viper.Set("peer.fileSystemPath", tempDir)
+	config.CacheViper()
 
-	ne := new(NodeEngine)
+	ne := CreateNode()
 	ne.Name = "test"
 	if err := ne.Init(); err != nil {
 		t.Fatal(err)
+	}
+
+	if _, ok := ne.Ledgers[""]; !ok {
+		t.Fatal("no ledger")
+	}
+
+	if _, ok := ne.Peers[""]; !ok {
+		t.Fatal("no peer")
+	}
+
+	if len(ne.srvPoints) == 0 {
+		t.Fatal("no srvpoint")
 	}
 }
 
@@ -37,10 +50,23 @@ func TestInit(t *testing.T) {
 	}
 
 	viper.Set("node.fileSystemPath", tempDir)
+	config.CacheViper()
 
-	ne := new(NodeEngine)
+	ne := CreateNode()
 	ne.Name = "test"
 	if err := ne.Init(); err != nil {
 		t.Fatal(err)
+	}
+
+	if len(ne.Ledgers) != 4 {
+		t.Fatal("missed ledger:", ne.Ledgers)
+	}
+
+	if len(ne.Peers) != 4 {
+		t.Fatal("missed peer:", ne.Peers)
+	}
+
+	if len(ne.srvPoints) == 0 {
+		t.Fatal("no srvpoint")
 	}
 }

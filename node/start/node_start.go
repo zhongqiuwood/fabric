@@ -19,18 +19,22 @@ var (
 
 func GetNode() *node.NodeEngine { return theNode }
 
-func InitFabricNode(name string) error {
-
+func PreInitFabricNode(name string) {
 	if theNode != nil {
 		panic("Doudble call of init")
 	}
+	theNode = node.CreateNode()
+	theNode.Name = name
+}
+
+func InitFabricNode() error {
 
 	config.CacheViper()
-	theNode = node.CreateNode()
+	if err := theNode.Init(); err != nil {
+		return fmt.Errorf("NODE INIT FAILURE: ***** %s *****", err)
+	}
 
 	//create node and other infrastructures ... (if no setting, use default peer's server point)
-	theNode.Name = name
-
 	//chaincode: TODO: support mutiple chaincode platforms
 	ccsrv, err := node.CreateServerPoint(config.SubViper("chaincode"))
 	if err != nil {
@@ -47,7 +51,7 @@ func InitFabricNode(name string) error {
 
 	pb.RegisterChaincodeSupportServer(ccsrv.Server,
 		//TODO: cred should provide confidienty handler
-		chaincode.NewChaincodeSupport(chaincode.DefaultChain, name, ccsrv.Spec(), userRunsCC, nil))
+		chaincode.NewChaincodeSupport(chaincode.DefaultChain, theNode.Name, ccsrv.Spec(), userRunsCC, nil))
 
 	var apisrv, evtsrv node.ServicePoint
 	var evtConf *viper.Viper

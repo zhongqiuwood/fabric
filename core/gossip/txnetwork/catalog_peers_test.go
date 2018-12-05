@@ -19,6 +19,7 @@ func createState(digest []byte, num uint64) *pb.PeerTxState {
 }
 
 func TestTxGlobal(t *testing.T) {
+	initTestLedgerWrapper(t)
 	global := initGlobalStatus()
 
 	peerG := new(peersGlobal)
@@ -212,7 +213,7 @@ func TestAsAWhole(t *testing.T) {
 
 	SetPeerTxQueueLen(3)
 
-	stub := stub.InitGossipStub(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
+	stub := stub.InitGossipStub(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}), nil)
 
 	globalM := stub.GetCatalogHandler(globalCatName).Model()
 	globalS := model.DumpScuttlebutt(globalM)
@@ -340,7 +341,7 @@ func TestSelfUpdateAsAWhole(t *testing.T) {
 
 	SetPeerTxQueueLen(3)
 
-	stub := stub.InitGossipStub(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}))
+	stub := stub.InitGossipStub(peer.NewPeer(&pb.PeerEndpoint{ID: &pb.PeerID{Name: "testpeer"}}), nil)
 
 	globalM := stub.GetCatalogHandler(globalCatName).Model()
 	globalS := model.DumpScuttlebutt(globalM)

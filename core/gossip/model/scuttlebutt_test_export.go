@@ -204,8 +204,8 @@ func DumpUpdate(u_in Update) (ret map[string]map[string]int) {
 
 	ret = make(map[string]map[string]int)
 
-	for id, s_in := range u.u {
-		s, ok := s_in.(*testPeerStatus)
+	for _, s_in := range u.u {
+		s, ok := s_in.U.(*testPeerStatus)
 
 		if !ok {
 			panic("wrong type, not testPeerStatus")
@@ -217,7 +217,7 @@ func DumpUpdate(u_in Update) (ret map[string]map[string]int) {
 			data[k] = v
 		}
 
-		ret[id] = data
+		ret[s_in.Id] = data
 	}
 
 	return

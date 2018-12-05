@@ -176,8 +176,8 @@ func newTxCol() collection { return collection(make(map[string]*txMemPoolItem)) 
 
 func TestPeerUpdate(t *testing.T) {
 
-	initGlobalStatus()
 	ledger := initTestLedgerWrapper(t)
+	initGlobalStatus()
 
 	txchain := populatePoolItems(t, 10)
 	txIndexs := formIndexs(txchain)

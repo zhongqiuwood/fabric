@@ -41,7 +41,9 @@ func InitGossipStub(bindPeer peer.Peer, srv *grpc.Server) *gossip.GossipStub {
 		f(gstub)
 	}
 
-	pb.RegisterGossipServer(srv, GossipFactory{gstub})
+	if srv != nil {
+		pb.RegisterGossipServer(srv, GossipFactory{gstub})
+	}
 
 	return gstub
 }

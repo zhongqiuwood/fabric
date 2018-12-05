@@ -26,8 +26,8 @@ func TestDigestToPb(d_in Digest) *pb.GossipMsg_Digest {
 
 	ret := &pb.GossipMsg_Digest{Data: make(map[string]*pb.GossipMsg_Digest_PeerState)}
 
-	for id, v := range d.PeerDigest() {
-		ret.Data[id] = &pb.GossipMsg_Digest_PeerState{Num: uint64(transVClock(v))}
+	for _, v := range d.PeerDigest() {
+		ret.Data[v.Id] = &pb.GossipMsg_Digest_PeerState{Num: uint64(transVClock(v.V))}
 	}
 
 	return ret
@@ -44,15 +44,15 @@ func TestUpdateEncode(u_in Update, msg *Test_Scuttlebutt) proto.Message {
 
 	msg.Peers = make(map[string]*Test_Scuttlebutt_Peer)
 
-	for id, udata := range u.PeerUpdate() {
+	for _, udata := range u.PeerUpdate() {
 
-		us := transUpdate(udata)
+		us := transUpdate(udata.U)
 		out := &Test_Scuttlebutt_Peer{make(map[string]int32)}
 		for k, v := range us.data {
 			out.Datas[k] = int32(v)
 		}
 
-		msg.Peers[id] = out
+		msg.Peers[udata.Id] = out
 
 	}
 

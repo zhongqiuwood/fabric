@@ -56,8 +56,8 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 	}
 
 	if id != "" {
-		if g.network.credvalidator != nil {
-			err := g.network.credvalidator.ValidatePeerStatus(id, u.PeerTxState)
+		if g.peerHandler != nil {
+			err := g.peerHandler.ValidatePeerStatus(id, u.PeerTxState)
 			if err != nil {
 				return fmt.Errorf("Peer [%s]'s state is invalid: %s", id, err)
 			}
@@ -211,12 +211,12 @@ func (c *globalCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Upda
 
 	msg := &pb.Gossip_TxState{make(map[string]*pb.PeerTxState)}
 
-	for id, iu_in := range u.PeerUpdate() {
-		iu, ok := iu_in.(peerStatus)
+	for _, iu_in := range u.PeerUpdate() {
+		iu, ok := iu_in.U.(peerStatus)
 		if !ok {
 			panic("Type error, not peerTxStatusUpdate")
 		}
-		msg.Txs[id] = iu.PeerTxState
+		msg.Txs[iu_in.Id] = iu.PeerTxState
 	}
 
 	return msg

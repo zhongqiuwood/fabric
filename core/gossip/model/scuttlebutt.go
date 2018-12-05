@@ -1,5 +1,10 @@
 package gossip_model
 
+import (
+	"math"
+	"math/rand"
+)
+
 //VClock is a type of digest, indicate a partial order nature
 type VClock interface {
 	Less(VClock) bool //VClock can be NEVER less than nil (indicate to "oldest" time)
@@ -35,64 +40,69 @@ type ScuttlebuttPeerStatus interface {
 	Update(string, ScuttlebuttPeerUpdate, ScuttlebuttStatus) error
 }
 
+type peersDig struct {
+	Id string
+	V  VClock
+}
+
 type ScuttlebuttDigest interface {
 	GlobalDigest() Digest
-	PeerDigest() map[string]VClock
+	PeerDigest() []peersDig
 	IsPartial() bool
 }
 
 //elements in scuttlebutt scheme include a per-peer data and global data
 type scuttlebuttDigest struct {
 	Digest
-	d         map[string]VClock
+	d         []peersDig
 	isPartial bool
 }
 
 func NewscuttlebuttDigest(gd Digest) *scuttlebuttDigest {
-	return &scuttlebuttDigest{Digest: gd, d: make(map[string]VClock), isPartial: true}
+	return &scuttlebuttDigest{Digest: gd, isPartial: true}
 }
 
 func (d *scuttlebuttDigest) GlobalDigest() Digest { return d.Digest }
 
-func (d *scuttlebuttDigest) PeerDigest() map[string]VClock { return d.d }
+func (d *scuttlebuttDigest) PeerDigest() []peersDig { return d.d }
 
 func (d *scuttlebuttDigest) IsPartial() bool { return d.isPartial }
 
 func (d *scuttlebuttDigest) SetPeerDigest(id string, dig VClock) {
-	d.d[id] = dig
+	d.d = append(d.d, peersDig{id, dig})
 }
 
 func (d *scuttlebuttDigest) MarkDigestIsPartial() {
 	d.isPartial = true
 }
 
+type peersUpdate struct {
+	Id string
+	U  ScuttlebuttPeerUpdate
+}
+
 type ScuttlebuttUpdate interface {
 	GlobalUpdate() Update
-	PeerUpdate() map[string]ScuttlebuttPeerUpdate
+	PeerUpdate() []peersUpdate
 }
 
 type scuttlebuttUpdate struct {
 	Update
-	u map[string]ScuttlebuttPeerUpdate
+	u []peersUpdate
 }
 
 func (*scuttlebuttUpdate) Gossip_IsUpdateIn() bool { return false }
 
 func (u *scuttlebuttUpdate) GlobalUpdate() Update { return u.Update }
 
-func (u *scuttlebuttUpdate) PeerUpdate() map[string]ScuttlebuttPeerUpdate { return u.u }
+func (u *scuttlebuttUpdate) PeerUpdate() []peersUpdate { return u.u }
 
 type scuttlebuttUpdateIn struct {
 	*scuttlebuttUpdate
 }
 
 func NewscuttlebuttUpdate(gu Update) *scuttlebuttUpdateIn {
-	return &scuttlebuttUpdateIn{
-		&scuttlebuttUpdate{
-			u:      make(map[string]ScuttlebuttPeerUpdate),
-			Update: gu,
-		},
-	}
+	return &scuttlebuttUpdateIn{&scuttlebuttUpdate{Update: gu}}
 }
 
 func (*scuttlebuttUpdateIn) Gossip_IsUpdateIn() bool { return true }
@@ -102,17 +112,17 @@ func (u *scuttlebuttUpdateIn) UpdatePeer(id string, pu ScuttlebuttPeerUpdate) {
 	if id == "" {
 		return
 	}
-	u.u[id] = pu
+	u.u = append(u.u, peersUpdate{id, pu})
 }
 
 //used for local update
 func (u *scuttlebuttUpdateIn) UpdateLocal(pu ScuttlebuttPeerUpdate) {
-	u.u[""] = pu
+	u.u = append(u.u, peersUpdate{"", pu})
 }
 
 func (u *scuttlebuttUpdateIn) RemovePeers(ids []string) {
 	for _, id := range ids {
-		u.u[id] = nil
+		u.u = append(u.u, peersUpdate{id, nil})
 	}
 }
 
@@ -130,6 +140,9 @@ type scuttlebuttStatus struct {
 	SelfID string
 	//depress the usage of extended protocol
 	Extended bool
+	//max items in one digest/update message, 0 is not limit
+	MaxUpdateLimit   int
+	AdditionalFilter func(string, ScuttlebuttPeerStatus) bool
 }
 
 // type noPeerStatusError string
@@ -151,7 +164,8 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 		return err
 	}
 
-	for id, ss := range u.PeerUpdate() {
+	for _, item := range u.PeerUpdate() {
+		id := item.Id
 
 		pss, ok := s.Peers[id]
 		if !ok {
@@ -162,7 +176,7 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 			}
 
 			//with extended protocol, update can carry unknown peers
-			if ss == nil {
+			if item.U == nil {
 				continue
 			}
 			pss = s.NewPeer(id)
@@ -172,15 +186,15 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 			s.Peers[id] = pss
 		}
 		//remove request
-		if ss == nil {
+		if item.U == nil {
 			s.RemovePeer(id, pss)
 			delete(s.Peers, id)
 		} else {
 
-			if pss.To().Less(ss.To()) {
-				err = pss.Update(id, ss, s.ScuttlebuttStatus)
+			if pss.To().Less(item.U.To()) {
+				err = pss.Update(id, item.U, s.ScuttlebuttStatus)
 			} else {
-				err = s.MissedUpdate(id, ss)
+				err = s.MissedUpdate(id, item.U)
 			}
 			// no peer status CAN NOT be consider as an error
 			// because far-end may return a update including removed peer
@@ -203,16 +217,34 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 //**** HOWEVER, we use "extended" flag to depress this for compitable with old codes*****
 func (s *scuttlebuttStatus) GenDigest() Digest {
 	r := NewscuttlebuttDigest(s.ScuttlebuttStatus.GenDigest())
+
+	scounter := 0
 	for id, ss := range s.Peers {
+		if s.AdditionalFilter == nil || !s.AdditionalFilter(id, ss) {
+			continue
+		}
+
 		if id == "" {
-			r.SetPeerDigest(s.SelfID, ss.To())
+			id = s.SelfID
+		}
+
+		pos := len(r.d)
+		if scounter >= s.MaxUpdateLimit {
+			//stream sampling: we consider calling of To() is trival
+			//so the cost of wasting a To() calling is small
+			//It is not the case in MakeUpdate
+			if pos := rand.Intn(scounter); pos >= len(r.d) {
+				continue
+			} else {
+				r.d[pos] = peersDig{id, ss.To()}
+			}
 		} else {
 			r.SetPeerDigest(id, ss.To())
 		}
-
+		scounter++
 	}
 
-	if s.Extended {
+	if s.Extended || len(r.d) < len(s.Peers) {
 		r.isPartial = false
 	}
 
@@ -226,14 +258,41 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 		panic("type error, not scuttlebuttDigest")
 	}
 
-	r := &scuttlebuttUpdate{
-		Update: s.ScuttlebuttStatus.MakeUpdate(dig.GlobalDigest()),
-		u:      make(map[string]ScuttlebuttPeerUpdate),
+	r := &scuttlebuttUpdate{Update: s.ScuttlebuttStatus.MakeUpdate(dig.GlobalDigest())}
+
+	//PickFrom is costful, so do searching in the map, so we purchase time by space
+	digsCache := []VClock{}
+	ssCache := []ScuttlebuttPeerStatus{}
+
+	//we have two different mode: in partial mode, we response all request,
+	//while in "full" mode we just send the whole status (or sampling it) of mine
+
+	for _, dd := range dig.PeerDigest() {
+		id := dd.Id
+		ss, ok := s.Peers[id]
+		if !ok {
+			if id != s.SelfID {
+				//touch new peer
+				if ss = s.NewPeer(id); ss != nil {
+					s.Peers[id] = ss
+				}
+			} else if ss, ok := s.Peers[""]; ok && dd.V.Less(ss.To()) {
+				//special handle self id
+				if ssu, ssgu := ss.PickFrom("", dd.V, r.Update); ssu != nil {
+					r.u = append(r.u, peersUpdate{id, ssu})
+					if ssgu != nil {
+						r.Update = ssgu
+					}
+				}
+
+			}
+			digs[""] = true
+		}
 	}
 
-	digs := dig.PeerDigest()
+	for _, dd := range dig.PeerDigest() {
 
-	for id, dd := range digs {
+		id := dd.Id
 		ss, ok := s.Peers[id]
 		if !ok {
 			if id != s.SelfID {
@@ -241,42 +300,62 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 				if ss != nil {
 					s.Peers[id] = ss
 				}
-			} else if ss, ok := s.Peers[""]; ok && dd.Less(ss.To()) {
+			} else if ss, ok := s.Peers[""]; ok && dd.V.Less(ss.To()) {
 				//special handle self id
-				if ssu, ssgu := ss.PickFrom("", dd, r.Update); ssu != nil {
-					r.u[id] = ssu
+				if ssu, ssgu := ss.PickFrom("", dd.V, r.Update); ssu != nil {
+					r.u = append(r.u, peersUpdate{id, ssu})
 					if ssgu != nil {
 						r.Update = ssgu
 					}
 				}
+				digs[""] = true
 			}
 
-		} else if dd.Less(ss.To()) {
-			if ssu, ssgu := ss.PickFrom(id, dd, r.Update); ssu != nil {
-				r.u[id] = ssu
+		} else if dd.V.Less(ss.To()) {
+			if ssu, ssgu := ss.PickFrom(id, dd.V, r.Update); ssu != nil {
+				r.u = append(r.u, peersUpdate{id, ssu})
 				if ssgu != nil {
 					r.Update = ssgu
 				}
 			}
+			digs[id] = true
 		}
 	}
 
 	//protocol extended: handling other peer for the "full digest"
+	//we suppose the incoming dig_in always contain items less than limit
+	//(or if far-end require more, we should reply more?), but when
+	//applying full digest, we still need consider the limit of items
+	//additionalfilter should be applied here, too
 	if !dig.IsPartial() {
-		var pid string
+		scounter := len(r.u)
 		for id, ss := range s.Peers {
-			//ss may also have the lowest clock...
-			if !BottomClock.Less(ss.To()) {
-				continue
-			}
-			if id == "" {
-				pid = s.SelfID
-			} else {
-				pid = id
-			}
-			if _, ok := digs[pid]; !ok {
+			if _, ok := digs[id]; !ok {
+				//ss may also have the lowest clock...
+				if !BottomClock.Less(ss.To()) || (s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss)) {
+					continue
+				}
+
+				pos := len(r.u)
+				if scounter >= s.MaxUpdateLimit {
+					pos = rand.Intn(scounter)
+					if pos >= s.MaxUpdateLimit {
+						continue
+					}
+				}
+
 				if ssu, ssgu := ss.PickFrom(id, BottomClock, r.Update); ssu != nil {
-					r.u[pid] = ssu
+					if id == "" {
+						id = s.SelfID
+					}
+
+					if pos > len(r.u) {
+						r.u = append(r.u, peersUpdate{id, ssu})
+					} else {
+						r.u[pos] = peersUpdate{id, ssu}
+					}
+					scounter++
+
 					if ssgu != nil {
 						r.Update = ssgu
 					}
@@ -313,5 +392,6 @@ func NewScuttlebuttStatus(gs ScuttlebuttStatus) *scuttlebuttStatus {
 	return &scuttlebuttStatus{
 		ScuttlebuttStatus: gs,
 		Peers:             make(map[string]ScuttlebuttPeerStatus),
+		MaxUpdateLimit:    math.MaxInt32,
 	}
 }

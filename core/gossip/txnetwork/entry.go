@@ -24,7 +24,7 @@ func (e *TxNetworkEntry) InitLedger(l *ledger.Ledger) {
 }
 
 func (e *TxNetworkEntry) InitCred(v cred.TxHandlerFactory) {
-	e.net.credvalidator = v
+	e.net.peers.peerHandler = v
 	e.net.txPool.txHandler = v
 }
 

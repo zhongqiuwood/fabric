@@ -3,7 +3,6 @@ package txnetwork
 import (
 	"bytes"
 	"fmt"
-
 	"github.com/abchain/fabric/core/gossip"
 	model "github.com/abchain/fabric/core/gossip/model"
 	"github.com/abchain/fabric/core/gossip/stub"
@@ -549,6 +548,9 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 
 }
 
+//TODO: may set this value dyanmic
+const maxDigestItem = 1024
+
 type hotTxCat struct {
 	policy gossip.CatalogPolicies
 }
@@ -593,6 +595,21 @@ func initHotTx(stub *gossip.GossipStub) {
 		selfStatus.SetSelfPeer(newID, self)
 		logger.Infof("Hottx cat reset self peer to %s", newID)
 	})
+
+	// hotTx.filterPullingReq = func(m model.ScuttlebuttDigest) model.ScuttlebuttDigest {
+	// 	//we will kick out peers which should not be shown up (e.g, the buffer has been full)
+	// 	//and trim the final size to fit the maxDigestItem
+
+	// 	filteredM := model.NewscuttlebuttDigest(m.GlobalDigest())
+	// 	filteredM.MarkDigestIsPartial()
+
+	// 	pendingItem := make([]string, 0, maxDigestItem)
+	// 	//streamming sampling algo
+	// 	for k, v := range m.PeerDigest() {
+
+	// 		//first kick out
+	// 	}
+	// }
 
 }
 
@@ -648,13 +665,13 @@ func (c *hotTxCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Updat
 
 	//encode txs
 	//TODO: if cpo is availiable and quota is limited, cut some data
-	for id, pu_in := range u.PeerUpdate() {
-		pu, ok := pu_in.(txPeerUpdate)
+	for _, pu_in := range u.PeerUpdate() {
+		pu, ok := pu_in.U.(txPeerUpdate)
 		if !ok {
 			panic("Type error, not peerTxs")
 		}
 
-		msg.Txs[id] = pu.pruneTxs(gu.epoch, gu.AcquireCaches(id)).HotTransactionBlock
+		msg.Txs[pu_in.Id] = pu.pruneTxs(gu.epoch, gu.AcquireCaches(pu_in.Id)).HotTransactionBlock
 	}
 
 	return msg

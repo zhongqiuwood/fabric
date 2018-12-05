@@ -78,10 +78,10 @@ func toPbDigestStd(d model.ScuttlebuttDigest, epoch []byte) *pb.GossipMsg_Digest
 
 	msg.Data = make(map[string]*pb.GossipMsg_Digest_PeerState)
 
-	for id, pd := range d.PeerDigest() {
+	for _, pd := range d.PeerDigest() {
 
-		msg.Data[id] = &pb.GossipMsg_Digest_PeerState{
-			Num: uint64(toStandardVClock(pd)),
+		msg.Data[pd.Id] = &pb.GossipMsg_Digest_PeerState{
+			Num: uint64(toStandardVClock(pd.V)),
 		}
 	}
 

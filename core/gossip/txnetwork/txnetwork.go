@@ -18,9 +18,8 @@ const (
 //txnetworkglobal manage datas required by single gossip-base txnetwork: (peers, txs, etc...)
 type txNetworkGlobal struct {
 	notifies
-	peers         *txNetworkPeers
-	txPool        *transactionPool
-	credvalidator cred.TxHandlerFactory
+	peers  *txNetworkPeers
+	txPool *transactionPool
 }
 
 //if this is set, network will be created with default peer status,
@@ -215,7 +214,9 @@ func (g *txNetworkPeers) RemovePeer(id string) bool {
 		logger.Infof("gossip peer [%s] is removed", id)
 		g.lruQueue.Remove(item)
 		delete(g.lruIndex, id)
-		g.peerHandler.RemovePreHandler(id)
+		if g.peerHandler != nil {
+			g.peerHandler.RemovePreHandler(id)
+		}
 	}
 	return ok
 }

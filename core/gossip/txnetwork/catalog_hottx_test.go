@@ -323,7 +323,7 @@ func TestPeerTxPool(t *testing.T) {
 	}
 
 	//test pickFrom method
-	ud_out, _ := pool.PickFrom(defaultPeer, standardVClock(14), txPoolGlobalUpdateOut{txGlobal, 2})
+	ud_out, _ := pool.PickFrom(standardVClock(14), txPoolGlobalUpdateOut{txGlobal, 2})
 
 	ud, ok := ud_out.(txPeerUpdate)
 
@@ -340,7 +340,7 @@ func TestPeerTxPool(t *testing.T) {
 	assertTxIsIdentify(t, indexs[38].tx, ud.GetTransactions()[23])
 
 	//test out-date pick
-	ud_out, _ = pool.PickFrom(defaultPeer, standardVClock(3), txPoolGlobalUpdateOut{txGlobal, 2})
+	ud_out, _ = pool.PickFrom(standardVClock(3), txPoolGlobalUpdateOut{txGlobal, 2})
 
 	if ud_out != nil {
 		t.Fatalf("get unexpected output %v", ud_out)
@@ -457,7 +457,7 @@ func TestPeerTxPool(t *testing.T) {
 	}
 
 	//test pickfrom after purge
-	ud_out, _ = pool.PickFrom("test", standardVClock(53), txPoolGlobalUpdateOut{txGlobal, 0})
+	ud_out, _ = pool.PickFrom(standardVClock(53), txPoolGlobalUpdateOut{txGlobal, 0})
 
 	ud, ok = ud_out.(txPeerUpdate)
 

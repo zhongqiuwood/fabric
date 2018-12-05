@@ -78,7 +78,7 @@ func (s *testPeerStatus) To() VClock {
 	return testVClock(max)
 }
 
-func (s *testPeerStatus) PickFrom(id string, v_in VClock, u Update) (ScuttlebuttPeerUpdate, Update) {
+func (s *testPeerStatus) PickFrom(v_in VClock, u Update) (ScuttlebuttPeerUpdate, Update) {
 	ret := &testPeerStatus{make(map[string]int)}
 	vclk := transVClock(v_in)
 

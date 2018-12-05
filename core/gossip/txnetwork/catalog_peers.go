@@ -14,6 +14,8 @@ const (
 	EndorseVerLimit = 128
 )
 
+var PeerTemporaryUnavail = fmt.Errorf("Peer is temporary unavailable")
+
 type peerStatus struct {
 	*pb.PeerTxState
 }
@@ -30,7 +32,7 @@ func (s peerStatus) To() model.VClock {
 	return standardVClock(s.GetNum()*uint64(EndorseVerLimit) + uint64(s.GetEndorsementVer()) + 1)
 }
 
-func (s peerStatus) PickFrom(id string, d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
+func (s peerStatus) PickFrom(d_in model.VClock, u_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 
 	//a (parital) deep copy is made
 	ret := new(pb.PeerTxState)
@@ -55,16 +57,19 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 		panic("Type error, not txNetworkGlobal")
 	}
 
-	if id != "" {
-		if g.peerHandler != nil {
-			err := g.peerHandler.ValidatePeerStatus(id, u.PeerTxState)
-			if err != nil {
-				return fmt.Errorf("Peer [%s]'s state is invalid: %s", id, err)
+	if g.peerHandler != nil {
+		err := g.peerHandler.ValidatePeerStatus(id, u.PeerTxState)
+		if err != nil {
+			if err == PeerTemporaryUnavail {
+				//we could not update peer temparory, but this is not consider as an error (or blame our neighbour)
+				logger.Warningf("Peer [%s] is not allowed to be update now", id)
+				return nil
 			}
-		} else {
-			if len(u.GetEndorsement()) == 0 {
-				return fmt.Errorf("Peer [%s] has no endorsement", id)
-			}
+			return fmt.Errorf("Peer [%s]'s state is invalid: %s", id, err)
+		}
+	} else if id != "" {
+		if len(u.GetEndorsement()) == 0 {
+			return fmt.Errorf("Peer [%s] has no endorsement", id)
 		}
 	}
 

@@ -36,7 +36,7 @@ type ScuttlebuttPeerUpdate interface {
 
 type ScuttlebuttPeerStatus interface {
 	To() VClock
-	PickFrom(string, VClock, Update) (ScuttlebuttPeerUpdate, Update)
+	PickFrom(VClock, Update) (ScuttlebuttPeerUpdate, Update)
 	Update(string, ScuttlebuttPeerUpdate, ScuttlebuttStatus) error
 }
 
@@ -220,16 +220,16 @@ func (s *scuttlebuttStatus) GenDigest() Digest {
 
 	scounter := 0
 	for id, ss := range s.Peers {
-		if s.AdditionalFilter == nil || !s.AdditionalFilter(id, ss) {
+		if s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss) {
 			continue
 		}
 
+		scounter++
 		if id == "" {
 			id = s.SelfID
 		}
 
-		pos := len(r.d)
-		if scounter >= s.MaxUpdateLimit {
+		if scounter > s.MaxUpdateLimit {
 			//stream sampling: we consider calling of To() is trival
 			//so the cost of wasting a To() calling is small
 			//It is not the case in MakeUpdate
@@ -241,10 +241,10 @@ func (s *scuttlebuttStatus) GenDigest() Digest {
 		} else {
 			r.SetPeerDigest(id, ss.To())
 		}
-		scounter++
+
 	}
 
-	if s.Extended || len(r.d) < len(s.Peers) {
+	if s.Extended && len(r.d) == len(s.Peers) {
 		r.isPartial = false
 	}
 
@@ -260,107 +260,85 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 
 	r := &scuttlebuttUpdate{Update: s.ScuttlebuttStatus.MakeUpdate(dig.GlobalDigest())}
 
-	//PickFrom is costful, so do searching in the map, so we purchase time by space
+	digs := map[string]bool{}
+	//PickFrom is costful, searching in the map also is, so we purchase time by space
 	digsCache := []VClock{}
 	ssCache := []ScuttlebuttPeerStatus{}
 
-	//we have two different mode: in partial mode, we response all request,
-	//while in "full" mode we just send the whole status (or sampling it) of mine
+	req := dig.PeerDigest()
+	//simply truncate the request array
+	if len(req) > s.MaxUpdateLimit {
+		req = req[:s.MaxUpdateLimit]
+	}
 
-	for _, dd := range dig.PeerDigest() {
+	for _, dd := range req {
 		id := dd.Id
+		digs[id] = true
 		ss, ok := s.Peers[id]
 		if !ok {
 			if id != s.SelfID {
 				//touch new peer
 				if ss = s.NewPeer(id); ss != nil {
 					s.Peers[id] = ss
+					continue
 				}
-			} else if ss, ok := s.Peers[""]; ok && dd.V.Less(ss.To()) {
-				//special handle self id
-				if ssu, ssgu := ss.PickFrom("", dd.V, r.Update); ssu != nil {
-					r.u = append(r.u, peersUpdate{id, ssu})
-					if ssgu != nil {
-						r.Update = ssgu
-					}
-				}
-
 			}
 			digs[""] = true
+			if ss, ok = s.Peers[""]; !ok {
+				continue
+			}
 		}
+
+		if !dd.V.Less(ss.To()) {
+			continue
+		}
+
+		r.u = append(r.u, peersUpdate{id, nil})
+		ssCache = append(ssCache, ss)
+		digsCache = append(digsCache, dd.V)
 	}
 
-	for _, dd := range dig.PeerDigest() {
-
-		id := dd.Id
-		ss, ok := s.Peers[id]
-		if !ok {
-			if id != s.SelfID {
-				ss = s.NewPeer(id)
-				if ss != nil {
-					s.Peers[id] = ss
-				}
-			} else if ss, ok := s.Peers[""]; ok && dd.V.Less(ss.To()) {
-				//special handle self id
-				if ssu, ssgu := ss.PickFrom("", dd.V, r.Update); ssu != nil {
-					r.u = append(r.u, peersUpdate{id, ssu})
-					if ssgu != nil {
-						r.Update = ssgu
-					}
-				}
-				digs[""] = true
-			}
-
-		} else if dd.V.Less(ss.To()) {
-			if ssu, ssgu := ss.PickFrom(id, dd.V, r.Update); ssu != nil {
-				r.u = append(r.u, peersUpdate{id, ssu})
-				if ssgu != nil {
-					r.Update = ssgu
-				}
-			}
-			digs[id] = true
-		}
-	}
-
-	//protocol extended: handling other peer for the "full digest"
-	//we suppose the incoming dig_in always contain items less than limit
-	//(or if far-end require more, we should reply more?), but when
-	//applying full digest, we still need consider the limit of items
-	//additionalfilter should be applied here, too
+	//protocol extended: "full digest" mode means we are
+	//in fact search the whole peer space, and need to
+	//filter it (notice, filter is not applied on which
+	//the far-end query them explicity)
 	if !dig.IsPartial() {
 		scounter := len(r.u)
 		for id, ss := range s.Peers {
-			if _, ok := digs[id]; !ok {
-				//ss may also have the lowest clock...
-				if !BottomClock.Less(ss.To()) || (s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss)) {
-					continue
-				}
 
-				pos := len(r.u)
-				if scounter >= s.MaxUpdateLimit {
-					pos = rand.Intn(scounter)
-					if pos >= s.MaxUpdateLimit {
-						continue
-					}
-				}
-
-				if ssu, ssgu := ss.PickFrom(id, BottomClock, r.Update); ssu != nil {
-					if id == "" {
-						id = s.SelfID
-					}
-
-					if pos > len(r.u) {
-						r.u = append(r.u, peersUpdate{id, ssu})
-					} else {
-						r.u[pos] = peersUpdate{id, ssu}
-					}
-					scounter++
-
-					if ssgu != nil {
-						r.Update = ssgu
-					}
-				}
+			if _, ok := digs[id]; ok {
+				continue
+			} else if !BottomClock.Less(ss.To()) {
+				//ss may also have the lowest clock, which should not count
+				continue
+			} else if s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss) {
+				continue
 			}
+
+			scounter++
+			if scounter > s.MaxUpdateLimit {
+				if pos := rand.Intn(scounter); pos >= len(r.u) {
+					continue
+				} else {
+					r.u[pos] = peersUpdate{id, nil}
+					ssCache[pos] = ss
+					digsCache[pos] = BottomClock
+				}
+
+			} else {
+				r.u = append(r.u, peersUpdate{id, nil})
+				ssCache = append(ssCache, ss)
+				digsCache = append(digsCache, BottomClock)
+			}
+		}
+	}
+
+	//finally we do required PickFrom calling
+	var ssgu Update
+	for i, _ := range r.u {
+		r.u[i].U, ssgu = ssCache[i].PickFrom(digsCache[i], r.Update)
+		if ssgu != nil {
+			r.Update = ssgu
 		}
 	}
 

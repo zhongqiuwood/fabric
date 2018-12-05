@@ -14,6 +14,8 @@ type transactionPool struct {
 	txPool map[string]*pb.Transaction
 	//use for temporary reading in a long-journey
 	txPoolSnapshot map[string]*pb.Transaction
+
+	commitHooks []func([]string)
 }
 
 func newTxPool() (*transactionPool, error) {
@@ -61,8 +63,6 @@ func (tp *transactionPool) putTransaction(txs []*pb.Transaction) error {
 		return err
 	}
 
-	tp.clearPool(txs)
-
 	return nil
 }
 
@@ -91,6 +91,7 @@ func (tp *transactionPool) commitTransaction(txids []string) error {
 
 	tp.RUnlock()
 
+	defer tp.clearPool(pendingTxs)
 	return tp.putTransaction(pendingTxs)
 }
 

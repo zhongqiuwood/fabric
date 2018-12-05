@@ -386,7 +386,7 @@ func (p *peerTxMemPool) To() model.VClock {
 	return standardVClock(p.lastSeries())
 }
 
-func (p *peerTxMemPool) PickFrom(id string, d_in model.VClock, gu_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
+func (p *peerTxMemPool) PickFrom(d_in model.VClock, gu_in model.Update) (model.ScuttlebuttPeerUpdate, model.Update) {
 
 	d := toStandardVClock(d_in)
 	expectedH := uint64(d) + 1
@@ -548,7 +548,6 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 
 }
 
-//TODO: may set this value dyanmic
 const maxDigestItem = 1024
 
 type hotTxCat struct {
@@ -570,6 +569,18 @@ func initHotTx(stub *gossip.GossipStub) {
 	hotTx.policy = gossip.NewCatalogPolicyDefault()
 
 	selfStatus := model.NewScuttlebuttStatus(txglobal)
+	//TODO: may set this value dyanmic
+	selfStatus.MaxUpdateLimit = maxDigestItem
+	selfStatus.AdditionalFilter = func(id string, ss model.ScuttlebuttPeerStatus) bool {
+
+		i, ok := ss.(*peerTxMemPool)
+		if !ok {
+			logger.Errorf("Have a s-model item [%s] with unexpected type: %v", id, ss)
+			return false
+		}
+
+		return int(i.lastSeries()-i.firstSeries()) < PeerTxQueueSoftLimit()
+	}
 
 	peers := txglobal.network.peers
 	if selfs, _ := peers.QuerySelf(); selfs != nil {

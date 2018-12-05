@@ -25,6 +25,10 @@ func PeerTxQueueLimit() int {
 	return peerTxQueues * peerTxQueueLen
 }
 
+func PeerTxQueueSoftLimit() int {
+	return peerTxQueues * peerTxQueueLen * 3 / 4
+}
+
 func PeerTxQueueLen() int {
 	return peerTxQueueLen
 }

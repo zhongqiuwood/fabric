@@ -33,7 +33,6 @@ var prefixStateHashKey = byte(4)
 var lastIndexedBlockKey = []byte{byte(0)}
 
 type blockchainIndexer interface {
-	isSynchronous() bool
 	start(blockchain *blockchain) error
 	createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte) error
 	fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error)
@@ -42,17 +41,52 @@ type blockchainIndexer interface {
 	stop()
 }
 
+type indexProgress struct {
+	beginBlockID  uint64
+	pendingBlocks []bool
+}
+
+func (i *indexProgress) GetProgress() uint64 { return i.beginBlockID }
+
+func (i *indexProgress) FinishBlock(id uint64) {
+	if id <= i.beginBlockID {
+		indexLogger.Errorf("Have rewinded id [%d] (current %d)", id, i.beginBlockID)
+		return
+	}
+
+	//laid a shortcut here
+	if id == i.beginBlockID+1 && i.pendingBlocks == nil {
+		i.beginBlockID = id
+		return
+	}
+
+	offset := int(id - i.beginBlockID)
+	for offset > len(i.pendingBlocks) {
+		i.pendingBlocks = append(i.pendingBlocks, false)
+	}
+	i.pendingBlocks[offset-1] = true
+
+	for ii, done := range i.pendingBlocks {
+		if !done {
+			i.pendingBlocks = i.pendingBlocks[ii:]
+			i.beginBlockID = i.beginBlockID + uint64(ii)
+			return
+		}
+	}
+
+	//if we come here, means all the pendingBlocks has been clean
+	i.beginBlockID = i.beginBlockID + uint64(len(i.pendingBlocks))
+	i.pendingBlocks = nil
+}
+
 // Implementation for sync indexer
 type blockchainIndexerSync struct {
 	*db.OpenchainDB
+	prog indexProgress
 }
 
 func newBlockchainIndexerSync() *blockchainIndexerSync {
 	return &blockchainIndexerSync{}
-}
-
-func (indexer *blockchainIndexerSync) isSynchronous() bool {
-	return true
 }
 
 func (indexer *blockchainIndexerSync) start(blockchain *blockchain) error {
@@ -68,6 +102,12 @@ func (indexer *blockchainIndexerSync) createIndexes(
 
 	if err := addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch); err != nil {
 		return err
+	}
+
+	//block 0 will not be considered as a progress
+	if blockNumber != 0 {
+		indexer.prog.FinishBlock(blockNumber)
+		writeBatch.PutCF(cf, lastIndexedBlockKey, encodeBlockNumber(indexer.prog.GetProgress()))
 	}
 
 	if err := writeBatch.BatchCommit(); err != nil {
@@ -92,6 +132,45 @@ func (indexer *blockchainIndexerSync) fetchTransactionIndexByID(txID string) (ui
 func (indexer *blockchainIndexerSync) stop() {
 	indexer.OpenchainDB = nil
 	return
+}
+
+func indexPendingBlocks(db *db.OpenchainDB, uint64 totalSize) error {
+	if totalSize == 0 {
+		// chain is empty as yet
+		return nil
+	}
+
+	lastCommittedBlockNum := blockchain.getSize() - 1
+	lastIndexedBlockNum := indexer.indexerState.getLastIndexedBlockNumber()
+	zerothBlockIndexed := indexer.indexerState.isZerothBlockIndexed()
+
+	indexLogger.Debugf("lastCommittedBlockNum=[%d], lastIndexedBlockNum=[%d], zerothBlockIndexed=[%t]",
+		lastCommittedBlockNum, lastIndexedBlockNum, zerothBlockIndexed)
+
+	if zerothBlockIndexed && lastCommittedBlockNum == lastIndexedBlockNum {
+		// all committed blocks are indexed
+		return nil
+	}
+
+	indexLogger.Infof("Async indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum, lastCommittedBlockNum)
+
+	// block numbers use uint64 - so, 'lastIndexedBlockNum = 0' is ambiguous.
+	// So, explicitly checking whether zero-th block has been indexed
+	if !zerothBlockIndexed {
+		err := indexer.fetchBlockFromDBAndCreateIndexes(0)
+		if err != nil {
+			return err
+		}
+	}
+
+	for ; lastIndexedBlockNum < lastCommittedBlockNum; lastIndexedBlockNum++ {
+		blockNumToIndex := lastIndexedBlockNum + 1
+		err := indexer.fetchBlockFromDBAndCreateIndexes(blockNumToIndex)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Functions for persisting and retrieving index data
@@ -135,8 +214,6 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 	// 	writeBatch.PutCF(cf, encodeAddressBlockNumCompositeKey(address, blockNumber),
 	// 		encodeListTxIndexes(txsIndexes))
 	// }
-
-	writeBatch.PutCF(cf, lastIndexedBlockKey, encodeBlockNumber(blockNumber))
 	return nil
 }
 

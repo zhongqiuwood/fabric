@@ -677,6 +677,10 @@ func (c *hotTxCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Updat
 	//encode txs
 	//TODO: if cpo is availiable and quota is limited, cut some data
 	for _, pu_in := range u.PeerUpdate() {
+		//Update can be nil, and we just omit it
+		if iu_in.U == nil {
+			continue
+		}
 		pu, ok := pu_in.U.(txPeerUpdate)
 		if !ok {
 			panic("Type error, not peerTxs")

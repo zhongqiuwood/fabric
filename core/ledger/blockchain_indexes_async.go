@@ -41,12 +41,13 @@ type blockIndex struct {
 	txindex map[string]int
 }
 
-type pendingBlockCache struct {
+type indexerState struct {
 	sync.RWMutex
 	index map[uint64]*blockIndex
+	prog  indexProgress
 }
 
-func (c *pendingBlockCache) fetchTransactionIndex(txID string) (uint64, uint64) {
+func (c *indexerState) fetchTransactionIndex(txID string) (uint64, uint64) {
 
 	c.RLock()
 	defer c.RUnlock()
@@ -60,7 +61,7 @@ func (c *pendingBlockCache) fetchTransactionIndex(txID string) (uint64, uint64) 
 	return 0, 0
 }
 
-func (c *pendingBlockCache) fetchBlockNumberByBlockHash(hash []byte) uint64 {
+func (c *indexerState) fetchBlockNumberByBlockHash(hash []byte) uint64 {
 
 	c.RLock()
 	defer c.RUnlock()
@@ -74,7 +75,7 @@ func (c *pendingBlockCache) fetchBlockNumberByBlockHash(hash []byte) uint64 {
 	return 0
 }
 
-func (c *pendingBlockCache) fetchBlockNumberByStateHash(hash []byte) uint64 {
+func (c *indexerState) fetchBlockNumberByStateHash(hash []byte) uint64 {
 
 	c.RLock()
 	defer c.RUnlock()
@@ -88,7 +89,7 @@ func (c *pendingBlockCache) fetchBlockNumberByStateHash(hash []byte) uint64 {
 	return 0
 }
 
-func (c *pendingBlockCache) cacheBlock(block *protos.Block, blockNumber uint64, blockHash []byte) error {
+func (c *indexerState) cacheBlock(block *protos.Block, blockNumber uint64, blockHash []byte) error {
 
 	idx := &blockIndex{block.GetStateHash(), blockHash, make(map[string]int)}
 
@@ -97,10 +98,11 @@ func (c *pendingBlockCache) cacheBlock(block *protos.Block, blockNumber uint64, 
 			idx.txindex[txid] = i
 		}
 	} else if txs := block.GetTransactions(); txs != nil {
-		indexLogger.Debugf("No txid array found in block, we have deprecated code?")
-		for i, tx := range txs {
-			idx.txindex[tx.GetTxid()] = i
-		}
+		panic("Accept malformed block, we have deprecated code?")
+		// indexLogger.Debugf("No txid array found in block, we have deprecated code?")
+		// for i, tx := range txs {
+		// 	idx.txindex[tx.GetTxid()] = i
+		// }
 	}
 
 	c.Lock()
@@ -114,29 +116,31 @@ func (c *pendingBlockCache) cacheBlock(block *protos.Block, blockNumber uint64, 
 	return nil
 }
 
-func (c *pendingBlockCache) purneCachedBlock(blockNumber uint64) {
+func (c *indexerState) purneCachedBlock(blockNumber uint64) {
 	c.Lock()
 	delete(c.index, blockNumber)
 	c.Unlock()
 }
 
 type blockchainIndexerAsync struct {
-	blockchain *blockchain
+	*db.OpenchainDB
 	// Channel for transferring block from block chain for indexing
-	blockChan    chan blockWrapper
-	indexerState *blockchainIndexerState
-	cache        *pendingBlockCache
-	stopf        context.CancelFunc
+	blockChan       chan blockWrapper
+	indexerStates   []blockchainIndexerState
+	state           *indexerState
+	newBlockIndexed *sync.Cond
+	stopf           context.CancelFunc
 }
 
-func newBlockchainIndexerAsync() *blockchainIndexerAsync {
+func newBlockchainIndexerAsync(threads int) *blockchainIndexerAsync {
 	ret := new(blockchainIndexerAsync)
-	ret.cache = &pendingBlockCache{index: make(map[uint64]*blockIndex)}
+	ret.state = &indexerState{index: make(map[uint64]*blockIndex)}
+	if threads == 0 {
+		indexLogger.Warningf("async indexer not specified, set to 1")
+		threads = 1
+	}
+	ret.indexerStates = make([]blockchainIndexerState, threads)
 	return ret
-}
-
-func (indexer *blockchainIndexerAsync) isSynchronous() bool {
-	return false
 }
 
 func (indexer *blockchainIndexerAsync) start(blockchain *blockchain) error {
@@ -230,6 +234,12 @@ func (indexer *blockchainIndexerAsync) createIndexesInternal(block *protos.Block
 	err := addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch)
 	if err != nil {
 		return err
+	}
+
+	//block 0 will not be considered as a progress
+	if blockNumber != 0 {
+		indexer.prog.FinishBlock(blockNumber)
+		writeBatch.PutCF(cf, lastIndexedBlockKey, encodeBlockNumber(indexer.prog.GetProgress()))
 	}
 
 	err = writeBatch.BatchCommit()
@@ -363,11 +373,10 @@ func (indexer *blockchainIndexerAsync) stop() {
 type blockchainIndexerState struct {
 	indexer *blockchainIndexerAsync
 
-	zerothBlockIndexed bool
-	lastBlockIndexed   uint64
-	err                error
-	lock               *sync.RWMutex
-	newBlockIndexed    *sync.Cond
+	lastBlockIndexed uint64
+	err              error
+	lock             *sync.RWMutex
+	newBlockIndexed  *sync.Cond
 }
 
 func newBlockchainIndexerState(indexer *blockchainIndexerAsync) (*blockchainIndexerState, error) {

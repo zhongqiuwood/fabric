@@ -160,9 +160,6 @@ func TestIndexesAsync_ClientWaitScenario(t *testing.T) {
 type NoopIndexer struct {
 }
 
-func (noop *NoopIndexer) isSynchronous() bool {
-	return true
-}
 func (noop *NoopIndexer) start(blockchain *blockchain) error {
 	return nil
 }

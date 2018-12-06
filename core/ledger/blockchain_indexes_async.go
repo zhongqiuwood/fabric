@@ -340,7 +340,7 @@ func (indexer *blockchainIndexerAsync) fetchBlockFromDBAndCreateIndexes(blockNum
 		return errBlockFetch
 	}
 
-	//when get hash, we must prepare for a incoming "raw" block (hash is not )
+	//when get hash, we must prepare for a incoming "raw" block (the old version require txs to obtain blockhash)
 	blockToIndex = compatibleLegacyBlock(blockToIndex)
 
 	blockHash, errBlockHash := blockToIndex.GetHash()

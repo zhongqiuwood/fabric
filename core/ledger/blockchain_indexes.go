@@ -134,42 +134,82 @@ func (indexer *blockchainIndexerSync) stop() {
 	return
 }
 
-func indexPendingBlocks(db *db.OpenchainDB, uint64 totalSize) error {
+func indexPendingBlocks(blockchain *blockchain) error {
+	totalSize := blockchain.getSize()
 	if totalSize == 0 {
 		// chain is empty as yet
 		return nil
 	}
 
-	lastCommittedBlockNum := blockchain.getSize() - 1
-	lastIndexedBlockNum := indexer.indexerState.getLastIndexedBlockNumber()
+	odb := blockchain.OpenchainDB
+	lastIndexedBlockNum := uint64(0)
+	lastCommittedBlockNum := totalSize - 1
+	if lastIndexedBlockNumberBytes, err := odb.GetValue(db.IndexesCF, lastIndexedBlockKey); err != nil {
+		return err
+	} else if lastIndexedBlockNumberBytes != nil {
+		//so if we have a "last indexed" record, we start from which plus one
+		lastIndexedBlockNum = decodeBlockNumber(lastIndexedBlockNumberBytes) + 1
+	}
+
+	//lastIndexedBlockNum := indexer.indexerState.getLastIndexedBlockNumber()
 	zerothBlockIndexed := indexer.indexerState.isZerothBlockIndexed()
 
 	indexLogger.Debugf("lastCommittedBlockNum=[%d], lastIndexedBlockNum=[%d], zerothBlockIndexed=[%t]",
-		lastCommittedBlockNum, lastIndexedBlockNum, zerothBlockIndexed)
+		totalSize-1, lastIndexedBlockNum, zerothBlockIndexed)
 
-	if zerothBlockIndexed && lastCommittedBlockNum == lastIndexedBlockNum {
+	if totalSize == lastIndexedBlockNum {
 		// all committed blocks are indexed
 		return nil
+	} else if totalSize < lastIndexedBlockNum {
+		//TODO:
 	}
 
-	indexLogger.Infof("Async indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum, lastCommittedBlockNum)
+	indexLogger.Infof("indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum, lastCommittedBlockNum)
 
 	// block numbers use uint64 - so, 'lastIndexedBlockNum = 0' is ambiguous.
 	// So, explicitly checking whether zero-th block has been indexed
-	if !zerothBlockIndexed {
-		err := indexer.fetchBlockFromDBAndCreateIndexes(0)
+
+	writeBatch := odb.NewWriteBatch()
+	defer writeBatch.Destroy()
+
+	for ; lastIndexedBlockNum < totalSize; lastIndexedBlockNum++ {
+
+		blockToIndex, err := blockchain.getRawBlock(lastIndexedBlockNum)
+		//interrupt for any db error
 		if err != nil {
-			return err
+			return fmt.Errorf("db fail in getblock: %s", err)
+		}
+
+		//when get hash, we must prepare for a incoming "raw" block (the old version require txs to obtain blockhash)
+		blockToIndex = compatibleLegacyBlock(blockToIndex)
+		blockHash, err := blockToIndex.GetHash()
+		if err != nil {
+			return fmt.Errorf("fail in obtained block %d's hash: %s", lastIndexedBlockNum, err)
+		}
+
+		//if we index genesis block, no check is needed
+		if lastIndexedBlockNum != 0 {
+			//add checking ...
+			if index, err := fetchBlockNumberByBlockHashFromDB(odb, blockHash); err != nil {
+				return fmt.Errorf("db fail in get index: %s", err)
+			} else if index == lastIndexedBlockNum {
+				//has been indexed, we can skip
+				continue
+			} else if index != 0 {
+				indexLogger.Errorf("block %d is indexed at different position %d", lastIndexedBlockNum, index)
+			}
+		}
+
+		//a little wasting, but the code is cleaner :-)
+		writeBatch.PutCF(writeBatch.GetDBHandle().IndexesCF, lastIndexedBlockKey, encodeBlockNumber(lastIndexedBlockNum))
+		err = addIndexDataForPersistence(blockToIndex, lastIndexedBlockNum, blockHash, writeBatch)
+		if err != nil {
+			return fmt.Errorf("fail in execute persistent index: %s", err)
+		} else if err = writeBatch.BatchCommit(); err != nil {
+			return fmt.Errorf("fail in commit batch: %s", err)
 		}
 	}
 
-	for ; lastIndexedBlockNum < lastCommittedBlockNum; lastIndexedBlockNum++ {
-		blockNumToIndex := lastIndexedBlockNum + 1
-		err := indexer.fetchBlockFromDBAndCreateIndexes(blockNumToIndex)
-		if err != nil {
-			return err
-		}
-	}
 	return nil
 }
 

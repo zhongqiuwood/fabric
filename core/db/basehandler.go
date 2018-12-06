@@ -40,25 +40,27 @@ const currentVersionKey = "currentVer"
 // base class of db handler and txdb handler
 type baseHandler struct {
 	*gorocksdb.DB
-	OpenOpt *gorocksdb.Options
 	cfMap   map[string]*gorocksdb.ColumnFamilyHandle
+	OpenOpt baseOpt
 }
 
-func GetDBHandle() *OpenchainDB {
-	return originalDB
+type baseOpt struct {
+	conf *viper.Viper
 }
 
-func GetGlobalDBHandle() *GlobalDataDB {
-	return globalDataDB
-}
+func (o baseOpt) Inited() bool { return o.conf != nil }
 
-func DefaultOption() (opts *gorocksdb.Options) {
-	return DBOptions(config.SubViper("peer.db"))
-}
+func (o baseOpt) Options() (opts *gorocksdb.Options) {
 
-func DBOptions(vp *viper.Viper) (opts *gorocksdb.Options) {
-	opts = gorocksdb.NewDefaultOptions()
+	//most common options
+	opts := gorocksdb.NewDefaultOptions()
+	opts.SetCreateIfMissing(true)
+	opts.SetCreateIfMissingColumnFamilies(true)
+	if !o.Inited() {
+		return
+	}
 
+	vp := o.conf
 	maxLogFileSize := viper.GetInt("maxLogFileSize")
 	if maxLogFileSize > 0 {
 		dbLogger.Infof("Setting rocksdb maxLogFileSize to %d", maxLogFileSize)
@@ -79,20 +81,40 @@ func DBOptions(vp *viper.Viper) (opts *gorocksdb.Options) {
 		opts.SetInfoLogLevel(logLevel)
 	}
 
-	opts.SetCreateIfMissing(true)
-	opts.SetCreateIfMissingColumnFamilies(true)
-
 	return
 }
 
-//if global db is not opened, it is also created
-func startDBInner(odb *OpenchainDB, opts *gorocksdb.Options, forcePath bool) error {
+func GetDBHandle() *OpenchainDB {
+	return originalDB
+}
 
-	clearOpt := func() {
-		globalDataDB.OpenOpt = nil
-		odb.db.OpenOpt = nil
+func GetGlobalDBHandle() *GlobalDataDB {
+	return globalDataDB
+}
+
+func DBOptions(vp *viper.Viper) baseOpt {
+	if vp == nil {
+		return DefaultOption()
 	}
-	defer clearOpt()
+	return baseOpt{vp}
+}
+
+func DefaultOption() baseOpt {
+
+	getDefaultOption.Do(func() {
+		//test new configuration, then the legacy one
+		vp := config.SubViper("node.db")
+		if vp != nil {
+			defaultOption = baseOpt{vp}
+		} else {
+			defaultOption = baseOpt{config.SubViper("peer.db")}
+		}
+	})
+	return defaultOption
+}
+
+//if global db is not opened, it is also created
+func startDBInner(odb *OpenchainDB, opts baseOpt, forcePath bool) error {
 
 	//detect if global db is opened
 	if globalDataDB.globalOpt == nil {
@@ -143,7 +165,7 @@ func startDBInner(odb *OpenchainDB, opts *gorocksdb.Options, forcePath bool) err
 	}
 
 	odb.db.OpenOpt = opts
-	err = odb.db.open(orgDBPath)
+	err = odb.db.open(orgDBPath, odb.buildOpenDBOptions(opts))
 	if err != nil {
 		return fmt.Errorf("open db [%s] fail: %s", odb.dbTag, err)
 	}
@@ -153,12 +175,9 @@ func startDBInner(odb *OpenchainDB, opts *gorocksdb.Options, forcePath bool) err
 
 func StartDB(tag string, vp *viper.Viper) (*OpenchainDB, error) {
 
-	opts := DBOptions(vp)
-	defer opts.Destroy()
-
 	ret := new(OpenchainDB)
 	ret.dbTag = tag
-	if err := startDBInner(ret, opts, false); err != nil {
+	if err := startDBInner(ret, DBOptions(vp), false); err != nil {
 		return nil, err
 	}
 
@@ -168,10 +187,7 @@ func StartDB(tag string, vp *viper.Viper) (*OpenchainDB, error) {
 // Start the db, init the openchainDB instance and open the db. Note this method has no guarantee correct behavior concurrent invocation.
 func Start() {
 
-	opts := DefaultOption()
-	defer opts.Destroy()
-
-	if err := startDBInner(originalDB, opts, true); err != nil {
+	if err := startDBInner(originalDB, DefaultOption(), true); err != nil {
 		panic(err)
 	}
 }
@@ -179,13 +195,14 @@ func Start() {
 // Stop the db. Note this method has no guarantee correct behavior concurrent invocation.
 func Stop() {
 
+	//we not care about the concurrent problem because it is never touched except for legacy usage
 	StopDB(originalDB)
-	globalDataDB.close()
 
-	if globalDataDB.globalOpt != nil {
-		globalDataDB.globalOpt.Destroy()
-		globalDataDB.globalOpt = nil
-	}
+	openglobalDBLock.Lock()
+	defer openglobalDBLock.Unlock()
+	globalDataDB.close()
+	globalDataDB.cleanDBOptions()
+	globalDataDB = new(GlobalDataDB)
 }
 
 func StopDB(odb *OpenchainDB) {
@@ -193,6 +210,7 @@ func StopDB(odb *OpenchainDB) {
 		odb.db.close()
 		odb.db = nil
 	}
+	odb.cleanDBOptions()
 }
 
 func DropDB(path string) error {
@@ -332,19 +350,13 @@ func (h *baseHandler) DeleteKey(cfName string, key []byte) error {
 	return h.delete(cf, key)
 }
 
-// Open open underlying rocksdb
+// Open underlying rocksdb
 func (openchainDB *baseHandler) opendb(dbPath string, cf []string, cfOpts []*gorocksdb.Options) []*gorocksdb.ColumnFamilyHandle {
 
 	dbLogger.Infof("Try opendb on <%s> with %d cfs", dbPath, len(cf))
 
-	opts := openchainDB.OpenOpt
-	if opts == nil {
-		//use some default options
-		opts = gorocksdb.NewDefaultOptions()
-		opts.SetCreateIfMissing(true)
-		opts.SetCreateIfMissingColumnFamilies(true)
-		defer opts.Destroy()
-	}
+	opts := openchainDB.OpenOpt.Options()
+	defer opts.Destroy()
 
 	cfNames := append(cf, "default")
 

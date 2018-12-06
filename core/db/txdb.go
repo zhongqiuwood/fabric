@@ -54,8 +54,9 @@ type GlobalDataDB struct {
 	globalStateLock sync.Mutex
 	//caution: destroy option before cf/db is WRONG but just ok only if it was just "default"
 	//we must keep object alive if we have custom some options (i.e.: merge operators)
-	globalOpt     *gorocksdb.Options
-	useCycleGraph bool
+	openDB         sync.Once
+	globalStateOpt *gorocksdb.Options
+	useCycleGraph  bool
 }
 
 const (
@@ -222,23 +223,13 @@ func (mo globalstatusMO) PartialMerge(key, leftOperand, rightOperand []byte) ([]
 }
 func (mo *globalstatusMO) Name() string { return mo.MOName }
 
-var globalDataDB = &GlobalDataDB{}
+var globalDataDB = new(GlobalDataDB)
+var openglobalDBLock sync.Mutex
 
 func (txdb *GlobalDataDB) open(dbpath string) error {
 
-	//caution: keep it in txdb.globalOpt, DO NOT destroy!
-	globalOpt := DefaultOption()
-	globalOpt.SetMergeOperator(&globalstatusMO{"globalstateMO", txdb.useCycleGraph})
-	txdb.globalOpt = globalOpt
-
-	opts := make([]*gorocksdb.Options, len(txDbColumnfamilies))
-	for i, cf := range txDbColumnfamilies {
-		if cf == GlobalCF {
-			opts[i] = txdb.globalOpt
-		}
-	}
-
-	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies, opts)
+	txdb.OpenOpt = DefaultOption()
+	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies, txdb.buildOpenDBOptions(txdb.OpenOpt))
 
 	if len(cfhandlers) != len(txDbColumnfamilies) {
 		return errors.New("rocksdb may ruin or not work as expected")

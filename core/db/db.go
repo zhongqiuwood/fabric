@@ -56,8 +56,9 @@ type ocDB struct {
 }
 
 type OpenchainDB struct {
-	db    *ocDB
-	dbTag string
+	db           *ocDB
+	dbTag        string
+	indexesCFOpt *gorocksdb.Options
 	sync.RWMutex
 }
 
@@ -74,11 +75,11 @@ func (oc *ocDB) dropDB() {
 	}
 }
 
-func (openchainDB *ocDB) open(dbpath string) error {
+func (openchainDB *ocDB) open(dbpath string, cfopts []*gorocksdb.Options) error {
 
 	openchainDB.dbName = dbpath
 
-	cfhandlers := openchainDB.opendb(dbpath, columnfamilies, nil)
+	cfhandlers := openchainDB.opendb(dbpath, columnfamilies, cfopts)
 
 	if len(cfhandlers) != len(columnfamilies) {
 		return errors.New("rocksdb may ruin or not work as expected")

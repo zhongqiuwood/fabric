@@ -21,6 +21,7 @@ var rocksDBLogLevelMap = map[string]gorocksdb.InfoLogLevel{
 	"fatal": gorocksdb.FatalInfoLogLevel}
 
 const DBVersion = 1
+const txDBVersion = 2
 
 // cf in txdb
 const TxCF = "txCF"
@@ -36,6 +37,7 @@ const IndexesCF = "indexesCF"
 
 const currentDBKey = "currentDB"
 const currentVersionKey = "currentVer"
+const currentGlobalVersionKey = "currentVerGlobal"
 
 // base class of db handler and txdb handler
 type baseHandler struct {
@@ -53,27 +55,28 @@ func (o baseOpt) Inited() bool { return o.conf != nil }
 func (o baseOpt) Options() (opts *gorocksdb.Options) {
 
 	//most common options
-	opts := gorocksdb.NewDefaultOptions()
+	opts = gorocksdb.NewDefaultOptions()
 	opts.SetCreateIfMissing(true)
 	opts.SetCreateIfMissingColumnFamilies(true)
+
 	if !o.Inited() {
 		return
 	}
 
 	vp := o.conf
-	maxLogFileSize := viper.GetInt("maxLogFileSize")
+	maxLogFileSize := vp.GetInt("maxLogFileSize")
 	if maxLogFileSize > 0 {
 		dbLogger.Infof("Setting rocksdb maxLogFileSize to %d", maxLogFileSize)
 		opts.SetMaxLogFileSize(maxLogFileSize)
 	}
 
-	keepLogFileNum := viper.GetInt("keepLogFileNum")
+	keepLogFileNum := vp.GetInt("keepLogFileNum")
 	if keepLogFileNum > 0 {
 		dbLogger.Infof("Setting rocksdb keepLogFileNum to %d", keepLogFileNum)
 		opts.SetKeepLogFileNum(keepLogFileNum)
 	}
 
-	logLevelStr := viper.GetString("loglevel")
+	logLevelStr := vp.GetString("loglevel")
 	logLevel, ok := rocksDBLogLevelMap[logLevelStr]
 
 	if ok {
@@ -107,7 +110,11 @@ func DefaultOption() baseOpt {
 		if vp != nil {
 			defaultOption = baseOpt{vp}
 		} else {
-			defaultOption = baseOpt{config.SubViper("peer.db")}
+			vp = config.SubViper("peer.db")
+			if vp == nil {
+				dbLogger.Warning("DB has no any custom options, complete default")
+			}
+			defaultOption = baseOpt{vp}
 		}
 	})
 	return defaultOption
@@ -116,13 +123,19 @@ func DefaultOption() baseOpt {
 //if global db is not opened, it is also created
 func startDBInner(odb *OpenchainDB, opts baseOpt, forcePath bool) error {
 
-	//detect if global db is opened
-	if globalDataDB.globalOpt == nil {
-		globalDataDB.OpenOpt = opts
-		err := globalDataDB.open(getDBPath("txdb"))
-		if err != nil {
-			return fmt.Errorf("open global db fail: %s", err)
+	globalDataDB.openDB.Do(func() {
+		globalDataDB.OpenOpt = DefaultOption()
+		if err := globalDataDB.open(getDBPath("txdb")); err != nil {
+			globalDataDB.openError = fmt.Errorf("open global db fail: %s", err)
+			return
 		}
+		if err := globalDataDB.setDBVersion(); err != nil {
+			globalDataDB.openError = fmt.Errorf("handle global db version fail: %s", err)
+			return
+		}
+	})
+	if globalDataDB.openError != nil {
+		return globalDataDB.openError
 	}
 
 	k, err := globalDataDB.get(globalDataDB.persistCF, odb.getDBKey(currentDBKey))
@@ -165,7 +178,7 @@ func startDBInner(odb *OpenchainDB, opts baseOpt, forcePath bool) error {
 	}
 
 	odb.db.OpenOpt = opts
-	err = odb.db.open(orgDBPath, odb.buildOpenDBOptions(opts))
+	err = odb.db.open(orgDBPath, odb.buildOpenDBOptions())
 	if err != nil {
 		return fmt.Errorf("open db [%s] fail: %s", odb.dbTag, err)
 	}
@@ -197,6 +210,7 @@ func Stop() {
 
 	//we not care about the concurrent problem because it is never touched except for legacy usage
 	StopDB(originalDB)
+	originalDB = &OpenchainDB{db: &ocDB{}}
 
 	openglobalDBLock.Lock()
 	defer openglobalDBLock.Unlock()
@@ -205,10 +219,11 @@ func Stop() {
 	globalDataDB = new(GlobalDataDB)
 }
 
+//NOTICE: stop the db do not ensure a completely "clean" of all resource, memory leak
+//is highly possible and we should avoid to use it frequently
 func StopDB(odb *OpenchainDB) {
 	if odb.db != nil {
 		odb.db.close()
-		odb.db = nil
 	}
 	odb.cleanDBOptions()
 }

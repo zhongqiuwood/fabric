@@ -29,7 +29,7 @@ func createCheckpoint(db *gorocksdb.DB, cpPath string) error {
 	defer checkpoint.Destroy()
 	err = checkpoint.CreateCheckpoint(cpPath, 0)
 	if err != nil {
-		return fmt.Errorf("[%s] Copy checkpoint fail: %s", printGID, err)
+		return fmt.Errorf("[%s] Copy checkpoint to %s fail: %s", printGID, cpPath, err)
 	}
 
 	return nil
@@ -111,16 +111,12 @@ func (oc *OpenchainDB) StateSwitch(statehash []byte) error {
 	}
 
 	//now open the new state ...
-	dbopts := DefaultOption()
-	defer dbopts.Destroy()
 	newdb := &ocDB{}
-	newdb.OpenOpt = dbopts
-	err = newdb.open(newdbPath)
+	newdb.OpenOpt = oc.db.OpenOpt
+	err = newdb.open(newdbPath, oc.buildOpenDBOptions())
 	if err != nil {
 		return err
 	}
-
-	newdb.OpenOpt = nil
 
 	//prepare ok, now do the switch ...
 	oc.Lock()

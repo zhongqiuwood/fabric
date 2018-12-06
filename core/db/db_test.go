@@ -37,13 +37,14 @@ func TestGetDBPathEmptyPath(t *testing.T) {
 	dbPathSetting = ""
 	originalSetting := viper.GetString("peer.fileSystemPath")
 	viper.Set("peer.fileSystemPath", "")
+	defer viper.Set("peer.fileSystemPath", originalSetting)
 	defer func() {
 		x := recover()
 		if x == nil {
 			t.Fatal("A panic should have been caused here.")
 		}
+		Stop()
 	}()
-	defer viper.Set("peer.fileSystemPath", originalSetting)
 	Start()
 	GetDBHandle()
 }

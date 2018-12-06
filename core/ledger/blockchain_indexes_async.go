@@ -340,7 +340,7 @@ func (indexer *blockchainIndexerAsync) fetchBlockFromDBAndCreateIndexes(blockNum
 		return errBlockFetch
 	}
 
-	//when get hash, we must prepare for a incoming "raw" block (the old version require txs to obtain blockhash)
+	//when get hash, we must prepare for a incoming "raw" block (hash is not )
 	blockToIndex = compatibleLegacyBlock(blockToIndex)
 
 	blockHash, errBlockHash := blockToIndex.GetHash()
@@ -375,8 +375,6 @@ type blockchainIndexerState struct {
 
 	lastBlockIndexed uint64
 	err              error
-	lock             *sync.RWMutex
-	newBlockIndexed  *sync.Cond
 }
 
 func newBlockchainIndexerState(indexer *blockchainIndexerAsync) (*blockchainIndexerState, error) {

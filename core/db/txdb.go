@@ -55,6 +55,7 @@ type GlobalDataDB struct {
 	//caution: destroy option before cf/db is WRONG but just ok only if it was just "default"
 	//we must keep object alive if we have custom some options (i.e.: merge operators)
 	openDB         sync.Once
+	openError      error
 	globalStateOpt *gorocksdb.Options
 	useCycleGraph  bool
 }
@@ -67,7 +68,6 @@ const (
 )
 
 type globalstatusMO struct {
-	MOName       string
 	IsCycleGraph bool
 }
 
@@ -221,15 +221,17 @@ func (mo globalstatusMO) PartialMerge(key, leftOperand, rightOperand []byte) ([]
 		return rightOperand, true
 	}
 }
-func (mo *globalstatusMO) Name() string { return mo.MOName }
+func (mo *globalstatusMO) Name() string {
+	//NOTICE: we give a c-style string so the tailing 0 is IMPORTANT!
+	return "globalstateMO\x00"
+}
 
 var globalDataDB = new(GlobalDataDB)
 var openglobalDBLock sync.Mutex
 
 func (txdb *GlobalDataDB) open(dbpath string) error {
 
-	txdb.OpenOpt = DefaultOption()
-	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies, txdb.buildOpenDBOptions(txdb.OpenOpt))
+	cfhandlers := txdb.opendb(dbpath, txDbColumnfamilies, txdb.buildOpenDBOptions())
 
 	if len(cfhandlers) != len(txDbColumnfamilies) {
 		return errors.New("rocksdb may ruin or not work as expected")
@@ -591,13 +593,27 @@ func (openchainDB *GlobalDataDB) ListCheckpoints() (ret [][]byte) {
 }
 
 func (openchainDB *GlobalDataDB) GetDBVersion() int {
-	dbLogger.Warning("You are calling a deprecated method for the version of default db")
-	v, _ := openchainDB.GetValue(PersistCF, []byte(currentVersionKey))
+	v, _ := openchainDB.GetValue(PersistCF, []byte(currentGlobalVersionKey))
 	if len(v) == 0 {
+		dbLogger.Errorf("TxDB version is missed in this db, something wrong")
 		return 0
 	}
 
 	return int(v[0])
+}
+
+func (openchainDB *GlobalDataDB) setDBVersion() error {
+	v, _ := openchainDB.GetValue(PersistCF, []byte(currentGlobalVersionKey))
+	if len(v) == 0 {
+		v = []byte{byte(txDBVersion)}
+		if err := openchainDB.PutValue(PersistCF, []byte(currentGlobalVersionKey), v); err != nil {
+			return err
+		}
+	}
+
+	//TODO: in some case we can force the db version?
+	dbLogger.Infof("TxDB Version is %d", int(v[0]))
+	return nil
 }
 
 func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator {

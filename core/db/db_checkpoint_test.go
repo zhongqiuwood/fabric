@@ -126,6 +126,7 @@ func TestReStart(t *testing.T) {
 
 	Start()
 	defer Stop()
+	openchainDB = GetDBHandle()
 
 	v, _ := openchainDB.GetValue(StateCF, []byte("key3"))
 	if v != nil {
@@ -140,7 +141,7 @@ func TestReStart(t *testing.T) {
 func TestSwitchCheckPoint(t *testing.T) {
 
 	Start()
-	defer deleteTestDBPath()
+	//defer deleteTestDBPath()
 	defer Stop()
 
 	openchainDB := GetDBHandle()

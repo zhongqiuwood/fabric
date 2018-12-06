@@ -44,7 +44,6 @@ type blockIndex struct {
 type indexerState struct {
 	sync.RWMutex
 	index map[uint64]*blockIndex
-	prog  indexProgress
 }
 
 func (c *indexerState) fetchTransactionIndex(txID string) (uint64, uint64) {

@@ -30,6 +30,7 @@ var prefixBlockHashKey = byte(1)
 var prefixTxIDKey = byte(2)
 var prefixAddressBlockNumCompositeKey = byte(3)
 var prefixStateHashKey = byte(4)
+var prefixIndexMarking = byte(8)
 var lastIndexedBlockKey = []byte{byte(0)}
 
 type blockchainIndexer interface {
@@ -39,44 +40,6 @@ type blockchainIndexer interface {
 	fetchBlockNumberByStateHash(stateHash []byte) (uint64, error)
 	fetchTransactionIndexByID(txID string) (uint64, uint64, error)
 	stop()
-}
-
-type indexProgress struct {
-	beginBlockID  uint64
-	pendingBlocks []bool
-}
-
-func (i *indexProgress) GetProgress() uint64 { return i.beginBlockID }
-
-func (i *indexProgress) FinishBlock(id uint64) {
-	if id <= i.beginBlockID {
-		indexLogger.Errorf("Have rewinded id [%d] (current %d)", id, i.beginBlockID)
-		return
-	}
-
-	//laid a shortcut here
-	if id == i.beginBlockID+1 && i.pendingBlocks == nil {
-		i.beginBlockID = id
-		return
-	}
-
-	offset := int(id - i.beginBlockID)
-	for offset > len(i.pendingBlocks) {
-		i.pendingBlocks = append(i.pendingBlocks, false)
-	}
-	i.pendingBlocks[offset-1] = true
-
-	for ii, done := range i.pendingBlocks {
-		if !done {
-			i.pendingBlocks = i.pendingBlocks[ii:]
-			i.beginBlockID = i.beginBlockID + uint64(ii)
-			return
-		}
-	}
-
-	//if we come here, means all the pendingBlocks has been clean
-	i.beginBlockID = i.beginBlockID + uint64(len(i.pendingBlocks))
-	i.pendingBlocks = nil
 }
 
 // Implementation for sync indexer
@@ -134,7 +97,7 @@ func (indexer *blockchainIndexerSync) stop() {
 	return
 }
 
-func indexPendingBlocks(blockchain *blockchain) error {
+func rebuildIndexs(blockchain *blockchain) error {
 	totalSize := blockchain.getSize()
 	if totalSize == 0 {
 		// chain is empty as yet
@@ -161,7 +124,9 @@ func indexPendingBlocks(blockchain *blockchain) error {
 		// all committed blocks are indexed
 		return nil
 	} else if totalSize < lastIndexedBlockNum {
-		//TODO:
+		//TODO: should be suppose error?
+		indexLogger.Warningf("Encounter a higher index [%d] record than current block size [%d]", lastIndexedBlockNum, totalSize)
+		return nil
 	}
 
 	indexLogger.Infof("indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum, lastCommittedBlockNum)

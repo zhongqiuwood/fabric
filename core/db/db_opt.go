@@ -33,11 +33,17 @@ func (openchainDB *OpenchainDB) buildOpenDBOptions() []*gorocksdb.Options {
 
 	//opts for indexesCF
 	if openchainDB.indexesCFOpt == nil {
-	iopt := opt.Options()
-	if globalDataDB.GetDBVersion() > 1 {
-		//can support prefix search
-		iopt.SetPrefixExtractor(&indexCFPrefixGen{})
-		openchainDB.indexesCFOpt = iopt
+		iopt := opt.Options()
+		if globalDataDB.GetDBVersion() > 1 {
+			/*
+				It seems gorocksdb has no way to completely release a go object
+				used in opitons, so the leaking of memory can not be avoided
+				when a Stop() is called
+				we have to reused the option in most case to mitigate the leaking
+			*/
+			iopt.SetPrefixExtractor(&indexCFPrefixGen{})
+			openchainDB.indexesCFOpt = iopt
+		}
 	}
 
 	var dbOpts = make([]*gorocksdb.Options, len(columnfamilies))
@@ -62,7 +68,7 @@ func (openchainDB *OpenchainDB) cleanDBOptions() {
 		   before destory the option
 		   (it was weired that cmo (merge operator) is not release in gorocksdb)
 		*/
-		//openchainDB.indexesCFOpt.SetPrefixExtractor(gorocksdb.NewNativeSliceTransform(nil))
+		openchainDB.indexesCFOpt.SetPrefixExtractor(gorocksdb.NewNativeSliceTransform(nil))
 		openchainDB.indexesCFOpt.Destroy()
 	}
 

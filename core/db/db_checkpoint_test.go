@@ -141,7 +141,7 @@ func TestReStart(t *testing.T) {
 func TestSwitchCheckPoint(t *testing.T) {
 
 	Start()
-	//defer deleteTestDBPath()
+	defer deleteTestDBPath()
 	defer Stop()
 
 	openchainDB := GetDBHandle()

@@ -18,6 +18,7 @@ package db
 
 import (
 	"bytes"
+	"encoding/binary"
 	"github.com/abchain/fabric/core/config"
 	"github.com/abchain/fabric/core/util"
 	"github.com/spf13/viper"
@@ -238,6 +239,75 @@ func TestDBIteratorAndSnapshotIterator(t *testing.T) {
 	dbitr = openchainDB.GetIterator(BlockchainCF)
 	defer dbitr.Close()
 	testIterator(t, dbitr.Iterator, map[string][]byte{"key6": []byte("value6"), "key7": []byte("value7")})
+}
+
+func TestPrefixIteration(t *testing.T) {
+
+	testDBWrapper := NewTestDBWrapper()
+	testDBWrapper.CleanDB(t)
+	openchainDB := GetDBHandle()
+	defer testDBWrapper.cleanup()
+
+	// write key-values
+	openchainDB.PutValue(IndexesCF, []byte{03, 01}, []byte{1})
+	openchainDB.PutValue(IndexesCF, []byte{03, 01, 02}, []byte{2})
+	openchainDB.PutValue(IndexesCF, []byte{03, 02}, []byte{3})
+
+	itr1 := openchainDB.GetIterator(IndexesCF)
+	defer itr1.Close()
+
+	itr1.Seek([]byte{03})
+
+	ret := []byte{}
+
+	for ; itr1.Valid(); itr1.Next() {
+		ret = append(ret, itr1.Value().Data()...)
+	}
+
+	if bytes.Compare(ret, []byte{1, 2, 3}) != 0 {
+		t.Fatalf("unexpected kv seq 1: %v", ret)
+	}
+
+	openchainDB.PutValue(IndexesCF, []byte{05, 01, 01}, []byte{4})
+
+	ret = nil
+	itr2 := openchainDB.GetIterator(IndexesCF)
+	defer itr2.Close()
+
+	itr2.Seek([]byte{03})
+
+	for ; itr2.Valid() && itr2.ValidForPrefix([]byte{03}); itr2.Next() {
+
+		ret = append(ret, itr2.Value().Data()...)
+	}
+
+	if bytes.Compare(ret, []byte{1, 2, 3}) != 0 {
+		t.Fatalf("unexpected kv seq 2: %v", ret)
+	}
+
+	buf := [5]byte{4}
+
+	for i := 0; i < 100000; i++ {
+		binary.BigEndian.PutUint32(buf[1:], uint32(i))
+		openchainDB.PutValue(IndexesCF, buf[:], buf[1:])
+	}
+
+	itr3 := openchainDB.GetIterator(IndexesCF)
+	defer itr3.Close()
+	counter := 0
+	itr3.Seek([]byte{04})
+
+	for ; itr3.Valid() && itr3.ValidForPrefix([]byte{04}); itr3.Next() {
+
+		if binary.BigEndian.Uint32(itr3.Value().Data()) != uint32(counter) {
+			t.Fatalf("Unexpect value at %d: [%x:%x]", counter, itr3.Key().Data(), itr3.Value().Data())
+		}
+		counter++
+	}
+
+	if counter != 100000 {
+		t.Fatal("Unexpect key count:", counter)
+	}
 }
 
 // db helper functions

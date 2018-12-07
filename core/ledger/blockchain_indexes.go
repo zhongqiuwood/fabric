@@ -19,6 +19,7 @@ package ledger
 import (
 	"fmt"
 
+	"encoding/binary"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
@@ -31,6 +32,7 @@ var prefixTxIDKey = byte(2)
 var prefixAddressBlockNumCompositeKey = byte(3)
 var prefixStateHashKey = byte(4)
 var prefixIndexMarking = byte(8)
+var indexMarkingMagicCode = []byte{42,42,42}
 var lastIndexedBlockKey = []byte{byte(0)}
 
 type blockchainIndexer interface {
@@ -45,20 +47,25 @@ type blockchainIndexer interface {
 // Implementation for sync indexer
 type blockchainIndexerSync struct {
 	*db.OpenchainDB
-	prog indexProgress
+	maxBlockSize uint64
+	curIndexedBlockNum uint64
 }
 
 func newBlockchainIndexerSync() *blockchainIndexerSync {
 	return &blockchainIndexerSync{}
 }
 
-func (indexer *blockchainIndexerSync) start(blockchain *blockchain) error {
+func (indexer *blockchainIndexerSync) start(blockchain *blockchain) (err error) {
 	indexer.OpenchainDB = blockchain.OpenchainDB
-	return nil
+	indexer.maxBlockSize = blockchain.getSize()
+	err, indexer.curIndexedBlockNum = checkIndex(blockchain, indexer.maxBlockNum)
+	return 
 }
 
 func (indexer *blockchainIndexerSync) createIndexes(
 	block *protos.Block, blockNumber uint64, blockHash []byte) error {
+
+	if indexer.curIndexedBlockNum
 
 	writeBatch := indexer.NewWriteBatch()
 	defer writeBatch.Destroy()
@@ -67,14 +74,14 @@ func (indexer *blockchainIndexerSync) createIndexes(
 		return err
 	}
 
-	//block 0 will not be considered as a progress
-	if blockNumber != 0 {
-		indexer.prog.FinishBlock(blockNumber)
-		writeBatch.PutCF(cf, lastIndexedBlockKey, encodeBlockNumber(indexer.prog.GetProgress()))
-	}
+	if progressIndexs(indexer.OpenchainDB, indexer.maxBlockNum, indexer.curIndexedBlockNum, nil)
 
 	if err := writeBatch.BatchCommit(); err != nil {
 		return err
+	}
+
+	if indexer.maxBlockSize <= blockNumber{
+		indexer.maxBlockSize = blockNumber + 1
 	}
 
 	return nil
@@ -97,59 +104,113 @@ func (indexer *blockchainIndexerSync) stop() {
 	return
 }
 
-func rebuildIndexs(blockchain *blockchain) error {
-	totalSize := blockchain.getSize()
+func checkIndex(odb *db.OpenchainDB, totalSize uint64) (error, uint64) {
+
 	if totalSize == 0 {
 		// chain is empty as yet
-		return nil
+		return nil, 0
 	}
 
-	odb := blockchain.OpenchainDB
 	lastIndexedBlockNum := uint64(0)
 	lastCommittedBlockNum := totalSize - 1
 	if lastIndexedBlockNumberBytes, err := odb.GetValue(db.IndexesCF, lastIndexedBlockKey); err != nil {
-		return err
+		return err, 0
 	} else if lastIndexedBlockNumberBytes != nil {
 		//so if we have a "last indexed" record, we start from which plus one
 		lastIndexedBlockNum = decodeBlockNumber(lastIndexedBlockNumberBytes) + 1
 	}
 
-	//lastIndexedBlockNum := indexer.indexerState.getLastIndexedBlockNumber()
-	zerothBlockIndexed := indexer.indexerState.isZerothBlockIndexed()
-
-	indexLogger.Debugf("lastCommittedBlockNum=[%d], lastIndexedBlockNum=[%d], zerothBlockIndexed=[%t]",
-		totalSize-1, lastIndexedBlockNum, zerothBlockIndexed)
-
 	if totalSize == lastIndexedBlockNum {
 		// all committed blocks are indexed
-		return nil
+		return nil, 0
 	} else if totalSize < lastIndexedBlockNum {
 		//TODO: should be suppose error?
 		indexLogger.Warningf("Encounter a higher index [%d] record than current block size [%d]", lastIndexedBlockNum, totalSize)
-		return nil
+		//return nil, 0
 	}
 
 	indexLogger.Infof("indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum, lastCommittedBlockNum)
 
-	// block numbers use uint64 - so, 'lastIndexedBlockNum = 0' is ambiguous.
-	// So, explicitly checking whether zero-th block has been indexed
-
 	writeBatch := odb.NewWriteBatch()
 	defer writeBatch.Destroy()
 
-	for ; lastIndexedBlockNum < totalSize; lastIndexedBlockNum++ {
+	calledCounter := 0
+	writef := func(block *protos.Block, blocknum uint64, blockhash []byte) error{
+		addIndexDataForPersistence(writeBatch, block, blocknum, blockhash)
+		calledCounter++
+		justCommit = false
+		//so we commit each 8 blocks
+		if calledCounter > 8 {
+			calledCounter = 0
+			justCommit = true
+			if err := writeBatch.BatchCommit(); err != nil {
+				return fmt.Errorf("fail in commit batch: %s", err)
+			}	
+		}
+		return nil
+	}
 
-		blockToIndex, err := blockchain.getRawBlock(lastIndexedBlockNum)
+	finalBlockNum, err := progressIndexs(odb, totalSize, lastIndexedBlockNum, writef)
+	if err != nil{
+		return fmt.Errorf("progressIndexs fail: %s", err), 0
+	}
+
+	writeBatch.PutCF(writeBatch.GetDBHandle().IndexesCF, lastIndexedBlockKey, encodeBlockNumber(finalBlockNum))
+	if err := writeBatch.BatchCommit(); err != nil {
+		return fmt.Errorf("fail in last commit batch: %s", err), 0
+	}
+	indexLogger.Infof("indexer task [%d - %d] finished at %d", lastIndexedBlockNum, lastCommittedBlockNum, finalBlockNum)
+	
+	return nil, finalBlockNum
+}
+
+//check our progress, obtain the real "lastIndexed" number and return
+//the incoming "lastIndexed" number is the recorded number plus 1
+func progressIndexs(odb *db.OpenchainDB, lastCommitedBlockNum uint64, lastIndexedBlockNum uint64,
+	persistBlock func(*protos.Block, uint64, []byte)error) (error, uint64) {
+
+	indexLogger.Debugf("lastCommittedBlockNum=[%d], lastIndexedBlockNum=[%d]",
+	lastCommitedBlockNum, lastIndexedBlockNum)
+
+	//the cache iterator will greatly help the efficiency
+	indMarkItr := odb.GetIterator(db.IndexesCF)
+	defer indMarkItr.Close()
+	indMarkItr.Seek(encodeIndexMarkKey(lastIndexedBlockNum))
+
+	for ; lastIndexedBlockNum <= lastCommitedBlockNum; lastIndexedBlockNum++ {
+
+		if indMarkItr != nil{
+			if !indMarkItr.Valid() || indMarkItr.ValidForPrefix(prefixIndexMarking){
+				indexLogger.Infof("We have no cache from [%d], iterator closed", lastIndexedBlockNum)
+				indMarkItr = nil
+			}else if num, err := decodeAndVerifyIndexMarkKey(indMarkItr.Key().Data(), indMarkItr.Value().Data()); err != nil{
+				indexLogger.Error("Wrong cache mark data:", err)
+				indMarkItr.Next() //TODO: try next? or fail? that's a problem
+			}else if num < lastIndexedBlockNum{
+				indexLogger.Errorf("Encounter a less number in key than expected [%d vs %d], something wrong, iterator closed", num, lastIndexedBlockNum)
+				//this should not happen ...
+				indMarkItr = nil
+			}else if num == lastIndexedBlockNum{
+				//good, we can skip this number and go for next one
+				indMarkItr.Next()
+				indexLogger.Debugf("Match cached at %d, forward next one", num)
+				continue
+			}else{
+				indexLogger.Debugf("block %d is not marked yet, deep inspect this, next one is %d", lastIndexedBlockNum,num)
+			}
+		}
+
+		blockToIndex, err := fetchRawBlockFromDB(odb, lastIndexedBlockNum)
 		//interrupt for any db error
 		if err != nil {
-			return fmt.Errorf("db fail in getblock: %s", err)
+			return fmt.Errorf("db fail in getblock: %s", err), 0
 		}
 
 		//when get hash, we must prepare for a incoming "raw" block (the old version require txs to obtain blockhash)
 		blockToIndex = compatibleLegacyBlock(blockToIndex)
 		blockHash, err := blockToIndex.GetHash()
 		if err != nil {
-			return fmt.Errorf("fail in obtained block %d's hash: %s", lastIndexedBlockNum, err)
+			return fmt.Errorf("fail in obtained block %d's hash: %s", lastIndexedBlockNum, err), 0
 		}
 
 		//if we index genesis block, no check is needed
@@ -159,36 +220,38 @@ func rebuildIndexs(blockchain *blockchain) error {
 				return fmt.Errorf("db fail in get index: %s", err)
 			} else if index == lastIndexedBlockNum {
 				//has been indexed, we can skip
+				indexLogger.Infof("Match has been cached at %d, forward next one", lastIndexedBlockNum)
+				//but still add the cache mark so we can go faster even the index building
+				//ruined in progress
+				odb.PutValue(db.IndexesCF, encodeIndexMarkKey(index), indexMarkingMagicCode)
 				continue
 			} else if index != 0 {
 				indexLogger.Errorf("block %d is indexed at different position %d", lastIndexedBlockNum, index)
 			}
 		}
 
-		//a little wasting, but the code is cleaner :-)
-		writeBatch.PutCF(writeBatch.GetDBHandle().IndexesCF, lastIndexedBlockKey, encodeBlockNumber(lastIndexedBlockNum))
-		err = addIndexDataForPersistence(blockToIndex, lastIndexedBlockNum, blockHash, writeBatch)
+		err = persistBlock(blockToIndex, lastIndexedBlockNum, blockHash)
 		if err != nil {
-			return fmt.Errorf("fail in execute persistent index: %s", err)
-		} else if err = writeBatch.BatchCommit(); err != nil {
-			return fmt.Errorf("fail in commit batch: %s", err)
+			return fmt.Errorf("fail in execute persistent index: %s", err), 0
 		}
 	}
 
-	return nil
+	return nil, lastIndexedBlockNum
 }
 
 // Functions for persisting and retrieving index data
-func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHash []byte, writeBatch *db.DBWriteBatch) error {
-	// add blockhash -> blockNumber
+func addIndexDataForPersistence(writeBatch *db.DBWriteBatch, block *protos.Block, blockNumber uint64, blockHash []byte) {
+
 	cf := writeBatch.GetDBHandle().IndexesCF
 
 	indexLogger.Debugf("Indexing block number [%d] by hash = [%x]", blockNumber, blockHash)
+	//add the mark
+	writeBatch.PutCF(cf, encodeIndexMarkKey(blockNumber), indexMarkingMagicCode)
+
 	writeBatch.PutCF(cf, encodeBlockHashKey(blockHash), encodeBlockNumber(blockNumber))
 	if block.GetStateHash() != nil {
 		writeBatch.PutCF(cf, encodeStateHashKey(block.StateHash), encodeBlockNumber(blockNumber))
 	}
-
 	//	addressToTxIndexesMap := make(map[string][]uint64)
 	//	addressToChaincodeIDsMap := make(map[string][]*protos.ChaincodeID)
 
@@ -219,7 +282,6 @@ func addIndexDataForPersistence(block *protos.Block, blockNumber uint64, blockHa
 	// 	writeBatch.PutCF(cf, encodeAddressBlockNumCompositeKey(address, blockNumber),
 	// 		encodeListTxIndexes(txsIndexes))
 	// }
-	return nil
 }
 
 func fetchBlockNumberByBlockHashFromDB(odb *db.OpenchainDB, blockHash []byte) (uint64, error) {
@@ -322,6 +384,29 @@ func encodeStateHashKey(stateHash []byte) []byte {
 // encode TxIDKey
 func encodeTxIDKey(txID string) []byte {
 	return prependKeyPrefix(prefixTxIDKey, []byte(txID))
+}
+
+func decodeAndVerifyIndexMarkKey(key []byte, val []byte) (uint64, error) {
+
+	if len(key) < 9 {
+		return 0, fmt.Errorf("We obtain wrong key content: %x", key)
+	}
+
+	num := binary.BigEndian.Uint64(key[1:])
+
+	//check the magic code ([]byte{42,42,42})
+	if len(val) != 3 || val[0] != 42 || val[1] != 42 || val[2] = 42{
+		return num, fmt.Errorf("We obtain a cache mark which contain not the magic code: %x", val)
+	}
+
+	return num, nil
+}
+
+func encodeIndexMarkKey(num uint64) []byte {
+
+	buffer := [9]byte{prefixIndexMarking}
+	binary.BigEndian.PutUint64(buffer, num)
+	return buffer
 }
 
 func encodeAddressBlockNumCompositeKey(address string, blockNumber uint64) []byte {

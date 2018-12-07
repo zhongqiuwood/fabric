@@ -159,3 +159,31 @@ func testIndexesGetTransactionByID(t *testing.T) {
 	testutil.AssertEquals(t, testBlockchainWrapper.getTransactionByID(uuid3), tx3)
 	testutil.AssertEquals(t, testBlockchainWrapper.getTransactionByID(uuid4), tx4)
 }
+
+func TestIndexes_ProcessRecorder(t *testing.T) {
+
+	pd := &indexProgress{42, nil}
+	testutil.AssertEquals(t, pd.GetProgress(), uint64(42))
+
+	pd.FinishBlock(43)
+
+	testutil.AssertEquals(t, pd.GetProgress(), uint64(43))
+	testutil.AssertNil(t, pd.pendingBlocks)
+
+	pd.FinishBlock(47)
+	pd.FinishBlock(45)
+	testutil.AssertEquals(t, pd.GetProgress(), uint64(43))
+
+	pd.FinishBlock(44)
+	testutil.AssertEquals(t, pd.GetProgress(), uint64(45))
+	testutil.AssertEquals(t, len(pd.pendingBlocks), 2)
+
+	pd.FinishBlock(48)
+	testutil.AssertEquals(t, pd.GetProgress(), uint64(45))
+	testutil.AssertEquals(t, len(pd.pendingBlocks), 3)
+
+	pd.FinishBlock(46)
+	testutil.AssertEquals(t, pd.GetProgress(), uint64(48))
+	testutil.AssertNil(t, pd.pendingBlocks)
+
+}

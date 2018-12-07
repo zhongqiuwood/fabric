@@ -44,11 +44,49 @@ type blockchainIndexer interface {
 	stop()
 }
 
+type indexProgress struct {
+	beginBlockID  uint64
+	pendingBlocks []bool
+}
+
+func (i *indexProgress) GetProgress() uint64 { return i.beginBlockID }
+
+func (i *indexProgress) FinishBlock(id uint64) {
+	if id <= i.beginBlockID {
+		indexLogger.Errorf("Have rewinded id [%d] (current %d)", id, i.beginBlockID)
+		return
+	}
+
+	//laid a shortcut here
+	if id == i.beginBlockID+1 && i.pendingBlocks == nil {
+		i.beginBlockID = id
+		return
+	}
+
+	offset := int(id - i.beginBlockID)
+	for offset > len(i.pendingBlocks) {
+		i.pendingBlocks = append(i.pendingBlocks, false)
+	}
+	i.pendingBlocks[offset-1] = true
+
+	for ii, done := range i.pendingBlocks {
+		if !done {
+			i.pendingBlocks = i.pendingBlocks[ii:]
+			i.beginBlockID = i.beginBlockID + uint64(ii)
+			return
+		}
+	}
+
+	//if we come here, means all the pendingBlocks has been clean
+	i.beginBlockID = i.beginBlockID + uint64(len(i.pendingBlocks))
+	i.pendingBlocks = nil
+}
+
+
 // Implementation for sync indexer
 type blockchainIndexerSync struct {
 	*db.OpenchainDB
-	maxBlockSize uint64
-	curIndexedBlockNum uint64
+	prog indexProgress
 }
 
 func newBlockchainIndexerSync() *blockchainIndexerSync {
@@ -62,26 +100,22 @@ func (indexer *blockchainIndexerSync) start(blockchain *blockchain) (err error) 
 	return 
 }
 
-func (indexer *blockchainIndexerSync) createIndexes(
-	block *protos.Block, blockNumber uint64, blockHash []byte) error {
-
-	if indexer.curIndexedBlockNum
+func (indexer *blockchainIndexerSync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte) error {
 
 	writeBatch := indexer.NewWriteBatch()
 	defer writeBatch.Destroy()
 
-	if err := addIndexDataForPersistence(block, blockNumber, blockHash, writeBatch); err != nil {
-		return err
-	}
+	before := indexer.prog.GetProgress()
+	addIndexDataForPersistence(writeBatch, block, blockNumber, blockHash)
+	indexer.prog.FinishBlock(blockNumber)
 
-	if progressIndexs(indexer.OpenchainDB, indexer.maxBlockNum, indexer.curIndexedBlockNum, nil)
+	if after := indexer.prog.GetProgress(); after > before{
+		writeBatch.PutCF(writeBatch.GetDBHandle().IndexesCF, lastIndexedBlockKey, encodeBlockNumber(finalBlockNum))
+	}
 
 	if err := writeBatch.BatchCommit(); err != nil {
-		return err
-	}
-
-	if indexer.maxBlockSize <= blockNumber{
-		indexer.maxBlockSize = blockNumber + 1
+		//if failed, prog will become inconsisted with db, but the error of db is fatal enough ....
+		return fmt.Errorf("fail in last commit batch: %s", err)
 	}
 
 	return nil
@@ -107,12 +141,11 @@ func (indexer *blockchainIndexerSync) stop() {
 func checkIndex(odb *db.OpenchainDB, totalSize uint64) (error, uint64) {
 
 	if totalSize == 0 {
-		// chain is empty as yet
+		// chain is empty 
 		return nil, 0
 	}
 
 	lastIndexedBlockNum := uint64(0)
-	lastCommittedBlockNum := totalSize - 1
 	if lastIndexedBlockNumberBytes, err := odb.GetValue(db.IndexesCF, lastIndexedBlockKey); err != nil {
 		return err, 0
 	} else if lastIndexedBlockNumberBytes != nil {
@@ -120,29 +153,27 @@ func checkIndex(odb *db.OpenchainDB, totalSize uint64) (error, uint64) {
 		lastIndexedBlockNum = decodeBlockNumber(lastIndexedBlockNumberBytes) + 1
 	}
 
-	if totalSize == lastIndexedBlockNum {
+	if lastIndexedBlockNum == totalSize {
 		// all committed blocks are indexed
-		return nil, 0
+		return nil, lastIndexedBlockNum - 1 //caution: the returned number is "planned number" minus 1
 	} else if totalSize < lastIndexedBlockNum {
 		//TODO: should be suppose error?
 		indexLogger.Warningf("Encounter a higher index [%d] record than current block size [%d]", lastIndexedBlockNum, totalSize)
 		//return nil, 0
 	}
 
-	indexLogger.Infof("indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum, lastCommittedBlockNum)
+	indexLogger.Infof("indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum -1, totalSize - 1)
 
 	writeBatch := odb.NewWriteBatch()
 	defer writeBatch.Destroy()
 
 	calledCounter := 0
-	writef := func(block *protos.Block, blocknum uint64, blockhash []byte) error{
+	writef := func(block *protos.Block, blocknum uint64, blockhash []byte) error {
 		addIndexDataForPersistence(writeBatch, block, blocknum, blockhash)
 		calledCounter++
-		justCommit = false
 		//so we commit each 8 blocks
 		if calledCounter > 8 {
 			calledCounter = 0
-			justCommit = true
 			if err := writeBatch.BatchCommit(); err != nil {
 				return fmt.Errorf("fail in commit batch: %s", err)
 			}	
@@ -150,7 +181,7 @@ func checkIndex(odb *db.OpenchainDB, totalSize uint64) (error, uint64) {
 		return nil
 	}
 
-	finalBlockNum, err := progressIndexs(odb, totalSize, lastIndexedBlockNum, writef)
+	finalBlockNum, err := progressIndexs(odb, totalSize, lastIndexedBlockNum,writef)
 	if err != nil{
 		return fmt.Errorf("progressIndexs fail: %s", err), 0
 	}
@@ -159,7 +190,7 @@ func checkIndex(odb *db.OpenchainDB, totalSize uint64) (error, uint64) {
 	if err := writeBatch.BatchCommit(); err != nil {
 		return fmt.Errorf("fail in last commit batch: %s", err), 0
 	}
-	indexLogger.Infof("indexer task [%d - %d] finished at %d", lastIndexedBlockNum, lastCommittedBlockNum, finalBlockNum)
+	indexLogger.Infof("indexer task [%d - %d] finished at %d", lastIndexedBlockNum, totalSize - 1, finalBlockNum)
 	
 	return nil, finalBlockNum
 }

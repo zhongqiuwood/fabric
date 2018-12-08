@@ -26,17 +26,20 @@ import (
 	"golang.org/x/net/context"
 )
 
-const maxPendingBlocksForIndexed = 3
-
 type blockIndex struct {
-	blockHash   []byte
-	block       *protos.Block
-	txindex map[string]uint64
+	blockNum  uint64
+	blockHash []byte
+	block     *protos.Block
+	txindex   map[string]int
 }
 
+//we use a channel, instead of condition, to notify new block, so
+//the worker can wait for both incoming block and external context
 type indexerCache struct {
+	blockChan chan *blockIndex
 	sync.RWMutex
-	index map[uint64]*blockIndex
+	index    map[uint64]*blockIndex
+	indexErr error
 }
 
 func (c *indexerCache) fetchTransactionIndex(txID string) (uint64, uint64) {
@@ -59,7 +62,7 @@ func (c *indexerCache) fetchBlockNumberByBlockHash(hash []byte) uint64 {
 	defer c.RUnlock()
 
 	for blkI, idx := range c.index {
-		if bytes.Compare(hash, idx.bhash) == 0 {
+		if bytes.Compare(hash, idx.blockHash) == 0 {
 			return blkI
 		}
 	}
@@ -73,7 +76,7 @@ func (c *indexerCache) fetchBlockNumberByStateHash(hash []byte) uint64 {
 	defer c.RUnlock()
 
 	for blkI, idx := range c.index {
-		if bytes.Compare(hash, idx.shash) == 0 {
+		if bytes.Compare(hash, idx.block.GetStateHash()) == 0 {
 			return blkI
 		}
 	}
@@ -81,9 +84,9 @@ func (c *indexerCache) fetchBlockNumberByStateHash(hash []byte) uint64 {
 	return 0
 }
 
-func (c *indexerCache) cacheBlock(block *protos.Block, blockNumber uint64, blockHash []byte) error {
+func (c *indexerCache) cacheBlock(block *protos.Block, blockNumber uint64, blockHash []byte) (*blockIndex, error) {
 
-	idx := &blockIndex{block.GetStateHash(), blockHash, make(map[string]int)}
+	idx := &blockIndex{blockNumber, blockHash, block, make(map[string]int)}
 
 	if txids := block.GetTxids(); txids != nil {
 		for i, txid := range txids {
@@ -98,14 +101,26 @@ func (c *indexerCache) cacheBlock(block *protos.Block, blockNumber uint64, block
 	}
 
 	c.Lock()
-	//a sanity check
-	if len(c.index) > 2*maxPendingBlocksForIndexed {
-		panic("We have too many pending index, something wrong?")
+	defer c.Unlock()
+	//not allow cache more ...
+	if c.indexErr != nil {
+		return nil, c.indexErr
 	}
+
 	c.index[blockNumber] = idx
-	c.Unlock()
+
+	return idx, nil
+}
+
+func (c *indexerCache) fetchAnyBlock() *blockIndex {
+	c.Lock()
+	defer c.Unlock()
+	for _, block := range c.index {
+		return block
+	}
 
 	return nil
+
 }
 
 func (c *indexerCache) purneCachedBlock(blockNumber uint64) {
@@ -114,285 +129,116 @@ func (c *indexerCache) purneCachedBlock(blockNumber uint64) {
 	c.Unlock()
 }
 
+func (c *indexerCache) setError(err error) {
+	c.Lock()
+	defer c.Unlock()
+	if c.indexErr == nil {
+		c.indexErr = err
+		indexLogger.Debugf("setError() = %#v", c.indexErr)
+	}
+}
+
 type indexerState struct {
-	sync.RWMutex
-	prog                indexProgress
-	lastIndexedBlockNum uint64
+	sync.Mutex
+	indexProgress
+}
+
+type indexerWorkState struct {
+	exitNotify chan interface{}
+	exitError  error
+}
+
+func (w *indexerWorkState) setError(err error) {
+	w.exitError = err
+	close(w.exitNotify)
 }
 
 type blockchainIndexerAsync struct {
 	*db.OpenchainDB
 	// Channel for transferring block from block chain for indexing
-	blockChan      chan blockWrapper
-	indexerStates  []blockchainIndexerState
-	cache          indexerCache
-	state          indexerState
-	newBlockNotify *sync.Cond
-	stopf          context.CancelFunc
+	indexerStates []indexerWorkState
+	cache         indexerCache
+	prog          indexerState
+	stopf         context.CancelFunc
 }
 
-func newBlockchainIndexerAsync(threads int) *blockchainIndexerAsync {
+const (
+	defaultThreadCount    = 2
+	defaultCachePerThread = 3
+)
+
+//legacy method
+func newBlockchainIndexerAsync() *blockchainIndexerAsync {
+	return newBlockchainIndexerAsyncEx(0)
+}
+
+func newBlockchainIndexerAsyncEx(threads int) *blockchainIndexerAsync {
 	ret := new(blockchainIndexerAsync)
-	ret.state = &indexerState{index: make(map[uint64]*blockIndex)}
 	if threads == 0 {
-		indexLogger.Warningf("async indexer not specified, set to 1")
-		threads = 1
+		indexLogger.Infof("async indexer not specified, set to default (%d)", defaultThreadCount)
+		threads = defaultThreadCount
+	} else if threads < defaultThreadCount {
+		indexLogger.Warningf("user specified a thread count (%d) less than required (%d)", threads, defaultThreadCount)
 	}
-	ret.indexerStates = make([]blockchainIndexerState, threads)
+
+	ret.cache.index = make(map[uint64]*blockIndex)
+	ret.cache.blockChan = make(chan *blockIndex, defaultCachePerThread*threads)
+	ret.indexerStates = make([]indexerWorkState, threads)
+
 	return ret
 }
 
-func (indexer *blockchainIndexerAsync) start(blockchain *blockchain) error {
-	indexer.blockchain = blockchain
-	indexerState, err := newBlockchainIndexerState(indexer)
-	if err != nil {
-		return err
-	}
-	indexer.indexerState = indexerState
-	indexLogger.Debugf("staring indexer, lastIndexedBlockNum = [%d]",
-		indexer.indexerState.getLastIndexedBlockNumber())
+func (indexer *blockchainIndexerAsync) start(blockchain *blockchain) (err error) {
 
-	err = indexer.indexPendingBlocks()
-	if err != nil {
-		return err
-	}
-	indexLogger.Debugf("staring indexer, lastIndexedBlockNum = [%d] after processing pending blocks",
-		indexer.indexerState.getLastIndexedBlockNumber())
-	indexer.blockChan = make(chan blockWrapper, maxPendingBlocksForIndexed)
+	indexer.OpenchainDB = blockchain.OpenchainDB
+	err, indexer.prog.beginBlockID = checkIndex(blockchain)
+
 	var ctx context.Context
 	ctx, indexer.stopf = context.WithCancel(context.TODO())
 
-	go func() {
-		defer indexer.indexerState.setError(fmt.Errorf("User stop"))
-		var num uint64
+	workerfunc := func(ind int) {
+		defer indexer.indexerStates[ind].setError(fmt.Errorf("User stop"))
 		var block *blockIndex
 
 		for {
 			indexLogger.Debug("Going to wait on channel for next block to index")
 
-			//check global stop notify
+			//check available from channel first
 			select {
-			case <-ctx.Done():
-				indexLogger.Debug("channel is closed, stop")
-				return
+			case block = <-indexer.cache.blockChan:
 			default:
+				block = indexer.cache.fetchAnyBlock()
 			}
 
-			indexer.state.Lock()
-
-			//try to pick one item from cache
-			block = nil
-			for num, block = range indexer.cache.index{
-				break
-			}
-
-			if block == nil{
-				indexer.newBlockNotify.Wait()
-			}else{
-
-				err := indexer.createIndexesInternal(blockWrapper.block, blockWrapper.blockNumber, blockWrapper.blockHash)
-				if err != nil {
-					indexer.indexerState.setError(err)
-					indexLogger.Errorf(
-						"Error occured while indexing block number [%d]. Error: %s. Further blocks will not be indexed",
-						blockWrapper.blockNumber, err)
-				}	
-
-				delete(indexer.cache.index, num)
-			}
-
-			indexer.state.Unlock()
-
-			select {
-			case blockWrapper := <-indexer.blockChan:
-				indexLogger.Debugf("Blockwrapper received on channel: block number = [%d]", blockWrapper.blockNumber)
-
-				if indexer.indexerState.hasError() {
-					indexLogger.Debugf("Not indexing block number [%d]. Because of previous error: %s.",
-						blockWrapper.blockNumber, indexer.indexerState.getError())
-					continue
+			if block == nil {
+				//waiting-only phrase
+				select {
+				case <-ctx.Done():
+					indexLogger.Debug("channel is closed, stop")
+					return
+				case block = <-indexer.cache.blockChan:
 				}
-
-				err := indexer.createIndexesInternal(blockWrapper.block, blockWrapper.blockNumber, blockWrapper.blockHash)
-				if err != nil {
-					indexer.indexerState.setError(err)
-					indexLogger.Errorf(
-						"Error occured while indexing block number [%d]. Error: %s. Further blocks will not be indexed",
-						blockWrapper.blockNumber, err)
-
-				} else {
-					indexer.indexerState.blockIndexed(blockWrapper.blockNumber)
-					indexLogger.Debugf("Finished indexing block number [%d]", blockWrapper.blockNumber)
-				}
-			case <-ctx.Done():
-				indexLogger.Debug("channel is closed, stop")
-				return
-			default:
-				
-				indexer.newBlockNotify.Wait()
 			}
 
-		}
-	}()
-	return nil
-}
-
-func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte) error {
-
-	err := indexer.indexerState.checkError()
-	if err == nil {
-		//only cache when indexer is working well...
-		err = indexer.cache.cacheBlock(block, blockNumber, blockHash)
-	}
-
-	if err != nil {
-		indexLogger.Warning("Can't cache block, we still forward but query may ruin:", err)
-		//TODO: maybe we should return all of the error?
-		//return err
-	}
-
-	for {
-		select {
-		case indexer.blockChan <- blockWrapper{block, blockNumber, blockHash, false}:
-			return nil
-		default:
-			if err = indexer.indexerState.waitForLastCommittedBlock(); err != nil {
-				return err
+			err := indexer.createIndexesInternal(block)
+			if err != nil {
+				indexer.cache.setError(err)
+				indexLogger.Errorf(
+					"Error occured while indexing block number [%d]. Error: %s. Further blocks will not be indexed",
+					block.blockNum, err)
+			} else {
+				indexer.cache.purneCachedBlock(block.blockNum)
 			}
 		}
 	}
 
-}
+	indexLogger.Debugf("staring indexer (sync), lastIndexedBlockNum = [%d] after processing pending blocks",
+		indexer.prog.GetProgress())
 
-// createIndexes adds entries into db for creating indexes on various attributes
-func (indexer *blockchainIndexerAsync) createIndexesInternal(block *protos.Block, blockNumber uint64, blockHash []byte) error {
-
-	//this is NOT a typo: we mimic a "cond wait" like calling
-	indexer.state.Unlock()
-	defer indexer.state.Lock()
-
-	writeBatch := indexer.NewWriteBatch()
-	defer writeBatch.Destroy()
-
-	addIndexDataForPersistence(writeBatch, block, blockNumber, blockHash)
-	if err := writeBatch.BatchCommit(); err != nil {
-		return fmt.Errorf("fail in last commit batch: %s", err)
+	for i, _ := range indexer.indexerStates {
+		indexer.indexerStates[i].exitNotify = make(chan interface{})
+		go workerfunc(i)
 	}
-
-	indexer.state.Lock()
-	defer indexer.state.Unlock()
-
-	indexer.state.prog.FinishBlock(blockNumber)
-	if indexer.state.prog.GetProgress() > indexer.state.lastIndexedBlockNum {
-		//we need a exclusive write in db (or we need a merge operation ....)
-		indexer.state.lastIndexedBlockNum = indexer.state.prog.GetProgress()
-		if err := indexer.PutValue(db.IndexesCF, lastIndexedBlockKey, encodeBlockNumber(finalBlockNum))); err != nil{
-			return fmt.Errorf("fail in write progress: %s", err)
-		}
-	}
-
-	return nil
-}
-
-func (indexer *blockchainIndexerAsync) fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error) {
-	err := indexer.indexerState.checkError()
-	if err != nil {
-		indexLogger.Debug("Async indexer has a previous error. Returing the error")
-		return 0, err
-	}
-
-	if bi := indexer.cache.fetchBlockNumberByBlockHash(blockHash); bi != 0 {
-		return bi, nil
-	}
-
-	return fetchBlockNumberByBlockHashFromDB(indexer.blockchain.OpenchainDB, blockHash)
-}
-
-func (indexer *blockchainIndexerAsync) fetchBlockNumberByStateHash(stateHash []byte) (uint64, error) {
-	err := indexer.indexerState.checkError()
-	if err != nil {
-		indexLogger.Debug("Async indexer has a previous error. Returing the error")
-		return 0, err
-	}
-
-	if bi := indexer.cache.fetchBlockNumberByStateHash(stateHash); bi != 0 {
-		return bi, nil
-	}
-
-	return fetchBlockNumberByStateHashFromDB(indexer.blockchain.OpenchainDB, stateHash)
-}
-
-func (indexer *blockchainIndexerAsync) fetchTransactionIndexByID(txID string) (bi uint64, ti uint64, err error) {
-	err = indexer.indexerState.checkError()
-	if err != nil {
-		indexLogger.Debug("Async indexer has a previous error. Returing the error")
-		return
-	}
-
-	bi, ti = indexer.cache.fetchTransactionIndex(txID)
-	if bi != 0 {
-		return
-	}
-
-	bi, ti, err = fetchTransactionIndexByIDFromDB(indexer.blockchain.OpenchainDB, txID)
-	return
-}
-
-func (indexer *blockchainIndexerAsync) indexPendingBlocks() error {
-	blockchain := indexer.blockchain
-	if blockchain.getSize() == 0 {
-		// chain is empty as yet
-		return nil
-	}
-
-	lastCommittedBlockNum := blockchain.getSize() - 1
-	lastIndexedBlockNum := indexer.indexerState.getLastIndexedBlockNumber()
-	zerothBlockIndexed := indexer.indexerState.isZerothBlockIndexed()
-
-	indexLogger.Debugf("lastCommittedBlockNum=[%d], lastIndexedBlockNum=[%d], zerothBlockIndexed=[%t]",
-		lastCommittedBlockNum, lastIndexedBlockNum, zerothBlockIndexed)
-
-	if zerothBlockIndexed && lastCommittedBlockNum == lastIndexedBlockNum {
-		// all committed blocks are indexed
-		return nil
-	}
-
-	indexLogger.Infof("Async indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum, lastCommittedBlockNum)
-
-	// block numbers use uint64 - so, 'lastIndexedBlockNum = 0' is ambiguous.
-	// So, explicitly checking whether zero-th block has been indexed
-	if !zerothBlockIndexed {
-		err := indexer.fetchBlockFromDBAndCreateIndexes(0)
-		if err != nil {
-			return err
-		}
-	}
-
-	for ; lastIndexedBlockNum < lastCommittedBlockNum; lastIndexedBlockNum++ {
-		blockNumToIndex := lastIndexedBlockNum + 1
-		err := indexer.fetchBlockFromDBAndCreateIndexes(blockNumToIndex)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (indexer *blockchainIndexerAsync) fetchBlockFromDBAndCreateIndexes(blockNumber uint64) error {
-	blockchain := indexer.blockchain
-	blockToIndex, errBlockFetch := blockchain.getRawBlock(blockNumber)
-	if errBlockFetch != nil {
-		return errBlockFetch
-	}
-
-	//when get hash, we must prepare for a incoming "raw" block (hash is not )
-	blockToIndex = compatibleLegacyBlock(blockToIndex)
-
-	blockHash, errBlockHash := blockToIndex.GetHash()
-	if errBlockHash != nil {
-		return errBlockHash
-	}
-	indexer.createIndexesInternal(blockToIndex, blockNumber, blockHash)
 	return nil
 }
 
@@ -402,115 +248,85 @@ func (indexer *blockchainIndexerAsync) stop() {
 		return
 	}
 	indexer.stopf()
-	indexer.indexerState.waitForLastCommittedBlock()
-	indexLogger.Debugf("async indexer stopped: %s", indexer.indexerState.checkError())
+	for _, state := range indexer.indexerStates {
+		<-state.exitNotify
+	}
+	indexLogger.Debugf("async indexer stopped")
 }
 
-// Code related to tracking the block number that has been indexed
-// and if there has been an error in indexing a block
-// Since, we index blocks asynchronously, there may be a case when
-// a client query arrives before a block has been indexed.
-//
-// Do we really need strict semantics such that an index query results
-// should include up to block number (or higher) that may have been committed
-// when user query arrives?
-// If a delay of a couple of blocks are allowed, we can get rid of this synchronization stuff
-type blockchainIndexerState struct {
-	indexer *blockchainIndexerAsync
+func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte) error {
 
-	lastBlockIndexed uint64
-	err              error
-}
+	blockind, err := indexer.cache.cacheBlock(block, blockNumber, blockHash)
 
-func newBlockchainIndexerState(indexer *blockchainIndexerAsync) (*blockchainIndexerState, error) {
-	var lock sync.RWMutex
-	zerothBlockIndexed, lastIndexedBlockNum, err := fetchLastIndexedBlockNumFromDB(indexer.blockchain.OpenchainDB)
 	if err != nil {
-		return nil, err
-	}
-	return &blockchainIndexerState{indexer, zerothBlockIndexed, lastIndexedBlockNum, nil, &lock, sync.NewCond(&lock)}, nil
-}
-
-func (indexerState *blockchainIndexerState) blockIndexed(blockNumber uint64) {
-	indexerState.newBlockIndexed.L.Lock()
-	defer indexerState.newBlockIndexed.L.Unlock()
-	indexerState.lastBlockIndexed = blockNumber
-	indexerState.zerothBlockIndexed = true
-	indexerState.newBlockIndexed.Broadcast()
-}
-
-func (indexerState *blockchainIndexerState) getLastIndexedBlockNumber() uint64 {
-	indexerState.lock.RLock()
-	defer indexerState.lock.RUnlock()
-	return indexerState.lastBlockIndexed
-}
-
-func (indexerState *blockchainIndexerState) isZerothBlockIndexed() bool {
-	indexerState.lock.RLock()
-	defer indexerState.lock.RUnlock()
-	return indexerState.zerothBlockIndexed
-}
-
-func (indexerState *blockchainIndexerState) waitForLastCommittedBlock() error {
-	indexLogger.Debugf("waitForLastCommittedBlock() indexerState.err = %#v", indexerState.err)
-	chain := indexerState.indexer.blockchain
-	indexerState.lock.Lock()
-	defer indexerState.lock.Unlock()
-	if indexerState.err != nil {
-		return indexerState.err
+		return fmt.Errorf("Can't cache block: %s", err)
 	}
 
-	lastBlockCommitted := chain.getSize() - 1
-	indexLogger.Debugf(
-		"Waiting for index to catch up with block chain. lastBlockCommitted=[%d] and lastBlockIndexed=[%d]",
-		lastBlockCommitted, indexerState.lastBlockIndexed)
-	indexerState.newBlockIndexed.Wait()
-
-	return indexerState.err
-}
-
-func (indexerState *blockchainIndexerState) setError(err error) {
-	indexerState.lock.Lock()
-	defer indexerState.lock.Unlock()
-	if indexerState.err == nil {
-		indexerState.err = err
-		indexLogger.Debugf("setError() indexerState.err = %#v", indexerState.err)
+	for {
+		select {
+		case indexer.cache.blockChan <- blockind:
+			return nil
+		default:
+			indexLogger.Warning("notify channel full, we may encounter a slow indexer")
+		}
 	}
-	indexerState.newBlockIndexed.Broadcast()
+
 }
 
-func (indexerState *blockchainIndexerState) hasError() bool {
-	indexerState.lock.RLock()
-	defer indexerState.lock.RUnlock()
-	return indexerState.err != nil
-}
+// createIndexes adds entries into db for creating indexes on various attributes
+func (indexer *blockchainIndexerAsync) createIndexesInternal(block *blockIndex) error {
 
-func (indexerState *blockchainIndexerState) getError() error {
-	indexerState.lock.RLock()
-	defer indexerState.lock.RUnlock()
-	return indexerState.err
-}
+	writeBatch := indexer.NewWriteBatch()
+	defer writeBatch.Destroy()
 
-func (indexerState *blockchainIndexerState) checkError() error {
-	indexerState.lock.RLock()
-	defer indexerState.lock.RUnlock()
-	if indexerState.err != nil {
-		return fmt.Errorf(
-			"An error had occured during indexing block number [%d]. So, index is out of sync. Detail of the error = %s",
-			indexerState.getLastIndexedBlockNumber()+1, indexerState.err)
+	blockNumber := block.blockNum
+	addIndexDataForPersistence(writeBatch, block.block, blockNumber, block.blockHash)
+	if err := writeBatch.BatchCommit(); err != nil {
+		return fmt.Errorf("fail in last commit batch: %s", err)
 	}
-	return indexerState.err
+
+	indexer.cache.purneCachedBlock(blockNumber)
+
+	indexer.prog.Lock()
+	defer indexer.prog.Unlock()
+
+	before := indexer.prog.GetProgress()
+	indexer.prog.FinishBlock(blockNumber)
+	if after := indexer.prog.GetProgress(); after > before {
+
+		if err := indexer.PutValue(db.IndexesCF, lastIndexedBlockKey, encodeBlockNumber(after)); err != nil {
+			return fmt.Errorf("fail in write progress: %s", err)
+		}
+	}
+
+	return nil
 }
 
-func fetchLastIndexedBlockNumFromDB(odb *db.OpenchainDB) (zerothBlockIndexed bool, lastIndexedBlockNum uint64, err error) {
-	lastIndexedBlockNumberBytes, err := odb.GetValue(db.IndexesCF, lastIndexedBlockKey)
-	if err != nil {
+func (indexer *blockchainIndexerAsync) fetchBlockNumberByBlockHash(blockHash []byte) (uint64, error) {
+
+	if bi := indexer.cache.fetchBlockNumberByBlockHash(blockHash); bi != 0 {
+		return bi, nil
+	}
+
+	return fetchBlockNumberByBlockHashFromDB(indexer.OpenchainDB, blockHash)
+}
+
+func (indexer *blockchainIndexerAsync) fetchBlockNumberByStateHash(stateHash []byte) (uint64, error) {
+
+	if bi := indexer.cache.fetchBlockNumberByStateHash(stateHash); bi != 0 {
+		return bi, nil
+	}
+
+	return fetchBlockNumberByStateHashFromDB(indexer.OpenchainDB, stateHash)
+}
+
+func (indexer *blockchainIndexerAsync) fetchTransactionIndexByID(txID string) (bi uint64, ti uint64, err error) {
+
+	bi, ti = indexer.cache.fetchTransactionIndex(txID)
+	if bi != 0 {
 		return
 	}
-	if lastIndexedBlockNumberBytes == nil {
-		return
-	}
-	lastIndexedBlockNum = decodeBlockNumber(lastIndexedBlockNumberBytes)
-	zerothBlockIndexed = true
+
+	bi, ti, err = fetchTransactionIndexByIDFromDB(indexer.OpenchainDB, txID)
 	return
 }

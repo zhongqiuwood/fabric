@@ -81,16 +81,20 @@ func (ledger *LedgerGlobal) AddGlobalState(parent []byte, state []byte) error {
 
 /////////////////// transaction related methods /////////////////////////////////////
 
+func (ledger *LedgerGlobal) AddCommitHook(hf func([]string, uint64)) {
+	ledger.txpool.commitHooks = append(ledger.txpool.commitHooks, hf)
+}
+
+func (ledger *LedgerGlobal) PruneTransactions(txs []*protos.Transaction) {
+	ledger.txpool.cleanTransaction(txs)
+}
+
 func (ledger *LedgerGlobal) PoolTransactions(txs []*protos.Transaction) {
 	ledger.txpool.poolTransaction(txs)
 }
 
 func (ledger *LedgerGlobal) IteratePooledTransactions(ctx context.Context) (chan *protos.Transaction, error) {
 	return ledger.txpool.iteratePooledTx(ctx)
-}
-
-func (ledger *LedgerGlobal) PruneTransactions(txs []*protos.Transaction) {
-	ledger.txpool.clearPool(txs)
 }
 
 func (ledger *LedgerGlobal) PutTransactions(txs []*protos.Transaction) error {

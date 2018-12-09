@@ -44,5 +44,6 @@ func InitTestLedger(t *testing.T) *Ledger {
 	testutil.AssertNoError(t, err, "Error while add gensis state")
 	//replace ledger singleton
 	ledger = newLedger
+	poolTxBeforeCommit = true
 	return newLedger
 }

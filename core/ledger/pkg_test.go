@@ -31,6 +31,7 @@ var testParams []string
 func TestMain(m *testing.M) {
 	//temporary disable panic for old fashion block bytes
 	compatibleLegacy = true
+	poolTxBeforeCommit = true
 	testParams = testutil.ParseTestParams()
 	testutil.SetupTestConfig()
 	os.Exit(m.Run())

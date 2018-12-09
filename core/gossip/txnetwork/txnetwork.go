@@ -51,10 +51,7 @@ func createNetworkGlobal() *txNetworkGlobal {
 		logger.Warning("Could not get default ledger", err)
 	}
 
-	txPool := &transactionPool{
-		ledger:  l,
-		cCaches: make(map[string]*commitData),
-	}
+	txPool := newTransactionPool(l)
 
 	if DefaultInitPeer.Id != "" {
 		peers.selfId = DefaultInitPeer.Id
@@ -327,17 +324,44 @@ func (g *txNetworkPeers) TouchPeer(id string, status *pb.PeerTxState) {
 
 type transactionPool struct {
 	sync.RWMutex
-	ledger    *ledger.Ledger
-	txHandler cred.TxHandlerFactory
-	cCaches   map[string]*commitData
+	ledger      *ledger.Ledger
+	txHandler   cred.TxHandlerFactory
+	cCaches     map[string]*commitData
+	cPendingTxs map[string]bool
 }
 
 func newTransactionPool(ledger *ledger.Ledger) *transactionPool {
 	ret := new(transactionPool)
 	ret.cCaches = make(map[string]*commitData)
+	ret.cPendingTxs = make(map[string]bool)
+
+	ledger.AddCommitHook(ret.onCommit)
 	ret.ledger = ledger
 
 	return ret
+}
+
+func (tp *transactionPool) onCommit(txids []string, _ uint64) {
+	tp.Lock()
+	defer tp.Unlock()
+	for _, id := range txids {
+		delete(tp.cPendingTxs, id)
+	}
+}
+
+func (tp *transactionPool) addPendingTx(txids []string) {
+	tp.Lock()
+	defer tp.Unlock()
+	for _, id := range txids {
+		tp.cPendingTxs[id] = true
+	}
+}
+
+func (tp *transactionPool) txIsPending(txid string) (ok bool) {
+	tp.RLock()
+	defer tp.RUnlock()
+	_, ok = tp.cPendingTxs[txid]
+	return
 }
 
 func (tp *transactionPool) AcquireCaches(peer string) TxCache {

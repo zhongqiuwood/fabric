@@ -206,7 +206,7 @@ func TestTxGlobalTruncate(t *testing.T) {
 
 func TestAsAWhole(t *testing.T) {
 
-	l := initTestLedgerWrapper(t)
+	initTestLedgerWrapper(t)
 	defer func(bits uint) {
 		SetPeerTxQueueLen(bits)
 	}(peerTxQueueLenBit)
@@ -280,14 +280,6 @@ func TestAsAWhole(t *testing.T) {
 	//clock must equal
 	if prv.Less(udv) || udv.Less(prv) {
 		t.Fatal("unmatch clock", udv, prv)
-	}
-
-	if tx := l.GetPooledTransaction(tx1.GetTxid()); tx == nil {
-		t.Fatal("tx1 is not pooled")
-	}
-
-	if tx := l.GetPooledTransaction(tx2.GetTxid()); tx == nil {
-		t.Fatal("tx2 is not pooled")
 	}
 
 	ccache := txG.AcquireCaches(newpeer).(*txCache).commitData

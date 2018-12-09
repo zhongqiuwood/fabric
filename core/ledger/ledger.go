@@ -282,6 +282,10 @@ func (ledger *Ledger) GetTXBatchPreviewBlockInfo(id interface{},
 	return info, nil
 }
 
+// we suppose all tx should has been "pooled" before committxbatch is called, but we need this
+// flag to make legacy code works (i.e. tests)
+var poolTxBeforeCommit = false
+
 // CommitTxBatch - gets invoked when the current transaction-batch needs to be committed
 // This function returns successfully iff the transactions details and state changes (that
 // may have happened during execution of this transaction-batch) have been committed to permanent storage
@@ -292,27 +296,25 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 
 	stateHash, err := ledger.state.GetHash()
+	if err != nil {
+		return err
+	}
+
+	if poolTxBeforeCommit {
+		ledger.txpool.poolTransaction(transactions)
+	}
+
+	writeBatch := ledger.blockchain.NewWriteBatch()
+	block := protos.NewBlock(transactions, metadata)
+
 	commitDone := false
 	defer func() {
 		if !commitDone {
 			ledger.resetForNextTxGroup(false)
 			ledger.blockchain.blockPersistenceStatus(false)
 		}
+		writeBatch.Destroy()
 	}()
-
-	if err != nil {
-		return err
-	}
-
-	//commit transactions first
-	err = ledger.PutTransactions(transactions)
-	if err != nil {
-		return err
-	}
-
-	writeBatch := ledger.blockchain.NewWriteBatch()
-	defer writeBatch.Destroy()
-	block := protos.NewBlock(transactions, metadata)
 
 	ccEvents := []*protos.ChaincodeEvent{}
 
@@ -347,22 +349,30 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}
 	ledger.state.AddChangesForPersistence(newBlockNumber, writeBatch)
 
-	//all commit done, we can add global state
-	dbErr := ledger.AddGlobalState(ledger.currentStateHash, stateHash)
+	//all commit to db finish, before commit them, we write the global db first because they
+	//can be re-entry:
 
-	if dbErr != nil {
-		ledgerLogger.Error("CommitTx fail at add global state phase:", dbErr)
+	//commit tx, them add globalstate
+	//the built block contain all txids
+	if dbErr := ledger.txpool.commitTransaction(block.GetTxids(), newBlockNumber); dbErr != nil {
+		ledgerLogger.Error("CommitTx fail:", dbErr)
+		return err
+	}
+
+	if dbErr := ledger.AddGlobalState(ledger.currentStateHash, stateHash); dbErr != nil {
+		ledgerLogger.Error("at add global state phase fail:", dbErr)
 		return dbErr
 	}
 
-	dbErr = writeBatch.BatchCommit()
+	err = writeBatch.BatchCommit()
 
-	if dbErr != nil {
-		return dbErr
+	if err != nil {
+		return err
 	}
 
 	commitDone = true
 	ledger.resetForNextTxGroup(true)
+	//this step also index all txs
 	ledger.blockchain.blockPersistenceStatus(true)
 
 	sendProducerBlockEvent(block)
@@ -685,19 +695,24 @@ func (ledger *Ledger) GetBlockchainSize() uint64 {
 // PutBlock put a raw block on the chain and also commit the corresponding transactions
 func (ledger *Ledger) PutBlock(blockNumber uint64, block *protos.Block) error {
 
-	//handle different type of block (with or without transaction included)
-	var err error
-	if block.GetTransactions() != nil {
-		err = ledger.txpool.putTransaction(block.Transactions)
-	} else {
-		err = ledger.txpool.commitTransaction(block.GetTxids())
+	commitids := block.GetTxids()
+	if len(commitids) == 0 {
+		for _, tx := range block.GetTransactions() {
+			commitids = append(commitids, tx.GetTxid())
+		}
 	}
 
-	if err != nil {
+	//for old styple block, we prepare for that the tx may not be pooled yet
+	if len(block.GetTransactions()) > 0 {
+		ledger.txpool.poolTransaction(block.Transactions)
+	}
+
+	if err := ledger.PutRawBlock(block, blockNumber); err != nil {
 		return err
 	}
 
-	return ledger.PutRawBlock(block, blockNumber)
+	//commiting txs MUST run AFTER the corresponding block is persisted
+	return ledger.txpool.commitTransaction(commitids, blockNumber)
 }
 
 // PutRawBlock just puts a raw block on the chain without handling the tx

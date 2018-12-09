@@ -282,10 +282,8 @@ func (blockchain *blockchain) blockPersistenceStatus(success bool) error {
 		}
 
 		blockchain.previousBlockHash = blockchain.lastProcessedBlock.blockHash
-		// see Notice in addPersistenceChangesForNewBlock
-		// if !blockchain.indexer.isSynchronous() {
-		// 	writeBatch := db.GetDBHandle().NewWriteBatch()
-		// 	defer writeBatch.Destroy()
+
+		//createIndexs ensure a block become indexed (can be query by index API) after function is called
 		err := blockchain.indexer.createIndexes(blockchain.lastProcessedBlock.block,
 			blockchain.lastProcessedBlock.blockNumber, blockchain.lastProcessedBlock.blockHash)
 		if err != nil {

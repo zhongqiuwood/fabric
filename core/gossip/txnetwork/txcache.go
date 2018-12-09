@@ -94,7 +94,7 @@ func (c *commitData) pruning(from uint64, to uint64) {
 
 type TxCache interface {
 	GetCommit(series uint64, tx *pb.Transaction) uint64
-	AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error
+	AddTxs(from uint64, txs []*pb.Transaction) error
 	Pruning(from uint64, to uint64)
 }
 
@@ -126,7 +126,8 @@ func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 
 	pos := c.commitData.pick(series)
 	if *pos == 0 {
-		if tx := c.parent.ledger.GetPooledTransaction(tx.GetTxid()); tx != nil {
+
+		if existed := c.parent.txIsPending(tx.GetTxid()); existed {
 			//tx is still being pooled
 			return 0
 		}
@@ -136,7 +137,7 @@ func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 			//tx can be re pooling here if it was lost before, but we should not encourage
 			//this behavoir
 			logger.Infof("Repool Tx {%s} [series %d] to ledger again", tx.GetTxid(), series)
-			c.parent.ledger.PoolTransactions([]*pb.Transaction{tx})
+			c.parent.addPendingTx([]string{tx.GetTxid()})
 		} else {
 			*pos = h
 		}
@@ -171,20 +172,17 @@ func completeTxs(txsin []*pb.Transaction, l *ledger.Ledger, h cred.TxPreHandler)
 	return
 }
 
-func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error {
+func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction) error {
 
 	var err error
-	if !nocheck {
-		if c.parent.txHandler != nil {
-			preHandler, err := c.parent.txHandler.GetPreHandler(c.id)
-			if err != nil {
-				return err
-			}
-			txs, err = completeTxs(txs, c.parent.ledger, preHandler)
-		} else {
-			txs, err = completeTxs(txs, c.parent.ledger, nil)
+	if c.parent.txHandler != nil {
+		preHandler, err := c.parent.txHandler.GetPreHandler(c.id)
+		if err != nil {
+			return err
 		}
-
+		txs, err = completeTxs(txs, c.parent.ledger, preHandler)
+	} else {
+		txs, err = completeTxs(txs, c.parent.ledger, nil)
 	}
 
 	if err != nil {
@@ -193,18 +191,15 @@ func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error
 
 	var txspos int
 	added := c.commitData.append(from, len(txs))
-	pooltxs := make([]*pb.Transaction, 0, len(txs))
+	pooltxs := make([]string, 0, len(txs))
 
 	for _, q := range added {
 		for i := 0; i < len(q); i++ {
 			tx := txs[txspos]
-			var commitedH uint64
-			if !nocheck {
-				commitedH, _, _ = c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
-			}
+			commitedH, _, _ := c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
 
 			if commitedH == 0 {
-				pooltxs = append(pooltxs, tx)
+				pooltxs = append(pooltxs, tx.GetTxid())
 			}
 
 			q[i] = commitedH
@@ -217,7 +212,7 @@ func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction, nocheck bool) error
 		panic("wrong code")
 	}
 
-	c.parent.ledger.PoolTransactions(pooltxs)
+	c.parent.addPendingTx(pooltxs)
 	return nil
 }
 

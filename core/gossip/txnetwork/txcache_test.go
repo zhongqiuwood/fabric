@@ -192,7 +192,7 @@ func TestCommitting(t *testing.T) {
 	}
 
 	last := uint64(1)
-	txpool.AcquireCaches("any").AddTxs(last, txcollection[1:queueLenPart], true)
+	txpool.AcquireCaches("any").AddTxs(last, txcollection[1:queueLenPart])
 	last = last + uint64(queueLenPart-1)
 
 	//commit part of it
@@ -230,7 +230,7 @@ func TestCommitting(t *testing.T) {
 		t.Fatal("commit fail", err)
 	}
 
-	err = txpool.AcquireCaches("any").AddTxs(last, txcollection[queueLenPart:queueLen+2*queueLenPart], false)
+	err = txpool.AcquireCaches("any").AddTxs(last, txcollection[queueLenPart:queueLen+2*queueLenPart])
 	if err != nil {
 		t.Fatal("add txs fail", err)
 	}
@@ -250,14 +250,4 @@ func TestCommitting(t *testing.T) {
 		t.Fatal("get uncommit tx fail", ch)
 	}
 
-	//repooling
-	ledger.PruneTransactions([]*pb.Transaction{txcollection[3]})
-	if ledger.GetPooledTransaction(txcollection[3].GetTxid()) != nil {
-		t.Fatal("tx is not pruned")
-	}
-
-	rcache.GetCommit(3, txcollection[3])
-	if ledger.GetPooledTransaction(txcollection[3].GetTxid()) == nil {
-		t.Fatal("tx is not repooled", ch)
-	}
 }

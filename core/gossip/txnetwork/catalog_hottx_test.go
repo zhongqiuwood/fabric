@@ -227,7 +227,7 @@ func TestPeerUpdate(t *testing.T) {
 
 	txPool := newTransactionPool(ledger)
 	commitCache := txPool.AcquireCaches("helperCache")
-	commitCache.AddTxs(udt.BeginSeries, udt.GetTransactions(), false)
+	commitCache.AddTxs(udt.BeginSeries, udt.GetTransactions())
 
 	udt.pruneTxs(2, commitCache)
 
@@ -396,12 +396,11 @@ func TestPeerTxPool(t *testing.T) {
 	//now you can get tx from ledger
 	checkTx := func(pos int) {
 
-		tx := ledger.GetPooledTransaction(indexs[pos].tx.GetTxid())
-		if tx == nil {
-			t.Fatalf("get pool tx %d in ledger fail", pos)
+		if ok := global.txPool.cPendingTxs[indexs[pos].tx.GetTxid()]; !ok {
+			t.Fatalf("get pool tx %d in pending pool fail", pos)
 		}
 
-		assertTxIsIdentify(t, indexs[pos].tx, tx)
+		//assertTxIsIdentify(t, indexs[pos].tx, tx)
 	}
 
 	checkTx(40)

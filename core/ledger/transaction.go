@@ -15,7 +15,7 @@ type transactionPool struct {
 	//use for temporary reading in a long-journey
 	txPoolSnapshot map[string]*pb.Transaction
 
-	commitHooks []func([]string)
+	commitHooks []func([]string, uint64)
 }
 
 func newTxPool() (*transactionPool, error) {
@@ -25,25 +25,6 @@ func newTxPool() (*transactionPool, error) {
 	txpool.txPool = make(map[string]*pb.Transaction)
 
 	return txpool, nil
-}
-
-func (tp *transactionPool) clearPool(txs []*pb.Transaction) {
-
-	tp.Lock()
-	defer tp.Unlock()
-	if tp.txPoolSnapshot != nil {
-		for _, tx := range txs {
-			if _, ok := tp.txPoolSnapshot[tx.GetTxid()]; ok {
-				tp.txPool[tx.GetTxid()] = nil
-			} else {
-				delete(tp.txPool, tx.GetTxid())
-			}
-		}
-	} else {
-		for _, tx := range txs {
-			delete(tp.txPool, tx.GetTxid())
-		}
-	}
 }
 
 func (tp *transactionPool) poolTransaction(txs []*pb.Transaction) {
@@ -66,15 +47,33 @@ func (tp *transactionPool) putTransaction(txs []*pb.Transaction) error {
 	return nil
 }
 
-func (tp *transactionPool) commitTransaction(txids []string) error {
+func (tp *transactionPool) cleanTransaction(txs []*pb.Transaction) {
+	tp.Lock()
+	defer tp.Unlock()
+	for _, tx := range txs {
+		if tp.txPoolSnapshot == nil {
+			delete(tp.txPool, tx.GetTxid())
+		} else {
+			tp.txPool[tx.GetTxid()] = nil
+		}
+	}
+}
+
+func (tp *transactionPool) commitTransaction(txids []string, blockNum uint64) error {
+
+	//notice: all the txids, not filter after txpool, is passed to commitHook
+	for _, hf := range tp.commitHooks {
+		hf(txids, blockNum)
+	}
 
 	pendingTxs := make([]*pb.Transaction, 0, len(txids))
 
-	tp.RLock()
+	tp.Lock()
 	if tp.txPoolSnapshot == nil {
 		for _, id := range txids {
 			if tx, ok := tp.txPool[id]; ok {
 				pendingTxs = append(pendingTxs, tx)
+				delete(tp.txPool, id)
 			}
 		}
 	} else {
@@ -82,16 +81,21 @@ func (tp *transactionPool) commitTransaction(txids []string) error {
 			tx, ok := tp.txPool[id]
 			if !ok {
 				tx, ok = tp.txPoolSnapshot[id]
+				if ok {
+					tp.txPool[id] = nil
+				} else {
+					continue
+				}
+			} else {
+				delete(tp.txPool, id)
 			}
-			if ok {
-				pendingTxs = append(pendingTxs, tx)
-			}
+
+			pendingTxs = append(pendingTxs, tx)
+
 		}
 	}
 
-	tp.RUnlock()
-
-	defer tp.clearPool(pendingTxs)
+	tp.Unlock()
 	return tp.putTransaction(pendingTxs)
 }
 
@@ -139,6 +143,7 @@ func (tp *transactionPool) finishIteration(out chan *pb.Transaction) {
 		}
 	}
 
+	//switch
 	tp.txPool = tp.txPoolSnapshot
 	tp.txPoolSnapshot = nil
 }

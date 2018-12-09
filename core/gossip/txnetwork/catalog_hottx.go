@@ -459,7 +459,7 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, g *txPoolGlo
 	}
 
 	u = u.getRef(p.lastSeries() + 1)
-	err := g.AcquireCaches(id).AddTxs(u.BeginSeries, u.Transactions, id == "")
+	err := g.AcquireCaches(id).AddTxs(u.BeginSeries, u.Transactions)
 	if err != nil {
 		return err
 	}
@@ -678,7 +678,7 @@ func (c *hotTxCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Updat
 	//TODO: if cpo is availiable and quota is limited, cut some data
 	for _, pu_in := range u.PeerUpdate() {
 		//Update can be nil, and we just omit it
-		if iu_in.U == nil {
+		if pu_in.U == nil {
 			continue
 		}
 		pu, ok := pu_in.U.(txPeerUpdate)

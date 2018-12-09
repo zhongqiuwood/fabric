@@ -71,7 +71,11 @@ func TestIndexesAsync_GetTransactionByID(t *testing.T) {
 func TestIndexesAsync_IndexingErrorScenario(t *testing.T) {
 	defaultSetting := indexBlockDataSynchronously
 	indexBlockDataSynchronously = false
-	defer func() { indexBlockDataSynchronously = defaultSetting }()
+	omitCreateIndexFailure = true
+	defer func() {
+		indexBlockDataSynchronously = defaultSetting
+		omitCreateIndexFailure = false
+	}()
 
 	testDBWrapper.CleanDB(t)
 	testBlockchainWrapper := newTestBlockchainWrapper(t)
@@ -79,10 +83,7 @@ func TestIndexesAsync_IndexingErrorScenario(t *testing.T) {
 	asyncIndexer, _ := chain.indexer.(*blockchainIndexerAsync)
 
 	defer func() {
-		// first stop and then set the error to nil.
-		// Otherwise stop may hang (waiting for catching up the index with the committing block)
 		testBlockchainWrapper.blockchain.indexer.stop()
-		asyncIndexer.indexerState.setError(nil)
 	}()
 
 	blocks, _, err := testBlockchainWrapper.populateBlockChainWithSampleData()
@@ -92,24 +93,33 @@ func TestIndexesAsync_IndexingErrorScenario(t *testing.T) {
 	}
 
 	t.Log("Setting an error artificially so as to client query gets an error")
-	asyncIndexer.indexerState.setError(errors.New("Error created for testing"))
+	asyncIndexer.cache.setError(errors.New("Error created for testing"))
 
-	err = asyncIndexer.indexerState.checkError()
+	//err = asyncIndexer.indexerState.checkError()
 
 	// populate more data after error
-	_, _, err = testBlockchainWrapper.populateBlockChainWithSampleData()
+	blocksMore, _, err := testBlockchainWrapper.populateMoreBlockChainWithSampleData()
 	if err != nil {
 		t.Logf("Error populating block chain with sample data: %s", err)
 		t.Fail()
 	}
 	fmt.Println("Going to execute QUERY")
-	blockHash, _ := blocks[0].GetHash()
+	blockHash, _ := blocksMore[0].GetHash()
 	// index query should throw error
 
 	_, err = chain.getBlockByHash(blockHash)
 	fmt.Println("executed QUERY")
 	if err == nil {
 		t.Fatal("Error expected during execution of client query")
+	}
+
+	blockHash, _ = blocks[0].GetHash()
+	// index query should be ok
+
+	_, err = chain.getBlockByHash(blockHash)
+	fmt.Println("executed QUERY")
+	if err != nil {
+		t.Fatal("Error during execution of client query for old data", err)
 	}
 }
 

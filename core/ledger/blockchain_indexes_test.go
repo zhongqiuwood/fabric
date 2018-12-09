@@ -17,10 +17,12 @@ limitations under the License.
 package ledger
 
 import (
+	"github.com/abchain/fabric/core/db"
 	"testing"
 
 	"github.com/abchain/fabric/core/ledger/testutil"
 	"github.com/abchain/fabric/protos"
+	"github.com/op/go-logging"
 )
 
 func TestIndexes_GetBlockByBlockNumber(t *testing.T) {
@@ -63,6 +65,63 @@ func TestIndexes_GetTransactionByID(t *testing.T) {
 	indexBlockDataSynchronously = true
 	defer func() { indexBlockDataSynchronously = defaultSetting }()
 	testIndexesGetTransactionByID(t)
+}
+
+func TestIndexes_Rebuild(t *testing.T) {
+
+	testutil.SetLogLevel(logging.DEBUG, "indexes")
+	defer testutil.SetLogLevel(logging.GetLevel(""), "indexes")
+
+	defaultSetting := indexBlockDataSynchronously
+	indexBlockDataSynchronously = true
+	defer func() { indexBlockDataSynchronously = defaultSetting }()
+	testDBWrapper.CleanDB(t)
+	testBlockchainWrapper := newTestBlockchainWrapper(t)
+	defer func() { testBlockchainWrapper.blockchain.indexer.stop() }()
+	blocks, _, err := testBlockchainWrapper.populateBlockChainWithSampleData()
+	if err != nil {
+		t.Logf("Error populating block chain with sample data: %s", err)
+		t.Fail()
+	}
+	for i := range blocks {
+		blockHash, _ := blocks[i].GetHash()
+		testutil.AssertEquals(t, testBlockchainWrapper.getBlockByHash(blockHash), blocks[i])
+	}
+
+	testDBWrapper.CleanCF(t, db.IndexesCF)
+
+	err, toNum := checkIndex(testBlockchainWrapper.blockchain)
+	if err != nil {
+		t.Logf("Error rebuild index fail: %s", err)
+		t.Fail()
+	} else if int(toNum)+1 != len(blocks) {
+		t.Logf("rebuild index not resume to block count: %d (expect %d) ", toNum, len(blocks)-1)
+		t.Fail()
+	}
+
+	//we need to inspect the logging info (debug level) to decide iterator-base caching is
+	//work as expected
+	testutil.AssertNil(t, testDBWrapper.GetDB().DeleteKey(db.IndexesCF, encodeIndexMarkKey(1)))
+
+	err, toNum = checkIndex(testBlockchainWrapper.blockchain)
+	if err != nil {
+		t.Logf("Error rebuild index (re-entry phase) fail: %s", err)
+		t.Fail()
+	} else if int(toNum)+1 != len(blocks) {
+		t.Logf("rebuild index  (re-entry phase) not resume to block count: %d (expect %d) ", toNum, len(blocks)-1)
+		t.Fail()
+	}
+
+	testutil.AssertNil(t, testDBWrapper.GetDB().DeleteKey(db.IndexesCF, lastIndexedBlockKey))
+
+	err, toNum = checkIndex(testBlockchainWrapper.blockchain)
+	if err != nil {
+		t.Logf("Error rebuild index from removed mark fail: %s", err)
+		t.Fail()
+	} else if int(toNum)+1 != len(blocks) {
+		t.Logf("rebuild index from removed mark not resume to block count: %d (expect %d) ", toNum, len(blocks)-1)
+		t.Fail()
+	}
 }
 
 func testIndexesGetBlockByBlockNumber(t *testing.T) {

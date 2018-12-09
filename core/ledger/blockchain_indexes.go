@@ -52,6 +52,12 @@ type indexProgress struct {
 func (i *indexProgress) GetProgress() uint64 { return i.beginBlockID }
 
 func (i *indexProgress) FinishBlock(id uint64) {
+
+	//0 is not a progress
+	if id == 0 {
+		return
+	}
+
 	if id <= i.beginBlockID {
 		indexLogger.Errorf("Have rewinded id [%d] (current %d)", id, i.beginBlockID)
 		return
@@ -149,23 +155,27 @@ func checkIndex(blockchain *blockchain) (error, uint64) {
 	odb := blockchain.OpenchainDB
 
 	lastIndexedBlockNum := uint64(0)
+	zerothRecord := false
 	if lastIndexedBlockNumberBytes, err := odb.GetValue(db.IndexesCF, lastIndexedBlockKey); err != nil {
 		return err, 0
 	} else if lastIndexedBlockNumberBytes != nil {
 		//so if we have a "last indexed" record, we start from which plus one
-		lastIndexedBlockNum = decodeBlockNumber(lastIndexedBlockNumberBytes) + 1
+		lastIndexedBlockNum = decodeBlockNumber(lastIndexedBlockNumberBytes)
+	} else {
+		zerothRecord = true
 	}
 
-	if lastIndexedBlockNum == totalSize {
+	if lastIndexedBlockNum+1 == totalSize {
 		// all committed blocks are indexed
-		return nil, lastIndexedBlockNum - 1 //caution: the returned number is "planned number" minus 1
-	} else if totalSize < lastIndexedBlockNum {
+		indexLogger.Debugf("Recorded last indexed num has catched up with block size (%d)", totalSize)
+		return nil, lastIndexedBlockNum
+	} else if totalSize <= lastIndexedBlockNum {
 		//TODO: should be suppose error?
-		indexLogger.Warningf("Encounter a higher index [%d] record than current block size [%d]", lastIndexedBlockNum, totalSize)
+		indexLogger.Warningf("Encounter a higher index [%d] record than current block size can have (%d)", lastIndexedBlockNum, totalSize-1)
 		//return nil, 0
 	}
 
-	indexLogger.Infof("indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum-1, totalSize-1)
+	indexLogger.Infof("indexer need to finshish pending block from %d to %d first, please wait ...", lastIndexedBlockNum, totalSize-1)
 
 	writeBatch := odb.NewWriteBatch()
 	defer writeBatch.Destroy()
@@ -184,8 +194,16 @@ func checkIndex(blockchain *blockchain) (error, uint64) {
 		return nil
 	}
 
-	err, finalBlockNum := progressIndexs(odb, totalSize, lastIndexedBlockNum, writef)
-	if err != nil {
+	startNum := lastIndexedBlockNum + 1
+	if zerothRecord {
+		startNum = 0
+	}
+
+	err, finalBlockNum := progressIndexs(odb, totalSize-1, startNum, writef)
+	if err == progressNoChange && !zerothRecord {
+		indexLogger.Infof("indexer task [%d - %d] finished, no change", lastIndexedBlockNum, totalSize-1)
+		return nil, lastIndexedBlockNum
+	} else if err != nil {
 		return fmt.Errorf("progressIndexs fail: %s", err), 0
 	}
 
@@ -198,43 +216,46 @@ func checkIndex(blockchain *blockchain) (error, uint64) {
 	return nil, finalBlockNum
 }
 
-//check our progress, obtain the real "lastIndexed" number and return
-//the incoming "lastIndexed" number is the recorded number plus 1
-func progressIndexs(odb *db.OpenchainDB, lastCommitedBlockNum uint64, lastIndexedBlockNum uint64,
-	persistBlock func(*protos.Block, uint64, []byte) error) (error, uint64) {
+var progressNoChange = fmt.Errorf("No change")
 
-	indexLogger.Debugf("lastCommittedBlockNum=[%d], lastIndexedBlockNum=[%d]",
-		lastCommitedBlockNum, lastIndexedBlockNum)
+//check our progress, obtain the real "lastIndexed" number and return
+//startBlockNum is the number checked begins and if this block can not
+//be indexed we return "progressNoChange" error
+func progressIndexs(odb *db.OpenchainDB, lastCommitedBlockNum uint64, startBlockNum uint64,
+	persistIndex func(*protos.Block, uint64, []byte) error) (error, uint64) {
+
+	indexLogger.Debugf("lastCommittedBlockNum=[%d], startBlockNum=[%d]",
+		lastCommitedBlockNum, startBlockNum)
 
 	//the cache iterator will greatly help the efficiency
 	indMarkItr := odb.GetIterator(db.IndexesCF)
 	defer indMarkItr.Close()
-	indMarkItr.Seek(encodeIndexMarkKey(lastIndexedBlockNum))
+	indMarkItr.Seek(encodeIndexMarkKey(startBlockNum))
 
-	for ; lastIndexedBlockNum <= lastCommitedBlockNum; lastIndexedBlockNum++ {
+	for ; startBlockNum <= lastCommitedBlockNum; startBlockNum++ {
 
 		if indMarkItr != nil {
-			if !indMarkItr.Valid() || indMarkItr.ValidForPrefix([]byte{prefixIndexMarking}) {
-				indexLogger.Infof("We have no cache from [%d], iterator closed", lastIndexedBlockNum)
+			if !indMarkItr.Valid() || !indMarkItr.ValidForPrefix([]byte{prefixIndexMarking}) {
+				indexLogger.Infof("We have no cache from [%d], iterator closed", startBlockNum)
 				indMarkItr = nil
 			} else if num, err := decodeAndVerifyIndexMarkKey(indMarkItr.Key().Data(), indMarkItr.Value().Data()); err != nil {
 				indexLogger.Error("Wrong cache mark data:", err)
 				indMarkItr.Next() //TODO: try next? or fail? that's a problem
-			} else if num < lastIndexedBlockNum {
-				indexLogger.Errorf("Encounter a less number in key than expected [%d vs %d], something wrong, iterator closed", num, lastIndexedBlockNum)
+			} else if num < startBlockNum {
+				indexLogger.Errorf("Encounter a less number in key than expected [%d vs %d], something wrong, iterator closed", num, startBlockNum)
 				//this should not happen ...
 				indMarkItr = nil
-			} else if num == lastIndexedBlockNum {
+			} else if num == startBlockNum {
 				//good, we can skip this number and go for next one
 				indMarkItr.Next()
 				indexLogger.Debugf("Match cached at %d, forward next one", num)
 				continue
 			} else {
-				indexLogger.Debugf("block %d is not marked yet, deep inspect this, next one is %d", lastIndexedBlockNum, num)
+				indexLogger.Debugf("block %d is not marked yet, deep inspect this, next one is %d", startBlockNum, num)
 			}
 		}
 
-		blockToIndex, err := fetchRawBlockFromDB(odb, lastIndexedBlockNum)
+		blockToIndex, err := fetchRawBlockFromDB(odb, startBlockNum)
 		//interrupt for any db error
 		if err != nil {
 			return fmt.Errorf("db fail in getblock: %s", err), 0
@@ -244,33 +265,34 @@ func progressIndexs(odb *db.OpenchainDB, lastCommitedBlockNum uint64, lastIndexe
 		blockToIndex = compatibleLegacyBlock(blockToIndex)
 		blockHash, err := blockToIndex.GetHash()
 		if err != nil {
-			return fmt.Errorf("fail in obtained block %d's hash: %s", lastIndexedBlockNum, err), 0
+			return fmt.Errorf("fail in obtained block %d's hash: %s", startBlockNum, err), 0
 		}
 
 		//if we index genesis block, no check is needed
-		if lastIndexedBlockNum != 0 {
+		if startBlockNum != 0 {
 			//add checking ...
-			if index, err := fetchBlockNumberByBlockHashFromDB(odb, blockHash); err != nil {
-				return fmt.Errorf("db fail in get index: %s", err), 0
-			} else if index == lastIndexedBlockNum {
-				//has been indexed, we can skip
-				indexLogger.Infof("Match has been cached at %d, forward next one", lastIndexedBlockNum)
-				//but still add the cache mark so we can go faster even the index building
-				//ruined in progress
-				odb.PutValue(db.IndexesCF, encodeIndexMarkKey(index), indexMarkingMagicCode)
-				continue
-			} else if index != 0 {
-				indexLogger.Errorf("block %d is indexed at different position %d", lastIndexedBlockNum, index)
+			if index, err := fetchBlockNumberByBlockHashFromDB(odb, blockHash); err == nil {
+				if index == startBlockNum {
+					//has been indexed, we can skip
+					indexLogger.Infof("Match has been cached at %d, forward next one", startBlockNum)
+					//but still add the cache mark so we can go faster even the index building
+					//ruined in progress
+					odb.PutValue(db.IndexesCF, encodeIndexMarkKey(index), indexMarkingMagicCode)
+					continue
+				} else if index != 0 {
+					indexLogger.Errorf("block %d is indexed at different position %d", startBlockNum, index)
+				}
 			}
 		}
 
-		err = persistBlock(blockToIndex, lastIndexedBlockNum, blockHash)
+		err = persistIndex(blockToIndex, startBlockNum, blockHash)
 		if err != nil {
 			return fmt.Errorf("fail in execute persistent index: %s", err), 0
 		}
 	}
 
-	return nil, lastIndexedBlockNum
+	//if we come here, startBlockNum must be 1 passed than lastCommitedBlockNum
+	return nil, startBlockNum - 1
 }
 
 // Functions for persisting and retrieving index data

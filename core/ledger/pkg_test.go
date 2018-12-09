@@ -151,6 +151,27 @@ func (testWrapper *blockchainTestWrapper) populateBlockChainWithSampleData() (bl
 	return allBlocks, allHashes, nil
 }
 
+func (testWrapper *blockchainTestWrapper) populateMoreBlockChainWithSampleData() (blocks []*protos.Block, hashes [][]byte, err error) {
+	var allBlocks []*protos.Block
+	var allHashes [][]byte
+
+	// -----------------------------<Block 4>-------------------------------------
+	// Create a transaction
+	transaction4a, err := protos.NewTransaction(protos.ChaincodeID{Path: "MyContractMore"}, testutil.GenerateID(testWrapper.t), "setX", []string{"{x: \"hello2\"}"})
+	if err != nil {
+		return nil, nil, err
+	}
+	// Create the third block and add it to the chain
+	transactions4a := []*protos.Transaction{transaction4a}
+	block4 := protos.NewBlock(transactions4a, nil)
+	allBlocks = append(allBlocks, block4)
+	allHashes = append(allHashes, []byte("stateHash4"))
+	testWrapper.addNewBlock(block4, []byte("stateHash4"))
+
+	// -----------------------------</Block 4>------------------------------------
+	return allBlocks, allHashes, nil
+}
+
 func buildTestTx(tb testing.TB) (*protos.Transaction, string) {
 	uuid := util.GenerateUUID()
 	tx, err := protos.NewTransaction(protos.ChaincodeID{Path: "testUrl"}, uuid, "anyfunction", []string{"param1, param2"})

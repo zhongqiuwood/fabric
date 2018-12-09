@@ -54,6 +54,32 @@ func (testDB *TestDBWrapper) CleanDB(t testing.TB) {
 	testDB.performCleanup = true
 }
 
+// clean a cf, this is just for test purpose and do not care about concurrency situtaion
+func (testDB *TestDBWrapper) CleanCF(t testing.TB, cfName string) {
+	cf := GetDBHandle().db.GetCFByName(cfName)
+	if err := GetDBHandle().db.DropColumnFamily(cf); err != nil {
+		t.Fatal("drop cf fail", err)
+	}
+
+	var cfOpt *gorocksdb.Options
+
+	switch cfName {
+	case IndexesCF:
+		cfOpt = GetDBHandle().indexesCFOpt
+	default:
+		cfOpt = GetDBHandle().db.OpenOpt.Options()
+		defer cfOpt.Destroy()
+	}
+
+	newcf, err := GetDBHandle().db.CreateColumnFamily(cfOpt, cfName)
+	if err != nil {
+		t.Fatal("create new cf fail", err)
+	}
+
+	GetDBHandle().db.cfMap[cfName] = newcf
+	GetDBHandle().db.IndexesCF = newcf
+}
+
 // CreateFreshDBGinkgo creates a fresh database for ginkgo testing
 func (testDB *TestDBWrapper) CreateFreshDBGinkgo() {
 	// cleaning up test db here so that each test does not have to call it explicitly

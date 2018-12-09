@@ -163,7 +163,7 @@ type blockchainIndexerAsync struct {
 }
 
 const (
-	defaultThreadCount    = 2
+	defaultThreadCount    = 1
 	defaultCachePerThread = 3
 )
 
@@ -254,11 +254,18 @@ func (indexer *blockchainIndexerAsync) stop() {
 	indexLogger.Debugf("async indexer stopped")
 }
 
+//just for some legacy code (e.g. testing)
+var omitCreateIndexFailure = false
+
 func (indexer *blockchainIndexerAsync) createIndexes(block *protos.Block, blockNumber uint64, blockHash []byte) error {
 
 	blockind, err := indexer.cache.cacheBlock(block, blockNumber, blockHash)
 
 	if err != nil {
+		if omitCreateIndexFailure {
+			indexLogger.Warningf("cache indexs has failed [%s] but omitted")
+			return nil
+		}
 		return fmt.Errorf("Can't cache block: %s", err)
 	}
 

@@ -107,10 +107,6 @@ type txCache struct {
 
 func getTxCommitHeight(l *ledger.Ledger, txid string) uint64 {
 
-	if l.GetPooledTransaction(txid) != nil {
-		return 0
-	}
-
 	h, _, err := l.GetBlockNumberByTxid(txid)
 	if err != nil {
 		logger.Errorf("Can not find index of Tx %s from ledger", txid)

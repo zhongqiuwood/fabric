@@ -25,7 +25,36 @@ func MutipleTxHandler(m ...TxHandlerFactory) TxHandlerFactory {
 			flattedM = append(flattedM, mh)
 		}
 	}
-	return mutiTxHandlerFactory(flattedM)
+
+	switch len(flattedM) {
+	case 0:
+		return nil
+	case 1:
+		return flattedM[0]
+	default:
+		return mutiTxHandlerFactory(flattedM)
+	}
+}
+
+func MutipleTxPreHandler(m ...TxPreHandler) TxPreHandler {
+	var flattedM []TxPreHandler
+	//also "flat" the recursive mutiple txhandler (we are pain for lacking of generics )
+	for _, mh := range m {
+		if mmh, ok := mh.(mutiTxPreHandler); ok {
+			flattedM = append(flattedM, mmh...)
+		} else {
+			flattedM = append(flattedM, mh)
+		}
+	}
+
+	switch len(flattedM) {
+	case 0:
+		return nil
+	case 1:
+		return flattedM[0]
+	default:
+		return mutiTxPreHandler(flattedM)
+	}
 }
 
 func (m mutiTxHandlerFactory) ValidatePeerStatus(id string, status *pb.PeerTxState) error {
@@ -49,7 +78,11 @@ func (m mutiTxHandlerFactory) GetPreHandler(id string) (TxPreHandler, error) {
 		if err != nil {
 			return nil, err
 		} else if hh != nil {
-			hs = append(hs, hh)
+			if mhh, ok := hh.(mutiTxPreHandler); ok {
+				hs = append(hs, mhh...)
+			} else {
+				hs = append(hs, mhh)
+			}
 		}
 	}
 	return mutiTxPreHandler(hs), nil
@@ -78,21 +111,4 @@ func (m mutiTxPreHandler) Release() {
 	for _, h := range m {
 		h.Release()
 	}
-}
-
-//an TxPreHandler can act as a "dummy" HandlerFactory and be integrated into a mutiple handlerfactory
-type dummyTxHandlerFactory struct {
-	TxPreHandler
-}
-
-func (dummyTxHandlerFactory) ValidatePeerStatus(string, *pb.PeerTxState) error { return nil }
-func (dummyTxHandlerFactory) RemovePreHandler(string)                          {}
-func (m dummyTxHandlerFactory) GetPreHandler(string) (TxPreHandler, error)     { return m.TxPreHandler, nil }
-
-func AdditionalTxHandler(m TxHandlerFactory, addh ...TxPreHandler) TxHandlerFactory {
-	ms := []TxHandlerFactory{m}
-	for _, h := range addh {
-		ms = append(ms, dummyTxHandlerFactory{h})
-	}
-	return mutiTxHandlerFactory(ms)
 }

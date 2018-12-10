@@ -27,6 +27,31 @@ func CreateNode() *NodeEngine {
 	return ret
 }
 
+func addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, error) {
+
+	tagdb, err := db.StartDB(tag, config.SubViper("db", vp))
+	if err != nil {
+		return nil, fmt.Errorf("Try to create db fail: %s", err)
+	}
+
+	checkonly := vp.GetBool("notUpgrade")
+	err = ledger.UpgradeLedger(tagdb, checkonly)
+	if err != nil {
+		return nil, fmt.Errorf("Upgrade ledger fail: %s", err)
+	}
+
+	l, err := ledger.GetNewLedger(tagdb, ledger.NewLedgerConfig(vp))
+	if err != nil {
+		return nil, fmt.Errorf("Try to create ledger fail: %s", err)
+	}
+	err = genesis.MakeGenesisForLedger(l, "", nil)
+	if err != nil {
+		return nil, fmt.Errorf("Try to create genesis block for ledger fail: %s", err)
+	}
+
+	return l, nil
+}
+
 func (ne *NodeEngine) GenCredDriver() *cred_driver.Credentials_PeerDriver {
 	drv := cred_driver.Credentials_PeerCredBase{ne.Cred.Peer, ne.Cred.Tx}
 	return &cred_driver.Credentials_PeerDriver{drv.Clone(), nil, ne.Endorsers}
@@ -48,13 +73,11 @@ func (ne *NodeEngine) PreInit() {
 	for _, tag := range peerTags {
 		ne.Peers[tag] = new(PeerEngine)
 	}
-}
 
-func (ne *NodeEngine) ExecInit() error {
 }
 
 //ne will fully respect an old-fashion (fabric 0.6) config file
-func (ne *NodeEngine) Init() error {
+func (ne *NodeEngine) ExecInit() error {
 
 	fpath := viper.GetString("node.fileSystemPath")
 	//if not set, use the old fashion one (peer.fileSystemPath)
@@ -62,10 +85,9 @@ func (ne *NodeEngine) Init() error {
 		db.InitDBPath(fpath)
 	}
 
-	//create ledgers
-	ledgerTags := viper.GetStringSlice("node.ledgers")
+	//init ledgers
 	var defaultTag string
-	for _, tag := range ledgerTags {
+	for tag, l := range ne.Ledgers {
 
 		vp := config.SubViper("ledgers." + tag)
 		if vp.GetBool("default") {
@@ -75,9 +97,18 @@ func (ne *NodeEngine) Init() error {
 			defaultTag = tag
 		}
 
-		if _, err := ne.addLedger(vp, tag); err != nil {
+		//respect the pre-set ledger
+		if l != nil {
+			logger.Infof("Ledger %s has been set before init", tag)
+			continue
+		}
+
+		var err error
+		if l, err = addLedger(vp, tag); err != nil {
 			return fmt.Errorf("Init ledger %s in node fail: %s", tag, err)
 		}
+
+		ne.Ledgers[tag] = l
 		logger.Info("Init ledger:", tag)
 	}
 
@@ -115,9 +146,8 @@ func (ne *NodeEngine) Init() error {
 	}
 	//TODO: create endorsers
 
-	//create peers
-	peerTags := viper.GetStringSlice("node.peers")
-	for _, tag := range peerTags {
+	//init peers
+	for tag, p := range ne.Peers {
 
 		vp := viper.Sub(tag)
 		if vp.GetBool("default") {
@@ -127,11 +157,9 @@ func (ne *NodeEngine) Init() error {
 			defaultTag = tag
 		}
 
-		p := new(PeerEngine)
 		if err := p.Init(vp, ne, tag); err != nil {
 			return fmt.Errorf("Create peer %s fail: %s", tag, err)
 		}
-		ne.Peers[tag] = p
 		logger.Info("Create peer:", tag)
 	}
 
@@ -152,42 +180,18 @@ func (ne *NodeEngine) Init() error {
 		if err := p.Init(vp, ne, ""); err != nil {
 			return fmt.Errorf("Create default peer fail: %s", err)
 		}
-		logger.Info("Create old-fashion, default peer")
 		ne.Peers[""] = p
+		logger.Info("Create old-fashion, default peer")
 	}
 
 	return nil
 
 }
 
-func (ne *NodeEngine) addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, error) {
-
-	if l, ok := ne.Ledgers[tag]; ok {
-		return l, nil
-	}
-
-	tagdb, err := db.StartDB(tag, config.SubViper("db", vp))
-	if err != nil {
-		return nil, fmt.Errorf("Try to create db fail: %s", err)
-	}
-
-	checkonly := vp.GetBool("notUpgrade")
-	err = ledger.UpgradeLedger(tagdb, checkonly)
-	if err != nil {
-		return nil, fmt.Errorf("Upgrade ledger fail: %s", err)
-	}
-
-	l, err := ledger.GetNewLedger(tagdb, ledger.NewLedgerConfig(vp))
-	if err != nil {
-		return nil, fmt.Errorf("Try to create ledger fail: %s", err)
-	}
-	err = genesis.MakeGenesisForLedger(l, "", nil)
-	if err != nil {
-		return nil, fmt.Errorf("Try to create genesis block for ledger fail: %s", err)
-	}
-
-	ne.Ledgers[tag] = l
-	return l, nil
+//wrap two step in one
+func (ne *NodeEngine) Init() error {
+	ne.PreInit()
+	return ne.ExecInit()
 }
 
 func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error {
@@ -247,11 +251,16 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		//use default ledger, do nothing
 	} else if useledger == "sole" {
 		//create a new ledger tagged by the peer, add it to node
-		l, err := node.addLedger(vp, useledger)
-		if err != nil {
-			return fmt.Errorf("Create peer's default ledger [%s] fail: %s", useledger, err)
+		var err error
+		l, exist := node.Ledgers[useledger]
+		if !exist {
+			l, err = addLedger(vp, useledger)
+			if err != nil {
+				return fmt.Errorf("Create peer's default ledger [%s] fail: %s", useledger, err)
+			}
+			node.Ledgers[useledger] = l
+			logger.Info("Create default ledger [%s] for peer [%s]", useledger, tag)
 		}
-		logger.Info("Create default ledger [%s] for peer [%s]", useledger, tag)
 		pe.TxNetworkEntry.InitLedger(l)
 
 	} else {

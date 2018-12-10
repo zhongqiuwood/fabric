@@ -24,7 +24,7 @@ func (pe *PeerEngine) GenTxEndorser() cred.TxEndorser {
 
 	ret, err := pe.defaultEndorser.GetEndorser(pe.defaultAttr...)
 	if err != nil {
-		txlogger.Error("Can not obtain tx endorser:", err)
+		logger.Error("Can not obtain tx endorser:", err)
 		return nil
 	}
 
@@ -74,7 +74,7 @@ func (pe *PeerEngine) Run() error {
 		//this is malformed: the laststate from txnetwork IS NOT the actual series
 		//which current peer has achieved to and a branched tx-chain may be encountered
 		if series := lastState.GetNum(); series != 0 {
-			txlogger.Warningf("We try to start a new peer with a running-state (series %d)", series)
+			logger.Warningf("We try to start a new peer with a running-state (series %d)", series)
 			pe.lastCache.Series = series
 		}
 		pe.lastID = id

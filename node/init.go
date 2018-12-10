@@ -32,6 +32,27 @@ func (ne *NodeEngine) GenCredDriver() *cred_driver.Credentials_PeerDriver {
 	return &cred_driver.Credentials_PeerDriver{drv.Clone(), nil, ne.Endorsers}
 }
 
+//preinit phase simply read all peer's name in the config and create them,
+//user can make settings on node and peer which will be respected in the
+//Init process
+func (ne *NodeEngine) PreInit() {
+
+	//occupy ledger's objects position
+	ledgerTags := viper.GetStringSlice("node.ledgers")
+	for _, tag := range ledgerTags {
+		ne.Ledgers[tag] = nil
+	}
+
+	//occupy peer's objects position
+	peerTags := viper.GetStringSlice("node.peers")
+	for _, tag := range peerTags {
+		ne.Peers[tag] = new(PeerEngine)
+	}
+}
+
+func (ne *NodeEngine) ExecInit() error {
+}
+
 //ne will fully respect an old-fashion (fabric 0.6) config file
 func (ne *NodeEngine) Init() error {
 

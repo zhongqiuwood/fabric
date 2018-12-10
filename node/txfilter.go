@@ -2,22 +2,119 @@ package node
 
 import (
 	cred "github.com/abchain/fabric/core/cred"
+	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
 )
 
-type txFilter struct {
-	txTopic map[string]litekfk.Topic
+type CCNameTransformer func(string) string
+
+var nullTransformer = CCNameTransformer(func(in string) string { return in })
+
+/*
+	ccSpecValidator organize additional interfaces in a hierarchical fashion
+	for chaincode name specification. A interfaces specified for one or some
+	chaincode will have priority to handle the corresponding txs, child node
+	first and then parent.
+	filter ensure each tx will be validated by EXACTLY ONE interface
+
+	an transformer for chaincode name is also appliable
+*/
+
+type ccSpecValidator struct {
+	parent    *ccSpecValidator
+	handlers  map[string]cred.TxPreHandler
+	nameTrans CCNameTransformer
 }
 
-func (f *txFilter) ValidatePeerStatus(id string, status *pb.PeerTxState) error {
-	return nil
+//for terminal...
+type nilValidator struct{}
+
+func (f *ccSpecValidator) getHandler(ccname string) cred.TxPreHandler {
+
+	if h, ok := f.handlers[ccname]; ok {
+		return h
+	}
+
+	if f.parent != nil {
+		return f.parent.getHandler(ccname)
+	}
+
+	return nilValidator{}
 }
 
-func (f *txFilter) TransactionPreValidation(*pb.Transaction) (*pb.Transaction, error) {
-	return nil, nil
+func (f *ccSpecValidator) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
+
+	ccname := f.nameTrans(string(tx.GetChaincodeID()))
+
+	return f.getHandler(ccname).TransactionPreValidation(tx)
 }
 
-func (f *txFilter) GetPreHandler(id string) (cred.TxPreHandler, error) { return f, nil }
-func (f *txFilter) RemovePreHandler(id string)                         {}
-func (f *txFilter) Release()                                           {}
+func (f *ccSpecValidator) Release() {}
+
+func (nilValidator) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
+	return tx, nil
+}
+func (nilValidator) Release() {}
+
+/*
+	Transactions received from txnetwork, and recorded in the TxTopic of NodeEngine
+	by specified of chaincode name. This structure allow the executor to trace
+	the source of each tx
+*/
+type TxInNetwork struct {
+	*pb.Transaction
+	PeerID string
+}
+
+//recordValidator write the incoming tx into a msg-streaming topic
+type recordValidator struct {
+	//bind the topic map in NodeEngine
+	txtopic   map[string]*litekfk.Topic
+	nameTrans CCNameTransformer
+}
+
+type recordValidatorByID struct {
+	peerID string
+	*recordValidator
+}
+
+func (r *recordValidator) GetPreHandler(id string) (cred.TxPreHandler, error) {
+	return &recordValidatorByID{id, r}, nil
+}
+func (r *recordValidator) ValidatePeerStatus(string, *pb.PeerTxState) error { return nil }
+func (r *recordValidator) RemovePreHandler(string)                          {}
+
+func (r *recordValidatorByID) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
+
+	ccname := r.nameTrans(string(tx.GetChaincodeID()))
+
+	topic, ok := r.txtopic[ccname]
+	if !ok {
+		topic = r.txtopic[""]
+		if topic == nil {
+			return tx, nil
+		}
+	}
+
+	if err := topic.Write(&TxInNetwork{tx, r.peerID}); err != nil {
+		logger.Errorf("Write into topic [%s] fail: %s", ccname, err)
+		return tx, cred.ValidateInterrupt
+	}
+
+	return tx, nil
+}
+
+func (f *recordValidatorByID) Release() {}
+
+//txPoolValidator write the incoming tx into the txpool of ledger
+type txPoolValidator struct {
+	l *ledger.Ledger
+}
+
+func (t txPoolValidator) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
+	t.l.PoolTransactions([]*pb.Transaction{tx})
+	return tx, nil
+}
+
+func (txPoolValidator) Release() {}

@@ -7,29 +7,33 @@ import (
 type mutiTxPreHandler []TxPreHandler
 type mutiTxHandlerFactory []TxHandlerFactory
 
-type interruptErr struct {
-	err error
+type interruptErr struct{}
+
+func (interruptErr) Error() string {
+	return "User interrupted"
 }
 
-func (e interruptErr) Error() string {
-	return e.Error()
-}
-
-func InterruptHandling(err error) error {
-	return interruptErr{err}
-}
+var ValidateInterrupt = interruptErr{}
 
 func MutipleTxHandler(m ...TxHandlerFactory) TxHandlerFactory {
-	return mutiTxHandlerFactory(m)
+	var flattedM []TxHandlerFactory
+	//"flat" the recursive mutiple txhandler
+	for _, mh := range m {
+		if mmh, ok := mh.(mutiTxHandlerFactory); ok {
+			flattedM = append(flattedM, mmh...)
+		} else {
+			flattedM = append(flattedM, mh)
+		}
+	}
+	return mutiTxHandlerFactory(flattedM)
 }
 
 func (m mutiTxHandlerFactory) ValidatePeerStatus(id string, status *pb.PeerTxState) error {
 	for _, h := range m {
 		err := h.ValidatePeerStatus(id, status)
-		if err != nil {
-			if ierr, ok := err.(interruptErr); ok {
-				return ierr.err
-			}
+		if err == ValidateInterrupt {
+			return nil
+		} else if err != nil {
 			return err
 		}
 	}
@@ -61,10 +65,9 @@ func (m mutiTxPreHandler) TransactionPreValidation(tx *pb.Transaction) (*pb.Tran
 	var err error
 	for _, h := range m {
 		tx, err = h.TransactionPreValidation(tx)
-		if err != nil {
-			if ierr, ok := err.(interruptErr); ok {
-				return tx, ierr.err
-			}
+		if err == ValidateInterrupt {
+			return tx, nil
+		} else if err != nil {
 			return tx, err
 		}
 	}
@@ -75,4 +78,21 @@ func (m mutiTxPreHandler) Release() {
 	for _, h := range m {
 		h.Release()
 	}
+}
+
+//an TxPreHandler can act as a "dummy" HandlerFactory and be integrated into a mutiple handlerfactory
+type dummyTxHandlerFactory struct {
+	TxPreHandler
+}
+
+func (dummyTxHandlerFactory) ValidatePeerStatus(string, *pb.PeerTxState) error { return nil }
+func (dummyTxHandlerFactory) RemovePreHandler(string)                          {}
+func (m dummyTxHandlerFactory) GetPreHandler(string) (TxPreHandler, error)     { return m.TxPreHandler, nil }
+
+func AdditionalTxHandler(m TxHandlerFactory, addh ...TxPreHandler) TxHandlerFactory {
+	ms := []TxHandlerFactory{m}
+	for _, h := range addh {
+		ms = append(ms, dummyTxHandlerFactory{h})
+	}
+	return mutiTxHandlerFactory(ms)
 }

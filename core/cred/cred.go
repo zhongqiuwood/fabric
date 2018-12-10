@@ -21,14 +21,12 @@ var logger = logging.MustGetLogger("credential")
 */
 
 //peer creds also include the endorse entry because it should be sole per-network
-//peer's cred should also derive a default TxHandlerFactory
 type PeerCreds interface {
 	PeerPki() []byte
 	PeerCred() []byte
 	EndorsePeerMsg(msg *pb.Message) (*pb.Message, error)
 	VerifyPeerMsg(pki []byte, msg *pb.Message) error
 	VerifyPeerCred([]byte) error
-	DeriveTxCred() TxHandlerFactory
 }
 
 type TxHandlerFactory interface {
@@ -81,4 +79,16 @@ type TxConfidentialityHandler interface {
 	//returns a DataEncryptor linked to pair defined by
 	//the deploy transaction and the execute transaction.
 	GenDataEncryptor(deployTx, executeTx *pb.Transaction) (DataEncryptor, error)
+}
+
+//represent the most common implement for credential: the cert-base credential
+//A certcred object can always act as a TxPreHandler or TxHandlerFactory, but
+//it must contain a privte key to act as PeerCred
+//NOTICE: a cert object can act to mutiple role, it deep copy its data to the
+//cred object created in "ActAs..." function
+type CertificateCred interface {
+	HasPrivKey() bool
+	ActAsTxHandlerFactory() (TxHandlerFactory, error)
+	ActAsTxPreHandler() (TxPreHandler, error)
+	ActAsPeerCreds() (PeerCreds, error)
 }

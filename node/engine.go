@@ -31,6 +31,12 @@ var (
 )
 
 type PeerEngine struct {
+	CredOpts struct {
+		Customs   []cred.TxHandlerFactory
+		NoPooling bool
+		*ccSpecValidator
+	}
+
 	*txnetwork.TxNetworkEntry
 	peer.Peer
 
@@ -52,24 +58,27 @@ type PeerEngine struct {
 	ledger here
 */
 type NodeEngine struct {
-	Name       string
-	EnforceSec bool
-	Ledgers    map[string]*ledger.Ledger
-	Peers      map[string]*PeerEngine
-	Endorsers  map[string]cred.TxEndorserFactory
-	Cred       struct {
-		Peer cred.PeerCreds
-		Tx   cred.TxHandlerFactory
+	Name string
+
+	Ledgers   map[string]*ledger.Ledger
+	Peers     map[string]*PeerEngine
+	Endorsers map[string]cred.TxEndorserFactory
+	Cred      struct {
+		Peer    cred.PeerCreds
+		Tx      cred.TxHandlerFactory
+		Customs []cred.TxHandlerFactory
+		*ccSpecValidator
 	}
 	//all the received transactions can be read out from different topic by its chaincode name,
 	//according to the configuration in transation filter
-	TxTopic map[string]litekfk.Topic
+	TxTopic            map[string]litekfk.Topic
+	TxTopicNameHandler CCNameTransformer
+
+	Options struct {
+		EnforceSec bool
+	}
 
 	srvPoints []*servicePoint
-
-	//additional tx hooks
-	globalTxHandlers []cred.TxHandlerFactory
-	peerTxHandlers   map[string]cred.TxHandlerFactory
 }
 
 func (ne *NodeEngine) DefaultLedger() *ledger.Ledger {

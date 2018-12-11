@@ -112,3 +112,16 @@ func (m mutiTxPreHandler) Release() {
 		h.Release()
 	}
 }
+
+//an TxPreHandler can act as a "dummy" HandlerFactory and be integrated into a mutiple handlerfactory
+type dummyTxHandlerFactory struct {
+	TxPreHandler
+}
+
+func (dummyTxHandlerFactory) ValidatePeerStatus(string, *pb.PeerTxState) error { return nil }
+func (dummyTxHandlerFactory) RemovePreHandler(string)                          {}
+func (m dummyTxHandlerFactory) GetPreHandler(string) (TxPreHandler, error)     { return m.TxPreHandler, nil }
+
+func EscalateToTxHandler(h TxPreHandler) TxHandlerFactory {
+	return dummyTxHandlerFactory{h}
+}

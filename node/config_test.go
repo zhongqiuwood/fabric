@@ -20,7 +20,7 @@ func TestLegacyInit(t *testing.T) {
 	viper.Set("peer.fileSystemPath", tempDir)
 	config.CacheViper()
 
-	ne := CreateNode()
+	ne := new(NodeEngine)
 	ne.Name = "test"
 	if err := ne.Init(); err != nil {
 		t.Fatal(err)
@@ -52,7 +52,7 @@ func TestInit(t *testing.T) {
 	viper.Set("node.fileSystemPath", tempDir)
 	config.CacheViper()
 
-	ne := CreateNode()
+	ne := new(NodeEngine)
 	ne.Name = "test"
 	if err := ne.Init(); err != nil {
 		t.Fatal(err)

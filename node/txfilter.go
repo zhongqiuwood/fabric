@@ -30,6 +30,28 @@ type ccSpecValidator struct {
 //for terminal...
 type nilValidator struct{}
 
+func NewCCSpecValidator(parent *ccSpecValidator) *ccSpecValidator {
+	return &ccSpecValidator{parent, make(map[string]cred.TxPreHandler), nullTransformer}
+}
+
+func (f *ccSpecValidator) SetHandler(cc string, h cred.TxPreHandler) {
+	curH, ok := f.handlers[cc]
+	if !ok {
+		f.handlers[cc] = h
+	} else {
+		f.handlers[cc] = cred.MutipleTxPreHandler(curH, h)
+	}
+}
+
+func (f *ccSpecValidator) SetNameTransfer(tf CCNameTransformer) (old CCNameTransformer) {
+	old = f.nameTrans
+	if f == nil {
+		panic("Nil transformer is not allowed")
+	}
+	f.nameTrans = tf
+	return
+}
+
 func (f *ccSpecValidator) getHandler(ccname string) cred.TxPreHandler {
 
 	if h, ok := f.handlers[ccname]; ok {
@@ -65,13 +87,15 @@ func (nilValidator) Release() {}
 type TxInNetwork struct {
 	*pb.Transaction
 	PeerID string
+	Peer   *PeerEngine
 }
 
 //recordValidator write the incoming tx into a msg-streaming topic
 type recordValidator struct {
 	//bind the topic map in NodeEngine
-	txtopic   map[string]*litekfk.Topic
+	txtopic   map[string]litekfk.Topic
 	nameTrans CCNameTransformer
+	peer      *PeerEngine
 }
 
 type recordValidatorByID struct {
@@ -91,13 +115,13 @@ func (r *recordValidatorByID) TransactionPreValidation(tx *pb.Transaction) (*pb.
 
 	topic, ok := r.txtopic[ccname]
 	if !ok {
-		topic = r.txtopic[""]
-		if topic == nil {
+		topic, ok = r.txtopic[""]
+		if !ok {
 			return tx, nil
 		}
 	}
 
-	if err := topic.Write(&TxInNetwork{tx, r.peerID}); err != nil {
+	if err := topic.Write(&TxInNetwork{tx, r.peerID, r.peer}); err != nil {
 		logger.Errorf("Write into topic [%s] fail: %s", ccname, err)
 		return tx, cred.ValidateInterrupt
 	}

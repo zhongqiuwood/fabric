@@ -7,6 +7,7 @@ import (
 	"github.com/abchain/fabric/core/cred/driver"
 	"github.com/abchain/fabric/core/db"
 	gossip_stub "github.com/abchain/fabric/core/gossip/stub"
+	"github.com/abchain/fabric/events/litekfk"
 	//"github.com/abchain/fabric/core/statesync/stub"
 
 	"github.com/abchain/fabric/core/gossip/txnetwork"
@@ -15,17 +16,6 @@ import (
 	"github.com/abchain/fabric/core/peer"
 	"github.com/spf13/viper"
 )
-
-func CreateNode() *NodeEngine {
-	ret := new(NodeEngine)
-
-	ret.Ledgers = make(map[string]*ledger.Ledger)
-	ret.Peers = make(map[string]*PeerEngine)
-	ret.Endorsers = make(map[string]credentials.TxEndorserFactory)
-	ret.peerTxHandlers = make(map[string]credentials.TxHandlerFactory)
-
-	return ret
-}
 
 func addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, error) {
 
@@ -62,6 +52,13 @@ func (ne *NodeEngine) GenCredDriver() *cred_driver.Credentials_PeerDriver {
 //Init process
 func (ne *NodeEngine) PreInit() {
 
+	ne.Ledgers = make(map[string]*ledger.Ledger)
+	ne.Peers = make(map[string]*PeerEngine)
+	ne.Endorsers = make(map[string]credentials.TxEndorserFactory)
+	ne.Cred.ccSpecValidator = NewCCSpecValidator(nil)
+	ne.TxTopic = make(map[string]litekfk.Topic)
+	ne.TxTopicNameHandler = nullTransformer
+
 	//occupy ledger's objects position
 	ledgerTags := viper.GetStringSlice("node.ledgers")
 	for _, tag := range ledgerTags {
@@ -71,9 +68,10 @@ func (ne *NodeEngine) PreInit() {
 	//occupy peer's objects position
 	peerTags := viper.GetStringSlice("node.peers")
 	for _, tag := range peerTags {
-		ne.Peers[tag] = new(PeerEngine)
+		p := new(PeerEngine)
+		p.PreInit(ne)
+		ne.Peers[tag] = p
 	}
-
 }
 
 //ne will fully respect an old-fashion (fabric 0.6) config file
@@ -146,6 +144,10 @@ func (ne *NodeEngine) ExecInit() error {
 	}
 	//TODO: create endorsers
 
+	//add a default txtopic
+	topicCfg := litekfk.NewDefaultConfig()
+	ne.TxTopic[""] = litekfk.CreateTopic(topicCfg)
+
 	//init peers
 	for tag, p := range ne.Peers {
 
@@ -194,12 +196,16 @@ func (ne *NodeEngine) Init() error {
 	return ne.ExecInit()
 }
 
+func (pe *PeerEngine) PreInit(node *NodeEngine) {
+	pe.CredOpts.ccSpecValidator = NewCCSpecValidator(node.Cred.ccSpecValidator)
+}
+
 func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error {
 
 	var err error
 	credrv := node.GenCredDriver()
 	if err = credrv.Drive(vp); err != nil {
-		if node.EnforceSec {
+		if node.Options.EnforceSec {
 			return fmt.Errorf("Init credential fail: %s", err)
 		} else {
 			logger.Warningf("Drive cred fail: %s, no security is available", err)
@@ -236,19 +242,29 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 	}
 
 	//build tx validator
-	networkTxCred := []credentials.TxHandlerFactory{credrv.TxValidator}
-	if hv, ok := node.peerTxHandlers[tag]; ok {
-		networkTxCred = append(networkTxCred, hv)
+	//see tech note for the building block for all validators
+	networkTxCred := []credentials.TxHandlerFactory{}
+	if credrv.TxValidator != nil {
+		networkTxCred = append(networkTxCred, credrv.TxValidator)
+		networkTxCred = append(networkTxCred, credentials.EscalateToTxHandler(pe.CredOpts.ccSpecValidator))
 	}
-	networkTxCred = append(networkTxCred, node.globalTxHandlers...)
-	pe.TxNetworkEntry.InitCred(credentials.MutipleTxHandler(networkTxCred...))
+	networkTxCred = append(networkTxCred, node.Cred.Customs...)
+	networkTxCred = append(networkTxCred, pe.CredOpts.Customs...)
+	networkTxCred = append(networkTxCred, &recordValidator{node.TxTopic, node.TxTopicNameHandler, pe})
 
 	//TODO: create and init sync entry
 	//_ = sync_stub.InitStateSyncStub(pe.Peer, "ledgerName", srvPoint.Server)
+	var peerLedger *ledger.Ledger
 
 	//test ledger configuration
 	if useledger := vp.GetString("ledger"); useledger == "" || useledger == "default" {
 		//use default ledger, do nothing
+		var err error
+		peerLedger, err = ledger.GetLedger()
+		if err != nil {
+			return fmt.Errorf("Could not get default ledger: %s", err)
+		}
+
 	} else if useledger == "sole" {
 		//create a new ledger tagged by the peer, add it to node
 		var err error
@@ -261,7 +277,7 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 			node.Ledgers[useledger] = l
 			logger.Info("Create default ledger [%s] for peer [%s]", useledger, tag)
 		}
-		pe.TxNetworkEntry.InitLedger(l)
+		peerLedger = l
 
 	} else {
 		//select a ledger created before (by node or other peer), throw error if not found
@@ -269,8 +285,16 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		if !ok {
 			return fmt.Errorf("Could not find specified ledger [%s]", useledger)
 		}
-		pe.TxNetworkEntry.InitLedger(l)
+		peerLedger = l
+
 	}
+
+	if !pe.CredOpts.NoPooling {
+		networkTxCred = append(networkTxCred, credentials.EscalateToTxHandler(txPoolValidator{peerLedger}))
+	}
+
+	pe.TxNetworkEntry.InitLedger(peerLedger)
+	pe.TxNetworkEntry.InitCred(credentials.MutipleTxHandler(networkTxCred...))
 
 	return nil
 }

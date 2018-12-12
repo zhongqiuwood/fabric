@@ -58,6 +58,16 @@ func TestTxNetwork(t *testing.T) {
 		t.Fatal("run peer fail", err)
 	}
 
+	defer thepeer.Stop()
+
+	cli := thenode.TxTopic[""].NewClient()
+	defer cli.UnReg()
+
+	topicRead, err := cli.Read(1) //default pos
+	if err != nil {
+		t.Fatal("topic read err", err)
+	}
+
 	spec1 := &pb.ChaincodeInvocationSpec{
 		ChaincodeSpec: &pb.ChaincodeSpec{
 			ChaincodeID: &pb.ChaincodeID{Name: "mycc1"},
@@ -81,4 +91,17 @@ func TestTxNetwork(t *testing.T) {
 	time.Sleep(time.Second)
 
 	compareTx(t, tx1, thenode.DefaultLedger().GetPooledTransaction(txid1))
+	obj, err := topicRead.ReadOne()
+	if err != nil {
+		t.Fatal("read tx fail", err)
+	}
+
+	if topictx, ok := obj.(*TxInNetwork); !ok {
+		t.Fatalf("write wrong object in topic: %T(%v)", obj, obj)
+	} else {
+		if topictx.Peer != thepeer {
+			t.Fatalf("unknown source of peer: %v", topictx.Peer)
+		}
+		compareTx(t, tx1, topictx.Transaction)
+	}
 }

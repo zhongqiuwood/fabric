@@ -210,3 +210,130 @@ func (c *ChaincodeInput) UnmarshalJSON(b []byte) error {
 	c.Args = util.ToChaincodeArgs(allArgs...)
 	return nil
 }
+
+/*
+  YA-fabric 0.9：
+  We define a struct for transaction which is passed in a pipeline
+  handling it, the data can be completed progressively along the
+  pipeline and finally be delivered for executing. It mainly contain
+  fidentiality-releated contents currently and may add more or customed
+  fields
+*/
+type TransactionHandlingContext struct {
+	*Transaction //the original transaction
+	//every fields can be readout from transaction (may covered by the confidentiality)
+	ChaincodeName       string //the decrypted part of Name field in chaincodeID
+	ChaincodeSpec       *ChaincodeSpec
+	ChaincodeDeploySpec *ChaincodeDeploymentSpec
+	//fields will be tagged from outside
+	NetworkID, PeerID string
+	CustomFields      map[string]interface{}
+}
+
+func NewTransactionHandlingContext(t *Transaction) *TransactionHandlingContext {
+	ret := new(TransactionHandlingContext)
+	ret.Transaction = t
+	return ret
+}
+
+/*
+   read a unencrypted tx and fill possible fields
+*/
+func parsePlainTx(tx *TransactionHandlingContext) (ret *TransactionHandlingContext, err error) {
+	ret = tx
+
+	switch tx.Type {
+	case Transaction_CHAINCODE_DEPLOY:
+		cds := &ChaincodeDeploymentSpec{}
+		err = proto.Unmarshal(tx.Payload, cds)
+		if err != nil {
+			return
+		}
+		ret.ChaincodeDeploySpec = cds
+		ret.ChaincodeName = cds.GetChaincodeSpec().GetChaincodeID().GetName()
+	case Transaction_CHAINCODE_INVOKE, Transaction_CHAINCODE_QUERY:
+		ci := &ChaincodeInvocationSpec{}
+		err = proto.Unmarshal(tx.Payload, ci)
+		if err != nil {
+			return
+		}
+		ret.ChaincodeSpec = ci.GetChaincodeSpec()
+		ret.ChaincodeName = ci.GetChaincodeSpec().GetChaincodeID().GetName()
+	default:
+		err = fmt.Errorf("invalid transaction type: %d", tx.Type)
+	}
+
+	return
+}
+
+func NewPlainTxHandlingContext(tx *Transaction) (*TransactionHandlingContext, error) {
+	ret := NewTransactionHandlingContext(tx)
+
+	return parsePlainTx(ret)
+}
+
+/*
+  Also define the handling pipeline interface
+*/
+
+type TxPreHandler interface {
+	Handle(*TransactionHandlingContext) (*TransactionHandlingContext, error)
+}
+
+//convert a function to a prehandler interface
+type FuncAsTxPreHandler func(tx *TransactionHandlingContext) (*TransactionHandlingContext, error)
+
+func (f FuncAsTxPreHandler) Handle(tx *TransactionHandlingContext) (*TransactionHandlingContext, error) {
+	return f(tx)
+}
+
+var PlainTxHandler = FuncAsTxPreHandler(parsePlainTx)
+
+/*
+  Mutiple handler
+*/
+
+type mutiTxPreHandler []TxPreHandler
+
+type interruptErr struct{}
+
+func (interruptErr) Error() string {
+	return "prehandling interrupted"
+}
+
+//allowing interrupt among a prehandler array and set the whold result as correct
+var ValidateInterrupt = interruptErr{}
+
+func MutipleTxHandler(m ...TxPreHandler) TxPreHandler {
+	var flattedM []TxPreHandler
+	//"flat" the recursive mutiple txhandler
+	for _, mh := range m {
+		if mmh, ok := mh.(mutiTxPreHandler); ok {
+			flattedM = append(flattedM, mmh...)
+		} else {
+			flattedM = append(flattedM, mh)
+		}
+	}
+
+	switch len(flattedM) {
+	case 0:
+		return nil
+	case 1:
+		return flattedM[0]
+	default:
+		return mutiTxPreHandler(flattedM)
+	}
+}
+
+func (m mutiTxPreHandler) Handle(tx *TransactionHandlingContext) (*TransactionHandlingContext, error) {
+	var err error
+	for _, h := range m {
+		tx, err = h.Handle(tx)
+		if err == ValidateInterrupt {
+			return tx, nil
+		} else if err != nil {
+			return tx, err
+		}
+	}
+	return tx, nil
+}

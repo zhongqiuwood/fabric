@@ -81,7 +81,7 @@ func (m mutiTxHandlerFactory) GetPreHandler(id string) (TxPreHandler, error) {
 			if mhh, ok := hh.(mutiTxPreHandler); ok {
 				hs = append(hs, mhh...)
 			} else {
-				hs = append(hs, mhh)
+				hs = append(hs, hh)
 			}
 		}
 	}

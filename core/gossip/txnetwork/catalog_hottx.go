@@ -493,7 +493,7 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, g *txPoolGlo
 
 	}
 
-	logger.Debugf("peer %s have updated %d txs", id, mergeCnt)
+	logger.Debugf("peer [%s] have updated %d txs", id, mergeCnt)
 
 	//finally we handle the case if pool's cache is overflowed
 	if int(p.lastSeries()-p.firstSeries())+1 > PeerTxQueueLimit() {

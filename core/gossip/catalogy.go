@@ -411,7 +411,7 @@ func (h *catalogHandler) executePush(excluded map[*pb.StreamHandler]bool) error 
 
 		if err := genSessionHandler(h, cpo).Process(strm.StreamHandler, nil, false); err == model.EmptyDigest {
 			//***GIVEN UP THE WHOLE PUSH PROCESS***
-			logger.Infof("Catalogy handler has forbidden a pulling process")
+			logger.Infof("Catalogy model has forbidden a pulling process")
 			break
 		} else if err == nil {
 			pushCnt++

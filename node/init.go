@@ -239,6 +239,15 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		return fmt.Errorf("Can not create gossip server: %s", err)
 	} else {
 		pe.TxNetworkEntry = txnetwork.GetNetworkEntry(gstub)
+		if pe.defaultEndorser != nil {
+			err = pe.TxNetworkEntry.ResetPeer(pe.defaultEndorser)
+		} else {
+			err = pe.TxNetworkEntry.ResetPeerSimple([]byte(tag + "_PeerId16BytePadding"))
+		}
+
+		if err != nil {
+			return fmt.Errorf("Can not set self peer id: %s", err)
+		}
 	}
 
 	//build tx validator
@@ -248,9 +257,6 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		networkTxCred = append(networkTxCred, credrv.TxValidator)
 		networkTxCred = append(networkTxCred, credentials.EscalateToTxHandler(pe.CredOpts.ccSpecValidator))
 	}
-	networkTxCred = append(networkTxCred, node.Cred.Customs...)
-	networkTxCred = append(networkTxCred, pe.CredOpts.Customs...)
-	networkTxCred = append(networkTxCred, &recordValidator{node.TxTopic, node.TxTopicNameHandler, pe})
 
 	//TODO: create and init sync entry
 	//_ = sync_stub.InitStateSyncStub(pe.Peer, "ledgerName", srvPoint.Server)
@@ -289,10 +295,13 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 
 	}
 
+	networkTxCred = append(networkTxCred, node.Cred.Customs...)
+	networkTxCred = append(networkTxCred, pe.CredOpts.Customs...)
+	//pool first, then topic
 	if !pe.CredOpts.NoPooling {
 		networkTxCred = append(networkTxCred, credentials.EscalateToTxHandler(txPoolValidator{peerLedger}))
 	}
-
+	networkTxCred = append(networkTxCred, &recordValidator{node.TxTopic, node.TxTopicNameHandler, pe})
 	pe.TxNetworkEntry.InitLedger(peerLedger)
 	pe.TxNetworkEntry.InitCred(credentials.MutipleTxHandler(networkTxCred...))
 

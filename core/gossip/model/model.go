@@ -21,7 +21,8 @@ type Status interface {
 //Now we have the model
 type Model struct {
 	sync.Mutex
-	s Status
+	ReadOnly bool
+	s        Status
 }
 
 func (m *Model) Status() Status { return m.s }
@@ -32,7 +33,18 @@ func (m *Model) GenPullDigest() Digest {
 	m.Lock()
 	defer m.Unlock()
 
+	if m.ReadOnly {
+		return nil
+	}
+
 	return m.s.GenDigest()
+}
+
+func (m *Model) TriggerReadOnlyMode(ro bool) {
+	m.Lock()
+	defer m.Unlock()
+
+	m.ReadOnly = ro
 }
 
 //recv the reconciliation message and update status
@@ -40,6 +52,10 @@ func (m *Model) RecvUpdate(r Update) error {
 
 	m.Lock()
 	defer m.Unlock()
+
+	if m.ReadOnly {
+		return nil
+	}
 
 	return m.s.Update(r)
 }

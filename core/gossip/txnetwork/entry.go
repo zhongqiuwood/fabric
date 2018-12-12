@@ -13,17 +13,20 @@ import (
 
 type TxNetworkEntry struct {
 	*txNetworkEntry
-	net  *txNetworkGlobal
-	stub *gossip.GossipStub
+	net         *txNetworkGlobal
+	stub        *gossip.GossipStub
+	doPauseflag bool
 }
 
 //Init method can be only executed before gossip network is running, to override
 //the default settings
 func (e *TxNetworkEntry) InitLedger(l *ledger.Ledger) {
+	logger.Debugf("txnetwork has set new ledger %v", l)
 	e.net.txPool.ledger = l
 }
 
 func (e *TxNetworkEntry) InitCred(v cred.TxHandlerFactory) {
+	logger.Debugf("txnetwork has set new txhandler %v(%T)", v, v)
 	e.net.peers.peerHandler = v
 	e.net.txPool.txHandler = v
 }
@@ -39,6 +42,7 @@ func (e *TxNetworkEntry) ResetPeerSimple(id []byte) error {
 	//add a mark to indicate the peer is endorsered
 	selfState.Endorsement = []byte{1}
 	e.catalogHandlerUpdateLocal(globalCatName, peerStatus{selfState}, nil)
+	logger.Infof("Self peer reseted to [%s] in simple mode", selfId)
 
 	return nil
 }
@@ -68,6 +72,7 @@ func (e *TxNetworkEntry) ResetPeer(endorser cred.TxEndorserFactory) error {
 		//we also update scuttlebutt model before the state is endorsed, now we have
 		//a new self-peer, but not endorsed so do not propagate it on the network
 		e.net.handleSetSelf(selfId, selfState)
+		logger.Infof("Self peer reseted to [%s]", selfId)
 
 	} else if err != SelfIDNotChange {
 		return err
@@ -90,7 +95,7 @@ func (e *TxNetworkEntry) ResetPeer(endorser cred.TxEndorserFactory) error {
 func (e *TxNetworkEntry) catalogHandlerUpdateLocal(catName string, u model.ScuttlebuttPeerUpdate, ug model.Update) error {
 	cat := e.stub.GetCatalogHandler(catName)
 	if cat == nil {
-		return fmt.Errorf("Can't not found corresponding cataloghandler [%s] catalogHandler", catName)
+		return fmt.Errorf("Can't not found corresponding cataloghandler [%s]", catName)
 	}
 
 	selfUpdate := model.NewscuttlebuttUpdate(ug)
@@ -117,6 +122,25 @@ func (e *TxNetworkEntry) GetPeerStatus() (*pb.PeerTxState, string) {
 	return e.net.peers.QuerySelf()
 }
 
+var catsToReferOnPaused = []string{globalCatName, hotTxCatName}
+
+func (e *TxNetworkEntry) PauseTxNetwork(dopause bool) {
+
+	for _, catName := range catsToReferOnPaused {
+		cat := e.stub.GetCatalogHandler(catName)
+		if cat == nil {
+			logger.Errorf("Can't not found corresponding cataloghandler [%s]", catName)
+			continue
+		}
+		cat.Model().TriggerReadOnlyMode(dopause)
+		if !dopause && e.doPauseflag {
+			//on resume, trigger a update process
+			cat.SelfUpdate()
+		}
+		e.doPauseflag = dopause
+	}
+}
+
 func GetNetworkEntry(stub *gossip.GossipStub) *TxNetworkEntry {
 
 	global.Lock()
@@ -135,9 +159,9 @@ func init() {
 func initTxnetworkEntrance(stub *gossip.GossipStub) {
 
 	self := &TxNetworkEntry{
-		newTxNetworkEntry(),
-		getTxNetwork(stub),
-		stub,
+		txNetworkEntry: newTxNetworkEntry(),
+		net:            getTxNetwork(stub),
+		stub:           stub,
 	}
 
 	global.Lock()

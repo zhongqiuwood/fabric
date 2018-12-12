@@ -241,7 +241,9 @@ func (g *txNetworkPeers) ChangeSelf(id []byte) error {
 
 	//old self peer is always being kept
 	old, ok := g.lruIndex[g.selfId]
-	g.lruQueue.MoveToFront(old)
+	if ok {
+		g.lruQueue.MoveToFront(old)
+	}
 
 	//also create self peer, notice we do not endorse it so new self
 	//peer will not be propagated before a local-peer updating

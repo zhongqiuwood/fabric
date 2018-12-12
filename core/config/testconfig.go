@@ -22,6 +22,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/abchain/fabric/flogging"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 )
@@ -108,7 +109,7 @@ func (c SetupTestConf) Setup() {
 		panic(fmt.Errorf("Fatal error config file: %s \n", err))
 	}
 
-	SetupTestLogging()
+	flogging.LoggingInit("test")
 
 	// Set the number of maxprocs
 	var numProcsDesired = viper.GetInt("peer.gomaxprocs")

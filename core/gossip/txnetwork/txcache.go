@@ -176,8 +176,12 @@ func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction) error {
 		if err != nil {
 			return err
 		}
+
+		logger.Debugf("cache [%s] add %d txs from series %d with handler %v", c.id, len(txs), from, preHandler)
 		txs, err = completeTxs(txs, c.parent.ledger, preHandler)
+		preHandler.Release()
 	} else {
+		logger.Debugf("cache [%s] add %d txs from series %d without handler", c.id, len(txs), from)
 		txs, err = completeTxs(txs, c.parent.ledger, nil)
 	}
 

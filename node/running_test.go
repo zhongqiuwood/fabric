@@ -1,10 +1,14 @@
 package node
 
 import (
+	"bytes"
 	"github.com/abchain/fabric/core/config"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
+	"golang.org/x/net/context"
 	"io/ioutil"
 	"testing"
+	"time"
 )
 
 func buildLegacyNode(t *testing.T) *NodeEngine {
@@ -30,5 +34,51 @@ func buildLegacyNode(t *testing.T) *NodeEngine {
 
 }
 
+func compareTx(t *testing.T, origin, delivered *pb.Transaction) {
+
+	if delivered == nil {
+		t.Fatal("No tx is found to compare with", origin)
+	}
+
+	if bytes.Compare(origin.ChaincodeID, delivered.ChaincodeID) != 0 {
+		t.Fatal("chaincode ID is different:", origin, delivered)
+	}
+
+	if bytes.Compare(origin.Payload, delivered.Payload) != 0 {
+		t.Fatal("payload is different:", origin, delivered)
+	}
+}
+
 func TestTxNetwork(t *testing.T) {
+
+	thenode := buildLegacyNode(t)
+	thepeer := thenode.Peers[""]
+
+	if err := thepeer.Run(); err != nil {
+		t.Fatal("run peer fail", err)
+	}
+
+	spec1 := &pb.ChaincodeInvocationSpec{
+		ChaincodeSpec: &pb.ChaincodeSpec{
+			ChaincodeID: &pb.ChaincodeID{Name: "mycc1"},
+		},
+	}
+
+	tx1, err := pb.NewChaincodeExecute(spec1, "", pb.Transaction_CHAINCODE_INVOKE)
+	if nil != err {
+		t.Fatal("Error on make tx", err)
+	}
+
+	resp := thepeer.ExecuteTransaction(context.Background(), tx1, nil)
+	if resp.Status == pb.Response_FAILURE {
+		t.Fatal("Error on deliver tx1")
+	}
+
+	txid1 := string(resp.Msg)
+	t.Logf("Get tx id for tx1: %s", txid1)
+
+	//need some time to fill the tx into network ...
+	time.Sleep(time.Second)
+
+	compareTx(t, tx1, thenode.DefaultLedger().GetPooledTransaction(txid1))
 }

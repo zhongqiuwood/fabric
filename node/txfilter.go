@@ -117,14 +117,16 @@ func (r *recordValidatorByID) TransactionPreValidation(tx *pb.Transaction) (*pb.
 	if !ok {
 		topic, ok = r.txtopic[""]
 		if !ok {
+			txlogger.Debugf("tx %s with ccname %s do not write to any topic", tx.GetTxid(), string(tx.GetChaincodeID()))
 			return tx, nil
 		}
 	}
 
 	if err := topic.Write(&TxInNetwork{tx, r.peerID, r.peer}); err != nil {
-		logger.Errorf("Write into topic [%s] fail: %s", ccname, err)
+		txlogger.Errorf("Tx %s write into topic [%s] fail: %s", tx.GetTxid(), ccname, err)
 		return tx, cred.ValidateInterrupt
 	}
+	txlogger.Debugf("tx %s write to topic [%s]", tx.GetTxid(), ccname)
 
 	return tx, nil
 }

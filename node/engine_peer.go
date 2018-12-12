@@ -55,6 +55,7 @@ func (pe *PeerEngine) Stop() {
 
 	pe.stopFunc()
 	<-pe.exitNotify
+	pe.stopFunc = nil
 }
 
 func (pe *PeerEngine) Run() error {
@@ -97,6 +98,9 @@ func (pe *PeerEngine) Run() error {
 		close(pe.exitNotify)
 
 	}()
+
+	//resume txnetwork first
+	pe.PauseTxNetwork(false)
 
 	var wctx context.Context
 	wctx, pe.stopFunc = context.WithCancel(pe.GetPeerCtx())

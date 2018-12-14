@@ -412,7 +412,7 @@ func filterFSMError(err error) error {
 }
 
 // createTransactionMessage creates a transaction message.
-func createTransactionMessage(txtype pb.Transaction_Type, txid string, cMsg *pb.ChaincodeInput) (*pb.ChaincodeMessage, error) {
+func createTransactionMessage(txtype pb.Transaction_Type, txid string, cMsg *pb.ChaincodeInput, sec *pb.ChaincodeSecurityContext) (*pb.ChaincodeMessage, error) {
 	payload, err := proto.Marshal(cMsg)
 	if err != nil {
 		return nil, err
@@ -426,7 +426,14 @@ func createTransactionMessage(txtype pb.Transaction_Type, txid string, cMsg *pb.
 		msgType = pb.ChaincodeMessage_INIT
 	}
 
-	return &pb.ChaincodeMessage{Type: msgType, Payload: payload, Txid: txid}, nil
+	if sec == nil {
+		//create a default, blank sec context, which include a variat (not consistent) timestamp
+		sec = new(pb.ChaincodeSecurityContext)
+		sec.TxTimestamp = util.CreateUtcTimestamp()
+		chaincodeLogger.Debug("setting a blank chaincode security context")
+	}
+
+	return &pb.ChaincodeMessage{Type: msgType, Payload: payload, Txid: txid, SecurityContext: sec}, nil
 }
 
 func cloneTx(tx *pb.Transaction) (*pb.Transaction, error) {
@@ -875,7 +882,7 @@ func (handler *Handler) handleInvokeChaincode(msg *pb.ChaincodeMessage, tctx *tr
 		return nil, launchErr
 	}
 
-	execMsg, err := createTransactionMessage(txtype, msg.Txid, chaincodeSpec.CtorMsg)
+	execMsg, err := createTransactionMessage(txtype, msg.Txid, chaincodeSpec.CtorMsg, tctx.inputMsg.SecurityContext)
 	if err != nil {
 		return nil, fmt.Errorf("error on create invoking msg: %s", err)
 	}
@@ -971,6 +978,12 @@ func (handler *Handler) executeMessage(ctx context.Context, msg *pb.ChaincodeMes
 
 		chaincodeLogger.Errorf("Set handler state for msg %s fail: %s, current [%s]", msg.Type, err, handler.FSM.Current())
 		return nil, CCHandlingErr_RCMain
+	}
+
+	//this is just for hacking the stupid code in shim module, which use the "payload" field in seccontext instead
+	//of the payload in message
+	if handler.ShimVersion < 1 {
+		msg.SecurityContext.Payload = msg.Payload
 	}
 
 	txctx := &transactionContext{

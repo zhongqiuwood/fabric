@@ -35,7 +35,7 @@ func (t *SimpleChaincode) GetChaincodeToCall() string {
 	//This is the hashcode for github.com/abchain/fabric/core/example/chaincode/chaincode_example02
 	//if the example is modifed this hashcode will change!!
 	//YA-fabric 0.9 has truncate the hash into 24bytes (96bit)
-	chainCodeToCall := "fe961cd4ecae16e537e6e777"
+	chainCodeToCall := "c51527f1515f381f00780c63"
 	return chainCodeToCall
 }
 

@@ -311,16 +311,13 @@ func (u txPeerUpdate) pruneTxs(epochH uint64, ccache TxCache) txPeerUpdate {
 	return u
 }
 
-func (u txPeerUpdate) toTxs(reflastDigest []byte) (*peerTxs, error) {
+func (u txPeerUpdate) toTxs() (*peerTxs, error) {
 
 	if len(u.Transactions) == 0 {
 		return nil, nil
 	}
 
 	tx := u.Transactions[0]
-	if reflastDigest != nil && !txIsPrecede(reflastDigest, tx) {
-		return nil, fmt.Errorf("update have invalid transactions chain for tx at %d", u.BeginSeries)
-	}
 
 	head := &txMemPoolItem{
 		tx:           tx,
@@ -464,7 +461,7 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, g *txPoolGlo
 		return err
 	}
 
-	inTxs, err := u.toTxs(p.last.digest)
+	inTxs, err := u.toTxs()
 	if err != nil {
 		//NEVER report this as the fraud of far-end because the original peer can build
 		//branch results (by update peer status or sending branched tx chains) deliberately

@@ -282,7 +282,7 @@ func TestAsAWhole(t *testing.T) {
 		t.Fatal("unmatch clock", udv, prv)
 	}
 
-	ccache := txG.AcquireCaches(newpeer).(*txCache).commitData
+	ccache := txG.AcquireCaches(newpeer).commitData
 	//cache for tx with series 7 and 8 just use two cache-row (0, 1)
 	if ccache[0] == nil || ccache[1] == nil {
 		t.Fatal("wrong cache position", ccache)
@@ -318,7 +318,7 @@ func TestAsAWhole(t *testing.T) {
 		t.Fatal("peer not remove", globalS.Peers)
 	}
 
-	if len(txG.AcquireCaches(newpeer).(*txCache).commitData[0]) > 0 {
+	if len(txG.AcquireCaches(newpeer).commitData[0]) > 0 {
 		t.Fatal("removed peer still have ghost cache")
 	}
 

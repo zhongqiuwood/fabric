@@ -354,6 +354,10 @@ func TestHTTPExecuteDeployTransaction(t *testing.T) {
 	// The chaincode used here cannot be from the fabric repo
 	// itself or it won't be downloaded because it will be found
 	// in GOPATH, which would defeat the test
+	if !viper.GetBool("chaincode.remoteinstall") {
+		t.Skip("Skip this test because config not allow get remote code")
+	}
+
 	ledger.InitTestLedger(t)
 	executeDeployTransaction(t, "http://gopkg.in/mastersingh24/fabric-test-resources.v0")
 }
@@ -1322,7 +1326,9 @@ func TestGetRows(t *testing.T) {
 var usercc bool
 
 func TestMain(m *testing.M) {
-	SetupTestConfig()
+	cf := config.SetupTestConf{"CORE", "chaincodetest", ""}
+	cf.Setup()
+
 	//Initialize crypto
 	if err := crypto.Init(); err != nil {
 		panic(fmt.Errorf("Failed initializing the crypto layer [%s]", err))

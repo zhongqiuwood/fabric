@@ -28,7 +28,6 @@ func (e *TxNetworkEntry) InitLedger(l *ledger.Ledger) {
 func (e *TxNetworkEntry) InitCred(v cred.TxHandlerFactory) {
 	logger.Debugf("txnetwork has set new txhandler %v(%T)", v, v)
 	e.net.peers.peerHandler = v
-	e.net.txPool.txHandler = v
 }
 
 func (e *TxNetworkEntry) ResetPeerSimple(id []byte) error {

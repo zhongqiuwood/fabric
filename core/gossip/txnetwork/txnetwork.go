@@ -212,7 +212,7 @@ func (g *txNetworkPeers) RemovePeer(id string) bool {
 		g.lruQueue.Remove(item)
 		delete(g.lruIndex, id)
 		if g.peerHandler != nil {
-			g.peerHandler.RemovePreHandler(id)
+			g.peerHandler.RemovePreValidator(id)
 		}
 	}
 	return ok
@@ -327,7 +327,7 @@ func (g *txNetworkPeers) TouchPeer(id string, status *pb.PeerTxState) {
 type transactionPool struct {
 	sync.RWMutex
 	ledger      *ledger.Ledger
-	txHandler   cred.TxHandlerFactory
+	txTerminal  pb.TxPreHandler
 	cCaches     map[string]*commitData
 	cPendingTxs map[string]bool
 }
@@ -366,7 +366,43 @@ func (tp *transactionPool) txIsPending(txid string) (ok bool) {
 	return
 }
 
-func (tp *transactionPool) AcquireCaches(peer string) TxCache {
+//the tx-height filter
+func (tp *transactionPool) getTxCommitHeight(txid string) uint64 {
+
+	if tp.txIsPending(txid) {
+		return 0
+	}
+
+	h, _, err := tp.ledger.GetBlockNumberByTxid(txid)
+	if err != nil {
+		logger.Errorf("Can not find index of Tx %s from ledger", txid)
+		//TODO: should we still consider it is pending?
+		return 0
+	}
+
+	return h
+
+}
+
+//the tx-complete filter
+func (tp *transactionPool) completeTx(txin *pb.Transaction) (tx *pb.Transaction, err error) {
+	if isLiteTx(txin) {
+		tx, err = tp.ledger.GetTransactionByID(txin.GetTxid())
+		if err != nil {
+			err = fmt.Errorf("Checking tx from db fail: %s", err)
+			return
+		} else if tx == nil {
+			err = fmt.Errorf("update give uncommited transactions")
+			return
+		}
+	} else {
+		tx = txin
+	}
+
+	return
+}
+
+func (tp *transactionPool) AcquireCaches(peer string) *txCache {
 
 	tp.RLock()
 

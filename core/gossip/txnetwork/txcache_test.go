@@ -178,7 +178,7 @@ func TestCommitting(t *testing.T) {
 		t.Fatal("We have a too small queue len", queueLen)
 	}
 
-	cache := txpool.AcquireCaches("any").(*txCache).commitData
+	cache := txpool.AcquireCaches("any").commitData
 
 	//generate a collection of txs large enough...
 	txcollection := make([]*pb.Transaction, queueLen*3+queueLenPart)

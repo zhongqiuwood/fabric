@@ -1,9 +1,6 @@
 package txnetwork
 
 import (
-	"fmt"
-	cred "github.com/abchain/fabric/core/cred"
-	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
 )
 
@@ -105,19 +102,6 @@ type txCache struct {
 	parent *transactionPool
 }
 
-func getTxCommitHeight(l *ledger.Ledger, txid string) uint64 {
-
-	h, _, err := l.GetBlockNumberByTxid(txid)
-	if err != nil {
-		logger.Errorf("Can not find index of Tx %s from ledger", txid)
-		//TODO: should we still consider it is pending?
-		return 0
-	}
-
-	return h
-
-}
-
 func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 
 	pos := c.commitData.pick(series)
@@ -129,7 +113,7 @@ func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 		}
 		//or tx is commited, we need to update the commitH
 
-		if h := getTxCommitHeight(c.parent.ledger, tx.GetTxid()); h == 0 {
+		if h := c.parent.getTxCommitHeight(tx.GetTxid()); h == 0 {
 			//tx can be re pooling here if it was lost before, but we should not encourage
 			//this behavoir
 			logger.Infof("Repool Tx {%s} [series %d] to ledger again", tx.GetTxid(), series)
@@ -142,48 +126,59 @@ func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 	return *pos
 }
 
-func completeTxs(txsin []*pb.Transaction, l *ledger.Ledger, h cred.TxPreHandler) (txs []*pb.Transaction, err error) {
+func completeTxs(txsin []*pb.Transaction, tp *transactionPool) ([]*pb.Transaction, error) {
 
-	txs = txsin
+	var err error
 	for i, tx := range txsin {
-		if isLiteTx(tx) {
-			tx, err = l.GetTransactionByID(tx.GetTxid())
-			if err != nil {
-				err = fmt.Errorf("Checking tx from db fail: %s", err)
-				return
-			} else if tx == nil {
-				err = fmt.Errorf("update give uncommited transactions")
-				return
-			}
-		} else if h != nil {
-			tx, err = h.TransactionPreValidation(tx)
-			if err != nil {
-				err = fmt.Errorf("Verify tx fail: %s", err)
-				return
-			}
+		tx, err = tp.completeTx(tx)
+		if err != nil {
+			return txsin[:i], err
 		}
-		txs[i] = tx
 	}
 
-	return
+	return txsin, nil
 }
 
+//send tx to the target (prehandler), each tx sent successfully is also added to cache and return
+//for record in txnetwork
+func (c *txCache) AddTxsToTarget(from uint64, txs []*pb.Transaction, preHandler pb.TxPreHandler) ([]*pb.Transaction, error) {
+
+	var txspos int
+	added := c.commitData.append(from, len(txs))
+	pooltxs := make([]string, 0, len(txs))
+
+	defer c.parent.addPendingTx(pooltxs)
+
+	for _, q := range added {
+		for i := 0; i < len(q); i++ {
+			tx := txs[txspos]
+
+			txe := pb.NewTransactionHandlingContext(tx)
+			if _, err := preHandler.Handle(txe); err != nil {
+				return txs[:txspos], err
+			}
+
+			txspos++
+			//commitedH, _, _ := c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
+
+			if commitedH == 0 {
+				pooltxs = append(pooltxs, tx.GetTxid())
+			}
+
+			q[i] = commitedH
+
+		}
+	}
+
+	return txs, nil
+}
+
+//only for test purpose
 func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction) error {
 
 	var err error
-	if c.parent.txHandler != nil {
-		preHandler, err := c.parent.txHandler.GetPreHandler(c.id)
-		if err != nil {
-			return err
-		}
-
-		logger.Debugf("cache [%s] add %d txs from series %d with handler %v", c.id, len(txs), from, preHandler)
-		txs, err = completeTxs(txs, c.parent.ledger, preHandler)
-		preHandler.Release()
-	} else {
-		logger.Debugf("cache [%s] add %d txs from series %d without handler", c.id, len(txs), from)
-		txs, err = completeTxs(txs, c.parent.ledger, nil)
-	}
+	logger.Debugf("cache [%s] add %d txs from series %d", c.id, len(txs), from)
+	txs, err = completeTxs(txs, c.parent)
 
 	if err != nil {
 		return err

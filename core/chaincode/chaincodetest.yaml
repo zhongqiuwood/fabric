@@ -134,13 +134,8 @@ logging:
     #   info                                       - Set default to INFO
     #   warning:main,db=debug:chaincode=info       - Override default WARNING in main,db,chaincode
     #   chaincode=info:main=debug:db=debug:warning - Same as above
-    peer:      debug
-    crypto:    info
-    status:    warning
-    stop:      warning
-    login:     warning
-    vm:        warning
-    chaincode: warning
+    test:      debug:buckettree,state,statemgmt=info
+
 
 
 ###############################################################################
@@ -396,6 +391,7 @@ chaincode:
     # the image
     installpath: /opt/gopath/bin/
 
+    remoteinstall: false
     #keepalive in seconds. In situations where the communiction goes through a
     #proxy that does not support keep-alive, this parameter will maintain connection
     #between peer and chaincode.

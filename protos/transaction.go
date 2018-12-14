@@ -325,10 +325,23 @@ type TxPreHandler interface {
 }
 
 //convert a function to a prehandler interface
-type FuncAsTxPreHandler func(tx *TransactionHandlingContext) (*TransactionHandlingContext, error)
+type FuncAsTxPreHandler func(*TransactionHandlingContext) (*TransactionHandlingContext, error)
 
 func (f FuncAsTxPreHandler) Handle(tx *TransactionHandlingContext) (*TransactionHandlingContext, error) {
 	return f(tx)
+}
+
+//a function filter the pure tx can also be converted to a prehandler interface
+type TxFuncAsTxPreHandler func(*Transaction) (*Transaction, error)
+
+func (f TxFuncAsTxPreHandler) Handle(txe *TransactionHandlingContext) (*TransactionHandlingContext, error) {
+	tx, err := f(txe.Transaction)
+	if err != nil {
+		return nil, err
+	}
+
+	txe.Transaction = tx
+	return txe, nil
 }
 
 var PlainTxHandler = FuncAsTxPreHandler(parsePlainTx)

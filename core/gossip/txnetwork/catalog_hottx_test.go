@@ -198,7 +198,7 @@ func TestPeerUpdate(t *testing.T) {
 	assertTxIsIdentify(t, txIndexs[8].tx, udt.GetTransactions()[7])
 	assertTxIsIdentify(t, txIndexs[9].tx, udt.GetTransactions()[8])
 
-	retTxs, err := udt.toTxs(nil)
+	retTxs, err := udt.toTxs()
 	if err != nil {
 		t.Fatal("to txs fail:", err)
 	}
@@ -239,14 +239,14 @@ func TestPeerUpdate(t *testing.T) {
 		t.Fatalf("unexpected full-tx <7>")
 	}
 
-	_, err = completeTxs(udt.Transactions, ledger, nil)
+	_, err = completeTxs(udt.Transactions, txPool)
 	if err != nil {
 		t.Fatal("handle udt fail:", err)
 	}
 
 	handledudt := udt.getRef(5)
 
-	retTxs, err = handledudt.toTxs(nil)
+	retTxs, err = handledudt.toTxs()
 	if err != nil {
 		t.Fatal("to txs fail:", err)
 	}
@@ -266,7 +266,7 @@ func TestPeerUpdate(t *testing.T) {
 	//check less index
 	handledudt = udt.getRef(3)
 
-	retTxs, err = handledudt.toTxs(nil)
+	retTxs, err = handledudt.toTxs()
 	if err != nil {
 		t.Fatal("to txs fail:", err)
 	}
@@ -380,7 +380,7 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatal("update fail", err)
 	}
 
-	if txGlobal.AcquireCaches("anotherTest").(*txCache).commitData[0] != nil {
+	if txGlobal.AcquireCaches("anotherTest").commitData[0] != nil {
 		t.Fatal("update unknown peer")
 	}
 
@@ -432,7 +432,7 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatal("unexpected last for update with old data", pool.lastSeries())
 	}
 
-	if c := txGlobal.AcquireCaches(defaultPeer).(*txCache).commitData; c[5] == nil {
+	if c := txGlobal.AcquireCaches(defaultPeer).commitData; c[5] == nil {
 		t.Fatal("Wrong commit cache status", c)
 	}
 
@@ -443,7 +443,7 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatalf("wrong head series after purge", pool.head.digestSeries)
 	}
 
-	if c := txGlobal.AcquireCaches(defaultPeer).(*txCache).commitData; c[5] != nil {
+	if c := txGlobal.AcquireCaches(defaultPeer).commitData; c[5] != nil {
 		t.Fatal("cache still have cache block which should be purged")
 	}
 

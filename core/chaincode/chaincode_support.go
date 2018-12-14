@@ -658,7 +658,7 @@ func (chaincodeSupport *ChaincodeSupport) HandleChaincodeStream(ctx context.Cont
 // Execute executes a transaction and waits for it to complete until a timeout value.
 func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *chaincodeRTEnv, txe *pb.TransactionHandlingContext, outstate ledger.TxExecStates) (*pb.ChaincodeMessage, error) {
 
-	msg, err := createTransactionMessage(txe.GetType(), txe.GetTxid(), txe.ChaincodeSpec.CtorMsg)
+	msg, err := createTransactionMessage(txe.GetType(), txe.GetTxid(), txe.ChaincodeSpec.CtorMsg, txe.SecContex)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to gen transaction message (%s)", err)
 	}

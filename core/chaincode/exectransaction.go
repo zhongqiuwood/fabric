@@ -42,9 +42,7 @@ func Execute2(ctxt context.Context, ledgerObj *ledger.Ledger, chain *ChaincodeSu
 		return nil, fmt.Errorf("Tx handling context has not enough information yet")
 	}
 
-	t := te.Transaction
 	cID := te.ChaincodeSpec.ChaincodeID
-	cMsg := te.ChaincodeSpec.CtorMsg
 	cds := te.ChaincodeDeploySpec
 
 	// YA-fabric: the condition on container side is complex enough so we could not make any assurance for creating image
@@ -57,56 +55,66 @@ func Execute2(ctxt context.Context, ledgerObj *ledger.Ledger, chain *ChaincodeSu
 	// }
 
 	//will launch if necessary (and wait for ready)
-	err, chrte := chain.Launch(ctxt, ledgerObj, cID, cds, t)
+	err, chrte := chain.Launch(ctxt, ledgerObj, cID, cds)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to launch chaincode spec(%s)", err)
 	}
 
-	//this should work because it worked above...
-	chaincode := cID.Name
-	resp, exstate, err := chain.Execute(ctxt, chrte, cMsg, t, ledger.TxExecStates{})
 	txSuccess := false
 	defer func() {
 		// **** for deploy, we add final checking ****
-		if t.Type != pb.Transaction_CHAINCODE_DEPLOY {
+		if te.GetType() != pb.Transaction_CHAINCODE_DEPLOY {
 			return
 		}
 
-		if txSuccess {
-			if exstate.StateDelta == nil {
-				panic("Tx is not run by correct process")
+		if !txSuccess {
+			chaincodeLogger.Infof("stopping due to error while final deploy tx")
+			errIgnore := chain.Stop(ctxt, te.ChaincodeDeploySpec)
+			if errIgnore != nil {
+				chaincodeLogger.Debugf("error on stop %s", errIgnore)
 			}
-			exstate.Set(cds.ChaincodeSpec.ChaincodeID.Name, deployTxKey, []byte(t.GetTxid()), nil)
-		} else {
-			chain.FinalDeploy(ctxt, txSuccess, cds, t)
 		}
 	}()
+
+	outstate := ledger.TxExecStates{}
+	outstate.InitForInvoking(ledgerObj)
+
+	if te.Type == pb.Transaction_CHAINCODE_DEPLOY {
+		err = chain.FinalDeploy(chrte, te, outstate)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to final deployment tx (%s)", err)
+		}
+	}
+
+	//this should work because it worked above...
+	chaincode := cID.Name
+	resp, err := chain.Execute(ctxt, chrte, te, outstate)
 
 	if err != nil {
 		return nil, fmt.Errorf("Failed to execute transaction or query(%s)", err)
 	} else if resp == nil {
-		return nil, fmt.Errorf("Failed to receive a response for (%s)", t.Txid)
+		return nil, fmt.Errorf("Failed to receive a response for (%s)", te.Txid)
 	}
 
 	if resp.ChaincodeEvent != nil {
 		resp.ChaincodeEvent.ChaincodeID = chaincode
-		resp.ChaincodeEvent.TxID = t.Txid
+		resp.ChaincodeEvent.TxID = te.Txid
 	}
 
 	if resp.Type == pb.ChaincodeMessage_COMPLETED || resp.Type == pb.ChaincodeMessage_QUERY_COMPLETED {
 		// Success
 		txSuccess = true
 		//		chaincodeLogger.Debugf("tx %s exec done: %x, %v", shorttxid(t.Txid), resp.Payload, resp.ChaincodeEvent)
-		return &ExecuteResult{exstate, resp.ChaincodeEvent, resp.Payload}, nil
+		return &ExecuteResult{outstate, resp.ChaincodeEvent, resp.Payload}, nil
 	} else if resp.Type == pb.ChaincodeMessage_ERROR || resp.Type == pb.ChaincodeMessage_QUERY_ERROR {
 		// Rollback transaction
-		return &ExecuteResult{exstate, resp.ChaincodeEvent, nil}, fmt.Errorf("Transaction or query returned with failure: %s", string(resp.Payload))
+		return &ExecuteResult{outstate, resp.ChaincodeEvent, nil}, fmt.Errorf("Transaction or query returned with failure: %s", string(resp.Payload))
 	}
-	return nil, fmt.Errorf("receive a response for (%s) but in invalid state(%d)", t.Txid, resp.Type)
+	return nil, fmt.Errorf("receive a response for (%s) but in invalid state(%d)", te.Txid, resp.Type)
 
 }
 
-var legacyHandler = pb.PlainTxHandler
+var legacyHandler = pb.DefaultTxHandler
 
 //Execute - execute transaction or a query
 func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) ([]byte, *pb.ChaincodeEvent, error) {
@@ -171,20 +179,6 @@ func ExecuteTransactions(ctxt context.Context, cname ChainName, xacts []*pb.Tran
 
 	return succeededTxs, stateHash, ccevents, txerrs, err
 }
-
-// GetSecureContext returns the security context from the context object or error
-// Security context is nil if security is off from core.yaml file
-// func GetSecureContext(ctxt context.Context) (crypto.Peer, error) {
-// 	var err error
-// 	temp := ctxt.Value("security")
-// 	if nil != temp {
-// 		if secCxt, ok := temp.(crypto.Peer); ok {
-// 			return secCxt, nil
-// 		}
-// 		err = errors.New("Failed to convert security context type")
-// 	}
-// 	return nil, err
-// }
 
 var errFailedToGetChainCodeSpecForTransaction = errors.New("Failed to get ChainCodeSpec from Transaction")
 

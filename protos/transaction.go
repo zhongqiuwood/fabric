@@ -17,13 +17,13 @@ limitations under the License.
 package protos
 
 import (
+	bin "encoding/binary"
 	"encoding/json"
 	"fmt"
-	"hash"
-
-	bin "encoding/binary"
 	"github.com/abchain/fabric/core/util"
 	"github.com/golang/protobuf/proto"
+	"hash"
+	"strings"
 )
 
 func TxidFromDigest(digest []byte) string {
@@ -224,11 +224,11 @@ type TransactionHandlingContext struct {
 	NetworkID, PeerID string
 	*Transaction      //the original transaction
 	//every fields can be readout from transaction (may covered by the confidentiality)
-	ChaincodeSpec                    *ChaincodeSpec
-	ChaincodeDeploySpec              *ChaincodeDeploymentSpec
-	ChaincodeName, ChaincodeTemplate string //the decrypted part of Name field in chaincodeID
-	SecContex                        *ChaincodeSecurityContext
-	CustomFields                     map[string]interface{}
+	ChaincodeSpec       *ChaincodeSpec
+	ChaincodeDeploySpec *ChaincodeDeploymentSpec
+	ChaincodeTemplate   string
+	SecContex           *ChaincodeSecurityContext
+	CustomFields        map[string]interface{}
 }
 
 func NewTransactionHandlingContext(t *Transaction) *TransactionHandlingContext {
@@ -241,6 +241,12 @@ func NewTransactionHandlingContext(t *Transaction) *TransactionHandlingContext {
    read a unencrypted tx and fill possible fields
 */
 func parsePlainTx(tx *TransactionHandlingContext) (ret *TransactionHandlingContext, err error) {
+
+	if tx.GetConfidentialityLevel() != ConfidentialityLevel_PUBLIC {
+		err = fmt.Errorf("Can't not parse non-public (level:%s) transaction", tx.GetConfidentialityLevel())
+		return
+	}
+
 	ret = tx
 
 	switch tx.Type {
@@ -266,6 +272,44 @@ func parsePlainTx(tx *TransactionHandlingContext) (ret *TransactionHandlingConte
 	return
 }
 
+//parse the chaincode name in YA-fabric 0.9's standard form: [templateName:]ccName[@LedgerName]
+//TODO: we still not assign ledger name to a field
+func parseChaincodeName(tx *TransactionHandlingContext) (ret *TransactionHandlingContext, err error) {
+
+	ret = tx
+	if ret.ChaincodeSpec == nil {
+		err = fmt.Errorf("Spec has not being parsed yet")
+		return
+	}
+
+	yfCCName := ret.ChaincodeSpec.GetChaincodeID().GetName()
+	if yfCCName == "" {
+		err = fmt.Errorf("Spec has an empty chaincodeName")
+		return
+	}
+
+	parsed := strings.Split(yfCCName, ":")
+
+	if len(parsed) >= 2 {
+		ret.ChaincodeTemplate = parsed[0]
+		if len(parsed[1:]) > 1 {
+			yfCCName = strings.Join(parsed[1:], "")
+		} else {
+			yfCCName = parsed[1]
+		}
+	}
+
+	parsed = strings.Split(yfCCName, "@")
+
+	//we overwrite the spec
+	if len(parsed) >= 2 {
+		ret.ChaincodeSpec.ChaincodeID.Name = parsed[0]
+	} else {
+		ret.ChaincodeSpec.ChaincodeID.Name = yfCCName
+	}
+	return
+}
+
 func NewPlainTxHandlingContext(tx *Transaction) (*TransactionHandlingContext, error) {
 	ret := NewTransactionHandlingContext(tx)
 
@@ -288,6 +332,8 @@ func (f FuncAsTxPreHandler) Handle(tx *TransactionHandlingContext) (*Transaction
 }
 
 var PlainTxHandler = FuncAsTxPreHandler(parsePlainTx)
+var YFCCNameHandler = FuncAsTxPreHandler(parseChaincodeName)
+var DefaultTxHandler = MutipleTxHandler(PlainTxHandler, YFCCNameHandler)
 
 /*
   Mutiple handler

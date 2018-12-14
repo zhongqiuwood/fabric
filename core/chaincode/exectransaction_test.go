@@ -129,7 +129,7 @@ func initPeer(vp *viper.Viper) (net.Listener, error) {
 	// 	}
 	// }
 
-	pb.RegisterChaincodeSupportServer(grpcServer, NewChaincodeSupport(DefaultChain, "cc_test", conf, usercc, nil))
+	pb.RegisterChaincodeSupportServer(grpcServer, NewChaincodeSupport(DefaultChain, "cc_test", conf, usercc))
 
 	go grpcServer.Serve(lis)
 

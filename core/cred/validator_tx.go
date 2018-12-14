@@ -136,7 +136,38 @@ func (f *txHandlerDefault) ValidatePeerStatus(id string, status *pb.PeerTxState)
 	return
 }
 
-func (f *txHandlerDefault) GetPreHandler(id string) (TxPreHandler, error) {
+func (f *txHandlerDefault) Handle(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
+
+	if txe.PeerID == "" {
+		return nil, errors.New("PeerID is not tagged yet")
+	}
+
+	v, err := f.assignPreHandler(txe.PeerID)
+	if err != nil {
+		return nil, err
+	}
+
+	//complete the security context
+	if txe.SecContex == nil {
+		txe.SecContex = new(pb.ChaincodeSecurityContext)
+	}
+
+	err = v.doValidate(txe)
+	if err != nil {
+		return nil, err
+	}
+
+	txe.SecContex.CallerSign = txe.Signature
+	//set the default time-stamp (maybe overwritten later)
+	txe.SecContex.TxTimestamp = txe.Timestamp
+	//create binding
+	txe.SecContex.Binding = primitives.Hash(append(txe.SecContex.CallerCert, txe.GetNonce()...))
+	txe.SecContex.Metadata = txe.Metadata
+
+	return txe, nil
+}
+
+func (f *txHandlerDefault) assignPreHandler(id string) (*txVerifier, error) {
 
 	f.RLock()
 
@@ -162,7 +193,7 @@ func (f *txHandlerDefault) GetPreHandler(id string) (TxPreHandler, error) {
 	}
 }
 
-func (f *txHandlerDefault) RemovePreHandler(id string) {
+func (f *txHandlerDefault) RemovePreValidator(id string) {
 	f.Lock()
 	defer f.Unlock()
 
@@ -200,14 +231,14 @@ type txVerifier struct {
 	ecertPool    *x509.CertPool
 }
 
-func (v *txVerifier) Release() {}
+func (v *txVerifier) doValidate(txe *pb.TransactionHandlingContext) error {
 
-func (v *txVerifier) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
+	tx := txe.Transaction
 
 	//the key derivation from tcert protocol
 	certPubkey, err := crypto.TxCertKeyDerivationEC(v.ecert.PublicKey.(*ecdsa.PublicKey), []byte(v.eid), tx.GetNonce())
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	var refCert *x509.Certificate
@@ -215,21 +246,21 @@ func (v *txVerifier) TransactionPreValidation(tx *pb.Transaction) (*pb.Transacti
 	if tx.Cert != nil {
 		refCert, err = primitives.DERToX509Certificate(tx.Cert)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if v.rootVerifier == nil {
-			return nil, x509.UnknownAuthorityError{Cert: refCert}
+			return x509.UnknownAuthorityError{Cert: refCert}
 		}
 
 		_, _, err = v.rootVerifier.VerifyWithAttr(refCert, v.ecertPool)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		txcertPk, ok := refCert.PublicKey.(*ecdsa.PublicKey)
 		if !ok {
-			return nil, errors.New("Tcert not use ecdsa signature")
+			return errors.New("Tcert not use ecdsa signature")
 		}
 
 		if !v.disableKDF {
@@ -237,7 +268,7 @@ func (v *txVerifier) TransactionPreValidation(tx *pb.Transaction) (*pb.Transacti
 			//we just compare X for it was almost impossible for attacker to reuse
 			//a cert which pubkey has same X but different Y
 			if txcertPk.X.Cmp(certPubkey.X) != 0 {
-				return nil, errors.New("Pubkey of tx cert is not matched to the derived key")
+				return errors.New("Pubkey of tx cert is not matched to the derived key")
 			}
 
 		} else {
@@ -245,27 +276,26 @@ func (v *txVerifier) TransactionPreValidation(tx *pb.Transaction) (*pb.Transacti
 			certPubkey = txcertPk
 		}
 
+		txe.SecContex.CallerCert = tx.Cert
+
 	} else {
 		refCert = v.ecert
-		//also mutate the transaction (fill the cert into transaction)
-		tx.Cert = v.ecert.Raw
+		txe.SecContex.CallerCert = v.ecert.Raw
 	}
 
 	txmsg, err := crypto.TxToSignatureMsg(tx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	ok, err := primitives.ECDSAVerify(certPubkey, txmsg, tx.GetSignature())
 	if err != nil {
-		return nil, err
+		return err
 	} else if !ok {
-		return nil, utils.ErrInvalidTransactionSignature
+		return utils.ErrInvalidTransactionSignature
 	}
 
-	//also prune signature because we do not need it anymore
-	tx.Signature = nil
-	return tx, nil
+	return nil
 }
 
 type TxHandlerFactoryX509 interface {

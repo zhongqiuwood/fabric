@@ -36,21 +36,16 @@ type ExecuteResult struct {
 
 //Execute2 - like legacy execute, but not relay the global ledger object and supposed the transaction has
 //be make pre-exec
-func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSupport, t *pb.Transaction) (*ExecuteResult, error) {
+func Execute2(ctxt context.Context, ledgerObj *ledger.Ledger, chain *ChaincodeSupport, te *pb.TransactionHandlingContext) (*ExecuteResult, error) {
 
-	if secHelper := chain.getTxHandler(); nil != secHelper {
-		var err error
-		t, err = secHelper.TransactionPreExecution(t)
-		// Note that t is now decrypted and is a deep clone of the original input t
-		if nil != err {
-			return nil, err
-		}
+	if te.ChaincodeSpec == nil {
+		return nil, fmt.Errorf("Tx handling context has not enough information yet")
 	}
 
-	cID, cMsg, cds, err := chain.Preapre(t)
-	if nil != err {
-		return nil, err
-	}
+	t := te.Transaction
+	cID := te.ChaincodeSpec.ChaincodeID
+	cMsg := te.ChaincodeSpec.CtorMsg
+	cds := te.ChaincodeDeploySpec
 
 	// YA-fabric: the condition on container side is complex enough so we could not make any assurance for creating image
 	// before we actually lauch it (chaincode container side may remove the image, fabric may not execute the deploy tx ...)
@@ -62,14 +57,14 @@ func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSuppo
 	// }
 
 	//will launch if necessary (and wait for ready)
-	err, chrte := chain.Launch(ctxt, ledger, cID, cds, t)
+	err, chrte := chain.Launch(ctxt, ledgerObj, cID, cds, t)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to launch chaincode spec(%s)", err)
 	}
 
 	//this should work because it worked above...
 	chaincode := cID.Name
-	resp, exstate, err := chain.Execute(ctxt, chrte, cMsg, t, nil)
+	resp, exstate, err := chain.Execute(ctxt, chrte, cMsg, t, ledger.TxExecStates{})
 	txSuccess := false
 	defer func() {
 		// **** for deploy, we add final checking ****
@@ -111,6 +106,8 @@ func Execute2(ctxt context.Context, ledger *ledger.Ledger, chain *ChaincodeSuppo
 
 }
 
+var legacyHandler = pb.PlainTxHandler
+
 //Execute - execute transaction or a query
 func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) ([]byte, *pb.ChaincodeEvent, error) {
 
@@ -120,8 +117,14 @@ func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) (
 		return nil, nil, fmt.Errorf("Failed to get handle to ledger (%s)", ledgerErr)
 	}
 
-	markTxBegin(ledger, t)
-	result, err := Execute2(ctxt, ledger, chain, t)
+	te := pb.NewTransactionHandlingContext(t)
+	te, err := legacyHandler.Handle(te)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	markTxBegin(ledger, te.Transaction)
+	result, err := Execute2(ctxt, ledger, chain, te)
 
 	defer func(err error) {
 
@@ -129,7 +132,7 @@ func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) (
 			ledger.ApplyTxExec(result.State.DeRef())
 		}
 		txSuccess := err == nil
-		markTxFinish(ledger, t, txSuccess)
+		markTxFinish(ledger, te.Transaction, txSuccess)
 	}(err)
 
 	if result != nil {

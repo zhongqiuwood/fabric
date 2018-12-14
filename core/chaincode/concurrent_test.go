@@ -39,7 +39,8 @@ func concurrentInvoke(ctxt context.Context, invtx []*pb.Transaction, querytx []*
 		cond.Wait()
 		lock.Unlock()
 
-		res, err := Execute2(ctxt, l, GetChain(DefaultChain), tx)
+		txe, _ := pb.NewPlainTxHandlingContext(tx)
+		res, err := Execute2(ctxt, l, GetChain(DefaultChain), txe)
 
 		lock.Lock()
 		wg.Done()

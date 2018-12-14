@@ -74,7 +74,10 @@ type chaincodeRTEnv struct {
 type runningChaincodes struct {
 	sync.RWMutex
 	// chaincode environment for each chaincode
-	chaincodeMap map[string]*chaincodeRTEnv
+	chaincodeMap map[string]map[*ledger.Ledger]*chaincodeRTEnv
+
+	// only for usercc, cache pre-connected chaincode and use them for launching
+	freeChainCodes map[string][]*chaincodeRTEnv
 }
 
 // GetChain returns the chaincode support for a given chain
@@ -87,18 +90,26 @@ func GetDefaultChain() *ChaincodeSupport {
 }
 
 //call this under lock
-func (chaincodeSupport *ChaincodeSupport) preLaunchSetup(chaincode string) *chaincodeRTEnv {
+func (chaincodeSupport *ChaincodeSupport) preLaunchSetup(l *ledger.Ledger, chaincode string) *chaincodeRTEnv {
 	//register placeholder Handler.
 	ret := &chaincodeRTEnv{
 		launchNotify: make(chan error, 1),
 	}
-	chaincodeSupport.runningChaincodes.chaincodeMap[chaincode] = ret
+
+	if _, ok := chaincodeSupport.runningChaincodes.chaincodeMap[chaincode]; !ok {
+		chaincodeSupport.runningChaincodes.chaincodeMap[chaincode] = make(map[*ledger.Ledger]*chaincodeRTEnv)
+	}
+	chaincodeSupport.runningChaincodes.chaincodeMap[chaincode][l] = ret
 	return ret
 }
 
 const (
-	deployTxKey = "__YAFABRIC_deployTx"
+	codepackCCName = ".repoCC"
+	deployTxKey    = "__YAFABRIC_deployTx"
 )
+
+//used to filter some chaincode name from external accessing
+var ReservedCCName = map[string]bool{codepackCCName: true}
 
 func (chaincodeSupport *ChaincodeSupport) FinalDeploy(ctx context.Context, txsuccess bool, cds *pb.ChaincodeDeploymentSpec, t *pb.Transaction) {
 
@@ -113,27 +124,24 @@ func (chaincodeSupport *ChaincodeSupport) FinalDeploy(ctx context.Context, txsuc
 	}
 }
 
-func checkDeployTxID(chaincode string, ledger *ledger.Ledger) ([]byte, error) {
+func checkDeployTx(chaincode string, ledger *ledger.Ledger) ([]byte, error) {
 	return ledger.GetState(chaincode, deployTxKey, true)
 }
 
-func (chaincodeSupport *ChaincodeSupport) extractDeployTx(chaincode string, ledger *ledger.Ledger) (*pb.Transaction, error) {
+func (chaincodeSupport *ChaincodeSupport) extractDeployData(chaincode string, ledger *ledger.Ledger) (*pb.ChaincodeDeploymentSpec, *pb.ChaincodeSecurityContext, error) {
 	if chaincodeSupport.userRunsCC {
 		chaincodeLogger.Error("You are attempting to perform an action other than Deploy on Chaincode that is not ready and you are in developer mode. Did you forget to Deploy your chaincode?")
 	}
 
-	var depTxId []byte
 	var depTx *pb.Transaction
 	var ledgerErr error
-	depTxId, ledgerErr = checkDeployTxID(chaincode, ledger)
+	depTx, ledgerErr = checkDeployTx(chaincode, ledger)
 	if ledgerErr != nil {
 		return nil, fmt.Errorf("Failed to get deploy key in ledger (%s)", ledgerErr)
-	} else if depTxId == nil {
+	} else if depTx == nil {
 		//to compatible old code
 		chaincodeLogger.Warningf("Deploy tx for chaincoide %s not found, try chaincode name as tx id", chaincode)
 		depTx, ledgerErr = ledger.GetTransactionByID(chaincode)
-	} else {
-		depTx, ledgerErr = ledger.GetTransactionByID(string(depTxId))
 	}
 
 	//hopefully we are restarting from existing image and the deployed transaction exists
@@ -156,9 +164,33 @@ func (chaincodeSupport *ChaincodeSupport) extractDeployTx(chaincode string, ledg
 }
 
 //call this under lock
-func (chaincodeSupport *ChaincodeSupport) chaincodeHasBeenLaunched(chaincode string) (*chaincodeRTEnv, bool) {
-	chrte, hasbeenlaunched := chaincodeSupport.runningChaincodes.chaincodeMap[chaincode]
-	return chrte, hasbeenlaunched
+func (chaincodeSupport *ChaincodeSupport) chaincodeHasBeenLaunched(l *ledger.Ledger, chaincode string) (chrte *chaincodeRTEnv, hasbeenlaunched bool) {
+
+	if chaincodeSupport.userRunsCC {
+		//check cached, prelaunched sessions
+		defer func() {
+			if !hasbeenlaunched {
+				for _, chrte = range chaincodeSupport.runningChaincodes.freeChainCodes[chaincode] {
+					//take one cached session out
+					chrte.handler.Ledger = l
+					if _, ok := chaincodeSupport.runningChaincodes.chaincodeMap[chaincode]; !ok {
+						chaincodeSupport.runningChaincodes.chaincodeMap[chaincode] = make(map[*ledger.Ledger]*chaincodeRTEnv)
+					}
+					chaincodeSupport.runningChaincodes.chaincodeMap[chaincode][l] = chrte
+					fcc := chaincodeSupport.runningChaincodes.freeChainCodes[chaincode]
+					chaincodeSupport.runningChaincodes.freeChainCodes[chaincode] = fcc[1:]
+					hasbeenlaunched = true
+				}
+			}
+		}()
+	}
+
+	if ml, ledgerExist := chaincodeSupport.runningChaincodes.chaincodeMap[chaincode]; !ledgerExist {
+		return
+	} else {
+		chrte, hasbeenlaunched = ml[l]
+		return
+	}
 }
 
 // NewChaincodeSupport creates a new ChaincodeSupport instance
@@ -166,7 +198,7 @@ func NewChaincodeSupport(chainname ChainName, nodeName string, srvSpec *config.S
 
 	s := &ChaincodeSupport{name: chainname,
 		runningChaincodes: &runningChaincodes{
-			chaincodeMap: make(map[string]*chaincodeRTEnv),
+			chaincodeMap: make(map[string]map[*ledger.Ledger]*chaincodeRTEnv),
 		},
 		txHandler:   txH,
 		userRunsCC:  userrunsCC,
@@ -272,32 +304,36 @@ func (chaincodeSupport *ChaincodeSupport) registerHandler(cID *pb.ChaincodeID, s
 	chaincodeSupport.runningChaincodes.Lock()
 	defer chaincodeSupport.runningChaincodes.Unlock()
 
-	chrte, ok := chaincodeSupport.chaincodeHasBeenLaunched(key)
-	if ok && chrte.handler != nil {
-		//add more stream into exist handler
-		ws, err := chrte.handler.addNewStream(stream)
-		if err != nil {
-			return nil, nil, err
+	var handler *Handler
+	var err error
+	//TODO: handling mutiple stream in one handler
+	for l, chrte := range chaincodeSupport.runningChaincodes.chaincodeMap[key] {
+
+		//so it was a pending runtime (just launched) and can be use
+		//(all cc just created is equivalence for pending launching instance
+		//and we can assigned to any one of them)
+		if chrte.handler == nil {
+			handler = newChaincodeSupportHandler(chaincodeSupport)
+			handler.ChaincodeID = cID
+			handler.Ledger = l
+
+			chrte.handler = handler
+			defer func(chrte *chaincodeRTEnv) { chrte.launchNotify <- err }(chrte)
+			break
 		}
-		return chrte.handler, ws, nil
+
 	}
 
-	//handler is just lauched
-	handler := newChaincodeSupportHandler(chaincodeSupport)
-	handler.ChaincodeID = cID
-	var err error
-
-	//a placeholder, unregistered handler will be setup by query or transaction processing that comes
-	//through via consensus. In this case we swap the handler and give it the notify channel
-	if chrte != nil {
-		chrte.handler = handler
-		defer func(chrte *chaincodeRTEnv) { chrte.launchNotify <- err }(chrte)
-	} else {
-		//should not allow register in "NET" mode
+	//if we can not find any available pending runtime, maybe we can cache it (only for userruncc mode)
+	if handler == nil {
 		if !chaincodeSupport.userRunsCC {
 			return nil, nil, fmt.Errorf("Can't register chaincode without invoking deploy tx")
+		} else {
+			handler = newChaincodeSupportHandler(chaincodeSupport)
+			handler.ChaincodeID = cID
+			chaincodeSupport.runningChaincodes.freeChainCodes[key] = append(chaincodeSupport.runningChaincodes.freeChainCodes[key],
+				&chaincodeRTEnv{handler: handler})
 		}
-		chaincodeSupport.runningChaincodes.chaincodeMap[key] = &chaincodeRTEnv{handler: handler}
 	}
 
 	var ws *workingStream
@@ -326,11 +362,34 @@ func (chaincodeSupport *ChaincodeSupport) registerHandler(cID *pb.ChaincodeID, s
 func (chaincodeSupport *ChaincodeSupport) deregisterHandler(chaincodehandler *Handler) {
 
 	key := chaincodehandler.ChaincodeID.Name
+	l := chaincodehandler.Ledger
 	chaincodeSupport.runningChaincodes.Lock()
 	defer chaincodeSupport.runningChaincodes.Unlock()
 
-	delete(chaincodeSupport.runningChaincodes.chaincodeMap, key)
-	chaincodeLogger.Debugf("Deregistered handler with key: %s", key)
+	chaincodeLogger.Debugf("Deregistered handler with key %s and ledger %p", key, l)
+	if l == nil {
+		//this should be a free rte ...
+		for i, rte := range chaincodeSupport.runningChaincodes.freeChainCodes[key] {
+			if rte.handler == chaincodehandler {
+				freeRtes := chaincodeSupport.runningChaincodes.freeChainCodes[key]
+				freeRtes = append(freeRtes[:i], freeRtes[i+1:]...)
+				chaincodeSupport.runningChaincodes.freeChainCodes[key] = freeRtes
+				break
+			}
+		}
+	} else {
+
+		if _, ok := chaincodeSupport.runningChaincodes.chaincodeMap[key]; !ok {
+			chaincodeLogger.Warning("handler for chaincode %s has been pruned", key)
+			return
+		}
+
+		delete(chaincodeSupport.runningChaincodes.chaincodeMap[key], l)
+		if len(chaincodeSupport.runningChaincodes.chaincodeMap[key]) == 0 {
+			chaincodeLogger.Debugf("clean handlers group with key: %s", key)
+			delete(chaincodeSupport.runningChaincodes.chaincodeMap, key)
+		}
+	}
 
 }
 
@@ -407,13 +466,13 @@ func (chaincodeSupport *ChaincodeSupport) launchAndWaitForRegister(ctxt context.
 	return nil
 }
 
-func (chaincodeSupport *ChaincodeSupport) finishLaunching(chaincode string, notify error) {
+func (chaincodeSupport *ChaincodeSupport) finishLaunching(l *ledger.Ledger, chaincode string, notify error) {
 
 	//we need a "lasttime checking", so if the launching chaincode is not registered,
 	//we just erase it and notify a termination
 	chaincodeSupport.runningChaincodes.Lock()
 	defer chaincodeSupport.runningChaincodes.Unlock()
-	if rte, ok := chaincodeSupport.chaincodeHasBeenLaunched(chaincode); !ok {
+	if rte, ok := chaincodeSupport.chaincodeHasBeenLaunched(l, chaincode); !ok {
 		//nothing to do
 		chaincodeLogger.Warningf("trying to terminate the launching for unexist chaincode %s", chaincode)
 		return
@@ -433,7 +492,11 @@ func (chaincodeSupport *ChaincodeSupport) finishLaunching(chaincode string, noti
 
 	//if we get err notify, we must clear the rte even it has created a handler
 	if notify != nil {
-		delete(chaincodeSupport.runningChaincodes.chaincodeMap, chaincode)
+		ml := chaincodeSupport.runningChaincodes.chaincodeMap[chaincode]
+		delete(ml, l)
+		if len(ml) == 0 {
+			delete(chaincodeSupport.runningChaincodes.chaincodeMap, chaincode)
+		}
 	}
 }
 
@@ -471,7 +534,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 
 	//the first tx touch the corresponding run-time object is response for the actually
 	//launching and other tx just wait
-	if chrte, ok := chaincodeSupport.chaincodeHasBeenLaunched(chaincode); ok {
+	if chrte, ok := chaincodeSupport.chaincodeHasBeenLaunched(ledger, chaincode); ok {
 		if chrte.waitCtx == nil {
 			chaincodeLogger.Debugf("chaincode is running(no need to launch) : %s", chaincode)
 			chaincodeSupport.runningChaincodes.Unlock()
@@ -496,7 +559,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 	}
 
 	//the first one create rte and start its adventure ...
-	chrte := chaincodeSupport.preLaunchSetup(chaincode)
+	chrte := chaincodeSupport.preLaunchSetup(ledger, chaincode)
 	var waitCf context.CancelFunc
 	chrte.waitCtx, waitCf = context.WithCancel(ctx)
 	chaincodeSupport.runningChaincodes.Unlock()
@@ -506,7 +569,7 @@ func (chaincodeSupport *ChaincodeSupport) Launch(ctx context.Context, ledger *le
 
 	//so the launchResult in runtime will be set first
 	defer waitCf()
-	defer func() { chaincodeSupport.finishLaunching(chaincode, err) }()
+	defer func() { chaincodeSupport.finishLaunching(ledger, chaincode, err) }()
 
 	if t.Type != pb.Transaction_CHAINCODE_DEPLOY {
 		//so the cds must be nil
@@ -615,71 +678,6 @@ func (chaincodeSupport *ChaincodeSupport) getVMType(cds *pb.ChaincodeDeploymentS
 	return container.DOCKER, nil
 }
 
-// Prepare parse the transaction and obtain require informations
-func (chaincodeSupport *ChaincodeSupport) Preapre(t *pb.Transaction) (*pb.ChaincodeID, *pb.ChaincodeInput, *pb.ChaincodeDeploymentSpec, error) {
-
-	if t.Type == pb.Transaction_CHAINCODE_DEPLOY {
-		cds := &pb.ChaincodeDeploymentSpec{}
-		err := proto.Unmarshal(t.Payload, cds)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		return cds.ChaincodeSpec.ChaincodeID, cds.ChaincodeSpec.CtorMsg, cds, nil
-	} else if t.Type == pb.Transaction_CHAINCODE_INVOKE || t.Type == pb.Transaction_CHAINCODE_QUERY {
-		ci := &pb.ChaincodeInvocationSpec{}
-		err := proto.Unmarshal(t.Payload, ci)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		return ci.ChaincodeSpec.ChaincodeID, ci.ChaincodeSpec.CtorMsg, nil, nil
-	} else {
-		return nil, nil, nil, fmt.Errorf("invalid transaction type: %d", t.Type)
-	}
-
-}
-
-// Deploy deploys the chaincode if not in development mode where user is running the chaincode.
-// func (chaincodeSupport *ChaincodeSupport) Deploy(context context.Context, cds *pb.ChaincodeDeploymentSpec) error {
-
-// 	cID := cds.ChaincodeSpec.ChaincodeID
-// 	cLang := cds.ChaincodeSpec.Type
-// 	chaincode := cID.Name
-
-// 	if chaincodeSupport.userRunsCC {
-// 		chaincodeLogger.Debug("user runs chaincode, not deploying chaincode")
-// 		return nil
-// 	}
-
-// 	chaincodeSupport.runningChaincodes.Lock()
-// 	//if its in the map, there must be a connected stream...and we are trying to build the code ?!
-// 	if _, ok := chaincodeSupport.chaincodeHasBeenLaunched(chaincode); ok {
-// 		chaincodeLogger.Debugf("deploy ?!! there's a chaincode with that name running: %s", chaincode)
-// 		chaincodeSupport.runningChaincodes.Unlock()
-// 		return fmt.Errorf("deploy attempted but a chaincode with same name running %s", chaincode)
-// 	}
-// 	chaincodeSupport.runningChaincodes.Unlock()
-
-// 	args, envs, err := chaincodeSupport.getArgsAndEnv(cID, cLang)
-// 	if err != nil {
-// 		return fmt.Errorf("error getting args for chaincode %s", err)
-// 	}
-
-// 	var targz io.Reader = bytes.NewBuffer(cds.CodePackage)
-// 	cir := &container.CreateImageReq{CCID: ccintf.CCID{ChaincodeSpec: cds.ChaincodeSpec, NetworkID: chaincodeSupport.name, PeerID: chaincodeSupport.nodeID}, Args: args, Reader: targz, Env: envs}
-
-// 	vmtype, _ := chaincodeSupport.getVMType(cds)
-
-// 	chaincodeLogger.Debugf("deploying chaincode %s(chain:%s,nodeid:%s)", chaincode, chaincodeSupport.name, chaincodeSupport.nodeID)
-
-// 	//create image and create container
-// 	_, err = container.VMCProcess(context, vmtype, cir)
-// 	if err != nil {
-// 		err = fmt.Errorf("Error starting container: %s", err)
-// 	}
-
-// 	return err
-// }
-
 // Register the bidi stream entry point called by chaincode to register with the Peer.
 // registerHandler implements ccintf.HandleChaincodeStream for all vms to call with appropriate stream
 // It call the main loop in handler for handling the associated Chaincode stream
@@ -711,11 +709,48 @@ func (chaincodeSupport *ChaincodeSupport) HandleChaincodeStream(ctx context.Cont
 }
 
 // Execute executes a transaction and waits for it to complete until a timeout value.
-func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *chaincodeRTEnv, cMsg *pb.ChaincodeInput, tx *pb.Transaction, outstate *ledger.TxExecStates) (*pb.ChaincodeMessage, ledger.TxExecStates, error) {
+func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *chaincodeRTEnv, cMsg *pb.ChaincodeInput, tx *pb.Transaction, outstate ledger.TxExecStates) (*pb.ChaincodeMessage, ledger.TxExecStates, error) {
+
+	msg, err := createTransactionMessage(tx, cMsg)
+	if err != nil {
+		return nil, emptyExState, fmt.Errorf("Failed to transaction message(%s)", err)
+	}
+
+	// if err = handler.setChaincodeSecurityContext(tx, msg); err != nil {
+	// 	return nil, emptyExState, err
+	// }
 
 	wctx, cf := context.WithTimeout(ctxt, chaincodeSupport.ccExecTimeout)
 	defer cf()
-	msg, newoutstate, err := chrte.handler.executeMessage(wctx, cMsg, tx, outstate)
+	msg, outstate, err = chrte.handler.executeMessage(wctx, msg, outstate)
 
-	return msg, newoutstate, err
+	return msg, outstate, err
+}
+
+func (chaincodeSupport *ChaincodeSupport) ReleaseLedger(l *ledger.Ledger) error {
+
+	chaincodeLogger.Debugf("Release all handler bind to ledger %p", l)
+
+	chaincodeSupport.runningChaincodes.Lock()
+	defer chaincodeSupport.runningChaincodes.Unlock()
+
+	for _, rtes := range chaincodeSupport.runningChaincodes.chaincodeMap {
+		if rte, ok := rtes[l]; ok {
+			//sanity check: a run-time of pending status indicate some execute is running with
+			//corresponding ledger, and the caller do execute and releaseledger simultaneously,
+			//which should not be allowed
+			if rte.handler == nil {
+				panic("try to delete a runtime when launching is pending, indicate a malformed, racing code")
+			}
+
+			//disconnect all streams
+			//DO NOT delete the corresponding handler explicitly, deregisterHandler will do that
+			for _, strm := range rte.handler.workingStream {
+				//TODO: we should define some message to gracely shutdown the stream
+				strm.resp <- &pb.ChaincodeMessage{Type: pb.ChaincodeMessage_ERROR}
+			}
+		}
+	}
+
+	return nil
 }

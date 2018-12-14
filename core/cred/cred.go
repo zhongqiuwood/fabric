@@ -31,14 +31,30 @@ type PeerCreds interface {
 
 type TxHandlerFactory interface {
 	ValidatePeerStatus(id string, status *pb.PeerTxState) error
-	GetPreHandler(id string) (TxPreHandler, error)
 	//notify all of the preparing for a specified id (i.e. caches) can be complete released
-	RemovePreHandler(id string)
+	RemovePreValidator(id string)
+	//tx prevalidator, handle any tx context with peerID being tagged, and fill the security context
+	pb.TxPreHandler
 }
 
-type TxPreHandler interface {
-	TransactionPreValidation(*pb.Transaction) (*pb.Transaction, error)
-	Release()
+// DataEncryptor is used to encrypt/decrypt chaincode's state data
+type DataEncryptor interface {
+	Encrypt([]byte) ([]byte, error)
+	Decrypt([]byte) ([]byte, error)
+}
+
+/*
+  (YA-fabric 0.9:
+  it is supposed to be created from something like a certfication but will not
+  get an implement in recent)
+*/
+type TxConfidentialityHandler interface {
+	//tx preexcution, it parse the tx with specified confidentiality and also prepare the
+	//execution context for data encryptor
+	pb.TxPreHandler
+
+	//---this method is under considering and may be abandoned later---
+	GetStateEncryptor(deployTx, executeTx *pb.Transaction) (DataEncryptor, error)
 }
 
 /*
@@ -58,37 +74,13 @@ type TxEndorser interface {
 	Release()
 }
 
-/*
-
- -- entries for per-platform's confidentiality ---
-
-*/
-
-// DataEncryptor is used to encrypt/decrypt chaincode's state data
-type DataEncryptor interface {
-	Encrypt([]byte) ([]byte, error)
-	Decrypt([]byte) ([]byte, error)
-}
-
-//YA-fabric 0.9
-//it is supposed to be created from something like a certfication but will not
-//get an implement in recent
-type TxConfidentialityHandler interface {
-	//decrypt the transaction
-	TransactionPreExecution(*pb.Transaction) (*pb.Transaction, error)
-	//returns a DataEncryptor linked to pair defined by
-	//the deploy transaction and the execute transaction.
-	GenDataEncryptor(deployTx, executeTx *pb.Transaction) (DataEncryptor, error)
-}
-
 //represent the most common implement for credential: the cert-base credential
-//A certcred object can always act as a TxPreHandler or TxHandlerFactory, but
+//A certcred object can always act as a TxHandlerFactory, but
 //it must contain a privte key to act as PeerCred
 //NOTICE: a cert object can act to mutiple role, it deep copy its data to the
 //cred object created in "ActAs..." function
 type CertificateCred interface {
 	HasPrivKey() bool
 	ActAsTxHandlerFactory() (TxHandlerFactory, error)
-	ActAsTxPreHandler() (TxPreHandler, error)
 	ActAsPeerCreds() (PeerCreds, error)
 }

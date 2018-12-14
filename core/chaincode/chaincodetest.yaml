@@ -390,7 +390,7 @@ chaincode:
     # command line on local machine
     #net - in net mode validator will run chaincode in a docker container
 
-    mode: dev
+    mode: net
     # typically installpath should not be modified. Otherwise, user must ensure
     # the chaincode executable is placed in the path specifed by installpath in
     # the image

@@ -220,14 +220,15 @@ func (c *ChaincodeInput) UnmarshalJSON(b []byte) error {
   fields
 */
 type TransactionHandlingContext struct {
-	*Transaction //the original transaction
-	//every fields can be readout from transaction (may covered by the confidentiality)
-	ChaincodeName       string //the decrypted part of Name field in chaincodeID
-	ChaincodeSpec       *ChaincodeSpec
-	ChaincodeDeploySpec *ChaincodeDeploymentSpec
 	//fields will be tagged from outside
 	NetworkID, PeerID string
-	CustomFields      map[string]interface{}
+	*Transaction      //the original transaction
+	//every fields can be readout from transaction (may covered by the confidentiality)
+	ChaincodeSpec                    *ChaincodeSpec
+	ChaincodeDeploySpec              *ChaincodeDeploymentSpec
+	ChaincodeName, ChaincodeTemplate string //the decrypted part of Name field in chaincodeID
+	SecContex                        *ChaincodeSecurityContext
+	CustomFields                     map[string]interface{}
 }
 
 func NewTransactionHandlingContext(t *Transaction) *TransactionHandlingContext {
@@ -250,7 +251,7 @@ func parsePlainTx(tx *TransactionHandlingContext) (ret *TransactionHandlingConte
 			return
 		}
 		ret.ChaincodeDeploySpec = cds
-		ret.ChaincodeName = cds.GetChaincodeSpec().GetChaincodeID().GetName()
+		ret.ChaincodeSpec = cds.GetChaincodeSpec()
 	case Transaction_CHAINCODE_INVOKE, Transaction_CHAINCODE_QUERY:
 		ci := &ChaincodeInvocationSpec{}
 		err = proto.Unmarshal(tx.Payload, ci)
@@ -258,7 +259,6 @@ func parsePlainTx(tx *TransactionHandlingContext) (ret *TransactionHandlingConte
 			return
 		}
 		ret.ChaincodeSpec = ci.GetChaincodeSpec()
-		ret.ChaincodeName = ci.GetChaincodeSpec().GetChaincodeID().GetName()
 	default:
 		err = fmt.Errorf("invalid transaction type: %d", tx.Type)
 	}

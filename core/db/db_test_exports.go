@@ -17,11 +17,9 @@ limitations under the License.
 package db
 
 import (
+	"github.com/tecbot/gorocksdb"
 	"os"
 	"testing"
-
-	"github.com/spf13/viper"
-	"github.com/tecbot/gorocksdb"
 )
 
 // TestDBWrapper wraps the db. Can be used by other modules for testing
@@ -98,8 +96,9 @@ func (testDB *TestDBWrapper) cleanup() {
 }
 
 func (testDB *TestDBWrapper) removeDBPath() {
-	dbPath := viper.GetString("peer.fileSystemPath")
-	os.RemoveAll(dbPath)
+	if dbPathSetting != "" {
+		os.RemoveAll(getDBPath(""))
+	}
 }
 
 func (testDB *TestDBWrapper) NewWriteBatch() *DBWriteBatch {

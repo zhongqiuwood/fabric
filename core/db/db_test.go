@@ -20,12 +20,10 @@ import (
 	"bytes"
 	"encoding/binary"
 	"github.com/abchain/fabric/core/config"
-	"github.com/abchain/fabric/core/util"
 	"github.com/spf13/viper"
 	"github.com/tecbot/gorocksdb"
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"testing"
 )
 
@@ -35,10 +33,8 @@ func TestMain(m *testing.M) {
 }
 
 func TestGetDBPathEmptyPath(t *testing.T) {
+	defer func(dbsetting string) { InitDBPath(dbsetting) }(dbPathSetting)
 	dbPathSetting = ""
-	originalSetting := viper.GetString("peer.fileSystemPath")
-	viper.Set("peer.fileSystemPath", "")
-	defer viper.Set("peer.fileSystemPath", originalSetting)
 	defer func() {
 		x := recover()
 		if x == nil {
@@ -332,14 +328,14 @@ func testIterator(t *testing.T, itr *gorocksdb.Iterator, expectedValues map[stri
 }
 
 func createNonEmptyTestDBPath() {
-	dbPath := util.CanonicalizePath(viper.GetString("peer.fileSystemPath"))
-	os.MkdirAll(filepath.Join(dbPath, "db", "tmpFile"), 0775)
-	os.MkdirAll(filepath.Join(dbPath, "txdb"), 0775)
+	os.MkdirAll(getDBPath("db", "tmpFile"), 0775)
+	os.MkdirAll(getDBPath("txdb"), 0775)
 }
 
 func deleteTestDBPath() {
-	dbPath := viper.GetString("peer.fileSystemPath")
-	os.RemoveAll(dbPath)
+	if dbPathSetting != "" {
+		os.RemoveAll(getDBPath(""))
+	}
 }
 
 func setupTestConfig() {
@@ -347,7 +343,8 @@ func setupTestConfig() {
 	if err != nil {
 		panic(err)
 	}
-	viper.Set("peer.fileSystemPath", tempDir)
+	viper.Set("peer.fileSystemPath", "")
+	InitDBPath(tempDir)
 	deleteTestDBPath()
 }
 

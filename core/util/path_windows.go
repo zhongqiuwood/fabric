@@ -8,14 +8,14 @@ func CanonicalizePath(path string) string {
 	pathexpanded, err := registry.ExpandString(path)
 	if err == nil {
 		path = pathexpanded
-	} 
+	}
 
 	if !strings.HasSuffix(path, "\\") {
 		path = path + "\\"
 	}
 
 	return path
-	
+
 }
 
 func CanonicalizeFilePath(path string) string {
@@ -23,8 +23,8 @@ func CanonicalizeFilePath(path string) string {
 	pathpathexpanded, err := registry.ExpandString(path)
 	if err == nil {
 		return pathpathexpanded
-	}else{
-		return path	
+	} else {
+		return path
 	}
-	
+
 }

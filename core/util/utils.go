@@ -184,7 +184,7 @@ func ArrayToChaincodeArgs(args []string) [][]byte {
 func MkdirIfNotExist(targetDir string) bool {
 	missing, err := dirMissingOrEmpty(targetDir)
 	if err != nil {
-		panic(fmt.Sprintf("Error while trying to open DB: %s", err))
+		panic(fmt.Sprintf("Error while trying to open directory: %s", err))
 	}
 
 	if missing {

@@ -77,12 +77,6 @@ func (ne *NodeEngine) PreInit() {
 //ne will fully respect an old-fashion (fabric 0.6) config file
 func (ne *NodeEngine) ExecInit() error {
 
-	fpath := viper.GetString("node.fileSystemPath")
-	//if not set, use the old fashion one (peer.fileSystemPath)
-	if fpath != "" {
-		db.InitDBPath(fpath)
-	}
-
 	//init ledgers
 	var defaultTag string
 	for tag, l := range ne.Ledgers {

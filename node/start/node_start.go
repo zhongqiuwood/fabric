@@ -23,14 +23,15 @@ func PreInitFabricNode(name string) {
 	if theNode != nil {
 		panic("Doudble call of init")
 	}
-	theNode = node.CreateNode()
+	theNode = new(node.NodeEngine)
 	theNode.Name = name
+	theNode.PreInit()
 }
 
 func InitFabricNode() error {
 
 	config.CacheViper()
-	if err := theNode.Init(); err != nil {
+	if err := theNode.ExecInit(); err != nil {
 		return fmt.Errorf("NODE INIT FAILURE: ***** %s *****", err)
 	}
 
@@ -51,7 +52,7 @@ func InitFabricNode() error {
 
 	pb.RegisterChaincodeSupportServer(ccsrv.Server,
 		//TODO: cred should provide confidienty handler
-		chaincode.NewChaincodeSupport(chaincode.DefaultChain, theNode.Name, ccsrv.Spec(), userRunsCC, nil))
+		chaincode.NewChaincodeSupport(chaincode.DefaultChain, theNode.Name, ccsrv.Spec(), userRunsCC))
 
 	var apisrv, evtsrv node.ServicePoint
 	var evtConf *viper.Viper

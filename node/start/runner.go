@@ -1,13 +1,8 @@
-package node
+package startnode
 
 import (
 	"fmt"
 	"github.com/abchain/fabric/core/crypto"
-	"github.com/abchain/fabric/flogging"
-	"github.com/abchain/fabric/peer/node"
-	"github.com/abchain/fabric/peerex"
-	"github.com/spf13/viper"
-	"runtime"
 )
 
 type NodeConfig struct {
@@ -16,32 +11,30 @@ type NodeConfig struct {
 }
 
 //mimic peer.main()
-func RunNode(cfg *NodeConfig) {
+func RunNode(ncfg *NodeConfig) {
 
-	peerConfig := &peerex.GlobalConfig{
-		LogRole: "node",
-	}
+	cfg := new(GlobalConfig)
+	cfg.LogRole = "node"
+	cfg.DefaultSetting = ncfg.Settings
 
-	err := peerConfig.InitGlobalWrapper(true, cfg.Settings)
-
-	if err != nil {
+	if err := cfg.Apply(); err != nil {
 		panic(fmt.Errorf("Init fail:", err))
 	}
 
-	runtime.GOMAXPROCS(viper.GetInt("peer.gomaxprocs"))
-
 	// Init the crypto layer
-	err = crypto.Init()
-	if err != nil {
+	if err := crypto.Init(); err != nil {
 		panic(fmt.Errorf("Failed to initialize the crypto layer: %s", err))
 	}
 
-	flogging.LoggingInit("node")
-
-	// run serve
-	err = node.StartNode(cfg.PostRun)
-	if err != nil {
+	PreInitFabricNode("Default")
+	if err := InitFabricNode(); err != nil {
 		panic(fmt.Errorf("Failed to running node: %s", err))
 	}
 
+	if ncfg.PostRun != nil {
+		if err := ncfg.PostRun(); err != nil {
+			logger.Errorf("post run fail: %s, exit immediately", err)
+			return
+		}
+	}
 }

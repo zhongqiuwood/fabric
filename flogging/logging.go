@@ -17,6 +17,7 @@ limitations under the License.
 package flogging
 
 import (
+	"io"
 	"os"
 	"strings"
 
@@ -88,21 +89,44 @@ func DefaultLoggingLevel() logging.Level {
 	return loggingDefaultLevel
 }
 
+func SetLogFormat(formatStr string) error {
+
+	f, err := logging.NewStringFormatter(formatStr)
+	if err != nil {
+		return err
+	}
+
+	format = f
+	DefaultBackend.Backend = logging.NewBackendFormatter(lowLayerBackend, format)
+
+	return nil
+}
+
+func SetLogOutput(w io.Writer, prefix string, flag int) {
+
+	lowLayerBackend = logging.NewLogBackend(w, prefix, flag)
+	DefaultBackend.Backend = logging.NewBackendFormatter(lowLayerBackend, format)
+
+}
+
 var (
-	DefaultBackend *ModuleLeveled
+	DefaultBackend  *ModuleLeveled
+	lowLayerBackend *logging.LogBackend
+	format          logging.Formatter
 )
 
 // Initiate 'leveled' logging to stderr.
 func init() {
 
-	format := logging.MustStringFormatter(
+	format = logging.MustStringFormatter(
 		"%{color}%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}",
 	)
 
+	lowLayerBackend = logging.NewLogBackend(os.Stderr, "", 0)
+
 	DefaultBackend = &ModuleLeveled{
-		levels: make(map[string]logging.Level),
-		Backend: logging.NewBackendFormatter(
-			logging.NewLogBackend(os.Stderr, "", 0), format),
+		levels:  make(map[string]logging.Level),
+		Backend: logging.NewBackendFormatter(lowLayerBackend, format),
 	}
 	DefaultBackend.SetLevel(loggingDefaultLevel, "")
 

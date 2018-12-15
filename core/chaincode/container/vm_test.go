@@ -22,6 +22,7 @@ import (
 	"compress/gzip"
 	"flag"
 	"fmt"
+	"github.com/abchain/fabric/core/config"
 	"io/ioutil"
 	"os"
 	"testing"
@@ -36,7 +37,8 @@ import (
 func TestMain(m *testing.M) {
 	flag.BoolVar(&runTests, "run-controller-tests", false, "run tests")
 	flag.Parse()
-	SetupTestConfig()
+	cfg := config.SetupTestConf{"CORE", "core", "./../../peer/"}
+	cfg.Setup()
 	os.Exit(m.Run())
 }
 
@@ -50,18 +52,20 @@ func createChaincodePackageBytes(spec *pb.ChaincodeSpec) ([]byte, error) {
 	gw := gzip.NewWriter(inputbuf)
 	tw := tar.NewWriter(gw)
 
-	platform, err := platforms.Find(spec.Type)
-	if err != nil {
-		return nil, err
-	}
+	// platform, err := platforms.Find(spec.Type)
+	// if err != nil {
+	// 	return nil, err
+	// }
 
-	err = platform.WritePackage(spec, tw)
+	_, err := platforms.WritePackage(spec, tw)
 	if err != nil {
 		return nil, err
 	}
 
 	tw.Close()
 	gw.Close()
+
+	err = fmt.Errorf("Not implied yet")
 
 	if err != nil {
 		return nil, err

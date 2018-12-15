@@ -34,7 +34,7 @@ import (
 	"github.com/abchain/fabric/flogging"
 	"github.com/abchain/fabric/peer/chaincode"
 	"github.com/abchain/fabric/peer/network"
-	"github.com/abchain/fabric/peer/node"
+	//"github.com/abchain/fabric/peer/node"
 	"github.com/abchain/fabric/peer/version"
 )
 
@@ -106,7 +106,7 @@ func main() {
 	}
 
 	mainCmd.AddCommand(version.Cmd())
-	mainCmd.AddCommand(node.Cmd())
+	//	mainCmd.AddCommand(node.Cmd())
 	mainCmd.AddCommand(network.Cmd())
 	mainCmd.AddCommand(chaincode.Cmd())
 

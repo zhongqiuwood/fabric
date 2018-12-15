@@ -3,6 +3,7 @@ package flogging
 import (
 	"bufio"
 	"errors"
+	"github.com/abchain/fabric/core/util"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"log"
@@ -77,6 +78,7 @@ func LoggingFileInit(fpath string) error {
 
 		directory := viper.GetString("logging.output.directory")
 		if directory != "" {
+			directory = util.CanonicalizeFilePath(directory)
 			_, err := os.Stat(directory)
 			if err == nil {
 				fpath = directory
@@ -92,21 +94,27 @@ func LoggingFileInit(fpath string) error {
 		}
 
 		flog := filepath.Join(fpath, outputfile)
-
 		flogout, err := NewFileLogBackend(flog, "", 0, logging.WARNING, logging.ERROR)
 
 		if err != nil {
 			return err
 		}
 
-		//we use another format which will overwrite the top-most one
-		format := logging.MustStringFormatter("%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} [%{pid}] %{message}")
-		formatterFileLog := logging.NewBackendFormatter(flogout, format)
+		formatStr := viper.GetString("logging.output.format")
+		if formatStr == "" {
+			//we use another format which will overwrite the top-most one
+			formatStr = "%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} [%{pid}] %{message}"
+		}
+
+		formatterFileLog := logging.NewBackendFormatter(flogout, logging.MustStringFormatter(formatStr))
 
 		//buiding multi-logger from logging package is a little overhead
 		//(it build a leveledbackend) but still OK
 		//we mixed file output with the default backend ...
 		DefaultBackend.Backend = logging.MultiLogger(DefaultBackend.Backend, formatterFileLog)
+		loggingLogger.Info("Log will be also output to", flog)
+	} else {
+		loggingLogger.Info("Do not output log to file")
 	}
 
 	return nil

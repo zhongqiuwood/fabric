@@ -3,7 +3,7 @@ package main
 import (
 	"github.com/abchain/fabric/core/embedded_chaincode/api"
 	cc "github.com/abchain/fabric/examples/chaincode/go/txnetwork/chaincode"
-	"github.com/abchain/fabric/peerex/node"
+	node "github.com/abchain/fabric/node/start"
 )
 
 var ccConf = &api.SystemChaincode{

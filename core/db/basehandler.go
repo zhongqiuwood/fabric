@@ -447,21 +447,22 @@ func InitDBPath(path string) {
 	dbPathSetting = path
 }
 
-func getDBPath(dbname string) string {
+func getDBPath(dbname ...string) string {
+	var dbPath string
 	if dbPathSetting == "" {
-		dbPathSetting = viper.GetString("peer.fileSystemPath")
-		dbLogger.Warningf("DBPath has been set by deprecated configuration to [%s]", dbPathSetting)
+		dbPath = config.GlobalFileSystemPath()
 		//though null string is OK, we still avoid this problem
-		if dbPathSetting == "" {
+		if dbPath == "" {
 			panic("DB path not specified in configuration file. Please check that property 'peer.fileSystemPath' is set")
+		}
+	} else {
+		dbPath = util.CanonicalizePath(dbPathSetting)
+		if util.MkdirIfNotExist(dbPath) {
+			dbLogger.Infof("dbpath %s not exist, we have created it", dbPath)
 		}
 	}
 
-	dbPath := util.CanonicalizePath(dbPathSetting)
-	if util.MkdirIfNotExist(dbPath) {
-		dbLogger.Infof("dbpath %s not exist, we have created it", dbPath)
-	}
-	return filepath.Join(dbPath, dbname)
+	return filepath.Join(append([]string{dbPath}, dbname...)...)
 }
 
 func makeCopy(src []byte) []byte {

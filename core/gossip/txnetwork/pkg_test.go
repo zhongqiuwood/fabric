@@ -33,6 +33,10 @@ func TestMain(m *testing.M) {
 	testParams = testutil.ParseTestParams()
 	testutil.SetupTestConfig()
 	testutil.SetLogLevel(logging.DEBUG, "")
+	testutil.SetLogLevel(logging.INFO, "buckettree")
+	testutil.SetLogLevel(logging.INFO, "db")
+	testutil.SetLogLevel(logging.INFO, "state")
+	testutil.SetLogLevel(logging.INFO, "statemgmt")
 
 	//create a default peer
 	id, s := CreateSimplePeer()

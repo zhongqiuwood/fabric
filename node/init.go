@@ -9,11 +9,11 @@ import (
 	gossip_stub "github.com/abchain/fabric/core/gossip/stub"
 	"github.com/abchain/fabric/events/litekfk"
 	//"github.com/abchain/fabric/core/statesync/stub"
-
 	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 )
 
@@ -197,7 +197,7 @@ func (ne *NodeEngine) Init() error {
 }
 
 func (pe *PeerEngine) PreInit(node *NodeEngine) {
-	pe.CredOpts.ccSpecValidator = NewCCSpecValidator(node.Cred.ccSpecValidator)
+	pe.TxHandlerOpts.ccSpecValidator = NewCCSpecValidator(node.Cred.ccSpecValidator)
 }
 
 func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error {
@@ -250,13 +250,7 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		}
 	}
 
-	//build tx validator
-	//see tech note for the building block for all validators
-	networkTxCred := []credentials.TxHandlerFactory{}
-	if credrv.TxValidator != nil {
-		networkTxCred = append(networkTxCred, credrv.TxValidator)
-		networkTxCred = append(networkTxCred, credentials.EscalateToTxHandler(pe.CredOpts.ccSpecValidator))
-	}
+	pe.TxNetworkEntry.InitCred(credrv.TxValidator)
 
 	//TODO: create and init sync entry
 	//_ = sync_stub.InitStateSyncStub(pe.Peer, "ledgerName", srvPoint.Server)
@@ -295,15 +289,45 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 
 	}
 
-	networkTxCred = append(networkTxCred, node.Cred.Customs...)
-	networkTxCred = append(networkTxCred, pe.CredOpts.Customs...)
-	//pool first, then topic
-	if !pe.CredOpts.NoPooling {
-		networkTxCred = append(networkTxCred, credentials.EscalateToTxHandler(txPoolValidator{peerLedger}))
-	}
-	networkTxCred = append(networkTxCred, &recordValidator{node.TxTopic, node.TxTopicNameHandler, pe})
 	pe.TxNetworkEntry.InitLedger(peerLedger)
-	pe.TxNetworkEntry.InitCred(credentials.MutipleTxHandler(networkTxCred...))
+	pe.TxHandlerOpts.ccSpecValidator = NewCCSpecValidator(node.Cred.ccSpecValidator)
+	//construct txhandler groups:
+	/*
+		ccspec (custom cert),
+		tx validator (tx security context),
+		plain tx parsing,
+		[confidentiality],
+		verifier,
+		[peer custom],
+		[node custom],
+		[pooling],
+		topic recording,
+	*/
+	handlerArray := []pb.TxPreHandler{
+		pe.TxHandlerOpts.ccSpecValidator,
+		validatorToHandler(credrv.TxValidator),
+		pb.PlainTxHandler,
+		pb.YFCCNameHandler,
+	}
+
+	//TODO: handling confidentiality
+
+	handlerArray = append(handlerArray, pb.FuncAsTxPreHandler(
+		func(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
+			if txe.ChaincodeSpec == nil {
+				return nil, fmt.Errorf("tx can not be corretly parsed")
+			}
+			return txe, nil
+		}))
+	handlerArray = append(handlerArray, pe.TxHandlerOpts.Customs...)
+	handlerArray = append(handlerArray, node.CustomFilters...)
+
+	if !pe.TxHandlerOpts.NoPooling {
+		handlerArray = append(handlerArray, txPoolHandler{peerLedger})
+	}
+	handlerArray = append(handlerArray, &recordHandler{node.TxTopic, node.TxTopicNameHandler})
+
+	pe.TxNetworkEntry.InitTerminal(pb.MutipleTxHandler(handlerArray...))
 
 	return nil
 }

@@ -31,7 +31,9 @@ func (ne *NodeEngine) QueryTransaction(ctx context.Context,
 
 	//TODO: local execute can be disabled
 	var ret *chaincode.ExecuteResult
-	ret, err = chaincode.Execute2(ctx, l, chaincode.GetDefaultChain(), tx)
+	var txe *pb.TransactionHandlingContext
+	txe, err = pb.NewPlainTxHandlingContext(tx)
+	ret, err = chaincode.Execute2(ctx, l, chaincode.GetDefaultChain(), txe)
 	if err == nil {
 		resp = &pb.Response{pb.Response_SUCCESS, []byte(ret.Resp)}
 		return

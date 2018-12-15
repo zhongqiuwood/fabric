@@ -242,7 +242,7 @@ func (g *txNetworkPeers) ChangeSelf(id []byte) error {
 	//old self peer is always being kept
 	old, ok := g.lruIndex[g.selfId]
 	if ok {
-		g.lruQueue.MoveToFront(old)
+		g.lruQueue.PushFront(old)
 	}
 
 	//also create self peer, notice we do not endorse it so new self
@@ -351,12 +351,10 @@ func (tp *transactionPool) onCommit(txids []string, _ uint64) {
 	}
 }
 
-func (tp *transactionPool) addPendingTx(txids []string) {
+func (tp *transactionPool) addPendingTx(txid string) {
 	tp.Lock()
 	defer tp.Unlock()
-	for _, id := range txids {
-		tp.cPendingTxs[id] = true
-	}
+	tp.cPendingTxs[txid] = true
 }
 
 func (tp *transactionPool) txIsPending(txid string) (ok bool) {

@@ -220,7 +220,8 @@ func (c *ChaincodeInput) UnmarshalJSON(b []byte) error {
   fields
 */
 type TransactionHandlingContext struct {
-	//fields will be tagged from outside
+	//fields will be tagged from outside, if PeerID is not set,
+	//it will be considered as "self peer" in network
 	NetworkID, PeerID string
 	*Transaction      //the original transaction
 	//every fields can be readout from transaction (may covered by the confidentiality)
@@ -240,10 +241,18 @@ func NewTransactionHandlingContext(t *Transaction) *TransactionHandlingContext {
 /*
    read a unencrypted tx and fill possible fields
 */
+func mustParsePlainTx(tx *TransactionHandlingContext) (ret *TransactionHandlingContext, err error) {
+	if tx.GetConfidentialityLevel() != ConfidentialityLevel_PUBLIC {
+		err = fmt.Errorf("Can't not parse non-public (level:%s) transaction", tx.GetConfidentialityLevel())
+		return
+	}
+
+	return parsePlainTx(tx)
+}
+
 func parsePlainTx(tx *TransactionHandlingContext) (ret *TransactionHandlingContext, err error) {
 
 	if tx.GetConfidentialityLevel() != ConfidentialityLevel_PUBLIC {
-		err = fmt.Errorf("Can't not parse non-public (level:%s) transaction", tx.GetConfidentialityLevel())
 		return
 	}
 
@@ -313,7 +322,7 @@ func parseChaincodeName(tx *TransactionHandlingContext) (ret *TransactionHandlin
 func NewPlainTxHandlingContext(tx *Transaction) (*TransactionHandlingContext, error) {
 	ret := NewTransactionHandlingContext(tx)
 
-	return parsePlainTx(ret)
+	return mustParsePlainTx(ret)
 }
 
 /*
@@ -344,8 +353,10 @@ func (f TxFuncAsTxPreHandler) Handle(txe *TransactionHandlingContext) (*Transact
 	return txe, nil
 }
 
+var NilValidator = TxFuncAsTxPreHandler(func(tx *Transaction) (*Transaction, error) { return tx, nil })
 var PlainTxHandler = FuncAsTxPreHandler(parsePlainTx)
 var YFCCNameHandler = FuncAsTxPreHandler(parseChaincodeName)
+
 var DefaultTxHandler = MutipleTxHandler(PlainTxHandler, YFCCNameHandler)
 
 /*

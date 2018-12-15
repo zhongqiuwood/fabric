@@ -21,25 +21,30 @@ var nullTransformer = CCNameTransformer(func(in string) string { return in })
 	an transformer for chaincode name is also appliable
 */
 
+func validatorToHandler(txh cred.TxHandlerFactory) pb.TxPreHandler {
+	if txh != nil {
+		return txh
+	}
+
+	return pb.NilValidator
+}
+
 type ccSpecValidator struct {
 	parent    *ccSpecValidator
-	handlers  map[string]cred.TxPreHandler
+	handlers  map[string]pb.TxPreHandler
 	nameTrans CCNameTransformer
 }
 
-//for terminal...
-type nilValidator struct{}
-
 func NewCCSpecValidator(parent *ccSpecValidator) *ccSpecValidator {
-	return &ccSpecValidator{parent, make(map[string]cred.TxPreHandler), nullTransformer}
+	return &ccSpecValidator{parent, make(map[string]pb.TxPreHandler), nullTransformer}
 }
 
-func (f *ccSpecValidator) SetHandler(cc string, h cred.TxPreHandler) {
+func (f *ccSpecValidator) SetHandler(cc string, h pb.TxPreHandler) {
 	curH, ok := f.handlers[cc]
 	if !ok {
 		f.handlers[cc] = h
 	} else {
-		f.handlers[cc] = cred.MutipleTxPreHandler(curH, h)
+		f.handlers[cc] = pb.MutipleTxHandler(curH, h)
 	}
 }
 
@@ -52,7 +57,7 @@ func (f *ccSpecValidator) SetNameTransfer(tf CCNameTransformer) (old CCNameTrans
 	return
 }
 
-func (f *ccSpecValidator) getHandler(ccname string) cred.TxPreHandler {
+func (f *ccSpecValidator) getHandler(ccname string) pb.TxPreHandler {
 
 	if h, ok := f.handlers[ccname]; ok {
 		return h
@@ -62,85 +67,51 @@ func (f *ccSpecValidator) getHandler(ccname string) cred.TxPreHandler {
 		return f.parent.getHandler(ccname)
 	}
 
-	return nilValidator{}
+	return pb.NilValidator
 }
 
-func (f *ccSpecValidator) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
+func (f *ccSpecValidator) Handle(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
 
-	ccname := f.nameTrans(string(tx.GetChaincodeID()))
+	ccname := f.nameTrans(txe.ChaincodeSpec.GetChaincodeID().GetName())
 
-	return f.getHandler(ccname).TransactionPreValidation(tx)
+	return f.getHandler(ccname).Handle(txe)
 }
 
-func (f *ccSpecValidator) Release() {}
-
-func (nilValidator) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
-	return tx, nil
-}
-func (nilValidator) Release() {}
-
-/*
-	Transactions received from txnetwork, and recorded in the TxTopic of NodeEngine
-	by specified of chaincode name. This structure allow the executor to trace
-	the source of each tx
-*/
-type TxInNetwork struct {
-	*pb.Transaction
-	PeerID string
-	Peer   *PeerEngine
-}
-
-//recordValidator write the incoming tx into a msg-streaming topic
-type recordValidator struct {
+//recordHandler write the incoming tx into a msg-streaming topic
+type recordHandler struct {
 	//bind the topic map in NodeEngine
 	txtopic   map[string]litekfk.Topic
 	nameTrans CCNameTransformer
-	peer      *PeerEngine
 }
 
-type recordValidatorByID struct {
-	peerID string
-	*recordValidator
-}
+func (r *recordHandler) Handle(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
 
-func (r *recordValidator) GetPreHandler(id string) (cred.TxPreHandler, error) {
-	return &recordValidatorByID{id, r}, nil
-}
-func (r *recordValidator) ValidatePeerStatus(string, *pb.PeerTxState) error { return nil }
-func (r *recordValidator) RemovePreHandler(string)                          {}
-
-func (r *recordValidatorByID) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
-
-	ccname := r.nameTrans(string(tx.GetChaincodeID()))
+	ccname := r.nameTrans(txe.ChaincodeSpec.GetChaincodeID().GetName())
 
 	topic, ok := r.txtopic[ccname]
 	if !ok {
 		topic, ok = r.txtopic[""]
 		if !ok {
-			txlogger.Debugf("tx %s with ccname %s do not write to any topic", tx.GetTxid(), string(tx.GetChaincodeID()))
-			return tx, nil
+			txlogger.Debugf("tx %s with ccname %s do not write to any topic", txe.GetTxid(), ccname)
+			return txe, nil
 		}
 	}
 
-	if err := topic.Write(&TxInNetwork{tx, r.peerID, r.peer}); err != nil {
-		txlogger.Errorf("Tx %s write into topic [%s] fail: %s", tx.GetTxid(), ccname, err)
-		return tx, cred.ValidateInterrupt
+	if err := topic.Write(txe); err != nil {
+		txlogger.Errorf("Tx %s write into topic [%s] fail: %s", txe.GetTxid(), ccname, err)
+		return txe, pb.ValidateInterrupt
 	}
-	txlogger.Debugf("tx %s write to topic [%s]", tx.GetTxid(), ccname)
+	txlogger.Debugf("tx %s write to topic [%s]", txe.GetTxid(), ccname)
 
-	return tx, nil
+	return txe, nil
 }
 
-func (f *recordValidatorByID) Release() {}
-
-//txPoolValidator write the incoming tx into the txpool of ledger
-type txPoolValidator struct {
+//txPoolHandler write the incoming tx into the txpool of ledger
+type txPoolHandler struct {
 	l *ledger.Ledger
 }
 
-func (t txPoolValidator) TransactionPreValidation(tx *pb.Transaction) (*pb.Transaction, error) {
-	t.l.PoolTransactions([]*pb.Transaction{tx})
-	return tx, nil
+func (t txPoolHandler) Handle(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
+	t.l.PoolTransactions([]*pb.Transaction{txe.Transaction})
+	return txe, nil
 }
-
-func (txPoolValidator) Release() {}

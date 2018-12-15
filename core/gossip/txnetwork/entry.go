@@ -30,6 +30,11 @@ func (e *TxNetworkEntry) InitCred(v cred.TxHandlerFactory) {
 	e.net.peers.peerHandler = v
 }
 
+func (e *TxNetworkEntry) InitTerminal(t pb.TxPreHandler) {
+	logger.Debugf("txnetwork has set new tx terminal %v(%T)", t, t)
+	e.net.txPool.txTerminal = t
+}
+
 func (e *TxNetworkEntry) ResetPeerSimple(id []byte) error {
 
 	if err := e.net.peers.ChangeSelf(id); err != nil {

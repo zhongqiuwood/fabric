@@ -138,10 +138,6 @@ func (f *txHandlerDefault) ValidatePeerStatus(id string, status *pb.PeerTxState)
 
 func (f *txHandlerDefault) Handle(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
 
-	if txe.PeerID == "" {
-		return nil, errors.New("PeerID is not tagged yet")
-	}
-
 	v, err := f.assignPreHandler(txe.PeerID)
 	if err != nil {
 		return nil, err

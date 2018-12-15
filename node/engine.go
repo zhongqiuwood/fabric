@@ -22,6 +22,7 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/events/litekfk"
+	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"golang.org/x/net/context"
 )
@@ -31,8 +32,8 @@ var (
 )
 
 type PeerEngine struct {
-	CredOpts struct {
-		Customs   []cred.TxHandlerFactory
+	TxHandlerOpts struct {
+		Customs   []pb.TxPreHandler
 		NoPooling bool
 		*ccSpecValidator
 	}
@@ -64,11 +65,12 @@ type NodeEngine struct {
 	Peers     map[string]*PeerEngine
 	Endorsers map[string]cred.TxEndorserFactory
 	Cred      struct {
-		Peer    cred.PeerCreds
-		Tx      cred.TxHandlerFactory
-		Customs []cred.TxHandlerFactory
+		Peer cred.PeerCreds
+		Tx   cred.TxHandlerFactory
 		*ccSpecValidator
 	}
+	CustomFilters []pb.TxPreHandler
+
 	//all the received transactions can be read out from different topic by its chaincode name,
 	//according to the configuration in transation filter
 	TxTopic            map[string]litekfk.Topic

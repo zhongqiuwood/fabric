@@ -109,7 +109,7 @@ func TestTxGlobal(t *testing.T) {
 	//update local
 	uself := model.NewscuttlebuttUpdate(nil)
 	ustate := createState([]byte{2}, 4)
-	ustate.Endorsement = nil
+	ustate.Endorsement = []byte{2}
 	//update local enable a vanished endorsement (use previous one instead)
 	uself.UpdateLocal(peerStatus{ustate})
 

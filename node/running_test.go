@@ -96,11 +96,11 @@ func TestTxNetwork(t *testing.T) {
 		t.Fatal("read tx fail", err)
 	}
 
-	if topictx, ok := obj.(*TxInNetwork); !ok {
+	if topictx, ok := obj.(*pb.TransactionHandlingContext); !ok {
 		t.Fatalf("write wrong object in topic: %T(%v)", obj, obj)
 	} else {
-		if topictx.Peer != thepeer {
-			t.Fatalf("unknown source of peer: %v", topictx.Peer)
+		if topictx.ChaincodeSpec == nil {
+			t.Fatalf("wrong exec context: %v", topictx)
 		}
 		compareTx(t, tx1, topictx.Transaction)
 	}

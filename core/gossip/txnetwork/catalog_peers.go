@@ -67,10 +67,10 @@ func (s *peerStatus) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in mo
 			}
 			return fmt.Errorf("Peer [%s]'s state is invalid: %s", id, err)
 		}
-	} else if id != "" {
-		if len(u.GetEndorsement()) == 0 {
-			return fmt.Errorf("Peer [%s] has no endorsement", id)
-		}
+	} else if len(u.GetEndorsement()) == 0 {
+
+		return fmt.Errorf("Peer [%s]'s new status has no endorsement: %v", id, u)
+
 	}
 
 	//scuttlebutt mode should avoiding this

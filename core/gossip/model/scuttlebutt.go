@@ -220,14 +220,13 @@ func (s *scuttlebuttStatus) GenDigest() Digest {
 
 	scounter := 0
 	for id, ss := range s.Peers {
-		if s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss) {
-			continue
-		}
-
-		scounter++
+		//never filter self id
 		if id == "" {
 			id = s.SelfID
+		} else if s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss) {
+			continue
 		}
+		scounter++
 
 		if scounter > s.MaxUpdateLimit {
 			//stream sampling: we consider calling of To() is trival

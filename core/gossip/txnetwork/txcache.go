@@ -116,7 +116,7 @@ func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 		if h := c.parent.getTxCommitHeight(tx.GetTxid()); h == 0 {
 			//tx can be re pooling here if a signal is received but it do not really commited before
 			logger.Infof("Repool Tx {%s} [series %d] to ledger again", tx.GetTxid(), series)
-			c.parent.addPendingTx([]string{tx.GetTxid()})
+			c.parent.addPendingTx(tx.GetTxid())
 		} else {
 			*pos = h
 		}
@@ -146,7 +146,6 @@ func (c *txCache) AddTxsToTarget(from uint64, txs []*pb.Transaction, preHandler 
 	var txspos int
 	var err error
 	added := c.commitData.append(from, len(txs))
-	pooltxs := make([]string, 0, len(txs))
 
 	dataPipe := make(chan *pb.TransactionHandlingContext)
 	dataRet := make(chan error)
@@ -159,7 +158,6 @@ func (c *txCache) AddTxsToTarget(from uint64, txs []*pb.Transaction, preHandler 
 		}
 	}(dataPipe, dataRet)
 
-	defer func() { c.parent.addPendingTx(pooltxs) }()
 	for _, q := range added {
 		for i := 0; i < len(q); i++ {
 			tx := txs[txspos]
@@ -190,7 +188,7 @@ func (c *txCache) AddTxsToTarget(from uint64, txs []*pb.Transaction, preHandler 
 
 			q[i] = commitedH
 			if commitedH == 0 {
-				pooltxs = append(pooltxs, tx.GetTxid())
+				c.parent.addPendingTx(tx.GetTxid())
 			}
 			txspos++
 		}

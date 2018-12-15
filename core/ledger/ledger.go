@@ -681,7 +681,7 @@ func (ledger *Ledger) GetBlockNumberByState(hash []byte) (uint64, error) {
 func (ledger *Ledger) GetBlockNumberByTxid(txID string) (uint64, uint64, error) {
 	//TODO: cache?
 	if tx := ledger.txpool.getPooledTx(txID); tx != nil {
-		return 0, 0, newLedgerError(ErrorTypeResourceNotFound, "ledger: tx is pending")
+		return 0, 0, ErrResourceNotFound
 	}
 
 	return ledger.blockchain.indexer.fetchTransactionIndexByID(txID)

@@ -402,24 +402,42 @@ func (tp *transactionPool) completeTx(txin *pb.Transaction) (tx *pb.Transaction,
 	return
 }
 
+//act as the "terminal" of txnetwork process, any tx which has been indexed should be consider
+//as duplicated/re-transfer and should not be thrown out of txnetwork
+func (tp *transactionPool) buildGetCommitHandler(heightRet chan<- uint64) pb.TxPreHandler {
+	return pb.TxFuncAsTxPreHandler(func(tx *pb.Transaction) (*pb.Transaction, error) {
+		h := tp.getTxCommitHeight(tx.GetTxid())
+		heightRet <- h
+		if h != 0 {
+			return tx, pb.ValidateInterrupt
+		}
+		return tx, nil
+	})
+}
+
+func (tp *transactionPool) buildCompleteTxHandler() pb.TxPreHandler {
+	return pb.TxFuncAsTxPreHandler(func(tx *pb.Transaction) (*pb.Transaction, error) {
+		return tp.completeTx(tx)
+	})
+}
+
 func (tp *transactionPool) AcquireCaches(peer string) *txCache {
 
 	tp.RLock()
-
 	c, ok := tp.cCaches[peer]
+	tp.RUnlock()
 
 	if !ok {
-		tp.RUnlock()
-
 		c = new(commitData)
 		tp.Lock()
 		defer tp.Unlock()
 		tp.cCaches[peer] = c
-		return &txCache{c, peer, tp}
 	}
 
-	tp.RUnlock()
-	return &txCache{c, peer, tp}
+	return &txCache{
+		commitData: c,
+		parent:     tp,
+	}
 }
 
 func (tp *transactionPool) RemoveCaches(peer string) {
@@ -430,10 +448,7 @@ func (tp *transactionPool) RemoveCaches(peer string) {
 }
 
 func (tp *transactionPool) ResetLedger() {
-	tp.Lock()
-	defer tp.Unlock()
-
-	tp.cCaches = make(map[string]*commitData)
+	tp.ClearCaches()
 }
 
 func (tp *transactionPool) ClearCaches() {

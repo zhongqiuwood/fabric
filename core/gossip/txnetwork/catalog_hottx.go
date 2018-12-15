@@ -331,7 +331,7 @@ func (u txPeerUpdate) toTxs() (*peerTxs, error) {
 	for _, tx := range u.Transactions[1:] {
 
 		if !txIsPrecede(current.digest, tx) {
-			return nil, fmt.Errorf("update have invalid transactions chain for tx at %d", current.digestSeries+1)
+			return nil, fmt.Errorf("update have invalid transactions chain for tx [%s] at %d", tx.GetTxid(), current.digestSeries+1)
 		}
 
 		current.next = &txMemPoolItem{
@@ -356,7 +356,8 @@ type peerTxMemPool struct {
 	*peerTxs
 	//index help us to seek by a txid, it do not need to consensus with the size
 	//field in peerTxs
-	jlindex map[uint64]*txMemPoolItem
+	jlindex    map[uint64]*txMemPoolItem
+	updateFlag int
 }
 
 func (p *peerTxMemPool) reset(txbeg *txMemPoolItem) {
@@ -448,29 +449,70 @@ func (p *peerTxMemPool) handlePeerCoVar(id string, peerStatus *pb.PeerTxState, g
 	return nil
 }
 
-func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, g *txPoolGlobal) error {
+type txChainValidator struct {
+	lastDigest []byte
+}
+
+var branchTxChainError = fmt.Errorf("branched tx chain")
+
+func (p *txChainValidator) Handle(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
+	//verify the precede
+	if !txIsPrecede(p.lastDigest, txe.Transaction) {
+		logger.Errorf("update have invalid transactions chain for tx [%s]", txe.GetTxid())
+		return nil, branchTxChainError
+	}
+	p.lastDigest = GetTxDigest(txe.Transaction)
+	logger.Debugf("update last digest to %x for tx [%s:%x]", p.lastDigest, txe.GetTxid(), txe.GetNonce())
+	return txe, nil
+}
+
+type networkTagger string
+
+func (s networkTagger) Handle(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
+	txe.PeerID = string(s)
+	return txe, nil
+}
+
+func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, g *txPoolGlobal) (err error) {
 	logger.Debugf("peer [%s] try to updated %d incoming txs from series %d", id, len(u.Transactions), u.BeginSeries)
 
 	if u.BeginSeries > p.lastSeries()+1 {
 		return fmt.Errorf("Get gapped update for [%s] start from %d, current %d", id, u.BeginSeries, p.lastSeries())
 	}
-
 	u = u.getRef(p.lastSeries() + 1)
-	err := g.AcquireCaches(id).AddTxs(u.BeginSeries, u.Transactions)
-	if err != nil {
-		return err
-	}
 
-	inTxs, err := u.toTxs()
-	if err != nil {
+	//check runtime ...
+	if p.updateFlag != 0 {
+		logger.Errorf("Con-current update status found on updating peer %s", id)
+		err = fmt.Errorf("data racing")
+		return
+	}
+	p.updateFlag = 1
+	defer func() { p.updateFlag = 0 }()
+
+	//now we construct fiter array for tx filters ...
+	heightChan := make(chan uint64)
+	txcache := g.AcquireCaches(id)
+	txcache.txHeightRet = heightChan
+
+	txTerminal := pb.MutipleTxHandler(g.transactionPool.buildCompleteTxHandler(),
+		&txChainValidator{p.last.digest},
+		g.transactionPool.buildGetCommitHandler(heightChan),
+		networkTagger(id), g.transactionPool.txTerminal)
+
+	u.Transactions, err = txcache.AddTxsToTarget(u.BeginSeries, u.Transactions, txTerminal)
+	//from now, we must handle the completed txs even an error is encountered
+	if err != nil && err == branchTxChainError {
 		//NEVER report this as the fraud of far-end because the original peer can build
 		//branch results (by update peer status or sending branched tx chains) deliberately
 		//we just skip the update data
-		logger.Warningf("***** PROBLEM ****** peer %s update found branched incoming", id)
-		return nil
-	} else if inTxs == nil {
+		err = nil
+	}
+
+	inTxs, _ := u.toTxs()
+	if inTxs == nil {
 		logger.Infof("peer %s update nothing in %d txs and quit", id, len(u.Transactions))
-		return nil
+		return
 	}
 
 	//sanity check
@@ -501,7 +543,7 @@ func (p *peerTxMemPool) handlePeerUpdate(u txPeerUpdate, id string, g *txPoolGlo
 		purgePool(p, to)
 	}
 
-	return nil
+	return
 }
 
 // there are too many ways that a far-end can waste our bandwidth (and

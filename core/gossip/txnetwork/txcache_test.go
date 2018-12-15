@@ -250,4 +250,15 @@ func TestCommitting(t *testing.T) {
 		t.Fatal("get uncommit tx fail", ch)
 	}
 
+	//repooling
+	txpool.onCommit([]string{txcollection[3].GetTxid()}, 255)
+	if _, ok := txpool.cPendingTxs[txcollection[3].GetTxid()]; ok {
+		t.Fatal("tx is not pruned")
+	}
+
+	rcache.GetCommit(3, txcollection[3])
+	if _, ok := txpool.cPendingTxs[txcollection[3].GetTxid()]; !ok {
+		t.Fatal("tx is not repooled")
+	}
+
 }

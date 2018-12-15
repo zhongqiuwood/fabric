@@ -98,8 +98,8 @@ type TxCache interface {
 //the cache is supposed to be handled only by single goroutine
 type txCache struct {
 	*commitData
-	id     string
-	parent *transactionPool
+	parent      *transactionPool
+	txHeightRet <-chan uint64
 }
 
 func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
@@ -114,8 +114,7 @@ func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
 		//or tx is commited, we need to update the commitH
 
 		if h := c.parent.getTxCommitHeight(tx.GetTxid()); h == 0 {
-			//tx can be re pooling here if it was lost before, but we should not encourage
-			//this behavoir
+			//tx can be re pooling here if a signal is received but it do not really commited before
 			logger.Infof("Repool Tx {%s} [series %d] to ledger again", tx.GetTxid(), series)
 			c.parent.addPendingTx([]string{tx.GetTxid()})
 		} else {
@@ -134,6 +133,7 @@ func completeTxs(txsin []*pb.Transaction, tp *transactionPool) ([]*pb.Transactio
 		if err != nil {
 			return txsin[:i], err
 		}
+		txsin[i] = tx
 	}
 
 	return txsin, nil
@@ -144,60 +144,54 @@ func completeTxs(txsin []*pb.Transaction, tp *transactionPool) ([]*pb.Transactio
 func (c *txCache) AddTxsToTarget(from uint64, txs []*pb.Transaction, preHandler pb.TxPreHandler) ([]*pb.Transaction, error) {
 
 	var txspos int
+	var err error
 	added := c.commitData.append(from, len(txs))
 	pooltxs := make([]string, 0, len(txs))
 
-	defer c.parent.addPendingTx(pooltxs)
+	dataPipe := make(chan *pb.TransactionHandlingContext)
+	dataRet := make(chan error)
+	defer close(dataPipe)
 
+	go func(in <-chan *pb.TransactionHandlingContext, out chan<- error) {
+		for txe := range in {
+			_, err := preHandler.Handle(txe)
+			out <- err
+		}
+	}(dataPipe, dataRet)
+
+	defer func() { c.parent.addPendingTx(pooltxs) }()
 	for _, q := range added {
 		for i := 0; i < len(q); i++ {
 			tx := txs[txspos]
 
 			txe := pb.NewTransactionHandlingContext(tx)
-			if _, err := preHandler.Handle(txe); err != nil {
+			dataPipe <- txe
+
+			var commitedH uint64
+			select {
+			case err = <-dataRet:
+				select {
+				case commitedH = <-c.txHeightRet:
+				default:
+					if err == nil {
+						panic("No commitH filter is included in the prehandler, wrong code")
+					}
+				}
+			case commitedH = <-c.txHeightRet:
+				err = <-dataRet
+			}
+
+			if err != nil {
 				return txs[:txspos], err
 			}
 
-			txspos++
-			//commitedH, _, _ := c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
+			txs[txspos] = txe.Transaction
+			logger.Debugf("Tx {%s} [nonce %x, commitH %d] is added to cache", tx.GetTxid(), tx.GetNonce(), commitedH)
 
+			q[i] = commitedH
 			if commitedH == 0 {
 				pooltxs = append(pooltxs, tx.GetTxid())
 			}
-
-			q[i] = commitedH
-
-		}
-	}
-
-	return txs, nil
-}
-
-//only for test purpose
-func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction) error {
-
-	var err error
-	logger.Debugf("cache [%s] add %d txs from series %d", c.id, len(txs), from)
-	txs, err = completeTxs(txs, c.parent)
-
-	if err != nil {
-		return err
-	}
-
-	var txspos int
-	added := c.commitData.append(from, len(txs))
-	pooltxs := make([]string, 0, len(txs))
-
-	for _, q := range added {
-		for i := 0; i < len(q); i++ {
-			tx := txs[txspos]
-			commitedH, _, _ := c.parent.ledger.GetBlockNumberByTxid(tx.GetTxid())
-
-			if commitedH == 0 {
-				pooltxs = append(pooltxs, tx.GetTxid())
-			}
-
-			q[i] = commitedH
 			txspos++
 		}
 	}
@@ -207,8 +201,18 @@ func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction) error {
 		panic("wrong code")
 	}
 
-	c.parent.addPendingTx(pooltxs)
-	return nil
+	return txs, nil
+}
+
+//only for test purpose
+func (c *txCache) AddTxs(from uint64, txs []*pb.Transaction) error {
+
+	heightChan := make(chan uint64)
+	c.txHeightRet = heightChan
+
+	_, err := c.AddTxsToTarget(from, txs,
+		pb.MutipleTxHandler(c.parent.buildCompleteTxHandler(), c.parent.buildGetCommitHandler(heightChan)))
+	return err
 }
 
 func (c *txCache) Pruning(from uint64, to uint64) {

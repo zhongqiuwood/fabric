@@ -367,6 +367,9 @@ func MutipleTxHandler(m ...TxPreHandler) TxPreHandler {
 	var flattedM []TxPreHandler
 	//"flat" the recursive mutiple txhandler
 	for _, mh := range m {
+		if mh == nil {
+			continue
+		}
 		if mmh, ok := mh.(mutiTxPreHandler); ok {
 			flattedM = append(flattedM, mmh...)
 		} else {

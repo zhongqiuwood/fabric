@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/abchain/fabric/core/embedded_chaincode/api"
-	cc "github.com/abchain/fabric/examples/chaincode/go/txnetwork/chaincode"
+	cc "github.com/abchain/fabric/examples/txnetwork/chaincode"
 	node "github.com/abchain/fabric/node/start"
 )
 
@@ -14,7 +14,7 @@ var ccConf = &api.SystemChaincode{
 
 func main() {
 
-	api.SystemChaincodes = append(api.SystemChaincodes, ccConf)
+	api.RegisterSysCC(ccConf)
 	nullf := func() error {
 		return nil
 	}

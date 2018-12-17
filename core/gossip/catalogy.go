@@ -218,11 +218,13 @@ func NewCatalogHandlerImpl(stub *pb.StreamStub, ctx context.Context, helper Cata
 type sessionHandler struct {
 	*catalogHandler
 	cpo        CatalogPeerPolicies
+	notPull    bool
 	pullingCtx context.Context
+	isRespond  bool
 }
 
-func genSessionHandler(h *catalogHandler, cpo CatalogPeerPolicies) *sessionHandler {
-	return &sessionHandler{h, cpo, nil}
+func genSessionHandler(h *catalogHandler, cpo CatalogPeerPolicies, resp bool) *sessionHandler {
+	return &sessionHandler{h, cpo, false, nil, resp}
 }
 
 //implement of pushhelper and pullerhelper
@@ -232,6 +234,12 @@ func (h *sessionHandler) EncodeDigest(d model.Digest) proto.Message {
 		Seq:     getGlobalSeq(),
 		Catalog: h.Name(),
 		M:       &pb.GossipMsg_Dig{h.TransDigestToPb(d)},
+	}
+
+	//a responding pull should never require more responding,
+	//else, we respect the handler's option
+	if h.isRespond {
+		msg.GetDig().NoResp = true
 	}
 
 	h.cpo.PushUpdate(msg.EstimateSize())
@@ -262,10 +270,10 @@ func (h *sessionHandler) EncodeUpdate(u model.Update) proto.Message {
 	}
 }
 
-func (h *sessionHandler) Process(strm *pb.StreamHandler, d model.Digest, responding bool) (err error) {
+func (h *sessionHandler) Process(strm *pb.StreamHandler, d model.Digest) (err error) {
 
 	cpo := h.cpo
-	logger.Debugf("Start a pulling (responding %v) to peer [%s]", responding, cpo.GetId())
+	logger.Debugf("Start a pulling (responding %v) to peer [%s]", h.isRespond, cpo.GetId())
 
 	pctx, pctxend := context.WithTimeout(h.hctx,
 		time.Duration(h.GetPolicies().PullTimeout())*time.Second)
@@ -273,7 +281,7 @@ func (h *sessionHandler) Process(strm *pb.StreamHandler, d model.Digest, respond
 	h.pullingCtx = pctx
 
 	var puller *model.Puller
-	if responding {
+	if h.isRespond {
 		puller, err = model.AcceptPulling(h, strm, h.Model(), d)
 	} else {
 		puller, err = model.StartPulling(h, strm)
@@ -297,13 +305,13 @@ func (h *sessionHandler) Process(strm *pb.StreamHandler, d model.Digest, respond
 	if err == nil {
 		//notice we should exclude current stream
 		//so the triggered push wouldn't make duplicated pulling
-		if responding {
+		if h.isRespond {
 			go h.executePush(map[*pb.StreamHandler]bool{strm: true})
 		}
 	} else if err == model.EmptyUpdate {
 		logger.Debugf("pull nothing from peer [%s]", cpo.GetId())
 	} else {
-		cpo.RecordViolation(fmt.Errorf("Pulling (responding %v) fail: %s", responding, err))
+		cpo.RecordViolation(fmt.Errorf("Pulling (responding %v) fail: %s", h.isRespond, err))
 	}
 
 	return
@@ -315,8 +323,8 @@ func (h *sessionHandler) CanPull() *model.Puller {
 		panic("WRONG CODE: CanPull can be only called implicitly within the Process method")
 	}
 
-	if !h.GetPolicies().AllowRecvUpdate() || !h.cpo.AllowRecvUpdate() {
-		logger.Infof("Policy has rejected a pulling to peer [%s]", h.cpo.GetId())
+	if h.notPull || !h.GetPolicies().AllowRecvUpdate() || !h.cpo.AllowRecvUpdate() {
+		logger.Debugf("Policy has rejected a pulling to peer [%s]", h.cpo.GetId())
 		return nil
 	}
 
@@ -343,8 +351,9 @@ func (h *catalogHandler) HandleDigest(msg *pb.GossipMsg_Digest, cpo CatalogPeerP
 		return
 	}
 
-	sess := genSessionHandler(h, cpo)
-	go sess.Process(strm, h.TransPbToDigest(msg), true)
+	sess := genSessionHandler(h, cpo, true)
+	sess.notPull = msg.NoResp
+	go sess.Process(strm, h.TransPbToDigest(msg))
 
 	//everytime we accept a digest, it is counted as a push
 	h.schedule.pushDone()
@@ -409,7 +418,7 @@ func (h *catalogHandler) executePush(excluded map[*pb.StreamHandler]bool) error 
 		}
 		cpo := ph.GetPeerPolicy()
 
-		if err := genSessionHandler(h, cpo).Process(strm.StreamHandler, nil, false); err == model.EmptyDigest {
+		if err := genSessionHandler(h, cpo, false).Process(strm.StreamHandler, nil); err == model.EmptyDigest {
 			//***GIVEN UP THE WHOLE PUSH PROCESS***
 			logger.Infof("Catalogy model has forbidden a pulling process")
 			break

@@ -77,6 +77,10 @@ func (g *GlobalConfig) Apply() error {
 		g.ConfigFileName = viperFileName
 	}
 
+	if g.ConfigPath == nil {
+		g.ConfigPath = []string{"."}
+	}
+
 	if !g.NotUseSourceConfig {
 		g.ConfigPath = append(g.ConfigPath, useSourceExample()...)
 	}

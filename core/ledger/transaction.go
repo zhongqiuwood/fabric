@@ -34,7 +34,9 @@ func (tp *transactionPool) poolTransaction(txs []*pb.Transaction) {
 
 	for _, tx := range txs {
 		tp.txPool[tx.GetTxid()] = tx
+		ledgerLogger.Debugf("pool tx [%s:%p]", tx.GetTxid(), tx)
 	}
+	ledgerLogger.Debugf("currently %d txs is pooled", len(tp.txPool)+len(tp.txPoolSnapshot))
 }
 
 func (tp *transactionPool) putTransaction(txs []*pb.Transaction) error {
@@ -50,13 +52,18 @@ func (tp *transactionPool) putTransaction(txs []*pb.Transaction) error {
 func (tp *transactionPool) cleanTransaction(txs []*pb.Transaction) {
 	tp.Lock()
 	defer tp.Unlock()
-	for _, tx := range txs {
-		if tp.txPoolSnapshot == nil {
+	if tp.txPoolSnapshot == nil {
+		for _, tx := range txs {
 			delete(tp.txPool, tx.GetTxid())
-		} else {
+		}
+		ledgerLogger.Debugf("%d txs has been pruned from pool later, currently %d txs left", len(txs), len(tp.txPool)+len(tp.txPoolSnapshot))
+	} else {
+		for _, tx := range txs {
 			tp.txPool[tx.GetTxid()] = nil
 		}
+		ledgerLogger.Debugf("%d txs has will be pruned from pool later, currently %d txs left", len(txs), len(tp.txPool)+len(tp.txPoolSnapshot))
 	}
+
 }
 
 func (tp *transactionPool) commitTransaction(txids []string, blockNum uint64) error {
@@ -75,6 +82,7 @@ func (tp *transactionPool) commitTransaction(txids []string, blockNum uint64) er
 				pendingTxs = append(pendingTxs, tx)
 				delete(tp.txPool, id)
 			}
+			ledgerLogger.Debugf("%d txs will be commited, currently %d txs left", len(pendingTxs), len(tp.txPool)+len(tp.txPoolSnapshot))
 		}
 	} else {
 		for _, id := range txids {
@@ -89,9 +97,8 @@ func (tp *transactionPool) commitTransaction(txids []string, blockNum uint64) er
 			} else {
 				delete(tp.txPool, id)
 			}
-
 			pendingTxs = append(pendingTxs, tx)
-
+			ledgerLogger.Debugf("%d txs will be commited, currently %d(+%d snapshotted) txs left ", len(pendingTxs), len(tp.txPool), len(tp.txPoolSnapshot))
 		}
 	}
 
@@ -151,6 +158,8 @@ func (tp *transactionPool) finishIteration(out chan *pb.Transaction) {
 func (tp *transactionPool) getPooledTxCount() int {
 	tp.RLock()
 	defer tp.RUnlock()
+
+	ledgerLogger.Debugf("%v, %v", tp.txPool, tp.txPoolSnapshot)
 
 	return len(tp.txPool) + len(tp.txPoolSnapshot)
 }

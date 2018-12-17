@@ -65,7 +65,13 @@ func handleTx(lastDigest []byte, tx *pb.Transaction, endorser cred.TxEndorser) (
 
 func (t *txNetworkHandlerImpl) updateEpoch(chk txPoint) error {
 
-	state := &pb.PeerTxState{Digest: chk.Digest, Num: chk.Series}
+	oldstate, _ := t.GetPeerStatus()
+	state := &pb.PeerTxState{
+		Digest:         chk.Digest,
+		Num:            chk.Series,
+		Endorsement:    oldstate.Endorsement,
+		EndorsementVer: oldstate.EndorsementVer,
+	}
 	var err error
 
 	if t.endorser != nil {
@@ -73,6 +79,8 @@ func (t *txNetworkHandlerImpl) updateEpoch(chk txPoint) error {
 		if err != nil {
 			return err
 		}
+	} else {
+		state.Endorsement = []byte{1}
 	}
 
 	return t.UpdateLocalPeer(state)
@@ -82,8 +90,9 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) er
 
 	txlogger.Debugf("start handling %d txs", len(txs))
 	lastDigest := t.lastDigest
-	var htxs []*pb.Transaction
+	nextChkPos := uint(t.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
 
+	var htxs []*pb.Transaction
 	var err error
 	for _, tx := range txs {
 
@@ -110,11 +119,8 @@ func (t *txNetworkHandlerImpl) HandleTxs(txs []*txnetwork.PendingTransaction) er
 		return nil
 	}
 
-	lastSeries := t.lastSeries + uint64(len(htxs))
-	nextChkPos := uint(t.lastSeries/uint64(txnetwork.PeerTxQueueLen())) + 1
-
-	if err = t.UpdateLocalHotTx(&pb.HotTransactionBlock{htxs, lastSeries}); err == nil {
-		t.lastSeries = lastSeries
+	if err = t.UpdateLocalHotTx(&pb.HotTransactionBlock{htxs, t.lastSeries + 1}); err == nil {
+		t.lastSeries = t.lastSeries + uint64(len(htxs))
 		t.lastDigest = lastDigest
 	} else {
 		txlogger.Errorf("updating completed txs into network fail: %s", err)

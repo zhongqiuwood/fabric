@@ -206,6 +206,7 @@ func (g *txPoolGlobal) GenDigest() model.Digest {
 
 	return txPoolGlobalDigest{epoch}
 }
+
 func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
 
 	if d_in == nil {
@@ -301,6 +302,7 @@ func (u txPeerUpdate) getRef(refSeries uint64) txPeerUpdate {
 }
 
 func (u txPeerUpdate) pruneTxs(epochH uint64, ccache TxCache) txPeerUpdate {
+	//logger.Debugf("prune data to epoch %d for %d txs from %d", epochH, u.BeginSeries, len(u.Transactions))
 	for i, tx := range u.Transactions {
 		commitedH := ccache.GetCommit(u.BeginSeries+uint64(i), tx)
 
@@ -622,11 +624,12 @@ func initHotTx(stub *gossip.GossipStub) {
 	}
 
 	peers := txglobal.network.peers
-	if selfs, _ := peers.QuerySelf(); selfs != nil {
+	if selfs, id := peers.QuerySelf(); selfs != nil {
 		self := &peerTxMemPool{}
 		self.reset(createPeerTxItem(selfs))
 
-		selfStatus.SetSelfPeer(peers.selfId, self)
+		selfStatus.SetSelfPeer(id, self)
+		txglobal.transactionPool.UpdateSelfID(id)
 	}
 
 	m := model.NewGossipModel(selfStatus)
@@ -643,6 +646,10 @@ func initHotTx(stub *gossip.GossipStub) {
 		self := &peerTxMemPool{}
 		self.reset(createPeerTxItem(state))
 		selfStatus.SetSelfPeer(newID, self)
+
+		//cache for self is also accessed by two possible name ("" or selfID) so we must update it
+		txglobal.transactionPool.UpdateSelfID(newID)
+
 		logger.Infof("Hottx cat reset self peer to %s", newID)
 	})
 

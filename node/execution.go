@@ -37,6 +37,8 @@ func (ne *NodeEngine) QueryTransaction(ctx context.Context,
 	if err == nil {
 		resp = &pb.Response{pb.Response_SUCCESS, []byte(ret.Resp)}
 		return
+	} else {
+		txlogger.Infof("local query fail: %s, try remote", err)
 	}
 
 	for _, netw := range remote {

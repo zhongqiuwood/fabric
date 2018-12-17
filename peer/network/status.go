@@ -20,7 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/abchain/fabric/core/peer"
+	"github.com/abchain/fabric/peer/common"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/ptypes/empty"
 	"github.com/spf13/cobra"
@@ -43,7 +43,7 @@ var networkStatusCmd = &cobra.Command{
 // Show a list of all existing network connections for the target peer node,
 // includes both validating and non-validating peers
 func networkStatus() (err error) {
-	clientConn, err := peer.NewPeerClientConnection()
+	clientConn, err := common.NewPeerClientConnection()
 	if err != nil {
 		err = fmt.Errorf("Error trying to connect to local peer: %s", err)
 		return

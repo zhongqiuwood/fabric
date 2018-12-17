@@ -2,7 +2,7 @@ package main
 
 import (
 	"github.com/abchain/fabric/core/embedded_chaincode/api"
-	"github.com/abchain/fabric/examples/chaincode/go/embedded/simple_chaincode"
+	"github.com/abchain/fabric/examples/chaincode/embedded/simple_chaincode"
 	"github.com/abchain/fabric/peerex/node"
 )
 

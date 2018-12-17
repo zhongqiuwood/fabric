@@ -80,7 +80,8 @@ type NodeEngine struct {
 		EnforceSec bool
 	}
 
-	srvPoints []*servicePoint
+	srvPoints    []*servicePoint
+	runPeersFunc func()
 }
 
 func (ne *NodeEngine) DefaultLedger() *ledger.Ledger {
@@ -121,4 +122,80 @@ func (ne *NodeEngine) SelectLedger(name string) (*ledger.Ledger, error) {
 
 func (ne *NodeEngine) AddServicePoint(s ServicePoint) {
 	ne.srvPoints = append(ne.srvPoints, s.servicePoint)
+}
+
+func (ne *NodeEngine) RunPeers() error {
+
+	if ne.runPeersFunc == nil {
+		return fmt.Errorf("Peers have been run, should not call again")
+	}
+
+	success := false
+	errExit := func(p *PeerEngine) {
+		if !success {
+			p.Stop()
+		}
+	}
+
+	for name, p := range ne.Peers {
+		if err := p.Run(); err != nil {
+			return fmt.Errorf("start peer [%s] fail: %s", name, err)
+		}
+		defer errExit(p)
+	}
+
+	//also run peers' impl (only once)
+	ne.runPeersFunc()
+	ne.runPeersFunc = nil
+
+	success = true
+	return nil
+}
+
+func (ne *NodeEngine) RunServices() (<-chan ServicePoint, error) {
+
+	notify := make(chan ServicePoint)
+
+	success := false
+	errExit := func(p *servicePoint) {
+		if !success {
+			if err := p.Stop(); err != nil {
+				logger.Errorf("srvpoint [%s] fail on stop: %s", p.spec.Address, err)
+			}
+		}
+	}
+
+	for _, p := range ne.srvPoints {
+		if err := p.Start(notify); err != nil {
+			return nil, fmt.Errorf("start service [%s] fail: %s", p.spec.Address, err)
+		}
+		defer errExit(p)
+	}
+
+	success = true
+	return notify, nil
+
+}
+
+func (ne *NodeEngine) StopServices(notify <-chan ServicePoint) {
+
+	for _, p := range ne.srvPoints {
+		if p.srvStatus != nil {
+			logger.Infof("service [%s] has stopped before (%s)", p.spec.Address, p.srvStatus)
+		}
+		p.Stop()
+		for endp := <-notify; p != endp.servicePoint; {
+			logger.Warningf("service [%s] stopped occasionally when stopping (%s)", endp.spec.Address, p.spec.Address)
+		}
+
+		logger.Warningf("service [%s] has stopped", p.spec.Address)
+	}
+}
+
+func (ne *NodeEngine) RunAll() (<-chan ServicePoint, error) {
+	if err := ne.RunPeers(); err != nil {
+		return nil, err
+	}
+
+	return ne.RunServices()
 }

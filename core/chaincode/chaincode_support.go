@@ -137,7 +137,7 @@ func checkDeployTx(chaincode string, ledger *ledger.Ledger) (depTx *pb.Transacti
 	if txByte, ledgerErr = ledger.GetState(chaincode, deployTxKey, true); ledgerErr != nil {
 		return
 	} else if txByte == nil {
-		chaincodeLogger.Warningf("Deploy tx for chaincoide %s not found, try chaincode name as tx id", chaincode)
+		chaincodeLogger.Debugf("Deploy tx for chaincoide %s not found, try chaincode name as tx id", chaincode)
 		depTx, ledgerErr = ledger.GetTransactionByID(chaincode)
 		return
 	}
@@ -674,6 +674,19 @@ func (chaincodeSupport *ChaincodeSupport) Execute(ctxt context.Context, chrte *c
 	wctx, cf := context.WithTimeout(ctxt, chaincodeSupport.ccExecTimeout)
 	defer cf()
 	return chrte.handler.executeMessage(wctx, msg, enc, outstate)
+
+}
+
+// Executelite executes with minimal data requirement, can used for internal testing, syscc and some other cases
+// this method also omit the limit of exectimeout, and CAN NOT be run concurrently
+func (chaincodeSupport *ChaincodeSupport) ExecuteLite(ctxt context.Context, chrte *chaincodeRTEnv, ttype pb.Transaction_Type, input *pb.ChaincodeInput, outstate ledger.TxExecStates) (*pb.ChaincodeMessage, error) {
+
+	msg, err := createTransactionMessage(ttype, "lite_execute", input, nil)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to gen lite transaction message (%s)", err)
+	}
+
+	return chrte.handler.executeMessage(ctxt, msg, nil, outstate)
 
 }
 

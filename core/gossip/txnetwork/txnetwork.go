@@ -404,7 +404,7 @@ func (tp *transactionPool) completeTx(txin *pb.Transaction) (tx *pb.Transaction,
 //as duplicated/re-transfer and should not be thrown out of txnetwork
 func (tp *transactionPool) buildGetCommitHandler(heightRet chan<- uint64) pb.TxPreHandler {
 	return pb.TxFuncAsTxPreHandler(func(tx *pb.Transaction) (*pb.Transaction, error) {
-		h := tp.getTxCommitHeight(tx.GetTxid())
+		h, _, _ := tp.ledger.GetBlockNumberByTxid(tx.GetTxid())
 		heightRet <- h
 		if h != 0 {
 			return tx, pb.ValidateInterrupt
@@ -417,6 +417,20 @@ func (tp *transactionPool) buildCompleteTxHandler() pb.TxPreHandler {
 	return pb.TxFuncAsTxPreHandler(func(tx *pb.Transaction) (*pb.Transaction, error) {
 		return tp.completeTx(tx)
 	})
+}
+
+//we must prepare for the possibility that self-peer's cache is accessed both by "" and self ID
+func (tp *transactionPool) UpdateSelfID(self string) {
+	tp.Lock()
+	defer tp.Unlock()
+
+	if c, ok := tp.cCaches[self]; ok {
+		tp.cCaches[""] = c
+	} else {
+		c = new(commitData)
+		tp.cCaches[self] = c
+		tp.cCaches[""] = c
+	}
 }
 
 func (tp *transactionPool) AcquireCaches(peer string) *txCache {

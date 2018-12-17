@@ -17,13 +17,11 @@ limitations under the License.
 package api
 
 import (
-	"fmt"
 	"github.com/abchain/fabric/core/chaincode/shim"
-	"github.com/spf13/viper"
 )
 
 //we devided embedded chaincode into system and embedded
-var SystemChaincodes = []*SystemChaincode{}
+var systemChaincodes = []*SystemChaincode{}
 
 // SystemChaincode defines the metadata needed to initialize system chaincode
 // when the fabric comes up. SystemChaincodes are installed by adding an
@@ -32,6 +30,10 @@ type SystemChaincode struct {
 	// Enabled a convenient switch to enable/disable system chaincode without
 	// having to remove entry
 	Enabled bool
+
+	// if syscc is enforced, register process throw error when this code is not
+	// allowed on whitelist
+	Enforced bool
 
 	//Unique name of the system chaincode
 	Name string
@@ -46,19 +48,15 @@ type SystemChaincode struct {
 	Chaincode shim.Chaincode
 }
 
-// RegisterSysCC registers the given system chaincode with the peer
-func RegisterSysCC(syscc *SystemChaincode) error {
+func ListSysCC() []*SystemChaincode { return systemChaincodes }
 
-	if !syscc.Enabled || !isWhitelisted(syscc) {
-		return fmt.Errorf(fmt.Sprintf("system chaincode (%s,%s) disabled", syscc.Name, syscc.Path))
+// RegisterSysCC registers the given system chaincode with the peer
+func RegisterSysCC(syscc *SystemChaincode) {
+
+	//just silently exit
+	if !syscc.Enabled {
+		return
 	}
 
-	return RegisterECC(&EmbeddedChaincode{syscc.Name, syscc.Chaincode})
-}
-
-func isWhitelisted(syscc *SystemChaincode) bool {
-	chaincodes := viper.GetStringMapString("chaincode.system")
-	val, ok := chaincodes[syscc.Name]
-	enabled := val == "enable" || val == "true" || val == "yes"
-	return ok && enabled
+	systemChaincodes = append(systemChaincodes, syscc)
 }

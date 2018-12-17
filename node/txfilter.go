@@ -101,7 +101,7 @@ func (r *recordHandler) Handle(txe *pb.TransactionHandlingContext) (*pb.Transact
 		txlogger.Errorf("Tx %s write into topic [%s] fail: %s", txe.GetTxid(), ccname, err)
 		return txe, pb.ValidateInterrupt
 	}
-	txlogger.Debugf("tx %s write to topic [%s]", txe.GetTxid(), ccname)
+	txlogger.Debugf("tx [%s] write to topic [%s]", txe.GetTxid(), ccname)
 
 	return txe, nil
 }
@@ -113,5 +113,6 @@ type txPoolHandler struct {
 
 func (t txPoolHandler) Handle(txe *pb.TransactionHandlingContext) (*pb.TransactionHandlingContext, error) {
 	t.l.PoolTransactions([]*pb.Transaction{txe.Transaction})
+	txlogger.Debugf("tx [%s] has been pooled to ledger <%p>", txe.GetTxid(), t.l)
 	return txe, nil
 }

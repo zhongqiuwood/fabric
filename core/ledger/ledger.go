@@ -196,7 +196,7 @@ func sanityCheck(odb *db.OpenchainDB) error {
 			}
 		}
 	*/
-	if lastExisting == nil {
+	if len(noneExistingList) > 0 && lastExisting == nil {
 		return fmt.Errorf("The whole blockchain is not match with global state")
 	}
 

@@ -18,8 +18,6 @@ package common
 
 import (
 	"fmt"
-
-	"github.com/abchain/fabric/core/peer"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/cobra"
 )
@@ -27,23 +25,22 @@ import (
 // UndefinedParamValue defines what undefined parameters in the command line will initialise to
 const UndefinedParamValue = ""
 
-
-var GenDevopsClient func () (pb.DevopsClient, error)
+var GenDevopsClient func() (pb.DevopsClient, error)
 
 // GetDevopsClient returns a new client connection for this peer
 func GetDevopsClient(cmd *cobra.Command) (pb.DevopsClient, error) {
 	return GenDevopsClient()
 }
 
-func genDevopsClient_default () (pb.DevopsClient, error){
-	clientConn, err := peer.NewPeerClientConnection()
+func genDevopsClient_default() (pb.DevopsClient, error) {
+	clientConn, err := newPeerClientConnection(true)
 	if err != nil {
 		return nil, fmt.Errorf("Error trying to connect to local peer: %s", err)
 	}
 	devopsClient := pb.NewDevopsClient(clientConn)
-	return devopsClient, nil	
+	return devopsClient, nil
 }
 
-func init(){
+func init() {
 	GenDevopsClient = genDevopsClient_default
 }

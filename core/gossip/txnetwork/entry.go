@@ -35,6 +35,12 @@ func (e *TxNetworkEntry) InitTerminal(t pb.TxPreHandler) {
 	e.net.txPool.txTerminal = t
 }
 
+func clonePeerTxState(s *pb.PeerTxState) *pb.PeerTxState {
+	cpy := new(pb.PeerTxState)
+	*cpy = *s
+	return cpy
+}
+
 func (e *TxNetworkEntry) ResetPeerSimple(id []byte) error {
 
 	if err := e.net.peers.ChangeSelf(id); err != nil {
@@ -42,8 +48,10 @@ func (e *TxNetworkEntry) ResetPeerSimple(id []byte) error {
 	}
 
 	selfState, selfId := e.net.peers.QuerySelf()
+	logger.Debugf("Self peer state after change is: %v", selfState)
 	e.net.handleSetSelf(selfId, selfState)
 	//add a mark to indicate the peer is endorsered
+	selfState = clonePeerTxState(selfState)
 	selfState.Endorsement = []byte{1}
 	e.catalogHandlerUpdateLocal(globalCatName, peerStatus{selfState}, nil)
 	logger.Infof("Self peer reseted to [%s] in simple mode", selfId)
@@ -85,15 +93,14 @@ func (e *TxNetworkEntry) ResetPeer(endorser cred.TxEndorserFactory) error {
 	}
 
 	//give a new endorsement for the selfState, so it was ready for broadcasting
+	selfState = clonePeerTxState(selfState)
 	selfState, err = endorser.EndorsePeerState(selfState)
 	if err != nil {
 		return err
 	}
 
 	//everything is done, now disclose our new peer to the whole network
-	e.catalogHandlerUpdateLocal(globalCatName, peerStatus{selfState}, nil)
-
-	return nil
+	return e.catalogHandlerUpdateLocal(globalCatName, peerStatus{selfState}, nil)
 }
 
 func (e *TxNetworkEntry) catalogHandlerUpdateLocal(catName string, u model.ScuttlebuttPeerUpdate, ug model.Update) error {
@@ -199,9 +206,9 @@ func (e *txNetworkEntry) worker(ctx context.Context, h TxNetworkHandler) {
 	var err error
 	txs := txBuffer[:0]
 
-	logger.Infof("Start a worker for txnetwork entry with handler %x", h)
+	logger.Infof("Start a worker for txnetwork entry with handler <%T:%p>", h, h)
 	defer func() {
-		logger.Infof("End the worker for txnetwork entry with handler %x", h)
+		logger.Infof("End the worker for txnetwork entry with handler <%p>", h)
 		h.Release()
 	}()
 	for {

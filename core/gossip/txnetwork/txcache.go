@@ -146,6 +146,7 @@ func (c *txCache) AddTxsToTarget(from uint64, txs []*pb.Transaction, preHandler 
 	var txspos int
 	var err error
 	added := c.commitData.append(from, len(txs))
+	logger.Debugf("Append cache space from %d for %d txs", from, len(txs))
 
 	dataPipe := make(chan *pb.TransactionHandlingContext)
 	dataRet := make(chan error)

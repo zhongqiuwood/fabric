@@ -22,11 +22,10 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/howeyc/gopass"
-	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/peer/common"
 	"github.com/abchain/fabric/peer/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/howeyc/gopass"
 	"github.com/spf13/cobra"
 	"golang.org/x/net/context"
 )
@@ -97,7 +96,7 @@ func networkLogin(args []string) error {
 	logger.Infof("Logging in user '%s' on CLI interface...\n", args[0])
 
 	// Get a devopsClient to perform the login
-	clientConn, err := peer.NewPeerClientConnection()
+	clientConn, err := common.NewPeerClientConnection()
 	if err != nil {
 		return fmt.Errorf("Error trying to connect to local peer: %s", err)
 	}

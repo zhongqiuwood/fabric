@@ -31,6 +31,10 @@ func (ep ServicePoint) Spec() *config.ServerSpec {
 	return ep.spec
 }
 
+func (ep ServicePoint) Status() error {
+	return ep.srvStatus
+}
+
 func CreateServerPoint(conf *viper.Viper) (ServicePoint, error) {
 	srvp := new(servicePoint)
 	err := srvp.Init(conf)
@@ -95,7 +99,7 @@ func (ep *servicePoint) SetPort(listenAddr string) error {
 	return nil
 }
 
-func (ep *servicePoint) Start(notify chan<- *servicePoint) error {
+func (ep *servicePoint) Start(notify chan<- ServicePoint) error {
 
 	if ep.Server == nil {
 		return fmt.Errorf("Server is not inited")
@@ -103,9 +107,10 @@ func (ep *servicePoint) Start(notify chan<- *servicePoint) error {
 
 	go func() {
 		ep.srvStatus = ep.Serve(ep.lPort)
-		notify <- ep
+		notify <- ServicePoint{ep}
 	}()
 
+	serviceLogger.Infof("service [%s] has startted", ep.spec.Address)
 	return nil
 }
 
@@ -114,6 +119,7 @@ func (ep *servicePoint) Stop() error {
 		return fmt.Errorf("Server is not inited")
 	}
 
+	serviceLogger.Infof("User stop service [%s]", ep.spec.Address)
 	ep.Server.Stop()
 	return nil
 }

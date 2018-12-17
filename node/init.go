@@ -72,6 +72,10 @@ func (ne *NodeEngine) PreInit() {
 		p.PreInit(ne)
 		ne.Peers[tag] = p
 	}
+
+	ne.runPeersFunc = func() {
+		logger.Info("Start the running peer stack")
+	}
 }
 
 //ne will fully respect an old-fashion (fabric 0.6) config file
@@ -123,6 +127,7 @@ func (ne *NodeEngine) ExecInit() error {
 		if l, err := ledger.GetLedger(); err != nil {
 			return fmt.Errorf("Init default ledger fail: %s", err)
 		} else {
+			genesis.MakeGenesis()
 			ne.Ledgers[""] = l
 			logger.Warningf("No ledger created, use old-fashion default one")
 		}
@@ -224,24 +229,26 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		return fmt.Errorf("Init peer config fail: %s", err)
 	}
 
-	if pe.Peer, err = peer.CreateNewPeer(credrv.PeerValidator, peercfg); err != nil {
+	var pimpl *peer.Impl
+	if pimpl, err = peer.CreateNewPeer(credrv.PeerValidator, peercfg); err != nil {
 		return fmt.Errorf("Init peer fail: %s", err)
 	}
+
+	deeperF := node.runPeersFunc
+	node.runPeersFunc = func() {
+		deeperF()
+		logger.Infof("starting peer [%s]", tag)
+		pimpl.RunPeer(peercfg)
+	}
+
+	pe.Peer = pimpl
+	pb.RegisterPeerServer(pe.srvPoint.Server, pimpl)
 
 	//init gossip network
 	if gstub := gossip_stub.InitGossipStub(pe.Peer, pe.srvPoint.Server); gstub == nil {
 		return fmt.Errorf("Can not create gossip server: %s", err)
 	} else {
 		pe.TxNetworkEntry = txnetwork.GetNetworkEntry(gstub)
-		if pe.defaultEndorser != nil {
-			err = pe.TxNetworkEntry.ResetPeer(pe.defaultEndorser)
-		} else {
-			err = pe.TxNetworkEntry.ResetPeerSimple([]byte(tag + "_PeerId16BytePadding"))
-		}
-
-		if err != nil {
-			return fmt.Errorf("Can not set self peer id: %s", err)
-		}
 	}
 
 	pe.TxNetworkEntry.InitCred(credrv.TxValidator)
@@ -322,6 +329,21 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 	handlerArray = append(handlerArray, &recordHandler{node.TxTopic, node.TxTopicNameHandler})
 
 	pe.TxNetworkEntry.InitTerminal(pb.MutipleTxHandler(handlerArray...))
+
+	//reset peer trigger update so we should run it finally
+	if pe.defaultEndorser != nil {
+		err = pe.TxNetworkEntry.ResetPeer(pe.defaultEndorser)
+	} else {
+		networkName := peercfg.PeerEndpoint.GetID().GetName()
+		if networkName == "" {
+			networkName = tag
+		}
+		err = pe.TxNetworkEntry.ResetPeerSimple([]byte(networkName + "_PeerId16BytePadding"))
+	}
+
+	if err != nil {
+		return fmt.Errorf("Can not set self peer id: %s", err)
+	}
 
 	return nil
 }

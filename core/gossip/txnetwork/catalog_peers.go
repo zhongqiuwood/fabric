@@ -109,10 +109,13 @@ type peersGlobal struct {
 	*txNetworkPeers
 }
 
-func (*peersGlobal) GenDigest() model.Digest                                { return nil }
-func (*peersGlobal) MakeUpdate(_ model.Digest) model.Update                 { return nil }
-func (*peersGlobal) Update(_ model.Update) error                            { return nil }
-func (*peersGlobal) MissedUpdate(string, model.ScuttlebuttPeerUpdate) error { return nil }
+func (*peersGlobal) GenDigest() model.Digest                { return nil }
+func (*peersGlobal) MakeUpdate(_ model.Digest) model.Update { return nil }
+func (*peersGlobal) Update(_ model.Update) error            { return nil }
+func (*peersGlobal) MissedUpdate(id string, u model.ScuttlebuttPeerUpdate) error {
+	logger.Warningf("peer receive a missed update from [%s]: %v", id, u)
+	return nil
+}
 
 func (g *peersGlobal) NewPeer(id string) model.ScuttlebuttPeerStatus {
 
@@ -201,6 +204,7 @@ func (c *globalCat) TransDigestToPb(d_in model.Digest) *pb.GossipMsg_Digest {
 }
 
 func (c *globalCat) TransPbToDigest(msg *pb.GossipMsg_Digest) model.Digest {
+	//	logger.Debugf("peer's digest msg: %v", msg)
 	return parsePbDigestStd(msg, nil)
 }
 
@@ -224,6 +228,7 @@ func (c *globalCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Upda
 		msg.Txs[iu_in.Id] = iu.PeerTxState
 	}
 
+	//	logger.Debugf("peer's update msg: %v", msg)
 	return msg
 }
 

@@ -59,7 +59,7 @@ type scuttlebuttDigest struct {
 }
 
 func NewscuttlebuttDigest(gd Digest) *scuttlebuttDigest {
-	return &scuttlebuttDigest{Digest: gd, isPartial: true}
+	return &scuttlebuttDigest{Digest: gd}
 }
 
 func (d *scuttlebuttDigest) GlobalDigest() Digest { return d.Digest }
@@ -243,8 +243,8 @@ func (s *scuttlebuttStatus) GenDigest() Digest {
 
 	}
 
-	if s.Extended && len(r.d) == len(s.Peers) {
-		r.isPartial = false
+	if !s.Extended || len(r.d) < len(s.Peers) {
+		r.isPartial = true
 	}
 
 	return r
@@ -312,6 +312,10 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 				continue
 			} else if s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss) {
 				continue
+			}
+
+			if id == "" {
+				id = s.SelfID
 			}
 
 			scounter++

@@ -104,4 +104,63 @@ func TestTxNetwork(t *testing.T) {
 		}
 		compareTx(t, tx1, topictx.Transaction)
 	}
+
+	thepeer.Stop()
+
+	thenode.TxTopic["mycc2"] = thenode.TxTopic[""]
+	delete(thenode.TxTopic, "")
+
+	spec2 := &pb.ChaincodeInvocationSpec{
+		ChaincodeSpec: &pb.ChaincodeSpec{
+			ChaincodeID: &pb.ChaincodeID{Name: "mycc2"},
+			CtorMsg:     &pb.ChaincodeInput{[][]byte{[]byte{42, 42, 42}}},
+		},
+	}
+
+	tx2, err := pb.NewChaincodeExecute(spec2, "", pb.Transaction_CHAINCODE_INVOKE)
+	if nil != err {
+		t.Fatal("Error on make tx", err)
+	}
+
+	err = thepeer.BroadCastTransaction(tx2, nil)
+	if nil != err {
+		t.Fatal("Error on broadcast tx2", err)
+	}
+
+	err = thepeer.Run()
+	if nil != err {
+		t.Fatal("re-run peer fail", err)
+	}
+
+	resp = thepeer.ExecuteTransaction(context.Background(), tx1, nil)
+	if resp.Status == pb.Response_FAILURE {
+		t.Fatal("Error on deliver tx1 again")
+	}
+
+	txid1again := string(resp.Msg)
+	t.Logf("Get tx id for anoghter tx1: %s", txid1again)
+	if txid1again == txid1 {
+		t.Fatal("Two txid is identify")
+	}
+
+	//need some time to fill the tx into network ...
+	time.Sleep(time.Second)
+	compareTx(t, tx1, thenode.DefaultLedger().GetPooledTransaction(txid1again))
+
+	obj, err = topicRead.ReadOne()
+	if err != nil {
+		t.Fatal("read tx2 fail", err)
+	}
+
+	if topictx, ok := obj.(*pb.TransactionHandlingContext); !ok {
+		t.Fatalf("write wrong object in topic: %T(%v)", obj, obj)
+	} else {
+		if topictx.ChaincodeSpec == nil {
+			t.Fatalf("wrong exec context for tx2: %v", topictx)
+		}
+
+		compareTx(t, tx2, topictx.Transaction)
+		compareTx(t, tx2, thenode.DefaultLedger().GetPooledTransaction(topictx.Transaction.GetTxid()))
+	}
+
 }

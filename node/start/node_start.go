@@ -4,17 +4,26 @@ import (
 	"fmt"
 	"github.com/abchain/fabric/core/chaincode"
 	"github.com/abchain/fabric/core/config"
+	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/core/embedded_chaincode"
+	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/events/producer"
 	"github.com/abchain/fabric/node"
 	api "github.com/abchain/fabric/node/service"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
+	"golang.org/x/net/context"
 )
 
 var (
-	logger  = logging.MustGetLogger("engine")
-	theNode *node.NodeEngine
+	logger         = logging.MustGetLogger("engine")
+	theNode        *node.NodeEngine
+	theDoom        context.CancelFunc
+	theEndServices func()
+
+	//an helper for simply waiting while running
+	TheGuard func(context.Context)
 )
 
 func GetNode() *node.NodeEngine { return theNode }
@@ -26,6 +35,48 @@ func PreInitFabricNode(name string) {
 	theNode = new(node.NodeEngine)
 	theNode.Name = name
 	theNode.PreInit()
+
+	peer.PeerGlobalParentCtx, theDoom = context.WithCancel(context.Background())
+}
+
+func Final() {
+	if theEndServices != nil {
+		theEndServices()
+	}
+
+	db.Stop()
+	if theDoom != nil {
+		theDoom()
+	}
+}
+
+func RunFabricNode() error {
+	status, err := theNode.RunAll()
+	if err != nil {
+		return err
+	}
+
+	theEndServices = func() {
+		theNode.StopServices(status)
+	}
+
+	TheGuard = func(ctx context.Context) {
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case srvp := <-status:
+				logger.Errorf("server point [%s] fail: %s", srvp.Spec().Address, srvp.Status())
+			}
+		}
+	}
+
+	return nil
+}
+
+func SetEndServicesFunc(f func()) {
+	theEndServices = f
 }
 
 func InitFabricNode() error {
@@ -50,9 +101,14 @@ func InitFabricNode() error {
 		userRunsCC = true
 	}
 
-	pb.RegisterChaincodeSupportServer(ccsrv.Server,
-		//TODO: cred should provide confidienty handler
-		chaincode.NewChaincodeSupport(chaincode.DefaultChain, theNode.Name, ccsrv.Spec(), userRunsCC))
+	ccplatform := chaincode.NewChaincodeSupport(chaincode.DefaultChain, theNode.Name, ccsrv.Spec(), userRunsCC)
+	pb.RegisterChaincodeSupportServer(ccsrv.Server, ccplatform)
+
+	//TODO: now we just launch system chaincode for default ledger
+	err = embedded_chaincode.RegisterSysCCs(theNode.DefaultLedger(), ccplatform)
+	if err != nil {
+		return fmt.Errorf("launch system chaincode fail: %s", err)
+	}
 
 	var apisrv, evtsrv node.ServicePoint
 	var evtConf *viper.Viper

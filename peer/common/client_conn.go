@@ -1,4 +1,4 @@
-package peerex
+package common
 
 import (
 	"github.com/abchain/fabric/core/comm"
@@ -9,6 +9,10 @@ import (
 type ClientConn struct {
 	C         *grpc.ClientConn
 	BlockConn bool
+}
+
+func NewPeerClientConnection() (*grpc.ClientConn, error) {
+	return newPeerClientConnection(true)
 }
 
 // NewPeerClientConnection Returns a new grpc.ClientConn to the configured local PEER.

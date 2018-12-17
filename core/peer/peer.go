@@ -151,9 +151,7 @@ func NewPeer(self *pb.PeerEndpoint) *Impl {
 func CreateNewPeer(cred cred.PeerCreds, config *PeerConfig) (peer *Impl, err error) {
 
 	peer = NewPeer(config.PeerEndpoint)
-	peerNodes := peer.initDiscovery(config)
 	peer.secHelper = cred
-
 	// Install security object for peer
 	if securityEnabled() {
 		if peer.secHelper == nil {
@@ -161,18 +159,30 @@ func CreateNewPeer(cred cred.PeerCreds, config *PeerConfig) (peer *Impl, err err
 		}
 	}
 
-	peer.chatWithSomePeers(peerNodes)
 	return peer, nil
 
 }
 
+func (p *Impl) RunPeer(config *PeerConfig) {
+
+	peerNodes := p.initDiscovery(config)
+	p.chatWithSomePeers(peerNodes)
+}
+
 func (p *Impl) EndPeer() {
-	p.onEnd()
+	if p.onEnd != nil {
+		p.onEnd()
+	}
+
 }
 
 // Chat implementation of the the Chat bidi streaming RPC function
 func (p *Impl) Chat(stream pb.Peer_ChatServer) error {
 	return p.handleChat(stream.Context(), stream, false)
+}
+
+func (p *Impl) ProcessTransaction(context.Context, *pb.Transaction) (*pb.Response, error) {
+	return nil, fmt.Errorf("Method is abandoned")
 }
 
 func (p *Impl) GetPeerCtx() context.Context { return p.pctx }

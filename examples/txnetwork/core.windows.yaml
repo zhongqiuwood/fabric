@@ -47,7 +47,7 @@ service:
     # The Address which peer will use when run as client
     # If the target peer's service is enabled, it should be the port at which 
     # service is listening
-    cliaddress: 127.0.0.1:7051
+    cliaddress: 127.0.0.1:7055
 
 ###############################################################################
 #
@@ -84,7 +84,7 @@ logging:
     client: debug
     #peer: warning
 
-    node:      info:gossip,gossip_cat=info:txhandler=info:db,crypto,buckettree=warning
+    node:      info:gossip,gossip_cat=warning:txhandler=info:db,crypto,buckettree=warning
     network:   warning
     chaincode: warning
     version: warning

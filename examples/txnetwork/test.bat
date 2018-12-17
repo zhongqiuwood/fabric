@@ -15,9 +15,9 @@ goto :eof
 
 :testbody
 setlocal
-set PEERLOCALADDRBASE=7051
+set PEERLOCALADDRBASE=7055
 set /a LOCADDRPORT=%PEERLOCALADDRBASE%+%1*100
-set CORE_PEER_LOCALADDR=127.0.0.1:%LOCADDRPORT%
+set CORE_SERVICE_CLIADDRESS=127.0.0.1:%LOCADDRPORT%
 peer network status
 peer chaincode query -n txnetwork -c "{\"Function\": \"count\", \"Args\": []}"
 peer chaincode query -n txnetwork -c "{\"Function\": \"status\", \"Args\": []}"

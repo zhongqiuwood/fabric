@@ -45,7 +45,7 @@ func NewStateSyncStubWithPeer(p peer.Peer, l *ledger.Ledger) *StateSyncStub {
 	return sycnStub
 }
 
-func (s *StateSyncStub) SyncToState(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (err error, result bool) {
+func (s *StateSyncStub) SyncToTarget(blockNumber uint64, blockHash []byte, peerIDs []*pb.PeerID) (err error, result bool) {
 
 	result = false
 

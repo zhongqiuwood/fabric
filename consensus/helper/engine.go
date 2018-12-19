@@ -26,6 +26,7 @@ import (
 	"github.com/abchain/fabric/consensus/controller"
 	"github.com/abchain/fabric/consensus/util"
 	"github.com/abchain/fabric/core/chaincode"
+	"github.com/abchain/fabric/core/statesync/stub"
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 )
@@ -111,10 +112,11 @@ func getEngineImpl() *EngineImpl {
 type PeerStack struct {
 	peer.Peer
 	peer.Neighbour
+	stub.StateTransfer
 }
 
 // GetEngine returns initialized peer.Engine
-func GetEngine(peer peer.Peer) error {
+func GetEngine(peer peer.Peer, sts stub.StateTransfer) error {
 
 	coord, err := peer.GetNeighbour()
 	if err != nil {
@@ -123,7 +125,7 @@ func GetEngine(peer peer.Peer) error {
 
 	engineOnce.Do(func() {
 		engine = new(EngineImpl)
-		engine.helper = NewHelper(PeerStack{peer, coord})
+		engine.helper = NewHelper(PeerStack{peer, coord, sts})
 		engine.consenter = controller.NewConsenter(engine.helper)
 		engine.helper.setConsenter(engine.consenter)
 		engine.peerEndpoint, err = peer.GetPeerEndpoint()

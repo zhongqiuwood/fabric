@@ -1,0 +1,13 @@
+/*
+
+    YA-fabric has introduced the new architecture for implement of consensus: the consensus framework.
+    Developer can run their consensus module among the system chaincode, access and invoke the method
+    in node_engine module instead of the interface for consensus in fabric 0.6
+
+    YA-fabric use "legacy mode" to support the old consensus module, which can only use the legacy
+    node (involving sole P2P network, ledger and chaincode supporting) and can not play the full power
+    of YA-fabric
+
+    Notice: the old impmelent of security is also be disabled
+
+*/

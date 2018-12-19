@@ -21,6 +21,7 @@ import (
 	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
+	"github.com/abchain/fabric/core/statesync"
 	"github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
@@ -39,6 +40,7 @@ type PeerEngine struct {
 	}
 
 	*txnetwork.TxNetworkEntry
+	*statesync.StateSyncStub
 	peer.Peer
 
 	defaultEndorser cred.TxEndorserFactory

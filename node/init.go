@@ -7,12 +7,12 @@ import (
 	"github.com/abchain/fabric/core/cred/driver"
 	"github.com/abchain/fabric/core/db"
 	gossip_stub "github.com/abchain/fabric/core/gossip/stub"
-	"github.com/abchain/fabric/events/litekfk"
-	//"github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/core/gossip/txnetwork"
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
+	sync_stub "github.com/abchain/fabric/core/statesync/stub"
+	"github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
 )
@@ -201,6 +201,8 @@ func (pe *PeerEngine) PreInit(node *NodeEngine) {
 
 func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error {
 
+	config.CacheViper(vp)
+
 	var err error
 	credrv := node.GenCredDriver()
 	if err = credrv.Drive(vp); err != nil {
@@ -252,9 +254,6 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 	}
 
 	pe.TxNetworkEntry.InitCred(credrv.TxValidator)
-
-	//TODO: create and init sync entry
-	//_ = sync_stub.InitStateSyncStub(pe.Peer, "ledgerName", srvPoint.Server)
 	var peerLedger *ledger.Ledger
 
 	//test ledger configuration
@@ -288,6 +287,12 @@ func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error 
 		}
 		peerLedger = l
 
+	}
+
+	//create and init sync entry
+	pe.StateSyncStub = sync_stub.InitStateSyncStub(pe.Peer, peerLedger, pe.srvPoint.Server)
+	if err = pe.StateSyncStub.Configure(config.SubViper("sync", vp)); err != nil {
+		return fmt.Errorf("Could not configure state sync module: %s", err)
 	}
 
 	pe.TxNetworkEntry.InitLedger(peerLedger)

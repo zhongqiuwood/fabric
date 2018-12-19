@@ -2,33 +2,32 @@ package statesync
 
 import (
 	"fmt"
-	_ "github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
-	_ "github.com/spf13/viper"
+	"github.com/spf13/viper"
 	"golang.org/x/net/context"
 	"sync"
 )
 
 var logger = logging.MustGetLogger("statesyncstub")
 
-
 type StateSyncStub struct {
 	self *pb.PeerID
 	*pb.StreamStub
 	sync.RWMutex
 	curCorrrelation uint64
-	curTask context.Context
-	ledgerName string
+	curTask         context.Context
+	ledger          *ledger.Ledger
 }
 
 type ErrInProcess struct {
 	error
 }
 
-func NewStateSyncStubWithPeer(p peer.Peer, ledgerName string) *StateSyncStub {
+func NewStateSyncStubWithPeer(p peer.Peer, l *ledger.Ledger) *StateSyncStub {
 
 	self, err := p.GetPeerEndpoint()
 	if err != nil {
@@ -40,9 +39,8 @@ func NewStateSyncStubWithPeer(p peer.Peer, ledgerName string) *StateSyncStub {
 	sycnStub := &StateSyncStub{
 		self:    self.ID,
 		curTask: gctx,
-		ledgerName: ledgerName,
+		ledger:  l,
 	}
-
 
 	return sycnStub
 }
@@ -52,7 +50,7 @@ func (s *StateSyncStub) SyncToState(blockNumber uint64, blockHash []byte, peerID
 	result = false
 
 	for _, peer := range peerIDs {
-		err = s.SyncToStateByPeer(context.Background(), blockHash,nil, peer)
+		err = s.SyncToStateByPeer(context.Background(), blockHash, nil, peer)
 		if err == nil {
 			result = true
 			break
@@ -61,6 +59,11 @@ func (s *StateSyncStub) SyncToState(blockNumber uint64, blockHash []byte, peerID
 	}
 
 	return err, result
+}
+
+func (s *StateSyncStub) Configure(vp *viper.Viper) error {
+	logger.Debugf("configure item: %v", vp.AllSettings())
+	return nil
 }
 
 func (s *StateSyncStub) Start() {
@@ -73,7 +76,7 @@ func (s *StateSyncStub) Stop() {
 
 func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID, sstub *pb.StreamStub) pb.StreamHandlerImpl {
 
-	return newStateSyncHandler(id, s.ledgerName, sstub)
+	return newStateSyncHandler(id, s.ledger, sstub)
 }
 
 func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt,
@@ -109,7 +112,7 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 	peerSyncHandler, ok := handler.StreamHandlerImpl.(*stateSyncHandler)
 
 	if !ok {
-		return fmt.Errorf("[%s]: Target peer <%v>, " +
+		return fmt.Errorf("[%s]: Target peer <%v>, "+
 			"failed to convert StreamHandlerImpl to stateSyncHandler",
 			flogging.GoRDef, peer)
 	}
@@ -124,7 +127,6 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 
 	return err
 }
-
 
 //if busy, return current correlation Id, els return 0
 func (s *StateSyncStub) IsBusy() uint64 {

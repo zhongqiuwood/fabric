@@ -1,11 +1,12 @@
 package stub
 
 import (
+	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/peer"
+	"github.com/abchain/fabric/core/statesync"
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
-	"github.com/abchain/fabric/core/statesync"
-	"github.com/abchain/fabric/core/peer"
 )
 
 //type SyncFactory func(*pb.PeerID, string, *pb.StreamStub) pb.StreamHandlerImpl
@@ -13,9 +14,9 @@ type SyncFactory struct {
 	stateSyncStub *statesync.StateSyncStub
 }
 
-func InitStateSyncStub(bindPeer peer.Peer, ledgerName string, srv *grpc.Server) *statesync.StateSyncStub {
+func InitStateSyncStub(bindPeer peer.Peer, l *ledger.Ledger, srv *grpc.Server) *statesync.StateSyncStub {
 
-	sstub := statesync.NewStateSyncStubWithPeer(bindPeer, ledgerName)
+	sstub := statesync.NewStateSyncStubWithPeer(bindPeer, l)
 	if sstub == nil {
 		return nil
 	}
@@ -53,7 +54,6 @@ func (t SyncFactory) NewClientStream(conn *grpc.ClientConn) (grpc.ClientStream, 
 
 	return stream, nil
 }
-
 
 func (t SyncFactory) Data(stream pb.Sync_DataServer) error {
 	return t.stateSyncStub.HandleServer(stream)

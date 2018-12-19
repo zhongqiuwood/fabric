@@ -37,4 +37,10 @@ func TestViperSetting(t *testing.T) {
 	if before != after {
 		t.Errorf("Wrong items count after making cache: %d vs %d", before, after)
 	}
+
+	//sub a sub viper
+	subofsub := config.SubViper("sync", config.SubViper("peer"))
+	if subofsub.Get("blocks") == nil {
+		t.Fatal("sub of sub vp fail:", subofsub.AllSettings())
+	}
 }

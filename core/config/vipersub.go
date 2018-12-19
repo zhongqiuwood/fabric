@@ -43,7 +43,7 @@ func SubViper(path string, thevp ...*viper.Viper) *viper.Viper {
 		}
 	} else {
 		if sets, ok = settingCache[thevp[0]]; !ok {
-			sets = viper.AllSettings()
+			sets = thevp[0].AllSettings()
 		}
 	}
 

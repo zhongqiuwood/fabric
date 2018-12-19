@@ -3,9 +3,9 @@ package statesync
 import (
 	"github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/looplab/fsm"
-	"github.com/abchain/fabric/flogging"
 )
 
 type stateServer struct {
@@ -20,11 +20,7 @@ func newStateServer(h *stateSyncHandler) (s *stateServer) {
 		parent: h,
 	}
 
-	// todo: get ledger by name
-	//l := NodeEngine.GetLedger(h.ledgerName)
-
-	l, _ := ledger.GetLedger()
-	s.ledger = l.CreateSnapshot()
+	s.ledger = h.ledger.CreateSnapshot()
 	return
 
 }

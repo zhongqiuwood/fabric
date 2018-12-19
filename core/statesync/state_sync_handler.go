@@ -2,7 +2,7 @@ package statesync
 
 import (
 	"fmt"
-	_ "github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
@@ -21,20 +21,20 @@ type stateSyncHandler struct {
 	server       *stateServer
 	client       *syncer
 	streamStub   *pb.StreamStub
-	ledgerName    string
+	ledger       *ledger.Ledger
 }
 
 type ErrHandlerFatal struct {
 	error
 }
 
-func newStateSyncHandler(remoterId *pb.PeerID, ledgerName string, sstub *pb.StreamStub) pb.StreamHandlerImpl {
+func newStateSyncHandler(remoterId *pb.PeerID, l *ledger.Ledger, sstub *pb.StreamStub) pb.StreamHandlerImpl {
 	logger.Debug("create handler for peer", remoterId)
 
 	h := &stateSyncHandler{
 		remotePeerId: remoterId,
-		streamStub: sstub,
-		ledgerName: ledgerName,
+		streamStub:   sstub,
+		ledger:       l,
 	}
 	h.fsmHandler = newFsmHandler(h)
 	return h
@@ -177,7 +177,6 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 
 	return err
 }
-
 
 func (syncHandler *stateSyncHandler) onRecvSyncMsg(e *fsm.Event, payloadMsg proto.Message) *pb.SyncMsg {
 

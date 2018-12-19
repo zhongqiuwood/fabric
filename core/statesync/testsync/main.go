@@ -1,27 +1,26 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"github.com/abchain/fabric/core/embedded_chaincode/api"
 	"github.com/abchain/fabric/core/statesync"
-	"github.com/abchain/fabric/peerex/node"
+	"github.com/abchain/fabric/examples/chaincode/embedded/simple_chaincode"
+	node "github.com/abchain/fabric/node/start"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 	"time"
-	"github.com/abchain/fabric/core/embedded_chaincode/api"
-	"github.com/abchain/fabric/examples/chaincode/go/embedded/simple_chaincode"
-	"context"
 )
 
 var logger = logging.MustGetLogger("synctest")
-
 
 func main() {
 
 	runtest := func() error {
 
 		err := api.RegisterECC(&api.EmbeddedChaincode{"example02",
-		new(simple_chaincode.SimpleChaincode)})
+			new(simple_chaincode.SimpleChaincode)})
 
 		if err != nil {
 			return err
@@ -33,7 +32,7 @@ func main() {
 			logger.Infof("Start state sync test after 10s. Sync target: %s", syncTarget)
 			time.Sleep(10 * time.Second)
 
-			syncStub := statesync.NewStateSyncStubWithPeer(nil, "")
+			syncStub := statesync.NewStateSyncStubWithPeer(nil, node.GetNode().DefaultLedger())
 
 			err = syncStub.SyncToStateByPeer(context.TODO(), nil, nil, &pb.PeerID{syncTarget})
 
@@ -47,6 +46,3 @@ func main() {
 	node.RunNode(&node.NodeConfig{PostRun: runtest})
 
 }
-
-
-

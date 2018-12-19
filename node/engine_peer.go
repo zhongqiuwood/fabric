@@ -113,6 +113,6 @@ func (pe *PeerEngine) Run() error {
 
 	var wctx context.Context
 	wctx, pe.stopFunc = context.WithCancel(pe.GetPeerCtx())
-	pe.Start(wctx, h)
+	pe.TxNetworkEntry.Start(wctx, h)
 	return nil
 }

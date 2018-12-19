@@ -159,7 +159,7 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
 	sts.parent.fsmHandler.Event(enterSyncBegin)
 
-	msg := &pb.SyncStart{LedgerName:sts.ledgerName}
+	msg := &pb.SyncStartRequest{}
 	err := sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_START, msg)
 
 	if err != nil {

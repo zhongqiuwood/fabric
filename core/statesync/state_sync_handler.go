@@ -105,7 +105,7 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 //---------------------------------------------------------------------------
 func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 
-	msg := &pb.SyncStart{}
+	msg := &pb.SyncStartRequest{}
 
 	syncMsg := syncHandler.onRecvSyncMsg(e, msg)
 

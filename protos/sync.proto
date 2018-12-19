@@ -121,3 +121,8 @@ message SyncStateResp {
   bytes  statehash   = 4;
   uint64  blockHeight = 5;
 }
+
+
+message SyncStartRequest {
+    uint32  id = 1;
+}

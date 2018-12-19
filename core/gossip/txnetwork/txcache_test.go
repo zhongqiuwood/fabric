@@ -39,7 +39,7 @@ func TestData(t *testing.T) {
 
 	cycleLen := PeerTxQueueLimit()
 
-	data := new(commitData)
+	data := commitData{nil}
 
 	//ensure we have a single row array
 	ret1 := data.append(0, 3)
@@ -178,8 +178,6 @@ func TestCommitting(t *testing.T) {
 		t.Fatal("We have a too small queue len", queueLen)
 	}
 
-	cache := txpool.AcquireCaches("any").commitData
-
 	//generate a collection of txs large enough...
 	txcollection := make([]*pb.Transaction, queueLen*3+queueLenPart)
 	for i, _ := range txcollection {
@@ -202,6 +200,7 @@ func TestCommitting(t *testing.T) {
 		t.Fatal("commit fail", err)
 	}
 
+	cache := txpool.AcquireCaches("any").commitData
 	if cache[0][2] != 0 || cache[0][3] != 0 || cache[0][4] != 0 {
 		t.Fatal("has wrong commitH", cache[0][:5])
 	}
@@ -230,13 +229,14 @@ func TestCommitting(t *testing.T) {
 		t.Fatal("commit fail", err)
 	}
 
-	err = txpool.AcquireCaches("any").AddTxs(last, txcollection[queueLenPart:queueLen+2*queueLenPart])
+	err = rcache.AddTxs(last, txcollection[queueLenPart:queueLen+2*queueLenPart])
 	if err != nil {
 		t.Fatal("add txs fail", err)
 	}
 	last = last + uint64(queueLen+queueLenPart)
 
 	ch = rcache.GetCommit(uint64(queueLen), txcollection[queueLen])
+	cache = rcache.commitData
 	if ch != 2 || cache[1][0] != 2 {
 		t.Fatal("Wrong commit status ", cache[1][:5], ch)
 	}

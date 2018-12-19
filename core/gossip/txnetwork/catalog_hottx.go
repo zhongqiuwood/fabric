@@ -301,18 +301,6 @@ func (u txPeerUpdate) getRef(refSeries uint64) txPeerUpdate {
 	}
 }
 
-func (u txPeerUpdate) pruneTxs(epochH uint64, ccache TxCache) txPeerUpdate {
-	//logger.Debugf("prune data to epoch %d for %d txs from %d", epochH, u.BeginSeries, len(u.Transactions))
-	for i, tx := range u.Transactions {
-		commitedH := ccache.GetCommit(u.BeginSeries+uint64(i), tx)
-
-		if commitedH != 0 && commitedH <= epochH {
-			u.Transactions[i] = getLiteTx(tx)
-		}
-	}
-	return u
-}
-
 func (u txPeerUpdate) toTxs() (*peerTxs, error) {
 
 	if len(u.Transactions) == 0 {
@@ -566,11 +554,8 @@ func (p *peerTxMemPool) Update(id string, u_in model.ScuttlebuttPeerUpdate, g_in
 
 	//checkout global status
 	var peerStatus *pb.PeerTxState
-	if id == "" {
-		peerStatus, _ = g.network.peers.QuerySelf()
-	} else {
-		peerStatus = g.network.peers.QueryPeer(id)
-	}
+	peerStatus = g.network.peers.QueryPeer(id)
+
 	if peerStatus == nil {
 		//boom ..., but it may be caused by an stale peer-removing so not
 		//consider as error
@@ -629,7 +614,6 @@ func initHotTx(stub *gossip.GossipStub) {
 		self.reset(createPeerTxItem(selfs))
 
 		selfStatus.SetSelfPeer(id, self)
-		txglobal.transactionPool.UpdateSelfID(id)
 	}
 
 	m := model.NewGossipModel(selfStatus)
@@ -645,10 +629,6 @@ func initHotTx(stub *gossip.GossipStub) {
 		defer m.Unlock()
 		self := &peerTxMemPool{}
 		self.reset(createPeerTxItem(state))
-		selfStatus.SetSelfPeer(newID, self)
-
-		//cache for self is also accessed by two possible name ("" or selfID) so we must update it
-		txglobal.transactionPool.UpdateSelfID(newID)
 
 		logger.Infof("Hottx cat reset self peer to %s", newID)
 	})
@@ -732,7 +712,17 @@ func (c *hotTxCat) EncodeUpdate(cpo gossip.CatalogPeerPolicies, u_in model.Updat
 			panic("Type error, not peerTxs")
 		}
 
-		msg.Txs[pu_in.Id] = pu.pruneTxs(gu.epoch, gu.AcquireCaches(pu_in.Id)).HotTransactionBlock
+		//in normal case this should be impossible
+		if len(pu.Transactions) > PeerTxQueueLimit()/2 {
+			logger.Warning("Try to send too large update (%d txs) to peer %s, truncate it", len(pu.Transactions), pu_in.Id)
+			pu.Transactions = pu.Transactions[:PeerTxQueueLimit()/2]
+		}
+
+		if gu.epoch != 0 {
+			gu.AcquireCachesRead(pu_in.Id).PruneTxs(gu.epoch, pu.HotTransactionBlock)
+		}
+
+		msg.Txs[pu_in.Id] = pu.HotTransactionBlock
 	}
 
 	return msg

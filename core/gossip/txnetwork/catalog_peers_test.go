@@ -318,7 +318,7 @@ func TestAsAWhole(t *testing.T) {
 		t.Fatal("peer not remove", globalS.Peers)
 	}
 
-	if len(txG.AcquireCaches(newpeer).commitData[0]) > 0 {
+	if len(txG.AcquireCaches(newpeer).commitData) > 0 {
 		t.Fatal("removed peer still have ghost cache")
 	}
 
@@ -345,7 +345,7 @@ func TestSelfUpdateAsAWhole(t *testing.T) {
 	// 	panic("wrong code, not txPoolGlobal")
 	// }
 
-	txSelf := txS.Peers[""].(*peerTxMemPool)
+	txSelf := txS.Peers[txS.SelfID].(*peerTxMemPool)
 
 	chain := prolongItemChain(t, txSelf.head.clone(), 20)
 	var udt = txPeerUpdate{new(pb.HotTransactionBlock)}
@@ -369,7 +369,7 @@ func TestSelfUpdateAsAWhole(t *testing.T) {
 		t.Fatal("recv self update global fail", err)
 	}
 
-	peerSelf := globalS.Peers[""].(*peerStatus)
+	peerSelf := globalS.Peers[globalS.SelfID].(*peerStatus)
 	if peerSelf.Num != jTo.digestSeries {
 		t.Fatal("unexpected updated peer status", peerSelf)
 	}

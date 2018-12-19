@@ -2,6 +2,8 @@ package txnetwork
 
 import (
 	pb "github.com/abchain/fabric/protos"
+	"math"
+	"sync/atomic"
 )
 
 //a deque struct mapped the tx chain into arrays
@@ -39,7 +41,8 @@ func SetPeerTxQueueLen(bits uint) {
 	peerTxQueueLen = int(peerTxQueueMask) + 1
 }
 
-type commitData [peerTxQueues][]uint64
+//we use uint32 for the commit height, save space and avoid 64 bit atomic ops
+type commitData [][]uint32
 
 func dequeueLoc(pos uint64) (loc int, qpos int) {
 	loc = int(uint(pos>>peerTxQueueLenBit) & peerTxMask)
@@ -47,38 +50,13 @@ func dequeueLoc(pos uint64) (loc int, qpos int) {
 	return
 }
 
-func (c *commitData) pick(pos uint64) *uint64 {
+func (c commitData) pick(pos uint64) *uint32 {
 
 	loc, qpos := dequeueLoc(pos)
 	return &c[loc][qpos]
 }
 
-//return a dequeue of append space (it maybe overlapped if the size is exceed
-//the limit, that is, peerTxQueues * peerTxQueueLen)
-func (c *commitData) append(from uint64, size int) (ret [][]uint64) {
-
-	loc, qpos := dequeueLoc(from)
-	if c[loc] == nil {
-		c[loc] = make([]uint64, peerTxQueueLen)
-	}
-
-	for size > 0 {
-
-		if qpos+size > peerTxQueueLen {
-			ret = append(ret, c[loc][qpos:peerTxQueueLen])
-			size = size - (peerTxQueueLen - qpos)
-			qpos = 0
-			loc = int(uint(loc+1) & peerTxMask)
-			c[loc] = make([]uint64, peerTxQueueLen)
-		} else {
-			ret = append(ret, c[loc][qpos:qpos+size])
-			size = 0
-		}
-	}
-	return
-}
-
-func (c *commitData) pruning(from uint64, to uint64) {
+func (c commitData) pruning(from uint64, to uint64) {
 
 	locBeg := from >> peerTxQueueLenBit
 	logTo := to >> peerTxQueueLenBit
@@ -89,54 +67,92 @@ func (c *commitData) pruning(from uint64, to uint64) {
 
 }
 
+//return a dequeue of append space (it maybe overlapped if the size is exceed
+//the limit, that is, peerTxQueues * peerTxQueueLen)
+func (cp *commitData) append(from uint64, size int) (ret [][]uint32) {
+
+	c := *cp
+	loc, qpos := dequeueLoc(from)
+	if len(c) < peerTxQueues {
+		requirelen, _ := dequeueLoc(from + uint64(size))
+		if loc > requirelen { //wrapping
+			requirelen = peerTxQueues
+		} else {
+			requirelen = requirelen + 1
+		}
+		if len(c) < requirelen {
+			c = append(c, make([][]uint32, requirelen-len(c))...)
+			*cp = c
+		}
+	}
+
+	if c[loc] == nil {
+		c[loc] = make([]uint32, peerTxQueueLen)
+	}
+
+	for size > 0 {
+
+		if qpos+size > peerTxQueueLen {
+			ret = append(ret, c[loc][qpos:peerTxQueueLen])
+			size = size - (peerTxQueueLen - qpos)
+			qpos = 0
+			loc = int(uint(loc+1) & peerTxMask)
+			c[loc] = make([]uint32, peerTxQueueLen)
+		} else {
+			ret = append(ret, c[loc][qpos:qpos+size])
+			size = 0
+		}
+	}
+	return
+}
+
+type txCacheRead struct {
+	commitData
+	parent *transactionPool
+}
+
+func (c txCacheRead) PruneTxs(epochH uint64, txs *pb.HotTransactionBlock) {
+
+	if c.commitData == nil {
+		return
+	}
+
+	for i, tx := range txs.Transactions {
+		h := c.GetCommit(txs.BeginSeries+uint64(i), tx)
+		if h != 0 && (h <= uint32(epochH) || h-uint32(epochH) > (math.MaxUint32>>1)) {
+			logger.Debugf("prune tx <%s> to lite (%d vs %d)", tx.GetTxid(), h, epochH)
+			txs.Transactions[i] = getLiteTx(tx)
+		}
+	}
+}
+
+func (c txCacheRead) GetCommit(series uint64, tx *pb.Transaction) uint32 {
+
+	pos := c.pick(series)
+	if h := atomic.LoadUint32(pos); h == 0 {
+
+		h = uint32(c.parent.confirmCommit(tx.GetTxid()))
+		atomic.StoreUint32(pos, h)
+		//logger.Debugf("test and confirm commit h of tx <%s> is %d", tx.GetTxid(), h)
+		return h
+	} else {
+		//logger.Debugf("test commit h of tx <%s> is %d", tx.GetTxid(), h)
+		return h
+	}
+
+}
+
 type TxCache interface {
-	GetCommit(series uint64, tx *pb.Transaction) uint64
+	GetCommit(series uint64, tx *pb.Transaction) uint32
 	AddTxs(from uint64, txs []*pb.Transaction) error
 	Pruning(from uint64, to uint64)
 }
 
 //the cache is supposed to be handled only by single goroutine
 type txCache struct {
-	*commitData
-	parent      *transactionPool
+	txCacheRead
+	id          string
 	txHeightRet <-chan uint64
-}
-
-func (c *txCache) GetCommit(series uint64, tx *pb.Transaction) uint64 {
-
-	pos := c.commitData.pick(series)
-	if *pos == 0 {
-
-		if existed := c.parent.txIsPending(tx.GetTxid()); existed {
-			//tx is still being pooled
-			return 0
-		}
-		//or tx is commited, we need to update the commitH
-
-		if h := c.parent.getTxCommitHeight(tx.GetTxid()); h == 0 {
-			//tx can be re pooling here if a signal is received but it do not really commited before
-			logger.Infof("Repool Tx {%s} [series %d] to ledger again", tx.GetTxid(), series)
-			c.parent.addPendingTx(tx.GetTxid())
-		} else {
-			*pos = h
-		}
-	}
-
-	return *pos
-}
-
-func completeTxs(txsin []*pb.Transaction, tp *transactionPool) ([]*pb.Transaction, error) {
-
-	var err error
-	for i, tx := range txsin {
-		tx, err = tp.completeTx(tx)
-		if err != nil {
-			return txsin[:i], err
-		}
-		txsin[i] = tx
-	}
-
-	return txsin, nil
 }
 
 //send tx to the target (prehandler), each tx sent successfully is also added to cache and return
@@ -145,12 +161,17 @@ func (c *txCache) AddTxsToTarget(from uint64, txs []*pb.Transaction, preHandler 
 
 	var txspos int
 	var err error
-	added := c.commitData.append(from, len(txs))
+	added := c.append(from, len(txs))
 	logger.Debugf("Append cache space from %d for %d txs", from, len(txs))
 
 	dataPipe := make(chan *pb.TransactionHandlingContext)
 	dataRet := make(chan error)
-	defer close(dataPipe)
+	defer func() {
+		close(dataPipe)
+		if txspos > 0 {
+			c.parent.setCommitData(c.id, c.commitData)
+		}
+	}()
 
 	go func(in <-chan *pb.TransactionHandlingContext, out chan<- error) {
 		for txe := range in {
@@ -187,7 +208,7 @@ func (c *txCache) AddTxsToTarget(from uint64, txs []*pb.Transaction, preHandler 
 			txs[txspos] = txe.Transaction
 			logger.Debugf("Tx {%s} [nonce %x, commitH %d] is added to cache", tx.GetTxid(), tx.GetNonce(), commitedH)
 
-			q[i] = commitedH
+			q[i] = uint32(commitedH)
 			if commitedH == 0 {
 				c.parent.addPendingTx(tx.GetTxid())
 			}

@@ -1,14 +1,38 @@
 ## YA-fabric
 
-This is purposed to be another future of fabric 0.6, keeping the original architecture and continue it with our improvments.
+YA-fabric is an independent project branched from the hyperledger fabric 0.6. It purposed to be another future of its parent, mostly keeping the original architecture and continue it under the abchain plan and developments.
 
-The original readme can be found [here](https://github.com/hyperledger/fabric/blob/v0.6/README.md)
+What we have achieved include:
+
+* A blockchain framework ready for production, including security and applicating consideration
+
+* A network focus on dispatching and syncing transactions on Scuttlebutt model (one of the Gossip Protocol), under a throughput of several thousands TPS
+
+* Supporting hyperledger's chaincode by a stable platform, with the ability of concurrent execution of transactions
+
+* An improved architecture of distributed ledger for tracing and working on mutiple global states. For more idea and thinking about the designation of ledger, read our article about a "[consensus framework]()" (in Chinese)
+
+* User can build consensus modules base on a chaincode, and made use of every part of the framework to serve to their business logic
+
+* Easy to be packed one or more chaincode with the framework and distrubute it as a standalone blockchain program, i.e. integration chaincodes into the fabric peer
+
+* Compatible to the old fabric 0.6 project: the chaincode, data and configurations will be respected and can continue working on YA-fabric
+
+## Our plans
+
+
+
+If you wish to take a look at the original readme of fabric 0.6, found [here](https://github.com/hyperledger/fabric/blob/v0.6/README.md)
 
 ## Installation
 
 ### Rocksdb
 
 * Use rocksdb 5.10
+
+## Release a preview of 0.9
+
+Now 
 
 ## Release of 0.8
 
@@ -37,18 +61,6 @@ The original readme can be found [here](https://github.com/hyperledger/fabric/bl
 * More roles in p2p network are induced
 
 * Core depedencies to vendor packages (protobuf, grpc, rocksdb) are up-to-date now
-
-## Our plans
-
-* A "real" impelemnt for production, including some security and applicating consideration
-
-* Completing some features and making improvments for the chaincode part
-
-* Easy to be packed as a "standalone" blockchain, that is, the integration of chaincodes and fabric peer
-
-* Our implement for the concurreny handling of transactions
-
-* More consensus modules
 
 
 ## License <a name="license"></a>

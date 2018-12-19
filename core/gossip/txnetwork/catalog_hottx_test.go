@@ -174,6 +174,20 @@ func (d collection) Import(items []*txMemPoolItem) {
 
 func newTxCol() collection { return collection(make(map[string]*txMemPoolItem)) }
 
+func completeTxs(txsin []*pb.Transaction, tp *transactionPool) ([]*pb.Transaction, error) {
+
+	var err error
+	for i, tx := range txsin {
+		tx, err = tp.completeTx(tx)
+		if err != nil {
+			return txsin[:i], err
+		}
+		txsin[i] = tx
+	}
+
+	return txsin, nil
+}
+
 func TestPeerUpdate(t *testing.T) {
 
 	ledger := initTestLedgerWrapper(t)
@@ -229,7 +243,7 @@ func TestPeerUpdate(t *testing.T) {
 	commitCache := txPool.AcquireCaches("helperCache")
 	commitCache.AddTxs(udt.BeginSeries, udt.GetTransactions())
 
-	udt.pruneTxs(2, commitCache)
+	commitCache.PruneTxs(2, udt.HotTransactionBlock)
 
 	if !isLiteTx(udt.GetTransactions()[1]) {
 		t.Fatalf("unexpected full-tx <2>")
@@ -380,7 +394,7 @@ func TestPeerTxPool(t *testing.T) {
 		t.Fatal("update fail", err)
 	}
 
-	if txGlobal.AcquireCaches("anotherTest").commitData[0] != nil {
+	if txGlobal.AcquireCaches("anotherTest").commitData != nil {
 		t.Fatal("update unknown peer")
 	}
 
@@ -498,7 +512,8 @@ func TestCatalogyHandler(t *testing.T) {
 
 	hotTx := new(hotTxCat)
 
-	m := model.NewGossipModel(model.NewScuttlebuttStatus(txglobal))
+	smodel := model.NewScuttlebuttStatus(txglobal)
+	m := model.NewGossipModel(smodel)
 
 	//try to build a proto directly
 	dig_in := &pb.GossipMsg_Digest{Data: make(map[string]*pb.GossipMsg_Digest_PeerState)} //any epoch is ok
@@ -533,7 +548,6 @@ func TestCatalogyHandler(t *testing.T) {
 	}
 
 	formTestData(l, indexs, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
-	defcache := txglobal.AcquireCaches(testname)
 
 	dig_in.Data[testname].Num = 20
 
@@ -579,6 +593,7 @@ func TestCatalogyHandler(t *testing.T) {
 		t.Fatal("commit more block fail", err)
 	}
 
+	defcache := txglobal.AcquireCaches(testname)
 	if committedH := defcache.GetCommit(21, indexs[21].tx); committedH != 5 {
 		t.Fatal("commit update fail 21:", committedH)
 	}

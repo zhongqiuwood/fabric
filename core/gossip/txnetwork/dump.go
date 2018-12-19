@@ -57,8 +57,8 @@ func DumpTxNetwork() map[string]func() map[string]uint64 {
 			//copy index
 
 			for id, s := range smodel.Peers {
-				if id == "" {
-					id = "@" + smodel.SelfID
+				if id == smodel.SelfID {
+					id = "@" + id
 				}
 				to_out, ok := s.To().(standardVClock)
 				if ok {

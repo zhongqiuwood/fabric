@@ -4,6 +4,11 @@
 #
 ###############################################################################
 
+logging:
+
+
+   test: debug:buckettree,db,state,statemgmt=warning:ledger=info
+
 ledger:
   
   state:

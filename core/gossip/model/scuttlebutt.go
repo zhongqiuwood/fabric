@@ -169,21 +169,25 @@ func (s *scuttlebuttStatus) Update(u_in Update) error {
 
 		pss, ok := s.Peers[id]
 		if !ok {
-			if id == s.SelfID {
-				//this may be some occasional error, we just omit it
-				//(self peer can be updated only by "")
-				continue
-			}
-
 			//with extended protocol, update can carry unknown peers
 			if item.U == nil {
 				continue
 			}
-			pss = s.NewPeer(id)
-			if pss == nil {
-				continue
+			//(we not allowed delete self amoung update)
+			if id == "" {
+				pss, ok = s.Peers[s.SelfID]
+				if !ok {
+					continue
+				}
+				id = s.SelfID
+			} else {
+				pss = s.NewPeer(id)
+				if pss == nil {
+					continue
+				}
+				s.Peers[id] = pss
 			}
-			s.Peers[id] = pss
+
 		}
 		//remove request
 		if item.U == nil {
@@ -220,10 +224,7 @@ func (s *scuttlebuttStatus) GenDigest() Digest {
 
 	scounter := 0
 	for id, ss := range s.Peers {
-		//never filter self id
-		if id == "" {
-			id = s.SelfID
-		} else if s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss) {
+		if s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss) {
 			continue
 		}
 		scounter++
@@ -275,15 +276,9 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 		digs[id] = true
 		ss, ok := s.Peers[id]
 		if !ok {
-			if id != s.SelfID {
-				//touch new peer
-				if ss = s.NewPeer(id); ss != nil {
-					s.Peers[id] = ss
-					continue
-				}
-			}
-			digs[""] = true
-			if ss, ok = s.Peers[""]; !ok {
+			//touch new peer
+			if ss = s.NewPeer(id); ss != nil {
+				s.Peers[id] = ss
 				continue
 			}
 		}
@@ -312,10 +307,6 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 				continue
 			} else if s.AdditionalFilter != nil && !s.AdditionalFilter(id, ss) {
 				continue
-			}
-
-			if id == "" {
-				id = s.SelfID
 			}
 
 			scounter++
@@ -359,10 +350,7 @@ func (s *scuttlebuttStatus) SetSelfPeer(selfid string,
 		oldself = id
 	}(s.SelfID)
 
-	if oldstate, ok := s.Peers[""]; ok {
-		s.Peers[s.SelfID] = oldstate
-	}
-	s.Peers[""] = self
+	s.Peers[selfid] = self
 	s.SelfID = selfid
 
 	return

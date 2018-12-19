@@ -242,13 +242,20 @@ func (g *txNetworkPeers) ChangeSelf(id []byte) error {
 	//old self peer is always being kept
 	old, ok := g.lruIndex[g.selfId]
 	if ok {
+		s, ok := old.Value.(*peerStatusItem)
+		if !ok {
+			panic(fmt.Errorf("old self is set to unknown data: %T<%v>", old.Value, old.Value))
+		}
+
+		s.peerId = g.selfId
 		g.lruQueue.PushFront(old)
+
 	}
 
 	//also create self peer, notice we do not endorse it so new self
 	//peer will not be propagated before a local-peer updating
 	newself := &peerStatusItem{
-		"",
+		"", //mark it was self if
 		&pb.PeerTxState{
 			Digest: id[:TxDigestVerifyLen],
 		},
@@ -291,7 +298,6 @@ func (g *txNetworkPeers) QuerySelf() (*pb.PeerTxState, string) {
 		return nil, ""
 	}
 
-	//self is supposed to always own endorsements
 	return i.Value.(*peerStatusItem).PeerTxState, g.selfId
 }
 
@@ -304,22 +310,16 @@ func (g *txNetworkPeers) TouchPeer(id string, status *pb.PeerTxState) {
 	g.Lock()
 	defer g.Unlock()
 
-	if id == "" {
-		//self is only updated from index by not in lru
-		item := g.lruIndex[g.selfId]
-		self := item.Value.(*peerStatusItem)
-		self.PeerTxState = status
-
-	} else {
-		//notice scuttlebutt mode has blocked the real selfID being updated from outside
-		if item, ok := g.lruIndex[id]; ok {
-			if s, ok := item.Value.(*peerStatusItem); ok {
-				s.PeerTxState = status
-				s.lastAccess = time.Now()
+	//notice scuttlebutt mode has blocked the real selfID being updated from outside
+	if item, ok := g.lruIndex[id]; ok {
+		if s, ok := item.Value.(*peerStatusItem); ok {
+			s.PeerTxState = status
+			s.lastAccess = time.Now()
+			if s.peerId != "" {
 				g.lruQueue.MoveToFront(item)
 			}
-
 		}
+
 	}
 
 }
@@ -328,13 +328,13 @@ type transactionPool struct {
 	sync.RWMutex
 	ledger      *ledger.Ledger
 	txTerminal  pb.TxPreHandler
-	cCaches     map[string]*commitData
+	cCaches     map[string]commitData
 	cPendingTxs map[string]bool
 }
 
 func newTransactionPool(ledger *ledger.Ledger) *transactionPool {
 	ret := new(transactionPool)
-	ret.cCaches = make(map[string]*commitData)
+	ret.cCaches = make(map[string]commitData)
 	ret.cPendingTxs = make(map[string]bool)
 
 	ledger.AddCommitHook(ret.onCommit)
@@ -364,8 +364,7 @@ func (tp *transactionPool) txIsPending(txid string) (ok bool) {
 	return
 }
 
-//the tx-height filter
-func (tp *transactionPool) getTxCommitHeight(txid string) uint64 {
+func (tp *transactionPool) confirmCommit(txid string) uint64 {
 
 	if tp.txIsPending(txid) {
 		return 0
@@ -373,12 +372,19 @@ func (tp *transactionPool) getTxCommitHeight(txid string) uint64 {
 
 	h, _, err := tp.ledger.GetBlockNumberByTxid(txid)
 	if err != nil {
-		logger.Errorf("Can not find index of Tx %s from ledger", txid)
-		//TODO: should we still consider it is pending?
+		//consider txpool will also receive commit signal from other network,
+		//this case is ubiquitous
+		logger.Debugf("Can not find index of Tx [%s] from ledger, repool it", txid)
+		tp.addPendingTx(txid)
 		return 0
 	}
-
 	return h
+}
+
+func (tp *transactionPool) setCommitData(peer string, c commitData) {
+	tp.Lock()
+	defer tp.Unlock()
+	tp.cCaches[peer] = c
 
 }
 
@@ -419,18 +425,17 @@ func (tp *transactionPool) buildCompleteTxHandler() pb.TxPreHandler {
 	})
 }
 
-//we must prepare for the possibility that self-peer's cache is accessed both by "" and self ID
-func (tp *transactionPool) UpdateSelfID(self string) {
-	tp.Lock()
-	defer tp.Unlock()
+func (tp *transactionPool) AcquireCachesRead(peer string) txCacheRead {
+	tp.RLock()
+	defer tp.RUnlock()
+	c, ok := tp.cCaches[peer]
 
-	if c, ok := tp.cCaches[self]; ok {
-		tp.cCaches[""] = c
-	} else {
-		c = new(commitData)
-		tp.cCaches[self] = c
-		tp.cCaches[""] = c
+	if !ok {
+		logger.Errorf("Can not get reading cache of peer %s", peer)
+		return txCacheRead{}
 	}
+
+	return txCacheRead{c, tp}
 }
 
 func (tp *transactionPool) AcquireCaches(peer string) *txCache {
@@ -440,16 +445,13 @@ func (tp *transactionPool) AcquireCaches(peer string) *txCache {
 	tp.RUnlock()
 
 	if !ok {
-		c = new(commitData)
+		c = commitData(nil)
 		tp.Lock()
 		defer tp.Unlock()
 		tp.cCaches[peer] = c
+		logger.Debugf("create new txcache for peer %s", peer)
 	}
-
-	return &txCache{
-		commitData: c,
-		parent:     tp,
-	}
+	return &txCache{txCacheRead{c, tp}, peer, nil}
 }
 
 func (tp *transactionPool) RemoveCaches(peer string) {
@@ -467,5 +469,5 @@ func (tp *transactionPool) ClearCaches() {
 	tp.Lock()
 	defer tp.Unlock()
 
-	tp.cCaches = make(map[string]*commitData)
+	tp.cCaches = make(map[string]commitData)
 }

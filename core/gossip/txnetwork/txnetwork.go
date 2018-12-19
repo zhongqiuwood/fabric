@@ -326,10 +326,11 @@ func (g *txNetworkPeers) TouchPeer(id string, status *pb.PeerTxState) {
 
 type transactionPool struct {
 	sync.RWMutex
-	ledger      *ledger.Ledger
-	txTerminal  pb.TxPreHandler
-	cCaches     map[string]commitData
-	cPendingTxs map[string]bool
+	ledger        *ledger.Ledger
+	txTerminal    pb.TxPreHandler
+	cCaches       map[string]commitData
+	cPendingTxs   map[string]bool
+	selfTxProcess func() (uint64, []byte)
 }
 
 func newTransactionPool(ledger *ledger.Ledger) *transactionPool {

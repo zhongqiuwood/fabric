@@ -69,17 +69,26 @@ func (pe *PeerEngine) Run() error {
 		return fmt.Errorf("Engine is not set a self peer yet")
 	}
 
+	var txlast txPoint
+	txlast.Series, txlast.Digest = pe.GetTxStatus()
+
 	if id != pe.lastID {
 		//ok, we start a new handler
-		pe.lastCache = txPoint{lastState.GetDigest(), lastState.GetNum()}
-		//this is malformed: the laststate from txnetwork IS NOT the actual series
-		//which current peer has achieved to and a branched tx-chain may be encountered
-		if series := lastState.GetNum(); series != 0 {
-			logger.Warningf("We try to start a new peer with a running-state (series %d)", series)
-			pe.lastCache.Series = series
-		}
 		pe.lastID = id
+		pe.lastCache = txlast
+		if pe.lastCache.Digest == nil {
+			pe.lastCache = txPoint{lastState.GetDigest(), lastState.GetNum()}
+			//this is malformed: the laststate from txnetwork IS NOT the actual series
+			//which current peer has achieved to and a branched tx-chain may be encountered
+			if series := lastState.GetNum(); series != 0 {
+				logger.Warningf("We try to start a new peer with a running-state (series %d)", series)
+			}
+		}
+	} else if txlast.Digest != nil {
+		pe.lastCache = txlast
 	}
+
+	logger.Infof("Run engine on id [%s:<%d:%x>]", pe.lastID, pe.lastCache.Series, pe.lastCache.Digest)
 
 	h := NewTxNetworkHandler(pe)
 

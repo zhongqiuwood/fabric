@@ -608,15 +608,21 @@ func initHotTx(stub *gossip.GossipStub) {
 		return int(i.lastSeries()-i.firstSeries()) < PeerTxQueueSoftLimit()
 	}
 
+	m := model.NewGossipModel(selfStatus)
 	peers := txglobal.network.peers
-	if selfs, id := peers.QuerySelf(); selfs != nil {
+	setselfpeer := func(newID string, state *pb.PeerTxState) {
+		m.Lock()
+		defer m.Unlock()
 		self := &peerTxMemPool{}
-		self.reset(createPeerTxItem(selfs))
+		self.reset(createPeerTxItem(state))
+		selfStatus.SetSelfPeer(newID, self)
 
-		selfStatus.SetSelfPeer(id, self)
+		logger.Infof("Hottx cat reset self peer to %s", newID)
 	}
 
-	m := model.NewGossipModel(selfStatus)
+	if selfs, id := peers.QuerySelf(); selfs != nil {
+		setselfpeer(id, selfs)
+	}
 
 	ch := gossip.NewCatalogHandlerImpl(stub.GetSStub(),
 		stub.GetStubContext(), hotTx, m)
@@ -624,14 +630,24 @@ func initHotTx(stub *gossip.GossipStub) {
 
 	txglobal.network.RegUpdateNotify(standardUpdateFunc(ch))
 	txglobal.network.RegEvictNotify(standardEvictFunc(ch))
-	txglobal.network.RegSetSelfPeer(func(newID string, state *pb.PeerTxState) {
+	txglobal.network.RegSetSelfPeer(setselfpeer)
+	txglobal.selfTxProcess = func() (uint64, []byte) {
 		m.Lock()
 		defer m.Unlock()
-		self := &peerTxMemPool{}
-		self.reset(createPeerTxItem(state))
+		us, ok := selfStatus.Peers[selfStatus.SelfID]
+		if !ok {
+			return 0, nil
+		} else if uss, ok := us.(*peerTxMemPool); !ok {
+			logger.Errorf("Self status is not expected type (peerTxMemPool): %T", us)
+			return 0, nil
+		} else if uss.last == nil {
+			logger.Errorf("Self status is empty")
+			return 0, nil
+		} else {
+			return uss.lastSeries(), uss.last.digest
+		}
 
-		logger.Infof("Hottx cat reset self peer to %s", newID)
-	})
+	}
 
 	// hotTx.filterPullingReq = func(m model.ScuttlebuttDigest) model.ScuttlebuttDigest {
 	// 	//we will kick out peers which should not be shown up (e.g, the buffer has been full)

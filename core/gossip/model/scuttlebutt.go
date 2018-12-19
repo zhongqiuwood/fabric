@@ -279,6 +279,7 @@ func (s *scuttlebuttStatus) MakeUpdate(dig_in Digest) Update {
 			//touch new peer
 			if ss = s.NewPeer(id); ss != nil {
 				s.Peers[id] = ss
+			} else {
 				continue
 			}
 		}

@@ -164,12 +164,19 @@ func initNetworkStatus(stub *gossip.GossipStub) {
 	peerG.txNetworkPeers = peerG.network.peers
 
 	selfstatus := model.NewScuttlebuttStatus(peerG)
+	m := model.NewGossipModel(selfstatus)
+	setself := func(newID string, state *pb.PeerTxState) {
+		m.Lock()
+		defer m.Unlock()
+		selfstatus.SetSelfPeer(newID, &peerStatus{state})
+		logger.Infof("TXPeers cat reset self peer to %s", newID)
+	}
+
 	//use extended mode of scuttlebutt scheme, see code and wiki
 	selfstatus.Extended = true
-	if selfs, _ := peerG.QuerySelf(); selfs != nil {
-		selfstatus.SetSelfPeer(peerG.selfId, &peerStatus{selfs})
+	if selfs, id := peerG.QuerySelf(); selfs != nil {
+		setself(id, selfs)
 	}
-	m := model.NewGossipModel(selfstatus)
 
 	globalcat := new(globalCat)
 	globalcat.policy = gossip.NewCatalogPolicyDefault()
@@ -178,13 +185,7 @@ func initNetworkStatus(stub *gossip.GossipStub) {
 		stub.GetStubContext(), globalcat, m)
 	stub.AddCatalogHandler(h)
 	stub.SubScribeNewPeerNotify(newPeerNotify{h})
-
-	peerG.network.RegSetSelfPeer(func(newID string, state *pb.PeerTxState) {
-		m.Lock()
-		defer m.Unlock()
-		selfstatus.SetSelfPeer(newID, &peerStatus{state})
-		logger.Infof("TXPeers cat reset self peer to %s", newID)
-	})
+	peerG.network.RegSetSelfPeer(setself)
 }
 
 const (

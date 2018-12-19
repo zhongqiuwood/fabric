@@ -133,6 +133,13 @@ func (e *TxNetworkEntry) GetPeerStatus() (*pb.PeerTxState, string) {
 	return e.net.peers.QuerySelf()
 }
 
+func (e *TxNetworkEntry) GetTxStatus() (uint64, []byte) {
+	if e.net.txPool.selfTxProcess == nil {
+		return 0, nil
+	}
+	return e.net.txPool.selfTxProcess()
+}
+
 var catsToReferOnPaused = []string{globalCatName, hotTxCatName}
 
 func (e *TxNetworkEntry) PauseTxNetwork(dopause bool) {

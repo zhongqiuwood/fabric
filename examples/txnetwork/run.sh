@@ -20,7 +20,9 @@ function startpeer {
     export CORE_PEER_FILESYSTEMPATH=${FILEPATHBASE}/txnet${index}
 
     export LOG_STDOUT_FILE=_stdout_${CORE_PEER_ID}.json
+    echo Run node ${CORE_PEER_ADDRESS} ...
     ./txnetwork >> ${LOG_STDOUT_FILE} 2>>${LOG_STDOUT_FILE} &
+    #sleep 1
 }
 
 

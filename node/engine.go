@@ -140,6 +140,10 @@ func (ne *NodeEngine) RunPeers() error {
 	}
 
 	for name, p := range ne.Peers {
+		//skip default peer (which is a shadow)
+		if name == "" {
+			continue
+		}
 		if err := p.Run(); err != nil {
 			return fmt.Errorf("start peer [%s] fail: %s", name, err)
 		}
@@ -191,6 +195,15 @@ func (ne *NodeEngine) StopServices(notify <-chan ServicePoint) {
 		}
 
 		logger.Warningf("service [%s] has stopped", p.spec.Address)
+	}
+}
+
+func (ne *NodeEngine) FinalRelease() {
+
+	for _, p := range ne.srvPoints {
+		if p.lPort != nil {
+			p.lPort.Close()
+		}
 	}
 }
 

@@ -52,6 +52,7 @@ func compareTx(t *testing.T, origin, delivered *pb.Transaction) {
 func TestTxNetwork(t *testing.T) {
 
 	thenode := buildLegacyNode(t)
+	defer thenode.FinalRelease()
 	thepeer := thenode.Peers[""]
 
 	if err := thepeer.Run(); err != nil {

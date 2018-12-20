@@ -3,6 +3,7 @@ package startnode
 import (
 	"fmt"
 	"github.com/abchain/fabric/core/crypto"
+	"github.com/abchain/fabric/node"
 	"golang.org/x/net/context"
 	"os"
 	"os/signal"
@@ -11,6 +12,7 @@ import (
 type NodeConfig struct {
 	Settings map[string]interface{}
 	PostRun  func() error
+	Schemes  func(*node.NodeEngine)
 }
 
 //mimic peer.main()
@@ -31,6 +33,10 @@ func RunNode(ncfg *NodeConfig) {
 	}
 
 	PreInitFabricNode("Default")
+	if ncfg.Schemes != nil {
+		ncfg.Schemes(theNode)
+	}
+
 	if err := InitFabricNode(); err != nil {
 		panic(fmt.Errorf("Failed to init node: %s", err))
 	}

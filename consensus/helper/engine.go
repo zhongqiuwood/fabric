@@ -116,20 +116,21 @@ type PeerStack struct {
 }
 
 // GetEngine returns initialized peer.Engine
-func GetEngine(peer peer.Peer, sts stub.StateTransfer) error {
+func GetEngine(pr peer.Peer, sts stub.StateTransfer) (peer.Engine, error) {
 
-	coord, err := peer.GetNeighbour()
+	coord, err := pr.GetNeighbour()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	engineOnce.Do(func() {
 		engine = new(EngineImpl)
-		engine.helper = NewHelper(PeerStack{peer, coord, sts})
+		engine.helper = NewHelper(PeerStack{pr, coord, sts})
 		engine.consenter = controller.NewConsenter(engine.helper)
 		engine.helper.setConsenter(engine.consenter)
-		engine.peerEndpoint, err = peer.GetPeerEndpoint()
+		engine.peerEndpoint, err = pr.GetPeerEndpoint()
 		engine.consensusFan = util.NewMessageFan()
+		peer.SetLegacyEngine(engine)
 
 		go func() {
 			logger.Debug("Starting up message thread for consenter")
@@ -140,5 +141,5 @@ func GetEngine(peer peer.Peer, sts stub.StateTransfer) error {
 			}
 		}()
 	})
-	return err
+	return engine, err
 }

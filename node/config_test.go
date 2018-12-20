@@ -22,6 +22,7 @@ func TestLegacyInit(t *testing.T) {
 
 	ne := new(NodeEngine)
 	ne.Name = "test"
+	defer ne.FinalRelease()
 	if err := ne.Init(); err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +55,7 @@ func TestInit(t *testing.T) {
 
 	ne := new(NodeEngine)
 	ne.Name = "test"
+	defer ne.FinalRelease()
 	if err := ne.Init(); err != nil {
 		t.Fatal(err)
 	}

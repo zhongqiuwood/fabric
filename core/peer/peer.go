@@ -113,10 +113,6 @@ type Impl struct {
 	persistor db.Persistor
 }
 
-type LegacyMessageHandler interface {
-	HandleMessage(msg *pb.Message) error
-}
-
 // MessageHandler standard interface for handling Openchain messages.
 type MessageHandler interface {
 	LegacyMessageHandler
@@ -567,12 +563,12 @@ func (p *Impl) handleChat(ctx context.Context, stream ChatStream, initiatedStrea
 	}
 
 	var legacyHandler LegacyMessageHandler
-	// if p.engine != nil {
-	// 	legacyHandler, err = p.engine.HandlerFactory(handler)
-	// 	if err != nil {
-	// 		return fmt.Errorf("Could not obtain legacy handler: %s", err)
-	// 	}
-	// }
+	if legacy_Engine != nil {
+		legacyHandler, err = legacy_Engine.HandlerFactory(handler)
+		if err != nil {
+			peerLogger.Errorf("Could not obtain legacy handler: %s", err)
+		}
+	}
 
 	defer handler.Stop()
 	for {

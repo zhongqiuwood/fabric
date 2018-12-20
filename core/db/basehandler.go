@@ -457,9 +457,10 @@ func getDBPath(dbname ...string) string {
 		}
 	} else {
 		dbPath = util.CanonicalizePath(dbPathSetting)
-		if util.MkdirIfNotExist(dbPath) {
-			dbLogger.Infof("dbpath %s not exist, we have created it", dbPath)
-		}
+	}
+
+	if util.MkdirIfNotExist(dbPath) {
+		dbLogger.Infof("dbpath %s not exist, we have created it", dbPath)
 	}
 
 	return filepath.Join(append([]string{dbPath}, dbname...)...)

@@ -6,6 +6,7 @@ import (
 	"github.com/abchain/fabric/core/embedded_chaincode/api"
 	"github.com/abchain/fabric/core/statesync"
 	"github.com/abchain/fabric/examples/chaincode/embedded/simple_chaincode"
+	"github.com/abchain/fabric/node/legacy"
 	node "github.com/abchain/fabric/node/start"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
@@ -17,12 +18,18 @@ var logger = logging.MustGetLogger("synctest")
 
 func main() {
 
+	adapter := &legacynode.LegacyEngineAdapter{}
+
 	runtest := func() error {
 
 		err := api.RegisterECC(&api.EmbeddedChaincode{"example02",
 			new(simple_chaincode.SimpleChaincode)})
 
 		if err != nil {
+			return err
+		}
+
+		if err = adapter.Init(); err != nil {
 			return err
 		}
 
@@ -43,6 +50,6 @@ func main() {
 		return err
 	}
 
-	node.RunNode(&node.NodeConfig{PostRun: runtest})
+	node.RunNode(&node.NodeConfig{PostRun: runtest, Schemes: adapter.Scheme})
 
 }

@@ -58,6 +58,9 @@ func (ne *NodeEngine) PreInit() {
 	ne.Cred.ccSpecValidator = NewCCSpecValidator(nil)
 	ne.TxTopic = make(map[string]litekfk.Topic)
 	ne.TxTopicNameHandler = nullTransformer
+	//add a default txtopic
+	topicCfg := litekfk.NewDefaultConfig()
+	ne.TxTopic[""] = litekfk.CreateTopic(topicCfg)
 
 	//occupy ledger's objects position
 	ledgerTags := viper.GetStringSlice("node.ledgers")
@@ -73,6 +76,14 @@ func (ne *NodeEngine) PreInit() {
 		ne.Peers[tag] = p
 	}
 
+	//create default peer
+	if len(peerTags) == 0 {
+		logger.Info("Create old-fashion, default peer")
+		p := new(PeerEngine)
+		p.PreInit(ne)
+		ne.Peers["peer"] = p
+	}
+
 	ne.runPeersFunc = func() {
 		logger.Info("Start the running peer stack")
 	}
@@ -80,6 +91,8 @@ func (ne *NodeEngine) PreInit() {
 
 //ne will fully respect an old-fashion (fabric 0.6) config file
 func (ne *NodeEngine) ExecInit() error {
+
+	config.CacheViper()
 
 	//init ledgers
 	var defaultTag string
@@ -143,14 +156,10 @@ func (ne *NodeEngine) ExecInit() error {
 	}
 	//TODO: create endorsers
 
-	//add a default txtopic
-	topicCfg := litekfk.NewDefaultConfig()
-	ne.TxTopic[""] = litekfk.CreateTopic(topicCfg)
-
 	//init peers
 	for tag, p := range ne.Peers {
 
-		vp := viper.Sub(tag)
+		vp := config.SubViper(tag)
 		if vp.GetBool("default") {
 			if defaultTag != "" {
 				logger.Warningf("Duplicated default tag found [%s vs %s], later will be used", defaultTag, tag)
@@ -164,26 +173,15 @@ func (ne *NodeEngine) ExecInit() error {
 		logger.Info("Create peer:", tag)
 	}
 
-	if len(ne.Peers) > 0 {
-		if defaultTag == "" {
-			for k, _ := range ne.Peers {
-				defaultTag = k
-				break
-			}
+	if defaultTag == "" {
+		for k, _ := range ne.Peers {
+			defaultTag = k
+			break
 		}
-
-		logger.Info("Default peer is:", defaultTag)
-		ne.Peers[""] = ne.Peers[defaultTag]
-	} else {
-		//try to create peer in "peer" block
-		vp := config.SubViper("peer")
-		p := new(PeerEngine)
-		if err := p.Init(vp, ne, ""); err != nil {
-			return fmt.Errorf("Create default peer fail: %s", err)
-		}
-		ne.Peers[""] = p
-		logger.Info("Create old-fashion, default peer")
 	}
+
+	logger.Info("Default peer is:", defaultTag)
+	ne.Peers[""] = ne.Peers[defaultTag]
 
 	return nil
 

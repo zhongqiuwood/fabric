@@ -29,17 +29,13 @@ func GlobalFileSystemPathRaw() string {
 			fsPath = viper.GetString("peer.fileSystemPath")
 			logger.Warningf("filesystem path has been set by deprecated configuration to [%s]", fsPath)
 		}
-
-		if fsPath != "" && util.MkdirIfNotExist(fsPath) {
-			logger.Infof("fspath %s not exist, we have created it", fsPath)
-		}
 	}
 
 	if testMode {
 		setup()
+	} else {
+		obtainfsPath.Do(setup)
 	}
-
-	obtainfsPath.Do(setup)
 
 	return fsPath
 

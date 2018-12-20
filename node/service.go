@@ -35,6 +35,10 @@ func (ep ServicePoint) Status() error {
 	return ep.srvStatus
 }
 
+func (ep ServicePoint) Release() error {
+	return ep.lPort.Close()
+}
+
 func CreateServerPoint(conf *viper.Viper) (ServicePoint, error) {
 	srvp := new(servicePoint)
 	err := srvp.Init(conf)
@@ -115,6 +119,7 @@ func (ep *servicePoint) Start(notify chan<- ServicePoint) error {
 }
 
 func (ep *servicePoint) Stop() error {
+
 	if ep.Server == nil {
 		return fmt.Errorf("Server is not inited")
 	}

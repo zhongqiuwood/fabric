@@ -61,12 +61,12 @@ func (pe *PeerEngine) Stop() {
 func (pe *PeerEngine) Run() error {
 
 	if isrun, _ := pe.IsRunning(); isrun {
-		return fmt.Errorf("Engine is still running")
+		return fmt.Errorf("PeerEngine is still running")
 	}
 
 	lastState, id := pe.GetPeerStatus()
 	if lastState == nil {
-		return fmt.Errorf("Engine is not set a self peer yet")
+		return fmt.Errorf("PeerEngine is not set a self peer yet")
 	}
 
 	var txlast txPoint

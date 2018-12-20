@@ -48,6 +48,8 @@ func Final() {
 	if theDoom != nil {
 		theDoom()
 	}
+
+	theNode.FinalRelease()
 }
 
 func RunFabricNode() error {
@@ -76,12 +78,19 @@ func RunFabricNode() error {
 }
 
 func SetEndServicesFunc(f func()) {
-	theEndServices = f
+	if theEndServices == nil {
+		theEndServices = f
+	} else {
+		theEndServices = func() {
+			f()
+			theEndServices()
+		}
+	}
+
 }
 
 func InitFabricNode() error {
 
-	config.CacheViper()
 	if err := theNode.ExecInit(); err != nil {
 		return fmt.Errorf("NODE INIT FAILURE: ***** %s *****", err)
 	}

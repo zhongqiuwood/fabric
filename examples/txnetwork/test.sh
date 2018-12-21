@@ -1,22 +1,24 @@
 #!/usr/bin/env bash
 
-PEERADDRBASE=7055
-PEERLOCALADDRBASE=7051
-EVENTADDRBASE=7053
-FILEPATHBASE=/var/hyperledger
+PEERLOCALADDRBASE=7055
+
+PEER_BINARY=../../peer/peer
 
 function invokebody {
-    ./peer chaincode invoke -n txnetwork -c "{\"Function\": \"invoke\", \"Args\": [\"aa\",\"$1\"]}"
+
+    ((LOCADDRPORT = PEERLOCALADDRBASE + $1 * 100))
+    export CORE_SERVICE_CLIADDRESS=127.0.0.1:${LOCADDRPORT}
+    ${PEER_BINARY} chaincode invoke -n txnetwork -c "{\"Function\": \"invoke\", \"Args\": [\"aa\",\"$1\"]}"
 }
 
 function testbody {
-    PEERLOCALADDRBASE=7051
-    let LOCADDRPORT=${PEERLOCALADDRBASE}+$1*100
-    export CORE_PEER_LOCALADDR=127.0.0.1:${LOCADDRPORT}
 
-    ./peer network status
-    ./peer chaincode query -n txnetwork -c "{\"Function\": \"count\", \"Args\": []}"
-    ./peer chaincode query -n txnetwork -c "{\"Function\": \"status\", \"Args\": []}"
+    ((LOCADDRPORT = PEERLOCALADDRBASE + $1 * 100))
+    export CORE_SERVICE_CLIADDRESS=127.0.0.1:${LOCADDRPORT}
+
+    ${PEER_BINARY} network status
+    ${PEER_BINARY} chaincode query -n txnetwork -c "{\"Function\": \"count\", \"Args\": []}"
+    ${PEER_BINARY} chaincode query -n txnetwork -c "{\"Function\": \"status\", \"Args\": []}"
 }
 
 function main {
@@ -26,14 +28,24 @@ function main {
     done
 
     sleep 1
-    ./peer network status
-    ./peer chaincode query -n txnetwork -c "{\"Function\": \"count\", \"Args\": []}"
+
+    export CORE_SERVICE_CLIADDRESS=127.0.0.1:${PEERLOCALADDRBASE}
+    ${PEER_BINARY} network status
+    ${PEER_BINARY} chaincode query -n txnetwork -c "{\"Function\": \"count\", \"Args\": []}"
 
     for ((index=0; index<$2; index++)) do
         testbody ${index}
     done
 }
 
+function build {
+    cd ../../peer
+    go build
+    cd ../examples/txnetwork
+    go build
+}
+
+build
 main $1 $2
 
 

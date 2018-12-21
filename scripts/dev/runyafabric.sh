@@ -138,7 +138,7 @@ function build_peer {
 
 function build_embedded {
     CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/examples/chaincode/go/embedded
+        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/examples/chaincode/embedded
 }
 
 function build_testsync {

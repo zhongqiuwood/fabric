@@ -16,9 +16,11 @@ limitations under the License.
 
 package statemgmt
 
+import 	pb "github.com/abchain/fabric/protos"
+
 // StateDeltaIterator - An iterator implementation over state-delta
 type StateDeltaIterator struct {
-	updates         map[string]*UpdatedValue
+	updates         map[string]*pb.UpdatedValue
 	relevantKeys    []string
 	currentKeyIndex int
 	done            bool
@@ -30,7 +32,7 @@ func NewStateDeltaRangeScanIterator(delta *StateDelta, chaincodeID string, start
 	return &StateDeltaIterator{updates, retrieveRelevantKeys(updates, startKey, endKey), -1, false}
 }
 
-func retrieveRelevantKeys(updates map[string]*UpdatedValue, startKey string, endKey string) []string {
+func retrieveRelevantKeys(updates map[string]*pb.UpdatedValue, startKey string, endKey string) []string {
 	relevantKeys := []string{}
 	if updates == nil {
 		return relevantKeys

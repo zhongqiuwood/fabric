@@ -799,7 +799,7 @@ func (ledger *Ledger) checkValidIDCommitORRollback(id interface{}) error {
 func (ledger *Ledger) resetForNextTxGroup(txCommited bool) {
 	ledgerLogger.Debug("resetting ledger state for next transaction batch")
 	ledger.currentID = nil
-	ledger.state.ClearInMemoryChanges(txCommited)
+	ledger.state.ClearInMemoryChanges(txCommited, false)
 }
 
 func sendProducerBlockEvent(block *protos.Block) {
@@ -847,4 +847,11 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 	}
 
 	return
+}
+
+func (ledger *Ledger) GetRootStateHashFromDB() (stateHash []byte, err error) {
+	return ledger.state.GetRootStateHashFromDB()
+}
+func (ledger *Ledger) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta{
+	return ledger.state.ProduceStateDeltaFromDB(level, bucketNumber, itr)
 }

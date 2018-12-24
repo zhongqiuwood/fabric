@@ -51,7 +51,7 @@ func (impl *StateImpl) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) error
 }
 
 // ClearWorkingSet - method implementation for interface 'statemgmt.HashableState'
-func (impl *StateImpl) ClearWorkingSet(changesPersisted bool) {
+func (impl *StateImpl) ClearWorkingSet(changesPersisted bool, reloadCache bool) {
 	impl.stateDelta = nil
 }
 
@@ -94,4 +94,12 @@ func (impl *StateImpl) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (statem
 // GetRangeScanIterator - method implementation for interface 'statemgmt.HashableState'
 func (impl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey string, endKey string) (statemgmt.RangeScanIterator, error) {
 	panic("Not a full-fledged state implementation. Implemented only for measuring best-case performance benchmark")
+}
+
+func (impl *StateImpl) GetRootStateHashFromDB(getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
+	return nil, nil
+}
+
+func (impl *StateImpl) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta {
+	return nil
 }

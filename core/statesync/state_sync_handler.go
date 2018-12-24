@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
+	//node "github.com/abchain/fabric/node/start"
 )
 
 func init() {
@@ -28,6 +29,8 @@ type ErrHandlerFatal struct {
 	error
 }
 
+
+
 func newStateSyncHandler(remoterId *pb.PeerID, l *ledger.Ledger, sstub *pb.StreamStub) pb.StreamHandlerImpl {
 	logger.Debug("create handler for peer", remoterId)
 
@@ -40,7 +43,7 @@ func newStateSyncHandler(remoterId *pb.PeerID, l *ledger.Ledger, sstub *pb.Strea
 	return h
 }
 
-func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte) error {
+func (syncHandler *stateSyncHandler) runSyncBlock(ctx context.Context, targetState []byte) error {
 
 	syncHandler.client = newSyncer(ctx, syncHandler)
 
@@ -105,26 +108,32 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 //---------------------------------------------------------------------------
 func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 
-	msg := &pb.SyncStartRequest{}
+	logger.Infof("[%s]: sync beforeSyncStart done", flogging.GoRDef)
 
-	syncMsg := syncHandler.onRecvSyncMsg(e, msg)
+	startRequest := &pb.SyncStartRequest{}
+	syncMsg := syncHandler.onRecvSyncMsg(e, startRequest)
 
 	if syncMsg == nil {
+		panic("todo")
 		return
 	}
 
 	syncHandler.server = newStateServer(syncHandler)
-
 	syncHandler.server.correlationId = syncMsg.CorrelationId
+	resp := &pb.SyncStartResponse{}
 
-	size, err := syncHandler.server.ledger.GetBlockchainSize()
-	if err != nil {
-		e.Cancel(err)
-		return
+	var err error
+	if startRequest.PayloadType == pb.SyncType_SYNC_BLOCK {
+		resp.BlockHeight, err = syncHandler.server.ledger.GetBlockchainSize()
+	} else if startRequest.PayloadType == pb.SyncType_SYNC_STATE {
+		err = syncHandler.server.verifySyncStateReq(startRequest)
 	}
 
-	resp := &pb.SyncStateResp{}
-	resp.BlockHeight = size
+	if err != nil {
+		resp.RejectedReason = fmt.Sprintf("%s", err)
+		logger.Errorf("[%s]: RejectedReason: %s", flogging.GoRDef, resp.RejectedReason)
+		e.Cancel(err)
+	}
 
 	err = syncHandler.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_START_ACK, resp)
 	if err != nil {
@@ -135,7 +144,6 @@ func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 func (syncHandler *stateSyncHandler) fini() {
 
 	err := syncHandler.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_END, nil)
-
 	if err != nil {
 		logger.Errorf("[%s]: sendSyncMsg SyncMsg_SYNC_SESSION_END err: %s", flogging.GoRDef, err)
 	}
@@ -150,6 +158,9 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 
 	if payloadMsg != nil {
 		tmp, err := proto.Marshal(payloadMsg)
+
+		//logger.Infof("==============%s: tmp<%x>, err: %s", flogging.GoRDef, data, err)
+
 		if err != nil {
 			lerr := fmt.Errorf("Error Marshalling payload message for <%s>: %s", msgType.String(), err)
 			logger.Info(lerr.Error())
@@ -159,6 +170,9 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 			return lerr
 		}
 		data = tmp
+
+		//logger.Infof("==============%s: data<%x>", flogging.GoRDef, data)
+
 	}
 
 	stream := syncHandler.streamStub.PickHandler(syncHandler.remotePeerId)
@@ -187,6 +201,8 @@ func (syncHandler *stateSyncHandler) onRecvSyncMsg(e *fsm.Event, payloadMsg prot
 		return nil
 	}
 	msg := e.Args[0].(*pb.SyncMsg)
+
+	//logger.Infof("=========%s: msg <%+v>", flogging.GoRDef, msg)
 
 	if payloadMsg != nil {
 		err := proto.Unmarshal(msg.Payload, payloadMsg)
@@ -246,7 +262,11 @@ func (h *stateSyncHandler) HandleMessage(m proto.Message) error {
 		if _, ok := err.(ErrHandlerFatal); ok {
 			return err
 		}
-		logger.Errorf("Handle sync message <%s> fail: %s", wrapmsg.Type.String(), err)
+
+		msg := fmt.Sprintf("%s", err)
+		if "no transition" != msg {
+			logger.Errorf("Handle sync message <%s> fail: %s", wrapmsg.Type.String(), err)
+		}
 	}
 
 	return nil

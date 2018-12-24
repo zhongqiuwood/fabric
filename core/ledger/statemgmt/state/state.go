@@ -292,10 +292,10 @@ func (state *State) GetTxStateDeltaHash() map[string][]byte {
 }
 
 // ClearInMemoryChanges remove from memory all the changes to state
-func (state *State) ClearInMemoryChanges(changesPersisted bool) {
+func (state *State) ClearInMemoryChanges(changesPersisted, reloadCache bool) {
 	state.stateDelta = statemgmt.NewStateDelta()
 	state.txStateDeltaHash = make(map[string][]byte)
-	state.stateImpl.ClearWorkingSet(changesPersisted)
+	state.stateImpl.ClearWorkingSet(changesPersisted, reloadCache)
 }
 
 // getStateDelta get changes in state after most recent call to method clearInMemoryChanges
@@ -331,6 +331,11 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.
 		state.updateStateImpl = false
 	}
 	state.stateImpl.AddChangesForPersistence(writeBatch)
+
+	if blockNumber == 0 {
+		logger.Debug("state.addChangesForPersistence()...finished")
+		return
+	}
 
 	serializedStateDelta := state.stateDelta.Marshal()
 	cf := writeBatch.GetDBHandle().StateDeltaCF
@@ -381,11 +386,13 @@ func (state *State) CommitStateDelta() error {
 // only used during state synchronization when creating a new state from
 // a snapshot.
 func (state *State) DeleteState() error {
-	state.ClearInMemoryChanges(false)
 	err := state.OpenchainDB.DeleteState()
 	if err != nil {
 		logger.Errorf("Error deleting state: %s", err)
 	}
+
+	state.ClearInMemoryChanges(false, true)
+
 	return err
 }
 
@@ -395,4 +402,12 @@ func encodeStateDeltaKey(blockNumber uint64) []byte {
 
 func decodeStateDeltaKey(dbkey []byte) uint64 {
 	return util.DecodeToUint64(dbkey)
+}
+
+func (state *State) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator)  *statemgmt.StateDelta {
+
+	return state.stateImpl.ProduceStateDeltaFromDB(level, bucketNumber, itr)
+}
+func (state *State) GetRootStateHashFromDB() ([]byte, error) {
+	return state.stateImpl.GetRootStateHashFromDB(nil)
 }

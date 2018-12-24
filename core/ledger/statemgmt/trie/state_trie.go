@@ -75,7 +75,7 @@ func (stateTrie *StateTrie) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) 
 }
 
 // ClearWorkingSet clears the existing delta
-func (stateTrie *StateTrie) ClearWorkingSet(changesPersisted bool) {
+func (stateTrie *StateTrie) ClearWorkingSet(changesPersisted bool, reloadCache bool) {
 	stateTrie.trieDelta = nil
 	stateTrie.recomputeCryptoHash = false
 
@@ -188,4 +188,12 @@ func (stateTrie *StateTrie) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (s
 // GetRangeScanIterator returns an iterator for performing a range scan between the start and end keys
 func (stateTrie *StateTrie) GetRangeScanIterator(chaincodeID string, startKey string, endKey string) (statemgmt.RangeScanIterator, error) {
 	return newRangeScanIterator(stateTrie.OpenchainDB, chaincodeID, startKey, endKey)
+}
+
+func (impl *StateTrie) GetRootStateHashFromDB(getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
+	return nil, nil
+}
+
+func (impl *StateTrie) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta {
+	return nil
 }

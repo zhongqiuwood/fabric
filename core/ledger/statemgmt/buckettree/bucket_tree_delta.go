@@ -16,17 +16,27 @@ limitations under the License.
 
 package buckettree
 
+import "sync"
+
 type byBucketNumber map[int]*bucketNode
 
 type bucketTreeDelta struct {
 	byLevel map[int]byBucketNumber
+	lock *sync.Mutex
 }
 
 func newBucketTreeDelta() *bucketTreeDelta {
-	return &bucketTreeDelta{make(map[int]byBucketNumber)}
+	return &bucketTreeDelta{make(map[int]byBucketNumber), &sync.Mutex{}}
 }
 
+
+
 func (bucketTreeDelta *bucketTreeDelta) getOrCreateBucketNode(bucketKey *bucketKey) *bucketNode {
+
+	bucketTreeDelta.lock.Lock()
+	defer bucketTreeDelta.lock.Unlock()
+
+
 	byBucketNumber := bucketTreeDelta.byLevel[bucketKey.level]
 	if byBucketNumber == nil {
 		byBucketNumber = make(map[int]*bucketNode)
@@ -45,6 +55,10 @@ func (bucketTreeDelta *bucketTreeDelta) isEmpty() bool {
 }
 
 func (bucketTreeDelta *bucketTreeDelta) getBucketNodesAt(level int) []*bucketNode {
+
+	bucketTreeDelta.lock.Lock()
+	defer bucketTreeDelta.lock.Unlock()
+
 	bucketNodes := []*bucketNode{}
 	byBucketNumber := bucketTreeDelta.byLevel[level]
 	if byBucketNumber == nil {
@@ -57,6 +71,7 @@ func (bucketTreeDelta *bucketTreeDelta) getBucketNodesAt(level int) []*bucketNod
 }
 
 func (bucketTreeDelta *bucketTreeDelta) getRootNode() *bucketNode {
+
 	bucketNodes := bucketTreeDelta.getBucketNodesAt(0)
 	if bucketNodes == nil || len(bucketNodes) == 0 {
 		panic("This method should be called after processing is completed (i.e., the root node has been created)")

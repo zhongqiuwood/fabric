@@ -139,7 +139,7 @@ func (testWrapper *stateImplTestWrapper) persistChangesAndResetInMemoryChanges()
 	defer writeBatch.Destroy()
 	testWrapper.addChangesForPersistence(writeBatch)
 	testDBWrapper.WriteToDB(testWrapper.t, writeBatch)
-	testWrapper.stateImpl.ClearWorkingSet(true)
+	testWrapper.stateImpl.ClearWorkingSet(true, false)
 }
 
 func (testWrapper *stateImplTestWrapper) getRangeScanIterator(chaincodeID string, startKey string, endKey string) statemgmt.RangeScanIterator {

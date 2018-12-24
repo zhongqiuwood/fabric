@@ -19,8 +19,8 @@ func newStateServer(h *stateSyncHandler) (s *stateServer) {
 	s = &stateServer{
 		parent: h,
 	}
-
-	s.ledger = h.ledger.CreateSnapshot()
+	l, _ := ledger.GetLedger()
+	s.ledger = l.CreateSnapshot()
 	return
 
 }
@@ -47,7 +47,7 @@ func (server *stateServer) beforeQuery(e *fsm.Event) {
 	resp.BlockHeight = payloadMsg.BlockHeight
 	resp.Statehash = block.StateHash
 
-	err = server.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_RESPONSE, resp)
+	err = server.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_QUERY_ACK, resp)
 	if err != nil {
 		server.ledger.Release()
 	}
@@ -56,15 +56,15 @@ func (server *stateServer) beforeQuery(e *fsm.Event) {
 //---------------------------------------------------------------------------
 // 3. acknowledge sync block request
 //---------------------------------------------------------------------------
-func (server *stateServer) beforeGetBlocks(e *fsm.Event) {
-	payloadMsg := &pb.SyncBlockRange{}
-	syncMsg := server.parent.onRecvSyncMsg(e, payloadMsg)
-	if syncMsg == nil || server.correlationId != syncMsg.CorrelationId {
-		return
-	}
-
-	go server.sendBlocks(e, payloadMsg)
-}
+//func (server *stateServer) beforeGetBlocks(e *fsm.Event) {
+//	payloadMsg := &pb.SyncBlockRange{}
+//	syncMsg := server.parent.onRecvSyncMsg(e, payloadMsg)
+//	if syncMsg == nil || server.correlationId != syncMsg.CorrelationId {
+//		return
+//	}
+//
+//	go server.sendBlocks(e, payloadMsg)
+//}
 
 //---------------------------------------------------------------------------
 // 4. acknowledge sync detal request
@@ -94,6 +94,7 @@ func (sts *stateServer) dumpStateUpdate(stateUpdate string) {
 		stateUpdate, sts.correlationId, sts.parent.remotePeerIdName())
 }
 
+
 //---------------------------------------------------------------------------
 // 5. acknowledge sync end
 //---------------------------------------------------------------------------
@@ -106,45 +107,6 @@ func (server *stateServer) beforeSyncEnd(e *fsm.Event) {
 	server.ledger.Release()
 }
 
-// sendBlocks sends the blocks based upon the supplied SyncBlockRange over the stream.
-func (d *stateServer) sendBlocks(e *fsm.Event, syncBlockRange *pb.SyncBlockRange) {
-	logger.Infof("Sending blocks %d-%d", syncBlockRange.Start, syncBlockRange.End)
-	var blockNums []uint64
-	if syncBlockRange.Start > syncBlockRange.End {
-		// Send in reverse order
-		// note that i is a uint so decrementing i below 0 results in an underflow
-		// (i becomes uint.MaxValue). Always stop after i == 0
-		for i := syncBlockRange.Start; i >= syncBlockRange.End && i <= syncBlockRange.Start; i-- {
-			blockNums = append(blockNums, i)
-		}
-	} else {
-		for i := syncBlockRange.Start; i <= syncBlockRange.End; i++ {
-			logger.Debugf("%s: Appending to blockNums: %d", flogging.GoRDef, i)
-			blockNums = append(blockNums, i)
-		}
-	}
-
-	for _, currBlockNum := range blockNums {
-		// Get the Block from
-		block, err := d.ledger.GetBlockByNumber(currBlockNum)
-		if err != nil {
-			logger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
-			break
-		}
-		// Encode a SyncBlocks into the payload
-		syncBlocks := &pb.SyncBlocks{Range: &pb.SyncBlockRange{Start: currBlockNum, End: currBlockNum,
-			CorrelationId: syncBlockRange.CorrelationId}, Blocks: []*pb.Block{block}}
-
-		logger.Infof("sendSyncMsg SyncMsg_SYNC_SESSION_BLOCKS blockNums: %d", currBlockNum)
-
-		err = d.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_BLOCKS, syncBlocks)
-
-		if err != nil {
-			logger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
-			break
-		}
-	}
-}
 
 func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.SyncStateDeltasRequest) {
 	logger.Debugf("Sending state deltas for block range %d-%d", syncStateDeltasRequest.Range.Start,
@@ -191,10 +153,51 @@ func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.S
 			Range:    &pb.SyncBlockRange{Start: currBlockNum, End: currBlockNum, CorrelationId: syncBlockRange.CorrelationId},
 			Syncdata: []*pb.BlockState{blockState}}
 
-		if err := d.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_DELTAS, syncStateDeltas); err != nil {
+		if err := d.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_DELTAS_ACK, syncStateDeltas); err != nil {
 			logger.Errorf("Error sending stateDeltas for blockNum %d: %s", currBlockNum, err)
 			break
 		}
 		logger.Debugf("Successfully sent stateDeltas for blockNum %d", currBlockNum)
 	}
 }
+
+
+// sendBlocks sends the blocks based upon the supplied SyncBlockRange over the stream.
+//func (d *stateServer) sendBlocks(e *fsm.Event, syncBlockRange *pb.SyncBlockRange) {
+//	logger.Infof("Sending blocks %d-%d", syncBlockRange.Start, syncBlockRange.End)
+//	var blockNums []uint64
+//	if syncBlockRange.Start > syncBlockRange.End {
+//		// Send in reverse order
+//		// note that i is a uint so decrementing i below 0 results in an underflow
+//		// (i becomes uint.MaxValue). Always stop after i == 0
+//		for i := syncBlockRange.Start; i >= syncBlockRange.End && i <= syncBlockRange.Start; i-- {
+//			blockNums = append(blockNums, i)
+//		}
+//	} else {
+//		for i := syncBlockRange.Start; i <= syncBlockRange.End; i++ {
+//			logger.Debugf("%s: Appending to blockNums: %d", flogging.GoRDef, i)
+//			blockNums = append(blockNums, i)
+//		}
+//	}
+//
+//	for _, currBlockNum := range blockNums {
+//		// Get the Block from
+//		block, err := d.ledger.GetBlockByNumber(currBlockNum)
+//		if err != nil {
+//			logger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
+//			break
+//		}
+//		// Encode a SyncBlocks into the payload
+//		syncBlocks := &pb.SyncBlocks{Range: &pb.SyncBlockRange{Start: currBlockNum, End: currBlockNum,
+//			CorrelationId: syncBlockRange.CorrelationId}, Blocks: []*pb.Block{block}}
+//
+//		logger.Infof("sendSyncMsg SyncMsg_SYNC_SESSION_BLOCKS blockNums: %d", currBlockNum)
+//
+//		err = d.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_BLOCKS, syncBlocks)
+//
+//		if err != nil {
+//			logger.Errorf("Error sending blockNum %d: %s", currBlockNum, err)
+//			break
+//		}
+//	}
+//}

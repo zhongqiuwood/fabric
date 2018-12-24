@@ -18,6 +18,7 @@ package statemgmt
 
 import (
 	"github.com/abchain/fabric/core/db"
+	"github.com/tecbot/gorocksdb"
 )
 
 // HashableState - Interface that is be implemented by state management
@@ -46,7 +47,7 @@ type HashableState interface {
 
 	// ClearWorkingSet state implementation may clear any data structures that it may have constructed
 	// for computing cryptoHash and persisting the changes for the stateDelta (passed in PrepareWorkingSet method)
-	ClearWorkingSet(changesPersisted bool)
+	ClearWorkingSet(changesPersisted bool, reloadCache bool)
 
 	// GetStateSnapshotIterator state implementation to provide an iterator that is supposed to give
 	// All the key-value of global state. A particular implementation may need to remove additional information
@@ -66,6 +67,21 @@ type HashableState interface {
 	// A state implementation may use this hint for prefetching relevant data so as if this could improve
 	// the performance of ComputeCryptoHash method (when gets called at a later time)
 	PerfHintKeyChanged(chaincodeID string, key string)
+
+	ProduceStateDeltaFromDB(level, bucketNumber int, itr CfIterator) *StateDelta
+	GetRootStateHashFromDB(getValueFunc GetValueFromSnapshotFunc) ([]byte, error)
+}
+
+type GetValueFromSnapshotFunc func(cfName string, key []byte)([]byte, error)
+
+// db or snapshot Iterator
+type CfIterator interface {
+	Seek(key []byte)
+	Next()
+	Close()
+	Valid() bool
+	Key() *gorocksdb.Slice
+	Value() *gorocksdb.Slice
 }
 
 // StateSnapshotIterator An interface that is to be implemented by the return value of

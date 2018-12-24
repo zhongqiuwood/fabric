@@ -56,12 +56,17 @@ func (cache *bucketCache) loadAllBucketNodesFromDB() {
 	if !cache.isEnabled {
 		return
 	}
+
 	itr := cache.GetIterator(db.StateCF)
 	defer itr.Close()
 	itr.Seek([]byte{byte(0)})
 	count := 0
 	cache.lock.Lock()
 	defer cache.lock.Unlock()
+
+	cache.size = 0
+	cache.c = make(map[bucketKey]*bucketNode)
+
 	for ; itr.Valid(); itr.Next() {
 		key := itr.Key().Data()
 		if key[0] != byte(0) {

@@ -7,12 +7,47 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
+	"github.com/op/go-logging"
 )
 
 // Ledger - the struct for openchain ledger
 type LedgerSnapshot struct {
 	l *Ledger
 	*db.DBSnapshot
+}
+
+var logger = logging.MustGetLogger("LedgerSnapshot")
+
+func (sledger *LedgerSnapshot) GetRootStateHashFromDB() ([]byte, error) {
+
+	localHash, err := sledger.l.GetCurrentStateHash()
+	logger.Infof("GetCurrentHash <%x>", localHash)
+
+	localHash, err = sledger.l.GetRootStateHashFromDB()
+	logger.Infof("RootStateHash  <%x>", localHash)
+	return localHash, err
+}
+
+
+func (sledger *LedgerSnapshot) ComputeBreakPointHash(level int, bucketNum int) ([]byte, error) {
+
+	getValueFunc := func(cfName string, key []byte)([]byte, error) {
+		return sledger.GetFromSnapshot(cfName, key)
+	}
+
+	localHash, err := buckettree.ComputeBreakPointHash(level, bucketNum, getValueFunc)
+	return localHash, err
+}
+
+func (sledger *LedgerSnapshot) ProduceStateDeltaFromDB(level, bucketNumber int) map[string]*protos.ChaincodeStateDelta{
+
+	itr := sledger.GetStateCFSnapshotIterator()
+
+	defer itr.Close()
+	stateDelta := sledger.l.ProduceStateDeltaFromDB(level, bucketNumber, itr)
+
+	return stateDelta.ChaincodeStateDeltas
 }
 
 func (sledger *LedgerSnapshot) GetBlockByNumber(blockNumber uint64) (*protos.Block, error) {

@@ -29,8 +29,8 @@ var logger = logging.MustGetLogger("buckettree")
 // StateImpl - implements the interface - 'statemgmt.HashableState'
 type StateImpl struct {
 	*db.OpenchainDB
-	dataNodesDelta         *dataNodesDelta
-	bucketTreeDelta        *bucketTreeDelta
+	dataNodesDelta         *dataNodesDelta  // bucket nodes map  level-bucketNum -> node, stores users key-value
+	bucketTreeDelta        *bucketTreeDelta // bucket tree, each node contains all its child hash
 	persistedStateHash     []byte
 	lastComputedCryptoHash []byte
 	recomputeCryptoHash    bool
@@ -63,6 +63,8 @@ func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 	return nil
 }
 
+
+
 // Get - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) Get(chaincodeID string, key string) ([]byte, error) {
 	dataKey := newDataKey(chaincodeID, key)
@@ -90,8 +92,7 @@ func (stateImpl *StateImpl) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) 
 }
 
 // ClearWorkingSet - method implementation for interface 'statemgmt.HashableState'
-func (stateImpl *StateImpl) ClearWorkingSet(changesPersisted bool) {
-	logger.Debug("Enter - ClearWorkingSet()")
+func (stateImpl *StateImpl) ClearWorkingSet(changesPersisted bool, reloadCache bool) {
 	if changesPersisted {
 		stateImpl.persistedStateHash = stateImpl.lastComputedCryptoHash
 		stateImpl.updateBucketCache()
@@ -101,6 +102,10 @@ func (stateImpl *StateImpl) ClearWorkingSet(changesPersisted bool) {
 	stateImpl.dataNodesDelta = nil
 	stateImpl.bucketTreeDelta = nil
 	stateImpl.recomputeCryptoHash = false
+
+	if reloadCache {
+		stateImpl.bucketCache.loadAllBucketNodesFromDB()
+	}
 }
 
 // ComputeCryptoHash - method implementation for interface 'statemgmt.HashableState'
@@ -108,11 +113,11 @@ func (stateImpl *StateImpl) ComputeCryptoHash() ([]byte, error) {
 	logger.Debug("Enter - ComputeCryptoHash()")
 	if stateImpl.recomputeCryptoHash {
 		logger.Debug("Recomputing crypto-hash...")
-		err := stateImpl.processDataNodeDelta()
+		err := stateImpl.processDataNodeDelta() // feed all leaf nodes(level n) and all their parent nodes(level n-1)
 		if err != nil {
 			return nil, err
 		}
-		err = stateImpl.processBucketTreeDelta()
+		err = stateImpl.processBucketTreeDelta()  // feed all other nodes(level n-2 to level 0)
 		if err != nil {
 			return nil, err
 		}
@@ -126,15 +131,25 @@ func (stateImpl *StateImpl) ComputeCryptoHash() ([]byte, error) {
 
 func (stateImpl *StateImpl) processDataNodeDelta() error {
 	afftectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
+
+	it := stateImpl.OpenchainDB.GetIterator(db.StateCF)
+	defer it.Close()
+
 	for _, bucketKey := range afftectedBuckets {
+
 		updatedDataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(bucketKey)
-		existingDataNodes, err := fetchDataNodesFromDBFor(stateImpl.OpenchainDB, bucketKey)
+
+		existingDataNodes, err := fetchDataNodesFromDBFor(it, bucketKey)
 		if err != nil {
 			return err
 		}
 		cryptoHashForBucket := computeDataNodesCryptoHash(bucketKey, updatedDataNodes, existingDataNodes)
 		logger.Debugf("Crypto-hash for lowest-level bucket [%s] is [%x]", bucketKey, cryptoHashForBucket)
 		parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
+
+		logger.Debugf("Feed DataNode<%s> to parentBucket [%+v]", bucketKey, parentBucket.bucketKey)
+
+		// set second last level children hash by index
 		parentBucket.setChildCryptoHash(bucketKey, cryptoHashForBucket)
 	}
 	return nil
@@ -147,11 +162,14 @@ func (stateImpl *StateImpl) processBucketTreeDelta() error {
 		logger.Debugf("Bucket tree delta. Number of buckets at level [%d] are [%d]", level, len(bucketNodes))
 		for _, bucketNode := range bucketNodes {
 			logger.Debugf("bucketNode in tree-delta [%s]", bucketNode)
+			// get middle node from db
 			dbBucketNode, err := stateImpl.bucketCache.get(*bucketNode.bucketKey)
 			logger.Debugf("bucket node from db [%s]", dbBucketNode)
 			if err != nil {
 				return err
 			}
+
+			// merge updated child hash into middle node by index
 			if dbBucketNode != nil {
 				bucketNode.mergeBucketNode(dbBucketNode)
 				logger.Debugf("After merge... bucketNode in tree-delta [%s]", bucketNode)
@@ -163,6 +181,8 @@ func (stateImpl *StateImpl) processBucketTreeDelta() error {
 			cryptoHash := bucketNode.computeCryptoHash()
 			logger.Debugf("cryptoHash for bucket [%s] is [%x]", bucketNode, cryptoHash)
 			parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketNode.bucketKey.getParentKey())
+
+			logger.Debugf("Feed bucketNode <%s> to parentBucket [%+v]", bucketNode.bucketKey, parentBucket.bucketKey)
 			parentBucket.setChildCryptoHash(bucketNode.bucketKey, cryptoHash)
 		}
 	}
@@ -173,8 +193,11 @@ func (stateImpl *StateImpl) computeRootNodeCryptoHash() []byte {
 	return stateImpl.bucketTreeDelta.getRootNode().computeCryptoHash()
 }
 
+// compute a leaf bucket hash by updatedNodes and existingNodes
 func computeDataNodesCryptoHash(bucketKey *bucketKey, updatedNodes dataNodes, existingNodes dataNodes) []byte {
-	logger.Debugf("Computing crypto-hash for bucket [%s]. numUpdatedNodes=[%d], numExistingNodes=[%d]", bucketKey, len(updatedNodes), len(existingNodes))
+	logger.Debugf("Computing crypto-hash for bucket [%s]. numUpdatedNodes=[%d], numExistingNodes=[%d]",
+		bucketKey, len(updatedNodes), len(existingNodes))
+
 	bucketHashCalculator := newBucketHashCalculator(bucketKey)
 	i := 0
 	j := 0
@@ -243,7 +266,9 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *db.DBWr
 				logger.Debugf("Deleting data node key = %#v", dataNode.dataKey)
 				writeBatch.DeleteCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes())
 			} else {
-				logger.Debugf("Adding data node with value = %#v", dataNode.value)
+				logger.Debugf("Adding data node with dataKey<%x>, compositedKey<%s>, value = %#v",
+					dataNode.dataKey.getEncodedBytes(),
+					dataNode.dataKey.compositeKey, dataNode.value)
 				writeBatch.PutCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes(), dataNode.value)
 			}
 		}
@@ -259,6 +284,10 @@ func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *db.DB
 			if bucketNode.markedForDeletion {
 				writeBatch.DeleteCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes())
 			} else {
+
+				logger.Debugf("Adding data node<%s> with dataKey<%x>, value <%x>",bucketNode.bucketKey,
+					bucketNode.bucketKey.getEncodedBytes(),	bucketNode.marshal())
+
 				writeBatch.PutCF(openchainDB.StateCF,
 					bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
 			}
@@ -300,4 +329,26 @@ func (stateImpl *StateImpl) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (s
 // GetRangeScanIterator - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey string, endKey string) (statemgmt.RangeScanIterator, error) {
 	return newRangeScanIterator(stateImpl.OpenchainDB, chaincodeID, startKey, endKey)
+}
+
+// report local root hash to server
+func (stateImpl *StateImpl) GetRootStateHashFromDB(getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
+
+	var persistedStateHash []byte = nil
+	var rootBucketNode *bucketNode
+	var err error
+
+	rootBucketNode, err = fetchBucketNode(getValueFunc, stateImpl.OpenchainDB, constructRootBucketKey())
+
+	if err == nil && rootBucketNode != nil {
+		persistedStateHash = rootBucketNode.computeCryptoHash()
+	}
+	return persistedStateHash, err
+}
+
+// return desired statemgmt.StateDelta to client
+func (stateImpl *StateImpl) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta{
+
+	start, end := conf.getLeafBuckets(level, bucketNumber)
+	return produceStateDeltaFromDB(start, end, itr)
 }

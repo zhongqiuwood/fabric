@@ -7,7 +7,10 @@ import (
 	pb "github.com/abchain/fabric/protos"
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
+	"github.com/op/go-logging"
 )
+
+var logger = logging.MustGetLogger("SyncFactory")
 
 //type SyncFactory func(*pb.PeerID, string, *pb.StreamStub) pb.StreamHandlerImpl
 type SyncFactory struct {
@@ -18,11 +21,15 @@ func InitStateSyncStub(bindPeer peer.Peer, l *ledger.Ledger, srv *grpc.Server) *
 
 	sstub := statesync.NewStateSyncStubWithPeer(bindPeer, l)
 	if sstub == nil {
+		logger.Errorf("Failed to NewStateSyncStubWithPeer:")
+
 		return nil
 	}
 
-	err := bindPeer.AddStreamStub("sync", SyncFactory{sstub}, sstub)
+	err := bindPeer.AddStreamStub("sync", SyncFactory{sstub})
 	if err != nil {
+		logger.Errorf("Failed to AddStreamStub: %s", err)
+		panic("Failed to AddStreamStub")
 		return nil
 	}
 
@@ -33,7 +40,6 @@ func InitStateSyncStub(bindPeer peer.Peer, l *ledger.Ledger, srv *grpc.Server) *
 	}
 
 	pb.RegisterSyncServer(srv, SyncFactory{sstub})
-
 	return sstub
 }
 

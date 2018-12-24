@@ -5,13 +5,14 @@ import (
 	"github.com/looplab/fsm"
 )
 
-var syncPhase = []string{"synclocating", "syncdelta", "syncblock", "syncsnapshot"}
+var syncPhase = []string{"synclocating", "syncdelta", "syncblock", "syncsnapshot", "syncstate"}
 
 var enterGetBlock = "GetBlock"
 var enterGetSnapshot = "GetSnapshot"
 var enterGetDelta = "GetDelta"
 var enterSyncBegin = "SyncBegin"
 var enterSyncFinish = "SyncFinish"
+var enterGetState = "GetState"
 
 func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 
@@ -24,21 +25,24 @@ func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 			//serving phase
 			{Name: pb.SyncMsg_SYNC_SESSION_START.String(),        Src: []string{"idle"},  Dst: "serve"},
 			{Name: pb.SyncMsg_SYNC_SESSION_QUERY.String(),        Src: []string{"serve"}, Dst: "serve"},
-			{Name: pb.SyncMsg_SYNC_SESSION_GET_BLOCKS.String(),   Src: []string{"serve"}, Dst: "serve"},
-			{Name: pb.SyncMsg_SYNC_SESSION_GET_SNAPSHOT.String(), Src: []string{"serve"}, Dst: "serve"},
-			{Name: pb.SyncMsg_SYNC_SESSION_GET_DELTAS.String(),   Src: []string{"serve"}, Dst: "serve"},
+			//{Name: pb.SyncMsg_SYNC_SESSION_GET_BLOCKS.String(),   Src: []string{"serve"}, Dst: "serve"},
+			//{Name: pb.SyncMsg_SYNC_SESSION_GET_SNAPSHOT.String(), Src: []string{"serve"}, Dst: "serve"},
+			{Name: pb.SyncMsg_SYNC_SESSION_DELTAS.String(),   Src: []string{"serve"}, Dst: "serve"},
+			{Name: pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE.String(),   Src: []string{"serve"}, Dst: "serve"},
 			{Name: pb.SyncMsg_SYNC_SESSION_END.String(),          Src: []string{"serve"}, Dst: "idle"},
 
 			//client phase
 			{Name: pb.SyncMsg_SYNC_SESSION_START_ACK.String(), Src: []string{"synchandshake"}, Dst: "synclocating"},
-			{Name: pb.SyncMsg_SYNC_SESSION_RESPONSE.String(),  Src: []string{"synclocating"},  Dst: "synclocating"},
-			{Name: pb.SyncMsg_SYNC_SESSION_BLOCKS.String(),    Src: []string{"syncblock"},     Dst: "syncblock"},
-			{Name: pb.SyncMsg_SYNC_SESSION_SNAPSHOT.String(),  Src: []string{"syncsnapshot"},  Dst: "syncsnapshot"},
-			{Name: pb.SyncMsg_SYNC_SESSION_DELTAS.String(),    Src: []string{"syncdelta"},     Dst: "syncdelta"},
+			{Name: pb.SyncMsg_SYNC_SESSION_QUERY_ACK.String(),  Src: []string{"synclocating"},  Dst: "synclocating"},
+			//{Name: pb.SyncMsg_SYNC_SESSION_BLOCKS.String(),    Src: []string{"syncblock"},     Dst: "syncblock"},
+			//{Name: pb.SyncMsg_SYNC_SESSION_SNAPSHOT.String(),  Src: []string{"syncsnapshot"},  Dst: "syncsnapshot"},
+			{Name: pb.SyncMsg_SYNC_SESSION_DELTAS_ACK.String(),    Src: []string{"syncdelta"},     Dst: "syncdelta"},
+			{Name: pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE_ACK.String(),    Src: []string{"synclocating", "syncstate"},     Dst: "syncstate"},
 			{Name: enterSyncBegin,   Src: []string{"idle"}, Dst: "synchandshake"},
 			{Name: enterGetBlock,    Src: syncPhase,        Dst: "syncblock"},
 			{Name: enterGetSnapshot, Src: syncPhase,        Dst: "syncsnapshot"},
 			{Name: enterGetDelta,    Src: syncPhase,        Dst: "syncdelta"},
+			{Name: enterGetState,    Src: syncPhase,        Dst: "syncstate"},
 			{Name: enterSyncFinish,  Src: syncPhase,        Dst: "idle"},
 
 		},
@@ -50,17 +54,20 @@ func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 			// server
 			"before_" + pb.SyncMsg_SYNC_SESSION_START.String():        func(e *fsm.Event) { h.beforeSyncStart(e) },
 			"before_" + pb.SyncMsg_SYNC_SESSION_QUERY.String():        func(e *fsm.Event) { h.server.beforeQuery(e) },
-			"before_" + pb.SyncMsg_SYNC_SESSION_GET_BLOCKS.String():   func(e *fsm.Event) { h.server.beforeGetBlocks(e) },
-			"before_" + pb.SyncMsg_SYNC_SESSION_GET_DELTAS.String():   func(e *fsm.Event) { h.server.beforeGetDeltas(e) },
+			//"before_" + pb.SyncMsg_SYNC_SESSION_GET_BLOCKS.String():   func(e *fsm.Event) { h.server.beforeGetBlocks(e) },
+			"before_" + pb.SyncMsg_SYNC_SESSION_DELTAS.String():   func(e *fsm.Event) { h.server.beforeGetDeltas(e) },
 			"before_" + pb.SyncMsg_SYNC_SESSION_END.String():          func(e *fsm.Event) { h.server.beforeSyncEnd(e) },
+			"before_" + pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE.String():    func(e *fsm.Event) { h.server.beforeSyncMessage(e) },
+
 			"leave_serve":                                             func(e *fsm.Event) { h.server.leaveServe(e) },
 			"enter_serve":                                             func(e *fsm.Event) { h.server.enterServe(e) },
 
 			// client
 			"after_" + pb.SyncMsg_SYNC_SESSION_START_ACK.String(): func(e *fsm.Event) { h.client.afterSyncStartResponse(e) },
-			"after_" + pb.SyncMsg_SYNC_SESSION_RESPONSE.String():  func(e *fsm.Event) { h.client.afterQueryResponse(e) },
-			"after_" + pb.SyncMsg_SYNC_SESSION_BLOCKS.String():    func(e *fsm.Event) { h.client.afterSyncBlocks(e) },
-			"after_" + pb.SyncMsg_SYNC_SESSION_DELTAS.String():    func(e *fsm.Event) { h.client.afterSyncStateDeltas(e) },
+			"after_" + pb.SyncMsg_SYNC_SESSION_QUERY_ACK.String():  func(e *fsm.Event) { h.client.afterQueryResponse(e) },
+			//"after_" + pb.SyncMsg_SYNC_SESSION_BLOCKS.String():    func(e *fsm.Event) { h.client.afterSyncBlocks(e) },
+			"after_" + pb.SyncMsg_SYNC_SESSION_DELTAS_ACK.String():    func(e *fsm.Event) { h.client.afterSyncStateDeltas(e) },
+			"after_" + pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE_ACK.String():    func(e *fsm.Event) { h.client.afterSyncMessage(e) },
 
 			"leave_synclocating":                                  func(e *fsm.Event) { h.client.leaveSyncLocating(e) },
 			"leave_syncblock":                                     func(e *fsm.Event) { h.client.leaveSyncBlocks(e) },

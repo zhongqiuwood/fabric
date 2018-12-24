@@ -28,8 +28,8 @@ while getopts "i:k:c:f:r:b:s:" opt; do
       NUM_F=$OPTARG
       ;;
     s)
-      echo "SYNC_TARGET = $OPTARG"
-      SYNC_TARGET=$OPTARG
+      echo "TAG_SYNC = $OPTARG"
+      TAG_SYNC=$OPTARG
       ;;
     \?)
       echo "Invalid option: -$OPTARG"
@@ -57,13 +57,21 @@ function init {
         let NUM_N=$NUM_F
     fi
 
-    FABRIC_DB_PATH=/var/hyperledger/production
-
 }
 
 function clearLog {
     rm peer*.json
     rm err_nohup_peer*.json
+
+    return
+    echo 'a' > err_nohup_peer0.json
+    echo 'a' > err_nohup_peer1.json
+    echo 'a' > err_nohup_peer2.json
+    echo 'a' > err_nohup_peer3.json
+    echo 'a' > peer0.json
+    echo 'a' > peer1.json
+    echo 'a' > peer2.json
+    echo 'a' > peer3.json
 }
 
 function clearBin {
@@ -87,7 +95,7 @@ function runpeers {
     if [ "$ACTION_CLEAR" = "clearall" ];then
         clearLog
         clearBin
-        rm -rf ${FABRIC_DB_PATH}*
+        rm -rf /var/hyperledger/production*
     fi
 
 
@@ -96,15 +104,14 @@ function runpeers {
         clearLog
     fi
 
-    
     if [ "$ACTION_CLEAR" = "cleardb" ];then
         clearBin
-        rm -rf ${FABRIC_DB_PATH}*
+        rm -rf /var/hyperledger/production*
     fi
 
     killbyname peer_fabric_
 
-    build_peer_process ${BUILD_PEER_SCRIPT}
+    build_peer_daemon
 
 
     index=0
@@ -131,22 +138,7 @@ function runpeers {
 }
 
 
-function build_peer {
-    CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/peer
-}
-
-function build_embedded {
-    CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/examples/chaincode/embedded
-}
-
-function build_testsync {
-    CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/core/statesync/testsync
-}
-
-function build_peer_process {
+function build_peer_daemon {
 
     clearBin
 
@@ -154,24 +146,16 @@ function build_peer_process {
         mkdir -p ${BUILD_BIN}
     fi
 
-    if [ -f ${BUILD_BIN}/${PEER_BINARY} ]; then
-        rm ${BUILD_BIN}/${PEER_BINARY}
+    if [ -f ${BUILD_BIN}/${PEER_DAEMON} ]; then
+        rm ${BUILD_BIN}/${PEER_DAEMON}
     fi
 
-    if [ -L ${BUILD_BIN}/peerex ]; then
-        rm ${BUILD_BIN}/peerex
-    fi
+    CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
+        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/${PEER_DAEMON_PATH}
 
-    $1
-
-    if [ ! -f ${BUILD_BIN}/${PEER_BINARY} ]; then
-        echo 'Failed to build '${BUILD_BIN}/${PEER_BINARY}
+    if [ ! -f ${BUILD_BIN}/${PEER_DAEMON} ]; then
+        echo 'Failed to build '${BUILD_BIN}/${PEER_DAEMON}
         exit
-    fi
-
-    if [ ! -L ${BUILD_BIN}/peerex ]; then
-        cd ${BUILD_BIN}
-        ln -fnsv ${PEER_BINARY} peerex
     fi
 }
 
@@ -211,6 +195,7 @@ function startpeer {
     FULL_PEER_ID=${PEER_MODE}${PEER_ID}
 
 
+
     if [ $PEER_ID -gt 0 ];then
         export CORE_PEER_DISCOVERY_ROOTNODE=127.0.0.1:${PORT_PREFIX}055
         echo "The <$FULL_PEER_ID> started up with <$CONSENSUS> consensus. CORE_PEER_DISCOVERY_ROOTNODE=$CORE_PEER_DISCOVERY_ROOTNODE"
@@ -221,28 +206,33 @@ function startpeer {
     if [ "$CONSENSUS" = "$TAG_PBFT" ];then
         export CORE_PBFT_GENERAL_N=$NUM_N
         export CORE_PBFT_GENERAL_F=$NUM_F
+        #echo "CORE_PBFT_GENERAL_N=$CORE_PBFT_GENERAL_N, CORE_PBFT_GENERAL_F=$CORE_PBFT_GENERAL_F"
     fi
     echo "======================================================"
 
-    export CORE_PEER_TXNETWORK_ENABLE=false
 
-    if [ ! "${FULL_PEER_ID}" = "${SYNC_TARGET}" ];then
-        export CORE_PEER_SYNCTARGET=${SYNC_TARGET}
+    if [ ! "${FULL_PEER_ID}" = "${TAG_SYNC}" ];then
+        export CORE_PEER_SYNCTARGET=${TAG_SYNC}
         export CORE_PEER_MYID=${FULL_PEER_ID}
-        export CORE_PEER_ENABLESTATESYNCTEST=true
+
     fi
+
+    let PEER_DEBUG_LISTEN_PORT=BASE_PORT+${PEER_ID}+10000
+    export CORE_PEER_DEBUG_LISTENADDRESS="0.0.0.0":${PEER_DEBUG_LISTEN_PORT}
+    export CORE_PEER_ENABLESTATESYNCTEST=true
 
     export CORE_PEER_DB_VERSION=${DB_VERSION}
     export CORE_PEER_VALIDATOR_CONSENSUS_PLUGIN=$CONSENSUS
 
     export CORE_LOGGING_OUTPUT_FILE=peer${PEER_ID}.json
-    export CORE_PEER_LOGPATH=${FABRIC_DEV_SCRIPT_TOP}
+    #export CORE_LOGGING_OUTPUTFILE=peer${PEER_ID}.json
+    #export CORE_LOGGING_OUTPUT_DIRECTORY=${GOPATH}/src/$FABRIC_PATH/wkdir
 
     export CORE_CLI_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}52
     export CORE_REST_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}50
 
     export CORE_SERVICE_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}51
-#    export CORE_SERVICE_CLIADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}59
+    export CORE_SERVICE_CLIADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}51
 
     export CORE_PEER_ID=${FULL_PEER_ID}
     export CORE_PEER_LOCALADDR=127.0.0.1:${PORT_PREFIX}${PEER_ID}56
@@ -259,43 +249,48 @@ function startpeer {
     export CORE_PEER_PKI_TLSCA_PADDR=localhost:${PORT_PREFIX}${PEER_ID}54
     export CORE_PEER_PROFILE_LISTENADDRESS=0.0.0.0:${PORT_PREFIX}${PEER_ID}60
 
-    export CORE_PEER_FILESYSTEMPATH=${FABRIC_DB_PATH}${PEER_ID}
+#    export CORE_PEER_FILESYSTEMPATH=/var/hyperledger/production${PEER_ID}
+    export CORE_PEER_FILESYSTEMPATH=/var/hyperledger/production${PEER_ID}
 
     export LOG_STDOUT_FILE=$CORE_PEER_LOGPATH/_stdout_$CORE_LOGGING_OUTPUT_FILE
 
-    export CORE_PEER_FILESYSTEMPATH=${FABRIC_DB_PATH}${PEER_ID}
+#    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=130
+#    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=116
+
+    export CORE_PEER_FILESYSTEMPATH=/var/hyperledger/production${PEER_ID}
 
 #    export CORE_LOGGING_NODE=info:ledger=debug:db=debug:consensus/noops=debug:consensus/executor=debug:buckettree2=debug:statemgmt=debug
 #    export CORE_LOGGING_NODE=info:statesync=debug:ledger=debug:nodeCmd=debug:peer=debug
-    export CORE_LOGGING_NODE=info:statesync=debug:ledger=debug
+#    export CORE_LOGGING_NODE=info:statesync=debug:state=debug:buckettree=debug
+#    export CORE_LOGGING_NODE=info:statesync=debug:state=info:buckettree=info:peer=info
 
 
     if [ ! -f ${BUILD_BIN}/peer_fabric_${PEER_ID} ]; then
         cd ${BUILD_BIN}
-        ln -s peerex peer_fabric_${PEER_ID}
+        ln -s ${PEER_DAEMON} peer_fabric_${PEER_ID}
         cd ../..
     fi
 
-
-    if [ "$ACTION_CLEAR" = "clearall" ] || [ "$ACTION_CLEAR" = "clearlog" ] || [ "$ACTION_CLEAR" = "cleardb" ];then
+    if [ "$ACTION_CLEAR" = "clearall" ];then
         echo '' > ${LOG_STDOUT_FILE}
     fi
+
+    if [ "$ACTION_CLEAR" = "clearlog" ];then
+        echo '' > ${LOG_STDOUT_FILE}
+    fi
+
+    if [ "$ACTION_CLEAR" = "cleardb" ];then
+        echo '' > ${LOG_STDOUT_FILE}
+    fi
+
+    #nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start > /dev/null 2>${FABRIC_TOP}/stderrdir/err_nohup_peer${PEER_ID}.json &
+    #nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start > ${FABRIC_TOP}/nohup_peer${PEER_ID}.log 2>&1 &
 
     nohup ${BUILD_BIN}/peer_fabric_${PEER_ID} node start >> ${LOG_STDOUT_FILE} 2>>${LOG_STDOUT_FILE} &
 #    ${BUILD_BIN}/peer_fabric_${PEER_ID} node start
 }
 
 function main {
-
-     if [ "${BUILD_VERSION}" = "6" ]; then
-          build_peer_process build_peer
-          exit
-     fi
-
-     if [ "${BUILD_VERSION}" = "8" ]; then
-          build_peer_process build_embedded
-          exit
-     fi
 
      if [ "$TARGET_STOPPED_PEER_ID" != "" ];then
         killbyname peer_fabric_$TARGET_STOPPED_PEER_ID

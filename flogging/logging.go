@@ -118,8 +118,12 @@ var (
 // Initiate 'leveled' logging to stderr.
 func init() {
 
-	format = logging.MustStringFormatter(
-		"%{color}%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}",
+	//format = logging.MustStringFormatter(
+	//	"%{color}%{time:15:04:05.000} [%{module}] %{shortfunc} -> %{level:.4s} %{id:03x}%{color:reset} %{message}",
+	//)
+
+	format := logging.MustStringFormatter(
+		"%{time:15:04:05.000} [%{module}] %{shortfunc} %{level:.4s}-> %{message}",
 	)
 
 	lowLayerBackend = logging.NewLogBackend(os.Stderr, "", 0)

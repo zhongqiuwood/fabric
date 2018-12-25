@@ -19,7 +19,6 @@ package buckettree
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"math"
 )
 
 // fetch one DataNode FromDB by a dataKey
@@ -239,13 +238,4 @@ func produceStateDeltaFromDB(start, end int, itr statemgmt.CfIterator) *statemgm
 	}
 
 	return stateDelta
-}
-
-func pow(a, b int) int {
-	return int(math.Pow(float64(a), float64(b)))
-}
-
-func log(antilogarithm, baseNumber int) int {
-	logarithm := math.Log(float64(antilogarithm)) / math.Log(float64(baseNumber))
-	return int(math.Floor(logarithm))
 }

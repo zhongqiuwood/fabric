@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"hash/fnv"
 	"github.com/spf13/viper"
+	"math"
 )
 
 // ConfigNumBuckets - config name 'numBuckets' as it appears in yaml file
@@ -228,3 +229,11 @@ func fnvHash(data []byte) uint32 {
 	return fnvHash.Sum32()
 }
 
+func pow(a, b int) int {
+	return int(math.Pow(float64(a), float64(b)))
+}
+
+func log(antilogarithm, baseNumber int) int {
+	logarithm := math.Log(float64(antilogarithm)) / math.Log(float64(baseNumber))
+	return int(math.Floor(logarithm))
+}

@@ -78,13 +78,14 @@ It has these top-level messages:
 	SyncStateResp
 	SyncStartRequest
 	SyncStartResponse
-	SyncState
 	UpdatedValue
 	ChaincodeStateDelta
 	SyncStateChunkArray
 	SyncStateChunk
 	SyncStateChunkArrayRequest
 	SyncMessage
+	SyncState
+	StateOffset
 */
 package protos
 

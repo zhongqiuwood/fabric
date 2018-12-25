@@ -19,6 +19,7 @@ package statemgmt
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/tecbot/gorocksdb"
+	"github.com/abchain/fabric/protos"
 )
 
 // HashableState - Interface that is be implemented by state management
@@ -70,6 +71,10 @@ type HashableState interface {
 
 	ProduceStateDeltaFromDB(level, bucketNumber int, itr CfIterator) *StateDelta
 	GetRootStateHashFromDB(getValueFunc GetValueFromSnapshotFunc) ([]byte, error)
+
+
+	ProduceStateDeltaFromDB2(offset *protos.StateOffset, itr CfIterator) *StateDelta
+	LoadStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error)
 }
 
 type GetValueFromSnapshotFunc func(cfName string, key []byte)([]byte, error)

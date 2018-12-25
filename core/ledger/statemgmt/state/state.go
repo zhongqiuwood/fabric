@@ -26,6 +26,7 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/abchain/fabric/core/util"
 	"github.com/op/go-logging"
+	"github.com/abchain/fabric/protos"
 )
 
 var logger = logging.MustGetLogger("state")
@@ -408,6 +409,18 @@ func (state *State) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemg
 
 	return state.stateImpl.ProduceStateDeltaFromDB(level, bucketNumber, itr)
 }
+
+func (state *State) ProduceStateDeltaFromDB2(offset *protos.StateOffset, itr statemgmt.CfIterator)  *statemgmt.StateDelta {
+	return state.stateImpl.ProduceStateDeltaFromDB2(offset, itr)
+}
+
+
 func (state *State) GetRootStateHashFromDB() ([]byte, error) {
 	return state.stateImpl.GetRootStateHashFromDB(nil)
 }
+
+func (state *State) LoadStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
+	return state.stateImpl.LoadStateOffset(curOffset)
+}
+
+

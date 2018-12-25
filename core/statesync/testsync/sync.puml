@@ -1,0 +1,28 @@
+@startuml
+
+
+participant stateImpl_Client
+participant syncClient
+participant syncServer
+participant stateImpl_Server
+
+
+
+syncClient -> stateImpl_Client: ask for offset
+stateImpl_Client -> stateImpl_Client: load offset from disk
+stateImpl_Client -> stateImpl_Client: clear stateCf and cache\n if no offset on disk
+syncClient <- stateImpl_Client: reture beginning offset \nor offset loaded from disk
+
+
+syncClient -> syncServer: send offset
+syncServer -> stateImpl_Server: ask for data by offset
+syncServer <- stateImpl_Server: return data
+syncClient <- syncServer: send data
+syncClient -> stateImpl_Client: persist data and offset commit
+syncClient <- stateImpl_Client: reture next offset
+
+syncClient -> syncServer: send offset
+syncClient <-> syncServer: ...
+
+
+@enduml

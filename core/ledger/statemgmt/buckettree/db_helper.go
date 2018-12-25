@@ -19,6 +19,7 @@ package buckettree
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/protos"
 )
 
 // fetch one DataNode FromDB by a dataKey
@@ -141,11 +142,14 @@ func DumpDataNodes() (dataNodes, error) {
 	return dataNodes, nil
 }
 
-
+func parseOffset(offset *protos.StateOffset) (int, int) {
+	return 0, 0
+}
 // return root hash of a bucket tree consisted of all dataNodes belong to bucket nodes between [lv-0, lv-bucketNum] include,
 // if lv is the lowest level, then the bucket tree contains all all dataNode [0, bucketNum]
-func ComputeBreakPointHash(lv int, bucketNum int, getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
+func ComputeBreakPointHash(offset *protos.StateOffset, getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
 
+	lv, bucketNum := parseOffset(offset)
 	necessaryBuckets := conf.getNecessaryBuckets(lv, bucketNum)
 	bucketTree := newBucketTreeDelta()
 	for _, bucketKey := range necessaryBuckets {

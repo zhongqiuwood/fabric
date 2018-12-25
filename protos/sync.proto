@@ -138,12 +138,6 @@ message SyncStartResponse {
     uint64  blockHeight = 5;
 }
 
-message SyncState {
-    uint64 level = 1;
-    uint64 bucketNum = 2;
-    bytes  statehash = 3;
-}
-
 message UpdatedValue {
     bytes  Value   = 1;
     bytes  PreviousValue   = 2;
@@ -182,6 +176,21 @@ message SyncMessage {
     uint64 endNum = 2;
     SyncType payloadType = 3;
     bytes payload = 4;
+    StateOffset offset = 5;
+}
+
+
+message SyncState {
+    uint64 level = 1;
+    uint64 bucketNum = 2;
+    bytes  statehash = 3;
+    StateOffset offset = 4;
+
+}
+
+message StateOffset {
+    bytes startOffset = 1;
+    bytes endOffset = 2;
 }
 
 

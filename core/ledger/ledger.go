@@ -30,6 +30,7 @@ import (
 	"github.com/op/go-logging"
 
 	"github.com/abchain/fabric/protos"
+
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
@@ -852,6 +853,17 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 func (ledger *Ledger) GetRootStateHashFromDB() (stateHash []byte, err error) {
 	return ledger.state.GetRootStateHashFromDB()
 }
+
 func (ledger *Ledger) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta{
 	return ledger.state.ProduceStateDeltaFromDB(level, bucketNumber, itr)
 }
+
+
+func (ledger *Ledger) ProduceStateDeltaFromDB2(offset *protos.StateOffset, itr statemgmt.CfIterator) *statemgmt.StateDelta{
+	return ledger.state.ProduceStateDeltaFromDB2(offset, itr)
+}
+
+func (ledger *Ledger) LoadStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
+	return ledger.state.LoadStateOffset(curOffset)
+}
+

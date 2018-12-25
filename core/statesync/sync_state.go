@@ -16,7 +16,8 @@ import (
 	"github.com/spf13/viper"
 )
 
-func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetStateHash []byte) error {
+
+func (syncHandler *stateSyncHandler) runSyncState2(ctx context.Context, targetStateHash []byte) error {
 
 	var err error
 	var hash []byte
@@ -29,38 +30,24 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 	//---------------------------------------------------------------------------
 	// 1. query local root state hash and state offset
 	//---------------------------------------------------------------------------
-	level, start := persist.LoadSyncPosition()
-	if level == 0 && start == 0 {
-		// sync from beginning
-		// clear stateCf and cache
-		syncHandler.client.ledger.EmptyState()
-		level = uint64(buckettree.BucketTreeConfig().GetSyncLevel())
-		start = 1
-	} else {
-		// sync from break point
-		hash, err = syncHandler.client.ledger.GetRootStateHashFromDB()
-		logger.Infof("[%s]: LoadSyncPosition level <%d>, start <%d>," +
-			"RootStateHash: <%x>", flogging.GoRDef, level, start, hash)
-		if err != nil {
-			return err
-		}
-	}
+	offset, err := syncHandler.client.ledger.LoadStateOffset(nil)
+	hash, err = syncHandler.client.ledger.GetRootStateHashFromDB()
 
-	delta := uint64(100)
-	end := uint64(buckettree.BucketTreeConfig().GetNumBuckets(int(level)))
-	handler := newStateMessageHandler(level, start, end, hash, syncHandler.client)
+	handler := newStateMessageHandler(offset, hash, syncHandler.client)
 	syncHandler.client.syncMessageHandler = handler
 	//---------------------------------------------------------------------------
 	// 2. send rootStateHash, state offset and targetStateHash to peer
 	//---------------------------------------------------------------------------
 	// level, startNum, endNum, stateHash
 	req := syncHandler.client.syncMessageHandler.produceSyncStartRequest()
+
+
 	_, err = syncHandler.client.issueSyncRequest(req)
 	if err == nil {
-		logger.Infof("Sync start at: bucker tree level <%d>, bucker num <%d to %d>, current root hash <%x>",
-			handler.level, handler.start, handler.end, handler.statehash)
+		//logger.Infof("Sync start at: bucker tree level <%d>, bucker num <%d to %d>, current root hash <%x>",
+		//	handler.level, handler.start, handler.end, handler.statehash)
 
-		err = syncHandler.client.syncProcess(start, end, delta)
+		err = syncHandler.client.syncProcess(offset)
 	}
 
 	//---------------------------------------------------------------------------
@@ -74,11 +61,71 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 	return err
 }
 
+//func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetStateHash []byte) error {
+//
+//	var err error
+//	var hash []byte
+//
+//	syncHandler.client = newSyncer(ctx, syncHandler)
+//
+//	defer logger.Infof("[%s]: Exit. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
+//	defer syncHandler.fini()
+//
+//	//---------------------------------------------------------------------------
+//	// 1. query local root state hash and state offset
+//	//---------------------------------------------------------------------------
+//	syncHandler.client.ledger.GetRootStateHashFromDB()
+//
+//	level, start := persist.LoadSyncPosition()
+//	if level == 0 && start == 0 {
+//		// sync from beginning
+//		// clear stateCf and cache
+//		syncHandler.client.ledger.EmptyState()
+//		level = uint64(buckettree.BucketTreeConfig().GetSyncLevel())
+//		start = 1
+//	} else {
+//		// sync from break point
+//		hash, err = syncHandler.client.ledger.GetRootStateHashFromDB()
+//		logger.Infof("[%s]: LoadSyncPosition level <%d>, start <%d>," +
+//			"RootStateHash: <%x>", flogging.GoRDef, level, start, hash)
+//		if err != nil {
+//			return err
+//		}
+//	}
+//
+//	delta := uint64(100)
+//	end := uint64(buckettree.BucketTreeConfig().GetNumBuckets(int(level)))
+//	handler := newStateMessageHandler(level, start, end, hash, syncHandler.client)
+//	syncHandler.client.syncMessageHandler = handler
+//	//---------------------------------------------------------------------------
+//	// 2. send rootStateHash, state offset and targetStateHash to peer
+//	//---------------------------------------------------------------------------
+//	// level, startNum, endNum, stateHash
+//	req := syncHandler.client.syncMessageHandler.produceSyncStartRequest()
+//	_, err = syncHandler.client.issueSyncRequest(req)
+//	if err == nil {
+//		logger.Infof("Sync start at: bucker tree level <%d>, bucker num <%d to %d>, current root hash <%x>",
+//			handler.level, handler.start, handler.end, handler.statehash)
+//
+//		err = syncHandler.client.syncProcess(start, end, delta)
+//	}
+//
+//	//---------------------------------------------------------------------------
+//	// 3. clear persisted position
+//	//---------------------------------------------------------------------------
+//	if err == nil {
+//		persist.ClearSyncPosition()
+//		hash, _ = syncHandler.client.ledger.GetRootStateHashFromDB()
+//		logger.Debugf("RootStateHash: <%x>", hash)
+//	}
+//	return err
+//}
+
 
 //////////////////////////////////////////////////////////////////////////////
 /////////  client
 //////////////////////////////////////////////////////////////////////////////
-func (sts *syncer) commitStateChunk(stateChunkArray *pb.SyncStateChunkArray) (error, uint64) {
+func (sts *syncer) commitStateChunk(stateChunkArray *pb.SyncStateChunkArray) (error, *pb.StateOffset) {
 	var err error
 	var stateChunkResp *pb.SyncStateChunk
 	for _, stateChunkResp = range stateChunkArray.Chunks {
@@ -96,26 +143,16 @@ func (sts *syncer) commitStateChunk(stateChunkArray *pb.SyncStateChunkArray) (er
 			break
 		}
 	}
-	return err, stateChunkResp.BucketNum
+	return err, nil
 }
 
-func (sts *syncer) syncProcess(start, end, delta uint64) error {
+func (sts *syncer) syncProcess(offset *pb.StateOffset) error {
 	var err error
 
-	if delta == 0 {
-		return fmt.Errorf("Invalid delta!")
-	}
-
-	offset := start
-
-	for offset <= end {
+	for {
 		syncMessage := &pb.SyncMessage{}
-		syncMessage.StartNum = offset
+		syncMessage.Offset = offset
 
-		syncMessage.EndNum = offset + delta - 1
-		if syncMessage.EndNum > end {
-			syncMessage.EndNum = end
-		}
 
 		logger.Debugf("Ask for startNum--endNum: %d--%d", syncMessage.StartNum, syncMessage.EndNum)
 
@@ -151,14 +188,14 @@ func (sts *syncer) syncProcess(start, end, delta uint64) error {
 			break
 		}
 
-		err = sts.syncMessageHandler.processResponse(syncMessageResp)
+		offset, err = sts.syncMessageHandler.processResponse(syncMessageResp)
 		if err != nil {
 			break
 		}
 		logger.Debugf("Recv and commit startNum--endNum: %d--%d", syncMessageResp.StartNum, syncMessageResp.EndNum)
 
 		// 3. ask for more
-		offset += delta
+		//offset =
 	}
 
 	return err
@@ -205,7 +242,7 @@ func (d *stateServer) sendSyncMessageResponse(e *fsm.Event, message *pb.SyncMess
 		if err != nil {
 			return
 		}
-		d.sendStateChuck(e, stateChunkRequest, message.StartNum, message.EndNum)
+		d.sendStateChuck(e, stateChunkRequest, message.StartNum, message.EndNum, message.Offset)
 	} else if message.PayloadType == pb.SyncType_SYNC_BLOCK {
 
 	}
@@ -220,7 +257,7 @@ func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest) error {
 		logger.Errorf("Error Unmarshal SyncState: %s", err)
 	}
 
-	localHash, err := server.ledger.ComputeBreakPointHash(int(syncState.Level), int(syncState.BucketNum))
+	localHash, err := server.ledger.ComputeBreakPointHash(syncState.Offset)
 	if err != nil {
 		logger.Errorf("Error ComputeBreakPointHash: %s", err)
 	}
@@ -243,37 +280,38 @@ func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest) error {
 }
 
 
-func (server *stateServer) sendStateChuck(e *fsm.Event, syncStateRequest *pb.SyncStateChunkArrayRequest, start, end uint64) {
+func (server *stateServer) sendStateChuck(e *fsm.Event, syncStateRequest *pb.SyncStateChunkArrayRequest, offset *pb.StateOffset) {
 
-	level := int(syncStateRequest.Level)
-	bucketIndex := int(start)
-	maxNumBuckets := int(end)
 
-	logger.Infof("Recv level: <%d>, start-end: <%d-%d>", level, bucketIndex, maxNumBuckets)
+	//logger.Infof("Recv level: <%d>, start-end: <%d-%d>", level, bucketIndex, maxNumBuckets)
+	//
+	//err := buckettree.BucketTreeConfig().Verify(level, bucketIndex, maxNumBuckets)
+	//
+	//stateChunkArray := &pb.SyncStateChunkArray{
+	//	Level:        syncStateRequest.Level,
+	//}
 
-	err := buckettree.BucketTreeConfig().Verify(level, bucketIndex, maxNumBuckets)
+	//breakpoint := viper.GetBool("peer.breakpoint")
+	//if breakpoint {
+	//	if bucketIndex >= buckettree.BucketTreeConfig().GetNumBuckets(level) / 2 {
+	//		err = fmt.Errorf("hit break point")
+	//	}
+	//}
 
-	stateChunkArray := &pb.SyncStateChunkArray{
-		Level:        syncStateRequest.Level,
-	}
-
-	breakpoint := viper.GetBool("peer.breakpoint")
-	if breakpoint {
-		if bucketIndex >= buckettree.BucketTreeConfig().GetNumBuckets(level) / 2 {
-			err = fmt.Errorf("hit break point")
-		}
-	}
-
+	//syncStateRequest.
 	if err == nil {
-		for i := bucketIndex; i <= maxNumBuckets; i++ {
-			res := server.ledger.ProduceStateDeltaFromDB(level, i)
 
-			stateChunk := &pb.SyncStateChunk{
-				BucketNum:            uint64(i),
-				ChaincodeStateDeltas: res,
-			}
-			stateChunkArray.Chunks = append(stateChunkArray.Chunks, stateChunk)
-		}
+		res := server.ledger.ProduceStateDeltaFromDB2(offset)
+
+		//for i := bucketIndex; i <= maxNumBuckets; i++ {
+		//	res := server.ledger.ProduceStateDeltaFromDB(level, i)
+		//
+		//	stateChunk := &pb.SyncStateChunk{
+		//		BucketNum:            uint64(i),
+		//		ChaincodeStateDeltas: res,
+		//	}
+		//	stateChunkArray.Chunks = append(stateChunkArray.Chunks, stateChunk)
+		//}
 
 		if maxNumBuckets >= buckettree.BucketTreeConfig().GetNumBuckets(level) {
 			hash, err := server.ledger.GetRootStateHashFromDB()

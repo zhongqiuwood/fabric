@@ -30,13 +30,13 @@ func (sledger *LedgerSnapshot) GetRootStateHashFromDB() ([]byte, error) {
 }
 
 
-func (sledger *LedgerSnapshot) ComputeBreakPointHash(level int, bucketNum int) ([]byte, error) {
+func (sledger *LedgerSnapshot) ComputeBreakPointHash(offset *protos.StateOffset) ([]byte, error) {
 
 	getValueFunc := func(cfName string, key []byte)([]byte, error) {
 		return sledger.GetFromSnapshot(cfName, key)
 	}
 
-	localHash, err := buckettree.ComputeBreakPointHash(level, bucketNum, getValueFunc)
+	localHash, err := buckettree.ComputeBreakPointHash(offset, getValueFunc)
 	return localHash, err
 }
 
@@ -46,6 +46,16 @@ func (sledger *LedgerSnapshot) ProduceStateDeltaFromDB(level, bucketNumber int) 
 
 	defer itr.Close()
 	stateDelta := sledger.l.ProduceStateDeltaFromDB(level, bucketNumber, itr)
+
+	return stateDelta.ChaincodeStateDeltas
+}
+
+func (sledger *LedgerSnapshot) ProduceStateDeltaFromDB2(offset *protos.StateOffset) map[string]*protos.ChaincodeStateDelta{
+
+	itr := sledger.GetStateCFSnapshotIterator()
+
+	defer itr.Close()
+	stateDelta := sledger.l.ProduceStateDeltaFromDB2(offset, itr)
 
 	return stateDelta.ChaincodeStateDeltas
 }

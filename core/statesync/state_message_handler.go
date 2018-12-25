@@ -4,7 +4,6 @@ import (
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	pb "github.com/abchain/fabric/protos"
 
-	"github.com/abchain/fabric/core/statesync/persist"
 	"github.com/golang/proto"
 	"fmt"
 	"bytes"
@@ -13,23 +12,19 @@ import (
 type SyncMessageHandler interface {
 	produceSyncStartRequest() *pb.SyncStartRequest
 	feedPayload(syncMessage *pb.SyncMessage) error
-	processResponse(syncMessage *pb.SyncMessage) error
+	processResponse(syncMessage *pb.SyncMessage) (*pb.StateOffset, error)
 }
 
 type StateMessageHandler struct {
 	client *syncer
-	level uint64
-	start uint64
-	end uint64
 	statehash []byte
+	offset *pb.StateOffset
 }
 
-func newStateMessageHandler(level, start, end uint64, statehash []byte, client *syncer) *StateMessageHandler {
+func newStateMessageHandler(offset *pb.StateOffset, statehash []byte, client *syncer) *StateMessageHandler {
 	handler := &StateMessageHandler{}
 	handler.client = client
-	handler.start = start
-	handler.level = level
-	handler.end = end
+	handler.offset = offset
 	handler.statehash = statehash
 	return handler
 }
@@ -37,7 +32,6 @@ func newStateMessageHandler(level, start, end uint64, statehash []byte, client *
 func (h *StateMessageHandler) feedPayload(syncMessage *pb.SyncMessage) error {
 
 	payloadMsg := &pb.SyncStateChunkArrayRequest{
-		Level: h.level,
 	}
 	data, err := proto.Marshal(payloadMsg)
 	if err != nil {
@@ -57,8 +51,7 @@ func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 	req.PayloadType = pb.SyncType_SYNC_STATE
 
 	payload := &pb.SyncState{}
-	payload.Level = h.level
-	payload.BucketNum = h.start
+	payload.Offset = h.offset
 	payload.Statehash = h.statehash
 
 	logger.Debugf("Sync request: <Level-BucketNum>: <%d-%d>, local state hash: <%x>",
@@ -74,30 +67,31 @@ func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 	return req
 }
 
-func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage) error {
+func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb.StateOffset, error) {
 
 	stateChunkResp := &pb.SyncStateChunkArray{}
 
 	err := proto.Unmarshal(syncMessage.Payload, stateChunkResp)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if len(stateChunkResp.FailedReason) > 0 {
 		err = fmt.Errorf("Sync state failed! Reason: %s", stateChunkResp.FailedReason)
-		return err
+		return nil, err
 	}
 
-	var lastNum uint64
-	if err, lastNum = h.client.commitStateChunk(stateChunkResp); err != nil {
-		return err
+	var offset *pb.StateOffset
+	if err, offset = h.client.commitStateChunk(stateChunkResp); err != nil {
+		return nil, err
 	}
 
-	if err = persist.StoreSyncPosition(h.level, syncMessage.EndNum); err != nil {
-		return err
+	offset, err = h.client.ledger.LoadStateOffset(syncMessage.Offset)
+	if err != nil {
+		return nil, err
 	}
 
-	if stateChunkResp.Roothash != nil && lastNum == h.end {
+	if stateChunkResp.Roothash != nil && offset == nil {
 		// all buckets synced, verify root hash
 		var localHash []byte
 		localHash, err = h.client.ledger.GetRootStateHashFromDB()
@@ -113,5 +107,5 @@ func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage) error
 
 	}
 
-	return err
+	return offset, err
 }

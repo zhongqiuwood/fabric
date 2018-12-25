@@ -22,6 +22,7 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
+	"github.com/abchain/fabric/protos"
 )
 
 var logger = logging.MustGetLogger("buckettree")
@@ -348,6 +349,12 @@ func (stateImpl *StateImpl) GetRootStateHashFromDB(getValueFunc statemgmt.GetVal
 
 // return desired statemgmt.StateDelta to client
 func (stateImpl *StateImpl) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta{
+
+	start, end := conf.getLeafBuckets(level, bucketNumber)
+	return produceStateDeltaFromDB(start, end, itr)
+}
+
+func (stateImpl *StateImpl) ProduceStateDeltaFromDB2(offset *protos.StateOffset, itr statemgmt.CfIterator) *statemgmt.StateDelta{
 
 	start, end := conf.getLeafBuckets(level, bucketNumber)
 	return produceStateDeltaFromDB(start, end, itr)

@@ -850,10 +850,6 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 	return
 }
 
-func (ledger *Ledger) GetRootStateHashFromDB() (stateHash []byte, err error) {
-	return ledger.state.GetRootStateHashFromDB()
-}
-
 
 
 func (ledger *Ledger) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
@@ -868,8 +864,8 @@ func (ledger *Ledger) SaveStateOffset(committedOffset *protos.StateOffset) error
 	return ledger.state.SaveStateOffset(committedOffset)
 }
 
-func (ledger *Ledger) VerifySyncState(offset *protos.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {
-	return ledger.state.VerifySyncState(offset, getValueFunc)
+func (ledger *Ledger) VerifySyncState(offset *protos.SyncState, snapshotHandler *db.DBSnapshot) error {
+	return ledger.state.VerifySyncState(offset, snapshotHandler)
 }
 
 func (ledger *Ledger) LoadStateOffsetFromDB() []byte {

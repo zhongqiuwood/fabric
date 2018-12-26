@@ -97,10 +97,6 @@ func (impl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey string,
 	panic("Not a full-fledged state implementation. Implemented only for measuring best-case performance benchmark")
 }
 
-func (impl *StateImpl) GetRootStateHashFromDB(getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
-	return nil, nil
-}
-
 
 func (impl *StateImpl) GetStateDeltaFromDB(curOffset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {	return nil, nil}
 
@@ -108,4 +104,4 @@ func (impl *StateImpl) NextStateOffset(curOffset *protos.StateOffset)(netxOffset
 
 func (impl *StateImpl) SaveStateOffset(committedOffset *protos.StateOffset) error {	return nil}
 
-func (impl *StateImpl) VerifySyncState(syncState *protos.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {return nil}
+func (impl *StateImpl) VerifySyncState(syncState *protos.SyncState, snapshotHandler *db.DBSnapshot) error {return nil}

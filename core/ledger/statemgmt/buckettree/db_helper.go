@@ -90,14 +90,13 @@ func fetchDataNodesFromDBFor(itr statemgmt.CfIterator, bucketKey *bucketKey) (da
 	return dataNodes, nil
 }
 
-
-func fetchBucketNode(getValueFunc statemgmt.GetValueFromSnapshotFunc, odb *db.OpenchainDB, bucketKey *bucketKey) (*bucketNode, error) {
+func fetchBucketNode(snapshotHandler *db.DBSnapshot, odb *db.OpenchainDB, bucketKey *bucketKey) (*bucketNode, error) {
 
 	var nodeBytes []byte
 	var err error
 
-	if getValueFunc != nil {
-		nodeBytes, err = getValueFunc(db.StateCF, bucketKey.getEncodedBytes())
+	if snapshotHandler != nil {
+		nodeBytes, err = snapshotHandler.GetFromSnapshot(db.StateCF, bucketKey.getEncodedBytes())
 	} else {
 		return fetchBucketNodeFromDB(odb, bucketKey)
 	}

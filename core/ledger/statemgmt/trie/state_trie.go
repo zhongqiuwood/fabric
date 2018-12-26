@@ -191,10 +191,6 @@ func (stateTrie *StateTrie) GetRangeScanIterator(chaincodeID string, startKey st
 	return newRangeScanIterator(stateTrie.OpenchainDB, chaincodeID, startKey, endKey)
 }
 
-func (impl *StateTrie) GetRootStateHashFromDB(getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
-	return nil, nil
-}
-
 
 func (stateImpl *StateTrie) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
 	return nil, nil
@@ -212,4 +208,4 @@ func (impl *StateTrie) SaveStateOffset(committedOffset *protos.StateOffset) erro
 
 }
 
-func (impl *StateTrie) VerifySyncState(syncState *protos.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {return nil}
+func (impl *StateTrie) VerifySyncState(syncState *protos.SyncState, snapshotHandler *db.DBSnapshot) error {return nil}

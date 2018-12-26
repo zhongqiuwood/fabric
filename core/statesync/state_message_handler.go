@@ -83,7 +83,7 @@ func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb
 	if stateChunkArrayResp.Roothash != nil && nextOffset == nil {
 		// all buckets synced, verify root hash
 		var localHash []byte
-		localHash, err = h.client.ledger.GetRootStateHashFromDB()
+		localHash, err = h.client.ledger.GetCurrentStateHash()
 		if err == nil {
 			logger.Infof("remote hash: <%x>", stateChunkArrayResp.Roothash)
 			logger.Infof("local hash:  <%x>", localHash)

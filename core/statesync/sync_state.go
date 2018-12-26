@@ -31,10 +31,11 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 		syncHandler.client.ledger.EmptyState()
 	} else {
 		// get break point state hash
-		hash, err = syncHandler.client.ledger.GetRootStateHashFromDB()
+		hash, err = syncHandler.client.ledger.GetCurrentStateHash()
 		if err != nil {
 			return err
 		}
+		logger.Debugf("GetCurrentStateHash: <%x>", hash)
 	}
 
 	offset := &pb.StateOffset{data}
@@ -54,8 +55,8 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 	//---------------------------------------------------------------------------
 	if err == nil {
 		syncHandler.client.ledger.ClearStateOffsetFromDB()
-		hash, _ = syncHandler.client.ledger.GetRootStateHashFromDB()
-		logger.Debugf("RootStateHash: <%x>", hash)
+		hash, _ = syncHandler.client.ledger.GetCurrentStateHash()
+		logger.Debugf("GetCurrentStateHash: <%x>", hash)
 	}
 	return err
 }

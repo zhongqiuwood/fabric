@@ -111,8 +111,8 @@ function loadenv {
 }
 
 loadenv
-#sync_breakpoint_test make_diff
+sync_breakpoint_test make_diff
 
-sync_test make_diff false
+#sync_test make_diff false
 
 

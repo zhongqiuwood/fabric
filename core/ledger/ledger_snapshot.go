@@ -18,23 +18,11 @@ type LedgerSnapshot struct {
 
 var logger = logging.MustGetLogger("LedgerSnapshot")
 
-func (sledger *LedgerSnapshot) GetRootStateHashFromDB() ([]byte, error) {
-
-	localHash, err := sledger.l.GetCurrentStateHash()
-	logger.Infof("GetCurrentHash <%x>", localHash)
-
-	localHash, err = sledger.l.GetRootStateHashFromDB()
-	logger.Infof("RootStateHash  <%x>", localHash)
-	return localHash, err
-}
 
 
 
 func (sledger *LedgerSnapshot) VerifySyncState(offset *protos.SyncState) error {
-	getValueFunc := func(cfName string, key []byte)([]byte, error) {
-		return sledger.DBSnapshot.GetFromSnapshot(cfName, key)
-	}
-	return sledger.l.VerifySyncState(offset, getValueFunc)
+	return sledger.l.VerifySyncState(offset, sledger.DBSnapshot)
 }
 
 
@@ -42,7 +30,6 @@ func (sledger *LedgerSnapshot) VerifySyncState(offset *protos.SyncState) error {
 
 func (sledger *LedgerSnapshot) GetStateDeltaFromDB(offset *protos.StateOffset) (*protos.SyncStateChunk, error){
 
-	//itr := sledger.DBSnapshot.GetStateCFSnapshotIterator()
 	return sledger.l.GetStateDeltaFromDB(offset, sledger.DBSnapshot)
 }
 

@@ -69,14 +69,13 @@ type HashableState interface {
 	// the performance of ComputeCryptoHash method (when gets called at a later time)
 	PerfHintKeyChanged(chaincodeID string, key string)
 
-	GetRootStateHashFromDB(getValueFunc GetValueFromSnapshotFunc) ([]byte, error)
+	VerifySyncState(offset *protos.SyncState, snapshotHandler *db.DBSnapshot) error
 	GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error)
+
 	NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error)
 	SaveStateOffset(committedOffset *protos.StateOffset) error
-	VerifySyncState(offset *protos.SyncState, getValueFunc GetValueFromSnapshotFunc) error
 }
 
-type GetValueFromSnapshotFunc func(cfName string, key []byte)([]byte, error)
 
 // db or snapshot Iterator
 type CfIterator interface {

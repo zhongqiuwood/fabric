@@ -337,13 +337,13 @@ func (stateImpl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey st
 }
 
 // report local root hash to server
-func (stateImpl *StateImpl) GetRootStateHashFromDB(getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
+func (stateImpl *StateImpl) getRootStateHashFromDB(snapshotHandler *db.DBSnapshot) ([]byte, error) {
 
 	var persistedStateHash []byte = nil
 	var rootBucketNode *bucketNode
 	var err error
 
-	rootBucketNode, err = fetchBucketNode(getValueFunc, stateImpl.OpenchainDB, constructRootBucketKey())
+	rootBucketNode, err = fetchBucketNode(snapshotHandler, stateImpl.OpenchainDB, constructRootBucketKey())
 
 	if err == nil && rootBucketNode != nil {
 		persistedStateHash = rootBucketNode.computeCryptoHash()
@@ -351,7 +351,7 @@ func (stateImpl *StateImpl) GetRootStateHashFromDB(getValueFunc statemgmt.GetVal
 	return persistedStateHash, err
 }
 
-func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {
+func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, snapshotHandler *db.DBSnapshot) error {
 
 	var err error
 	var localHash []byte
@@ -365,7 +365,7 @@ func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, getValueFun
 		}
 	} else {
 
-		localHash, err = ComputeStateHashByOffset(syncState.Offset, getValueFunc)
+		localHash, err = ComputeStateHashByOffset(syncState.Offset, snapshotHandler)
 		if !bytes.Equal(localHash, syncState.Statehash) {
 			err = fmt.Errorf("Wrong Statehash, at level-num<%d-%d>\n" +
 				"remote hash<%x>\n" +
@@ -399,10 +399,7 @@ func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.StateOffset, snapshot
 	if maxBucketNum < endNum {
 		return nil, fmt.Errorf("invalid offset")
 	} else if maxBucketNum == endNum {
-		getValueFunc := func(cfName string, key []byte)([]byte, error) {
-			return snapshotHandler.GetFromSnapshot(cfName, key)
-		}
-		stateChunk.Roothash, err = stateImpl.GetRootStateHashFromDB(getValueFunc)
+		stateChunk.Roothash, err = stateImpl.getRootStateHashFromDB(snapshotHandler)
 		if err != nil {
 			return nil, err
 		}
@@ -496,7 +493,7 @@ func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffse
 
 // return root hash of a bucket tree consisted of all dataNodes belong to bucket nodes between [lv-0, lv-bucketNum] include,
 // if lv is the lowest level, then the bucket tree contains all all dataNode [0, bucketNum]
-func ComputeStateHashByOffset(offset *pb.StateOffset, getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
+func ComputeStateHashByOffset(offset *pb.StateOffset, snapshotHandler *db.DBSnapshot) ([]byte, error) {
 
 	btoffset := byte2BucketTreeOffset(offset.Data)
 
@@ -504,7 +501,7 @@ func ComputeStateHashByOffset(offset *pb.StateOffset, getValueFunc statemgmt.Get
 	necessaryBuckets := conf.getNecessaryBuckets(lv, bucketNum)
 	bucketTree := newBucketTreeDelta()
 	for _, bucketKey := range necessaryBuckets {
-		bucketNode, err := fetchBucketNode(getValueFunc, db.GetDBHandle(), bucketKey)
+		bucketNode, err := fetchBucketNode(snapshotHandler, db.GetDBHandle(), bucketKey)
 
 		if err !=nil {
 			logger.Errorf("Failed to fetch BucketNode<%s> From Snapshot, err: %s\n", bucketKey, err)
@@ -532,7 +529,7 @@ func ComputeStateHashByOffset(offset *pb.StateOffset, getValueFunc statemgmt.Get
 
 			if level == conf.lowestLevel {
 				index := parentKey.getChildIndex(node.bucketKey)
-				parentBucketNodeOnDisk, err := fetchBucketNode(getValueFunc, db.GetDBHandle(), parentKey)
+				parentBucketNodeOnDisk, err := fetchBucketNode(snapshotHandler, db.GetDBHandle(), parentKey)
 
 				if err !=nil {
 					logger.Errorf("<%s>, index<%d> in parent child num: <%d>, err: %s\n",

@@ -410,10 +410,6 @@ func (state *State) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHand
 	return state.stateImpl.GetStateDeltaFromDB(offset, snapshotHandler)
 }
 
-func (state *State) GetRootStateHashFromDB() ([]byte, error) {
-	return state.stateImpl.GetRootStateHashFromDB(nil)
-}
-
 func (state *State) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
 	return state.stateImpl.NextStateOffset(curOffset)
 }
@@ -422,8 +418,8 @@ func (state *State) SaveStateOffset(committedOffset *protos.StateOffset) error {
 	return state.stateImpl.SaveStateOffset(committedOffset)
 }
 
-func (state *State) VerifySyncState(offset *protos.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {
-	return state.stateImpl.VerifySyncState(offset, getValueFunc)
+func (state *State) VerifySyncState(offset *protos.SyncState, snapshotHandler *db.DBSnapshot) error {
+	return state.stateImpl.VerifySyncState(offset, snapshotHandler)
 }
 
 func (state *State) LoadStateOffsetFromDB() []byte {

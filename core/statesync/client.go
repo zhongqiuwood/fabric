@@ -115,7 +115,7 @@ func (sts *syncer) afterSyncStartResponse(e *fsm.Event) {
 	msg := sts.parent.onRecvSyncMsg(e, resp)
 
 	if msg == nil {
-		panic("todo")
+		e.Cancel(fmt.Errorf("unexpected sync message"))
 		return
 	}
 	sts.startResponseChan <- resp
@@ -330,7 +330,6 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 					if err != nil {
 						logger.Errorf("sanityCheckBlock err: %s", err)
 						break
-						panic("todo")
 					}
 				}
 
@@ -343,7 +342,6 @@ func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, 
 						"hashes matched, but failed to commit, invalidated state", sts.parent.remotePeerIdName())
 					logger.Errorf("%s", err)
 					break
-					panic("todo")
 				}
 
 				//we can still forward even if we can't persist the block

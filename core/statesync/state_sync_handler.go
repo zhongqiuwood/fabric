@@ -114,7 +114,7 @@ func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 	syncMsg := syncHandler.onRecvSyncMsg(e, startRequest)
 
 	if syncMsg == nil {
-		panic("todo")
+		e.Cancel(fmt.Errorf("unexpected sync message"))
 		return
 	}
 
@@ -201,8 +201,6 @@ func (syncHandler *stateSyncHandler) onRecvSyncMsg(e *fsm.Event, payloadMsg prot
 		return nil
 	}
 	msg := e.Args[0].(*pb.SyncMsg)
-
-	//logger.Infof("=========%s: msg <%+v>", flogging.GoRDef, msg)
 
 	if payloadMsg != nil {
 		err := proto.Unmarshal(msg.Payload, payloadMsg)

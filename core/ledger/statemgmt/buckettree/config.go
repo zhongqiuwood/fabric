@@ -82,6 +82,9 @@ func initConfig(configs map[string]interface{}) {
 	syncDelta := DefaultSyncDeltaNumBuckets
 	if viper.IsSet("ledger.state.dataStructure.configs.syncDelta") {
 		syncDelta = viper.GetInt("ledger.state.dataStructure.configs.syncDelta")
+		if syncDelta < 1 {
+			panic("Invalid syncDelta config")
+		}
 		logger.Debugf("ledger.state.dataStructure.configs.syncDelta: [%d]", syncDelta)
 	}
 

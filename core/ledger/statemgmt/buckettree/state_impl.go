@@ -355,7 +355,10 @@ func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, snapshotHan
 
 	var err error
 	var localHash []byte
-	btOffset := byte2BucketTreeOffset(syncState.Offset.Data)
+	btOffset, err := byte2BucketTreeOffset(syncState.Offset.Data)
+	if err != nil {
+		return err
+	}
 
 	logger.Infof("state offset: <%+v>, config<%v>", btOffset, conf)
 
@@ -385,7 +388,11 @@ func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.StateOffset, snapshot
 	var stateDelta *statemgmt.StateDelta
 	stateChunk := &pb.SyncStateChunk{}
 
-	bucketTreeOffset := byte2BucketTreeOffset(offset.Data)
+	bucketTreeOffset, err := byte2BucketTreeOffset(offset.Data)
+
+	if err != nil {
+		return nil, err
+	}
 
 	level := int(bucketTreeOffset.Level)
 	startNum := int(bucketTreeOffset.BucketNum)
@@ -437,9 +444,12 @@ func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.StateOffset, snapshot
 
 func (impl *StateImpl) SaveStateOffset(committedOffset *pb.StateOffset) error {
 
-	btoffset := byte2BucketTreeOffset(committedOffset.Data)
+	btoffset, err := byte2BucketTreeOffset(committedOffset.Data)
 
-	logger.Infof("Committed state offset: level-num<%d-%d>",
+	if err != nil {
+		return err
+	}
+	logger.Debugf("Committed state offset: level-num<%d-%d>",
 		btoffset.Level,	btoffset.BucketNum + btoffset.Delta - 1)
 
 	return persist.StoreSyncPosition(committedOffset.Data)
@@ -465,14 +475,17 @@ func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffse
 	if data == nil {
 		bucketTreeOffset = &pb.BucketTreeOffset{}
 		bucketTreeOffset.Level = uint64(conf.GetSyncLevel())
-
 		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
 
 		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum)
 		bucketTreeOffset.BucketNum = 1
 	} else {
 
-		bucketTreeOffset = byte2BucketTreeOffset(data)
+		bucketTreeOffset, err = byte2BucketTreeOffset(data)
+		if err != nil {
+			return nil, err
+		}
+
 		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
 
 		bucketTreeOffset.BucketNum += bucketTreeOffset.Delta
@@ -483,9 +496,9 @@ func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffse
 		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum - bucketTreeOffset.BucketNum + 1)
 	}
 
-	logger.Infof("Next state offset <%+v>", bucketTreeOffset)
+	logger.Debugf("Next state offset <%+v>", bucketTreeOffset)
 	nextOffset := &pb.StateOffset{}
-	nextOffset.Data = bucketTreeOffset2Byte(bucketTreeOffset)
+	nextOffset.Data, err = bucketTreeOffset2Byte(bucketTreeOffset)
 
 	return nextOffset, err
 }
@@ -495,7 +508,11 @@ func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffse
 // if lv is the lowest level, then the bucket tree contains all all dataNode [0, bucketNum]
 func ComputeStateHashByOffset(offset *pb.StateOffset, snapshotHandler *db.DBSnapshot) ([]byte, error) {
 
-	btoffset := byte2BucketTreeOffset(offset.Data)
+	btoffset, err := byte2BucketTreeOffset(offset.Data)
+
+	if err != nil {
+		return nil, err
+	}
 
 	lv, bucketNum := int(btoffset.Level), int(btoffset.BucketNum + btoffset.Delta - 1)
 	necessaryBuckets := conf.getNecessaryBuckets(lv, bucketNum)
@@ -558,19 +575,12 @@ func ComputeStateHashByOffset(offset *pb.StateOffset, snapshotHandler *db.DBSnap
 	return hash, nil
 }
 
-func byte2BucketTreeOffset(data []byte) *pb.BucketTreeOffset {
+func byte2BucketTreeOffset(data []byte) (*pb.BucketTreeOffset, error) {
 	bucketTreeOffset := &pb.BucketTreeOffset{}
 	err := proto.Unmarshal(data, bucketTreeOffset)
-	if err != nil {
-		panic("todo")
-	}
-	return bucketTreeOffset
+	return bucketTreeOffset, err
 }
 
-func bucketTreeOffset2Byte(offset *pb.BucketTreeOffset) []byte  {
-	data, err := offset.Byte()
-	if err != nil {
-		panic("todo")
-	}
-	return data
+func bucketTreeOffset2Byte(offset *pb.BucketTreeOffset) ([]byte, error)  {
+	return offset.Byte()
 }

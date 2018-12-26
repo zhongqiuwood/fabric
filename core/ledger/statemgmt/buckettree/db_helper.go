@@ -20,7 +20,18 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"fmt"
+	"github.com/tecbot/gorocksdb"
 )
+
+// db or snapshot Iterator
+type stateCfIterator interface {
+	Seek(key []byte)
+	Next()
+	Close()
+	Valid() bool
+	Key() *gorocksdb.Slice
+	Value() *gorocksdb.Slice
+}
 
 // fetch one DataNode FromDB by a dataKey
 func fetchDataNodeFromDB(odb *db.OpenchainDB, dataKey *dataKey) (*dataNode, error) {
@@ -53,7 +64,7 @@ func fetchBucketNodeFromDB(odb *db.OpenchainDB, bucketKey *bucketKey) (*bucketNo
 
 
 // fetch a DataNode array belone to a Lowest Level bucketKey FromDB
-func fetchDataNodesFromDBFor(itr statemgmt.CfIterator, bucketKey *bucketKey) (dataNodes, error) {
+func fetchDataNodesFromDBFor(itr stateCfIterator, bucketKey *bucketKey) (dataNodes, error) {
 
 	if bucketKey.level != conf.GetLowestLevel() {
 		return nil, fmt.Errorf("Invalid bucketKey")
@@ -110,7 +121,7 @@ func fetchBucketNode(snapshotHandler *db.DBSnapshot, odb *db.OpenchainDB, bucket
 	return unmarshalBucketNode(bucketKey, nodeBytes), nil
 }
 
-func produceStateDeltaFromDB(start, end int, itr statemgmt.CfIterator) (*statemgmt.StateDelta, error) {
+func produceStateDeltaFromDB(start, end int, itr stateCfIterator) (*statemgmt.StateDelta, error) {
 
 	var dataNodes dataNodes = nil
 	for i := start; i <= end ; i++ {

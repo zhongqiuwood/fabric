@@ -18,7 +18,6 @@ package statemgmt
 
 import (
 	"github.com/abchain/fabric/core/db"
-	"github.com/tecbot/gorocksdb"
 	"github.com/abchain/fabric/protos"
 )
 
@@ -74,17 +73,6 @@ type HashableState interface {
 
 	NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error)
 	SaveStateOffset(committedOffset *protos.StateOffset) error
-}
-
-
-// db or snapshot Iterator
-type CfIterator interface {
-	Seek(key []byte)
-	Next()
-	Close()
-	Valid() bool
-	Key() *gorocksdb.Slice
-	Value() *gorocksdb.Slice
 }
 
 // StateSnapshotIterator An interface that is to be implemented by the return value of

@@ -31,16 +31,7 @@ func newStateMessageHandler(offset *pb.StateOffset, statehash []byte, client *sy
 
 func (h *StateMessageHandler) feedPayload(syncMessage *pb.SyncMessage) error {
 
-	payloadMsg := &pb.SyncStateChunkArrayRequest{
-	}
-	data, err := proto.Marshal(payloadMsg)
-	if err != nil {
-		logger.Errorf("Error Marshal SyncMsg_SYNC_SESSION_SYNC_MESSAGE: %s", err)
-		return err
-	}
-
 	syncMessage.PayloadType = pb.SyncType_SYNC_STATE
-	syncMessage.Payload = data
 	return nil
 }
 
@@ -54,8 +45,7 @@ func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 	payload.Offset = h.offset
 	payload.Statehash = h.statehash
 
-	logger.Debugf("Sync request: <Level-BucketNum>: <%d-%d>, local state hash: <%x>",
-		payload.Level, payload.BucketNum, payload.Statehash)
+	logger.Infof("Sync start at:<%v>", h)
 
 	var err error
 	req.Payload, err = proto.Marshal(payload)
@@ -69,43 +59,42 @@ func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 
 func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb.StateOffset, error) {
 
-	stateChunkResp := &pb.SyncStateChunkArray{}
-
-	err := proto.Unmarshal(syncMessage.Payload, stateChunkResp)
+	stateChunkArrayResp := &pb.SyncStateChunk{}
+	err := proto.Unmarshal(syncMessage.Payload, stateChunkArrayResp)
 	if err != nil {
 		return nil, err
 	}
 
-	if len(stateChunkResp.FailedReason) > 0 {
-		err = fmt.Errorf("Sync state failed! Reason: %s", stateChunkResp.FailedReason)
+	if len(stateChunkArrayResp.FailedReason) > 0 {
+		err = fmt.Errorf("Sync state failed! Reason: %s", stateChunkArrayResp.FailedReason)
 		return nil, err
 	}
 
-	var offset *pb.StateOffset
-	if err, offset = h.client.commitStateChunk(stateChunkResp); err != nil {
+	if err = h.client.commitStateChunk(stateChunkArrayResp, syncMessage.Offset); err != nil {
 		return nil, err
 	}
 
-	offset, err = h.client.ledger.LoadStateOffset(syncMessage.Offset)
+	var nextOffset *pb.StateOffset
+	nextOffset, err = h.client.ledger.NextStateOffset(syncMessage.Offset)
 	if err != nil {
 		return nil, err
 	}
 
-	if stateChunkResp.Roothash != nil && offset == nil {
+	if stateChunkArrayResp.Roothash != nil && nextOffset == nil {
 		// all buckets synced, verify root hash
 		var localHash []byte
 		localHash, err = h.client.ledger.GetRootStateHashFromDB()
 		if err == nil {
-			logger.Infof("remote hash: <%x>", stateChunkResp.Roothash)
+			logger.Infof("remote hash: <%x>", stateChunkArrayResp.Roothash)
 			logger.Infof("local hash:  <%x>", localHash)
 
-			if !bytes.Equal(localHash, stateChunkResp.Roothash) {
+			if !bytes.Equal(localHash, stateChunkArrayResp.Roothash) {
 				err = fmt.Errorf("Sync state failed! Target root hash <%x>, local root hash <%x>",
-					stateChunkResp.Roothash, localHash)
+					stateChunkArrayResp.Roothash, localHash)
 			}
 		}
 
 	}
 
-	return offset, err
+	return nextOffset, err
 }

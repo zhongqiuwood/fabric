@@ -135,6 +135,8 @@ func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 		e.Cancel(err)
 	}
 
+	syncHandler.server.ledger.GetRootStateHashFromDB()
+
 	err = syncHandler.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_START_ACK, resp)
 	if err != nil {
 		syncHandler.server.ledger.Release()

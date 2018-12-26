@@ -31,7 +31,6 @@ function backup_ledger {
     fi
 }
 
-
 function copy_diff_from_disk {
     rm -rf ${DB_TOP}/production*
     rm -rf _stdout*.json
@@ -39,6 +38,7 @@ function copy_diff_from_disk {
 }
 
 function sync_from_disk {
+
     export CORE_PEER_SYNCBYBLOCK=$2
     copy_diff_from_disk $1
     start_peers_and_sync ${PEER_NUM}
@@ -51,9 +51,9 @@ function make_huge_diff {
     sleep_and_invoke -a d -n 500 -c example03_
     for ((index=0; index<10; index++))
     do
-        sleep_and_invoke -a i -c example01_
-        sleep_and_invoke -a i -c example02_
-        sleep_and_invoke -a i -c example03_
+        sleep_and_invoke -a i -c example01_ -n 1000
+        sleep_and_invoke -a i -c example02_ -n 1000
+        sleep_and_invoke -a i -c example03_ -n 1000
     done
     sleep 20
     backup_ledger $1
@@ -64,18 +64,15 @@ function make_diff {
     sleep_and_invoke -a d -n 10 -c example01_
     sleep_and_invoke -a d -n 10 -c example02_
     start_peers 1 none
-    sleep_and_invoke -a i -c example01_
-    sleep_and_invoke -a i -c example02_
+    sleep_and_invoke -a i -c example01_ -n 20
+    sleep_and_invoke -a i -c example02_ -n 20
     sleep 10
     backup_ledger $1
 }
 
 function sync_breakpoint_test {
-    export CORE_LOGGING_NODE=info:statesync=info:state=info:buckettree=info:peer=info:statesyncstub=info
-    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=1000003
-    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=5
 
-    $1
+    $1 $1
 
     export CORE_PEER_BREAKPOINT=true
     start_peers_and_sync ${PEER_NUM}
@@ -88,12 +85,9 @@ function sync_breakpoint_test {
 
 
 function sync_test {
-    export CORE_LOGGING_NODE=info:statesync=info:state=info:buckettree=info:peer=info:statesyncstub=info
-    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=1000003
-    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=5
 
     export CORE_PEER_SYNCBYBLOCK=$2
-    $1
+    $1 $1
     start_peers_and_sync ${PEER_NUM}
 }
 
@@ -104,5 +98,21 @@ function sync_test {
 #sync_test make_huge_diff false
 
 
-sync_breakpoint_test make_diff
+function loadenv {
+
+    export CORE_LOGGING_NODE=debug:statesync=debug:state=info:buckettree=info:peer=info:statesyncstub=debug:ledger=info
+#    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=1000003
+#    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=5
+#    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_SYNCDELTA=200
+
+    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=32
+    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=3
+    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_SYNCDELTA=1
+}
+
+loadenv
+#sync_breakpoint_test make_diff
+
+sync_test make_diff false
+
 

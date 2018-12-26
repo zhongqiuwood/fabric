@@ -22,6 +22,7 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
+	"github.com/abchain/fabric/protos"
 )
 
 var stateTrieLogger = logging.MustGetLogger("stateTrie")
@@ -194,6 +195,21 @@ func (impl *StateTrie) GetRootStateHashFromDB(getValueFunc statemgmt.GetValueFro
 	return nil, nil
 }
 
-func (impl *StateTrie) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta {
-	return nil
+
+func (stateImpl *StateTrie) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
+	return nil, nil
 }
+
+
+func (impl *StateTrie) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
+	return nil, nil
+}
+
+
+func (impl *StateTrie) SaveStateOffset(committedOffset *protos.StateOffset) error {
+
+	return nil
+
+}
+
+func (impl *StateTrie) VerifySyncState(syncState *protos.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {return nil}

@@ -19,6 +19,7 @@ package raw
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/protos"
 )
 
 // StateImpl implements raw state management. This implementation does not support computation of crypto-hash of the state.
@@ -100,6 +101,11 @@ func (impl *StateImpl) GetRootStateHashFromDB(getValueFunc statemgmt.GetValueFro
 	return nil, nil
 }
 
-func (impl *StateImpl) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta {
-	return nil
-}
+
+func (impl *StateImpl) GetStateDeltaFromDB(curOffset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {	return nil, nil}
+
+func (impl *StateImpl) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {	return nil, nil}
+
+func (impl *StateImpl) SaveStateOffset(committedOffset *protos.StateOffset) error {	return nil}
+
+func (impl *StateImpl) VerifySyncState(syncState *protos.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {return nil}

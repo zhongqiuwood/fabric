@@ -27,6 +27,7 @@ import (
 	"github.com/abchain/fabric/core/util"
 	"github.com/op/go-logging"
 	"github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/core/ledger/statemgmt/persist"
 )
 
 var logger = logging.MustGetLogger("state")
@@ -393,7 +394,6 @@ func (state *State) DeleteState() error {
 	}
 
 	state.ClearInMemoryChanges(false, true)
-
 	return err
 }
 
@@ -405,22 +405,32 @@ func decodeStateDeltaKey(dbkey []byte) uint64 {
 	return util.DecodeToUint64(dbkey)
 }
 
-func (state *State) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator)  *statemgmt.StateDelta {
 
-	return state.stateImpl.ProduceStateDeltaFromDB(level, bucketNumber, itr)
+func (state *State) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {
+	return state.stateImpl.GetStateDeltaFromDB(offset, snapshotHandler)
 }
-
-func (state *State) ProduceStateDeltaFromDB2(offset *protos.StateOffset, itr statemgmt.CfIterator)  *statemgmt.StateDelta {
-	return state.stateImpl.ProduceStateDeltaFromDB2(offset, itr)
-}
-
 
 func (state *State) GetRootStateHashFromDB() ([]byte, error) {
 	return state.stateImpl.GetRootStateHashFromDB(nil)
 }
 
-func (state *State) LoadStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
-	return state.stateImpl.LoadStateOffset(curOffset)
+func (state *State) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
+	return state.stateImpl.NextStateOffset(curOffset)
 }
 
+func (state *State) SaveStateOffset(committedOffset *protos.StateOffset) error {
+	return state.stateImpl.SaveStateOffset(committedOffset)
+}
+
+func (state *State) VerifySyncState(offset *protos.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {
+	return state.stateImpl.VerifySyncState(offset, getValueFunc)
+}
+
+func (state *State) LoadStateOffsetFromDB() []byte {
+	return persist.LoadSyncPosition()
+}
+
+func (state *State) ClearStateOffsetFromDB() {
+	persist.ClearSyncPosition()
+}
 

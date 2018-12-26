@@ -7,7 +7,6 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
-	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
 	"github.com/op/go-logging"
 )
 
@@ -30,34 +29,21 @@ func (sledger *LedgerSnapshot) GetRootStateHashFromDB() ([]byte, error) {
 }
 
 
-func (sledger *LedgerSnapshot) ComputeBreakPointHash(offset *protos.StateOffset) ([]byte, error) {
 
+func (sledger *LedgerSnapshot) VerifySyncState(offset *protos.SyncState) error {
 	getValueFunc := func(cfName string, key []byte)([]byte, error) {
-		return sledger.GetFromSnapshot(cfName, key)
+		return sledger.DBSnapshot.GetFromSnapshot(cfName, key)
 	}
-
-	localHash, err := buckettree.ComputeBreakPointHash(offset, getValueFunc)
-	return localHash, err
+	return sledger.l.VerifySyncState(offset, getValueFunc)
 }
 
-func (sledger *LedgerSnapshot) ProduceStateDeltaFromDB(level, bucketNumber int) map[string]*protos.ChaincodeStateDelta{
 
-	itr := sledger.GetStateCFSnapshotIterator()
 
-	defer itr.Close()
-	stateDelta := sledger.l.ProduceStateDeltaFromDB(level, bucketNumber, itr)
 
-	return stateDelta.ChaincodeStateDeltas
-}
+func (sledger *LedgerSnapshot) GetStateDeltaFromDB(offset *protos.StateOffset) (*protos.SyncStateChunk, error){
 
-func (sledger *LedgerSnapshot) ProduceStateDeltaFromDB2(offset *protos.StateOffset) map[string]*protos.ChaincodeStateDelta{
-
-	itr := sledger.GetStateCFSnapshotIterator()
-
-	defer itr.Close()
-	stateDelta := sledger.l.ProduceStateDeltaFromDB2(offset, itr)
-
-	return stateDelta.ChaincodeStateDeltas
+	//itr := sledger.DBSnapshot.GetStateCFSnapshotIterator()
+	return sledger.l.GetStateDeltaFromDB(offset, sledger.DBSnapshot)
 }
 
 func (sledger *LedgerSnapshot) GetBlockByNumber(blockNumber uint64) (*protos.Block, error) {

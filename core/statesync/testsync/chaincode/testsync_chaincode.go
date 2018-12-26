@@ -128,8 +128,8 @@ func (t *TestSyncChaincode) Invoke(stub shim.ChaincodeStubInterface, function st
 
 	keysize, _ := t.getInt(stub,"keysize")
 
-	t.batchPutState(stub, "breakpoint_", keysize + 1, keysize + 1000)
-	keysize += 1000
+	t.batchPutState(stub, "breakpoint_", keysize + 1, keysize + X)
+	keysize += X
 	t.putInt(stub, "keysize", keysize)
 	fmt.Printf("keysize = %d\n", keysize)
 

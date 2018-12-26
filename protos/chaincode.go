@@ -18,8 +18,15 @@ package protos
 
 import (
 	"sort"
+	"github.com/golang/proto"
 )
 
+
+type ChaincodeStateDeltaMap map[string]*ChaincodeStateDelta
+
+func (m *BucketTreeOffset) Byte() ([]byte, error) {
+	return proto.Marshal(m)
+}
 
 func NewChaincodeStateDelta() *ChaincodeStateDelta {
 	return &ChaincodeStateDelta{make(map[string]*UpdatedValue)}

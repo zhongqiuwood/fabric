@@ -128,7 +128,8 @@ message SyncStateResp {
 message SyncStartRequest {
     uint32  id = 1;
     SyncType payloadType = 2;
-    bytes payload = 3;
+    bytes  payload   = 3;
+
 }
 
 message SyncStartResponse {
@@ -147,20 +148,12 @@ message ChaincodeStateDelta {
     map<string, UpdatedValue> UpdatedKVs = 1;
 }
 
-message SyncStateChunkArray {
-    uint64 level = 1;
-    repeated SyncStateChunk chunks  = 2;
-    bytes roothash = 3;
-    string failedReason = 4;
-}
-
 message SyncStateChunk {
-    uint64 bucketNum = 1;
-    map<string, ChaincodeStateDelta> ChaincodeStateDeltas = 2;
-}
+    StateOffset offset = 1;
+    bytes roothash = 2;
+    string failedReason = 3;
+    map<string, ChaincodeStateDelta> ChaincodeStateDeltas = 4;
 
-message SyncStateChunkArrayRequest {
-    uint64 level = 1;        // Bucket tree level to sync
 }
 
 enum SyncType {
@@ -181,16 +174,19 @@ message SyncMessage {
 
 
 message SyncState {
-    uint64 level = 1;
-    uint64 bucketNum = 2;
-    bytes  statehash = 3;
-    StateOffset offset = 4;
-
+    bytes  statehash = 1;
+    StateOffset offset = 2;
 }
 
 message StateOffset {
-    bytes startOffset = 1;
-    bytes endOffset = 2;
+    bytes data = 1;
+}
+
+
+message BucketTreeOffset {
+    uint64 level = 1;
+    uint64 bucketNum = 2;
+    uint64 delta = 3;
 }
 
 

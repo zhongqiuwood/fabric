@@ -854,16 +854,33 @@ func (ledger *Ledger) GetRootStateHashFromDB() (stateHash []byte, err error) {
 	return ledger.state.GetRootStateHashFromDB()
 }
 
-func (ledger *Ledger) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta{
-	return ledger.state.ProduceStateDeltaFromDB(level, bucketNumber, itr)
+
+
+func (ledger *Ledger) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
+	return ledger.state.GetStateDeltaFromDB(offset, snapshotHandler)
+}
+
+func (ledger *Ledger) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
+	return ledger.state.NextStateOffset(curOffset)
+}
+
+func (ledger *Ledger) SaveStateOffset(committedOffset *protos.StateOffset) error {
+	return ledger.state.SaveStateOffset(committedOffset)
+}
+
+func (ledger *Ledger) VerifySyncState(offset *protos.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {
+	return ledger.state.VerifySyncState(offset, getValueFunc)
+}
+
+func (ledger *Ledger) LoadStateOffsetFromDB() []byte {
+	return ledger.state.LoadStateOffsetFromDB()
+}
+
+func (ledger *Ledger) ClearStateOffsetFromDB() {
+	ledger.state.ClearStateOffsetFromDB()
 }
 
 
-func (ledger *Ledger) ProduceStateDeltaFromDB2(offset *protos.StateOffset, itr statemgmt.CfIterator) *statemgmt.StateDelta{
-	return ledger.state.ProduceStateDeltaFromDB2(offset, itr)
-}
 
-func (ledger *Ledger) LoadStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
-	return ledger.state.LoadStateOffset(curOffset)
-}
+
 

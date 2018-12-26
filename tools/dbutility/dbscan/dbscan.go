@@ -86,17 +86,17 @@ func main() {
 	node.RunNode(&node.NodeConfig{PostRun: reg})
 }
 
-//func dumpBucketNodes(expectedLevel int) {
-//	output("=========================================================")
-//	output("== Dump level[%d]:", expectedLevel)
-//	output("=========================================================")
-//	maxNum := buckettree.BucketTreeConfig().GetNumBuckets(expectedLevel)
-//	for i := 1; i <= maxNum; i++ {
-//
-//		output("== Dump level[%d][%d]:", expectedLevel, i)
-//		buckettree.ComputeBreakPointHash(expectedLevel, i, nil)
-//	}
-//}
+func dumpBucketNodes(expectedLevel int) {
+	output("=========================================================")
+	output("== Dump level[%d]:", expectedLevel)
+	output("=========================================================")
+	maxNum := buckettree.BucketTreeConfig().GetNumBuckets(expectedLevel)
+	for i := 1; i <= maxNum; i++ {
+
+		output("== Dump level[%d][%d]:", expectedLevel, i)
+		//buckettree.ComputeBreakPointHash(expectedLevel, i, nil)
+	}
+}
 
 
 func dumpBreakPointHash(level int) {

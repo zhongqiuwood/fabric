@@ -69,12 +69,11 @@ type HashableState interface {
 	// the performance of ComputeCryptoHash method (when gets called at a later time)
 	PerfHintKeyChanged(chaincodeID string, key string)
 
-	ProduceStateDeltaFromDB(level, bucketNumber int, itr CfIterator) *StateDelta
 	GetRootStateHashFromDB(getValueFunc GetValueFromSnapshotFunc) ([]byte, error)
-
-
-	ProduceStateDeltaFromDB2(offset *protos.StateOffset, itr CfIterator) *StateDelta
-	LoadStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error)
+	GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error)
+	NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error)
+	SaveStateOffset(committedOffset *protos.StateOffset) error
+	VerifySyncState(offset *protos.SyncState, getValueFunc GetValueFromSnapshotFunc) error
 }
 
 type GetValueFromSnapshotFunc func(cfName string, key []byte)([]byte, error)

@@ -1,10 +1,20 @@
 #!/bin/bash
 
+function loadenv {
+
+    export CORE_LOGGING_NODE=debug:statesync=debug:state=info:buckettree=info:peer=info:statesyncstub=debug:ledger=info
+    #export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=1000003
+    #export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=5
+    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=32
+    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=3
+    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_SYNCDELTA=2
+}
+
 
 ./killbyname.sh txnetwork
 ./killbyname.sh peer
 ln -s ../../core.yaml core.yaml
-
+loadenv
 ./scandb.sh -dbpath /var/hyperledger/production0 -block y > production0.json
 ./scandb.sh -dbpath /var/hyperledger/production1 -block y > production1.json
 

@@ -22,7 +22,11 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
-	"github.com/abchain/fabric/protos"
+	pb "github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/core/ledger/statemgmt/persist"
+	"github.com/golang/proto"
+	"fmt"
+	"github.com/spf13/viper"
 )
 
 var logger = logging.MustGetLogger("buckettree")
@@ -347,15 +351,229 @@ func (stateImpl *StateImpl) GetRootStateHashFromDB(getValueFunc statemgmt.GetVal
 	return persistedStateHash, err
 }
 
-// return desired statemgmt.StateDelta to client
-func (stateImpl *StateImpl) ProduceStateDeltaFromDB(level, bucketNumber int, itr statemgmt.CfIterator) *statemgmt.StateDelta{
+func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, getValueFunc statemgmt.GetValueFromSnapshotFunc) error {
 
-	start, end := conf.getLeafBuckets(level, bucketNumber)
-	return produceStateDeltaFromDB(start, end, itr)
+	var err error
+	var localHash []byte
+	btOffset := byte2BucketTreeOffset(syncState.Offset.Data)
+
+	logger.Infof("state offset: <%+v>, config<%v>", btOffset, conf)
+
+	if btOffset.BucketNum == 0 {
+		if syncState.Statehash != nil {
+			err = fmt.Errorf("Invalid Statehash<%x>. The nil expected", syncState.Statehash)
+		}
+	} else {
+
+		localHash, err = ComputeStateHashByOffset(syncState.Offset, getValueFunc)
+		if !bytes.Equal(localHash, syncState.Statehash) {
+			err = fmt.Errorf("Wrong Statehash, at level-num<%d-%d>\n" +
+				"remote hash<%x>\n" +
+				"local  hash<%x>",
+				btOffset.Level, btOffset.BucketNum,
+				syncState.Statehash, localHash)
+		}
+	}
+	return err
 }
 
-func (stateImpl *StateImpl) ProduceStateDeltaFromDB2(offset *protos.StateOffset, itr statemgmt.CfIterator) *statemgmt.StateDelta{
 
-	start, end := conf.getLeafBuckets(level, bucketNumber)
-	return produceStateDeltaFromDB(start, end, itr)
+
+func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.StateOffset, snapshotHandler *db.DBSnapshot) (*pb.SyncStateChunk, error){
+
+	var err error
+	var stateDelta *statemgmt.StateDelta
+	stateChunk := &pb.SyncStateChunk{}
+
+	bucketTreeOffset := byte2BucketTreeOffset(offset.Data)
+
+	level := int(bucketTreeOffset.Level)
+	startNum := int(bucketTreeOffset.BucketNum)
+	endNum := int(bucketTreeOffset.Delta + bucketTreeOffset.BucketNum - 1)
+
+	if level > conf.GetLowestLevel() {
+		return nil, fmt.Errorf("invalid level")
+	}
+
+	maxBucketNum := conf.GetNumBuckets(level)
+	if maxBucketNum < endNum {
+		return nil, fmt.Errorf("invalid offset")
+	} else if maxBucketNum == endNum {
+		getValueFunc := func(cfName string, key []byte)([]byte, error) {
+			return snapshotHandler.GetFromSnapshot(cfName, key)
+		}
+		stateChunk.Roothash, err = stateImpl.GetRootStateHashFromDB(getValueFunc)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	stateDeltaAll := statemgmt.NewStateDelta()
+
+	itr := snapshotHandler.GetStateCFSnapshotIterator()
+	defer itr.Close()
+
+	for index := startNum; index <= endNum; index++ {
+
+		if viper.GetBool("peer.breakpoint") {
+			// for test only
+			if index > maxBucketNum / 2 {
+				err = fmt.Errorf("hit breakpoint at <%d-%d>, bucket tree: level<%d>, bucketNum<%d>",
+					level, index, level, maxBucketNum, )
+				break
+			}
+		}
+
+		start, end := conf.getLeafBuckets(int(level), int(index))
+		stateDelta, err = produceStateDeltaFromDB(start, end, itr)
+		if err != nil {
+			break
+		}
+		stateDeltaAll.ApplyChanges(stateDelta)
+	}
+	stateChunk.ChaincodeStateDeltas = stateDeltaAll.ChaincodeStateDeltas
+
+	return stateChunk, err
+}
+
+
+
+func (impl *StateImpl) SaveStateOffset(committedOffset *pb.StateOffset) error {
+
+	btoffset := byte2BucketTreeOffset(committedOffset.Data)
+
+	logger.Infof("Committed state offset: level-num<%d-%d>",
+		btoffset.Level,	btoffset.BucketNum + btoffset.Delta - 1)
+
+	return persist.StoreSyncPosition(committedOffset.Data)
+}
+
+func (impl *StateImpl) LoadStateOffsetFromDB() []byte {
+	return persist.LoadSyncPosition()
+}
+
+
+func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffset, error) {
+
+	var err error
+	var data []byte
+	var bucketTreeOffset *pb.BucketTreeOffset
+
+	if curOffset == nil {
+		data = persist.LoadSyncPosition()
+	} else {
+		data = curOffset.Data
+	}
+
+	if data == nil {
+		bucketTreeOffset = &pb.BucketTreeOffset{}
+		bucketTreeOffset.Level = uint64(conf.GetSyncLevel())
+
+		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
+
+		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum)
+		bucketTreeOffset.BucketNum = 1
+	} else {
+
+		bucketTreeOffset = byte2BucketTreeOffset(data)
+		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
+
+		bucketTreeOffset.BucketNum += bucketTreeOffset.Delta
+		if maxNum <= bucketTreeOffset.BucketNum - 1 {
+			logger.Infof("Hit maxBucketNum<%d>, target BucketNum<%d>", maxNum,  bucketTreeOffset.BucketNum)
+			return nil, nil
+		}
+		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum - bucketTreeOffset.BucketNum + 1)
+	}
+
+	logger.Infof("Next state offset <%+v>", bucketTreeOffset)
+	nextOffset := &pb.StateOffset{}
+	nextOffset.Data = bucketTreeOffset2Byte(bucketTreeOffset)
+
+	return nextOffset, err
+}
+
+
+// return root hash of a bucket tree consisted of all dataNodes belong to bucket nodes between [lv-0, lv-bucketNum] include,
+// if lv is the lowest level, then the bucket tree contains all all dataNode [0, bucketNum]
+func ComputeStateHashByOffset(offset *pb.StateOffset, getValueFunc statemgmt.GetValueFromSnapshotFunc) ([]byte, error) {
+
+	btoffset := byte2BucketTreeOffset(offset.Data)
+
+	lv, bucketNum := int(btoffset.Level), int(btoffset.BucketNum + btoffset.Delta - 1)
+	necessaryBuckets := conf.getNecessaryBuckets(lv, bucketNum)
+	bucketTree := newBucketTreeDelta()
+	for _, bucketKey := range necessaryBuckets {
+		bucketNode, err := fetchBucketNode(getValueFunc, db.GetDBHandle(), bucketKey)
+
+		if err !=nil {
+			logger.Errorf("Failed to fetch BucketNode<%s> From Snapshot, err: %s\n", bucketKey, err)
+			return nil, err
+		}
+
+		bucketTree.getOrCreateBucketNode(bucketKey)
+		if bucketNode != nil && bucketNode.childrenCryptoHash != nil {
+			logger.Debugf("<%s>: %d children\n", bucketKey, len(bucketNode.childrenCryptoHash))
+			bucketTree.byLevel[bucketKey.level][bucketKey.bucketNumber] = bucketNode
+		} else {
+			logger.Debugf("<%s>: 0 children\n", bucketKey)
+		}
+	}
+
+	for level := conf.lowestLevel; level > 0; level-- {
+		bucketNodes := bucketTree.getBucketNodesAt(level)
+
+		for _, node := range bucketNodes {
+
+			logger.Debugf("node.bucketKey<%s>", node.bucketKey)
+
+			parentKey := node.bucketKey.getParentKey()
+			cryptoHash := node.computeCryptoHash()
+
+			if level == conf.lowestLevel {
+				index := parentKey.getChildIndex(node.bucketKey)
+				parentBucketNodeOnDisk, err := fetchBucketNode(getValueFunc, db.GetDBHandle(), parentKey)
+
+				if err !=nil {
+					logger.Errorf("<%s>, index<%d> in parent child num: <%d>, err: %s\n",
+						node.bucketKey, index, err)
+					return nil, err
+				}
+
+				if parentBucketNodeOnDisk ==nil {
+					logger.Debugf("<%s>, index<%d>, no parentKey<%s> ondisk\n", node.bucketKey, index, parentKey)
+				} else {
+					cryptoHash = parentBucketNodeOnDisk.childrenCryptoHash[index]
+					logger.Debugf("<%s>, index<%d> in parent child num: <%d>\n", node.bucketKey,
+						index,	len(parentBucketNodeOnDisk.childrenCryptoHash))
+				}
+			}
+
+			bucketNodeInMem := bucketTree.getOrCreateBucketNode(parentKey)
+			bucketNodeInMem.setChildCryptoHash(node.bucketKey, cryptoHash)
+			logger.Debugf("set <%s> hash into parent <%s>, hash<%x>\n",
+				node.bucketKey, parentKey, cryptoHash)
+		}
+	}
+
+	hash := bucketTree.getRootNode().computeCryptoHash()
+	logger.Infof("<%d-%d>: root hash <%x>\n", lv, bucketNum, 	hash)
+	return hash, nil
+}
+
+func byte2BucketTreeOffset(data []byte) *pb.BucketTreeOffset {
+	bucketTreeOffset := &pb.BucketTreeOffset{}
+	err := proto.Unmarshal(data, bucketTreeOffset)
+	if err != nil {
+		panic("todo")
+	}
+	return bucketTreeOffset
+}
+
+func bucketTreeOffset2Byte(offset *pb.BucketTreeOffset) []byte  {
+	data, err := offset.Byte()
+	if err != nil {
+		panic("todo")
+	}
+	return data
 }

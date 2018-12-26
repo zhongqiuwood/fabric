@@ -35,6 +35,8 @@ const ConfigHashFunction = "hashFunction"
 // DefaultNumBuckets - total buckets
 const DefaultNumBuckets = 10009
 
+const DefaultSyncDeltaNumBuckets = 100
+
 // DefaultMaxGroupingAtEachLevel - Number of max buckets to group at each level.
 // Grouping is started from left. The last group may have less buckets
 const DefaultMaxGroupingAtEachLevel = 10
@@ -51,6 +53,7 @@ type config struct {
 	levelToNumBucketsMap   map[int]int
 	hashFunc               hashFunc
 	numBuckets			   int
+	syncDelta			   int
 }
 
 func initConfig(configs map[string]interface{}) {
@@ -76,16 +79,25 @@ func initConfig(configs map[string]interface{}) {
 		logger.Debugf("ledger.state.dataStructure.configs.numBuckets: [%d]", numBuckets)
 	}
 
+	syncDelta := DefaultSyncDeltaNumBuckets
+	if viper.IsSet("ledger.state.dataStructure.configs.syncDelta") {
+		syncDelta = viper.GetInt("ledger.state.dataStructure.configs.syncDelta")
+		logger.Debugf("ledger.state.dataStructure.configs.syncDelta: [%d]", syncDelta)
+	}
+
 	hashFunction, ok := configs[ConfigHashFunction].(hashFunc)
 	if !ok {
 		hashFunction = fnvHash
 	}
-	conf = newConfig(numBuckets, maxGroupingAtEachLevel, hashFunction)
+	conf = newConfig(numBuckets, maxGroupingAtEachLevel, syncDelta, hashFunction)
 	logger.Infof("Initializing bucket tree state implemetation with configurations %+v", conf)
 }
 
-func newConfig(numBuckets int, maxGroupingAtEachLevel int, hashFunc hashFunc) *config {
-	conf := &config{maxGroupingAtEachLevel, -1, make(map[int]int), hashFunc, numBuckets}
+func newConfig(numBuckets, maxGroupingAtEachLevel, syncDelta int, hashFunc hashFunc) *config {
+	conf := &config{maxGroupingAtEachLevel, -1,
+	make(map[int]int), hashFunc,
+	numBuckets, syncDelta}
+
 	currentLevel := 0
 	numBucketAtCurrentLevel := numBuckets
 	levelInfoMap := make(map[int]int)
@@ -237,3 +249,11 @@ func log(antilogarithm, baseNumber int) int {
 	logarithm := math.Log(float64(antilogarithm)) / math.Log(float64(baseNumber))
 	return int(math.Floor(logarithm))
 }
+
+func min(x, y uint64) uint64 {
+	if x < y {
+		return x
+	}
+	return y
+}
+

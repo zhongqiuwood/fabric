@@ -80,12 +80,11 @@ It has these top-level messages:
 	SyncStartResponse
 	UpdatedValue
 	ChaincodeStateDelta
-	SyncStateChunkArray
 	SyncStateChunk
-	SyncStateChunkArrayRequest
 	SyncMessage
 	SyncState
 	StateOffset
+	BucketTreeOffset
 */
 package protos
 

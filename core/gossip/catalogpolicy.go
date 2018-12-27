@@ -32,6 +32,10 @@ const (
 	def_TrackPeers  = 128
 )
 
+func (p *catalogPolicyImpl) SetPullOnly() {
+	p.allowUpdate = false
+}
+
 func (p *catalogPolicyImpl) AllowRecvUpdate() bool {
 	if p == nil {
 		return true

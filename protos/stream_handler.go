@@ -215,7 +215,7 @@ func (s *StreamStub) unRegisterHandler(peerid *PeerID) {
 	s.handlerMap.Lock()
 	defer s.handlerMap.Unlock()
 	if _, ok := s.handlerMap.m[*peerid]; ok {
-		logger.Infof("unregister handler for far-end peer %s", peerid.GetName())
+		logger.Debugf("unregister handler for far-end peer %s", peerid.GetName())
 		delete(s.handlerMap.m, *peerid)
 	}
 }

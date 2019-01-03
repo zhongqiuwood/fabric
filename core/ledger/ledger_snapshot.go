@@ -17,19 +17,11 @@ type LedgerSnapshot struct {
 }
 
 var logger = logging.MustGetLogger("LedgerSnapshot")
-
-
-
-
 func (sledger *LedgerSnapshot) VerifySyncState(offset *protos.SyncState) error {
 	return sledger.l.VerifySyncState(offset, sledger.DBSnapshot)
 }
 
-
-
-
 func (sledger *LedgerSnapshot) GetStateDeltaFromDB(offset *protos.StateOffset) (*protos.SyncStateChunk, error){
-
 	return sledger.l.GetStateDeltaFromDB(offset, sledger.DBSnapshot)
 }
 

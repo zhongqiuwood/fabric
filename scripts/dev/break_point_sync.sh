@@ -63,7 +63,11 @@ function make_diff {
     start_peers ${PEER_NUM} clearall
     sleep_and_invoke -a d -n 10 -c example01_
     sleep_and_invoke -a d -n 10 -c example02_
+    sleep_and_invoke -a i -c example01_ -n 20
+    sleep_and_invoke -a i -c example02_ -n 20
     start_peers 1 none
+    sleep_and_invoke -a i -c example01_ -n 20
+    sleep_and_invoke -a i -c example02_ -n 20
     sleep_and_invoke -a i -c example01_ -n 20
     sleep_and_invoke -a i -c example02_ -n 20
     sleep 10
@@ -111,7 +115,9 @@ function loadenv {
 }
 
 loadenv
-sync_breakpoint_test make_diff
+#sync_breakpoint_test make_diff
+sync_test make_diff true
+
 
 
 

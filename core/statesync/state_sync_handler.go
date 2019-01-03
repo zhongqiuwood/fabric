@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/viper"
 	_ "github.com/spf13/viper"
 	"golang.org/x/net/context"
-	//node "github.com/abchain/fabric/node/start"
 )
 
 func init() {
@@ -159,8 +158,6 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 	if payloadMsg != nil {
 		tmp, err := proto.Marshal(payloadMsg)
 
-		//logger.Infof("==============%s: tmp<%x>, err: %s", flogging.GoRDef, data, err)
-
 		if err != nil {
 			lerr := fmt.Errorf("Error Marshalling payload message for <%s>: %s", msgType.String(), err)
 			logger.Info(lerr.Error())
@@ -170,9 +167,6 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 			return lerr
 		}
 		data = tmp
-
-		//logger.Infof("==============%s: data<%x>", flogging.GoRDef, data)
-
 	}
 
 	stream := syncHandler.streamStub.PickHandler(syncHandler.remotePeerId)

@@ -11,13 +11,15 @@ import (
 	"github.com/op/go-logging"
 	"github.com/abchain/fabric/protos"
 	"github.com/abchain/fabric/core/util"
-	_ "github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
 	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
 	node "github.com/abchain/fabric/node/start"
+	pb "github.com/abchain/fabric/protos"
 
 )
 
-var logger = logging.MustGetLogger("dbscan")
+var logger *logging.Logger
+
+//var logger = logging.MustGetLogger("dbscan")
 
 type detailPrinter func(data []byte)
 
@@ -62,11 +64,14 @@ func main() {
 
 	reg := func() error {
 
+		logger = logging.MustGetLogger("dbscan")
+
 		orgdb := db.GetDBHandle()
 		txdb := db.GetGlobalDBHandle()
 
 		if len(*dumpStatePtr) > 0 {
-			dumpBreakPointHash(-1)
+			buckettree.DumpDataNodes()
+			dumpBreakPointRootHash(-1)
 		}
 
 		if len(*dumpBlockPtr) > 0 {
@@ -86,34 +91,41 @@ func main() {
 	node.RunNode(&node.NodeConfig{PostRun: reg})
 }
 
-func dumpBucketNodes(expectedLevel int) {
+func dumpBucketNodesRootHash(expectedLevel int) {
 	output("=========================================================")
 	output("== Dump level[%d]:", expectedLevel)
 	output("=========================================================")
 	maxNum := buckettree.BucketTreeConfig().GetNumBuckets(expectedLevel)
 	for i := 1; i <= maxNum; i++ {
 
-		output("== Dump level[%d][%d]:", expectedLevel, i)
-		//buckettree.ComputeBreakPointHash(expectedLevel, i, nil)
+		stateOffset := pb.NewStateOffset(uint64(expectedLevel), uint64(i))
+		buckettree.ComputeStateHashByOffset(stateOffset,  nil)
 	}
+
 }
 
 
-func dumpBreakPointHash(level int) {
+func dumpBreakPointRootHash(level int) {
 
 	if level < 0 {
 		// dump all levels
 		for levelIdx := 0; levelIdx <= buckettree.BucketTreeConfig().GetLowestLevel(); levelIdx++{
-			dumpBucketNodes(levelIdx)
+			dumpBucketNodesRootHash(levelIdx)
 		}
 	} else {
 		// dump specified level
-		dumpBucketNodes(level)
+		dumpBucketNodesRootHash(level)
 	}
+
+	output("=========================================================")
+	output("== Bucket tree dump completed!")
+	output("=========================================================")
 }
 
 func output(format string, a ...interface{}) (n int, err error) {
 	format += "\n"
+
+	logger.Infof(format, a...)
 	return fmt.Printf(format, a...)
 }
 

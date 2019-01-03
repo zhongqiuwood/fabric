@@ -24,7 +24,6 @@ import (
 	"github.com/op/go-logging"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/abchain/fabric/core/ledger/statemgmt/persist"
-	"github.com/golang/proto"
 	"fmt"
 	"github.com/spf13/viper"
 )
@@ -67,8 +66,6 @@ func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 	stateImpl.bucketCache.loadAllBucketNodesFromDB()
 	return nil
 }
-
-
 
 // Get - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) Get(chaincodeID string, key string) ([]byte, error) {
@@ -151,9 +148,7 @@ func (stateImpl *StateImpl) processDataNodeDelta() error {
 		cryptoHashForBucket := computeDataNodesCryptoHash(bucketKey, updatedDataNodes, existingDataNodes)
 		logger.Debugf("Crypto-hash for lowest-level bucket [%s] is [%x]", bucketKey, cryptoHashForBucket)
 		parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
-
 		logger.Debugf("Feed DataNode<%s> to parentBucket [%+v]", bucketKey, parentBucket.bucketKey)
-
 		// set second last level children hash by index
 		parentBucket.setChildCryptoHash(bucketKey, cryptoHashForBucket)
 	}
@@ -355,7 +350,7 @@ func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, snapshotHan
 
 	var err error
 	var localHash []byte
-	btOffset, err := byte2BucketTreeOffset(syncState.Offset.Data)
+	btOffset, err := syncState.Offset.Unmarshal()
 	if err != nil {
 		return err
 	}
@@ -388,7 +383,7 @@ func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.StateOffset, snapshot
 	var stateDelta *statemgmt.StateDelta
 	stateChunk := &pb.SyncStateChunk{}
 
-	bucketTreeOffset, err := byte2BucketTreeOffset(offset.Data)
+	bucketTreeOffset, err := offset.Unmarshal()
 
 	if err != nil {
 		return nil, err
@@ -444,7 +439,7 @@ func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.StateOffset, snapshot
 
 func (impl *StateImpl) SaveStateOffset(committedOffset *pb.StateOffset) error {
 
-	btoffset, err := byte2BucketTreeOffset(committedOffset.Data)
+	btoffset, err := committedOffset.Unmarshal()
 
 	if err != nil {
 		return err
@@ -474,14 +469,15 @@ func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffse
 
 	if data == nil {
 		bucketTreeOffset = &pb.BucketTreeOffset{}
-		bucketTreeOffset.Level = uint64(conf.GetSyncLevel())
+		bucketTreeOffset.Level = uint64(conf.getSyncLevel())
 		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
 
 		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum)
 		bucketTreeOffset.BucketNum = 1
 	} else {
 
-		bucketTreeOffset, err = byte2BucketTreeOffset(data)
+		stateOffset := &pb.StateOffset{data}
+		bucketTreeOffset, err = stateOffset.Unmarshal()
 		if err != nil {
 			return nil, err
 		}
@@ -498,89 +494,9 @@ func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffse
 
 	logger.Debugf("Next state offset <%+v>", bucketTreeOffset)
 	nextOffset := &pb.StateOffset{}
-	nextOffset.Data, err = bucketTreeOffset2Byte(bucketTreeOffset)
+	nextOffset.Data, err = bucketTreeOffset.Byte()
 
 	return nextOffset, err
 }
 
 
-// return root hash of a bucket tree consisted of all dataNodes belong to bucket nodes between [lv-0, lv-bucketNum] include,
-// if lv is the lowest level, then the bucket tree contains all all dataNode [0, bucketNum]
-func ComputeStateHashByOffset(offset *pb.StateOffset, snapshotHandler *db.DBSnapshot) ([]byte, error) {
-
-	btoffset, err := byte2BucketTreeOffset(offset.Data)
-
-	if err != nil {
-		return nil, err
-	}
-
-	lv, bucketNum := int(btoffset.Level), int(btoffset.BucketNum + btoffset.Delta - 1)
-	necessaryBuckets := conf.getNecessaryBuckets(lv, bucketNum)
-	bucketTree := newBucketTreeDelta()
-	for _, bucketKey := range necessaryBuckets {
-		bucketNode, err := fetchBucketNode(snapshotHandler, db.GetDBHandle(), bucketKey)
-
-		if err !=nil {
-			logger.Errorf("Failed to fetch BucketNode<%s> From Snapshot, err: %s\n", bucketKey, err)
-			return nil, err
-		}
-
-		bucketTree.getOrCreateBucketNode(bucketKey)
-		if bucketNode != nil && bucketNode.childrenCryptoHash != nil {
-			logger.Debugf("<%s>: %d children\n", bucketKey, len(bucketNode.childrenCryptoHash))
-			bucketTree.byLevel[bucketKey.level][bucketKey.bucketNumber] = bucketNode
-		} else {
-			logger.Debugf("<%s>: 0 children\n", bucketKey)
-		}
-	}
-
-	for level := conf.lowestLevel; level > 0; level-- {
-		bucketNodes := bucketTree.getBucketNodesAt(level)
-
-		for _, node := range bucketNodes {
-
-			logger.Debugf("node.bucketKey<%s>", node.bucketKey)
-
-			parentKey := node.bucketKey.getParentKey()
-			cryptoHash := node.computeCryptoHash()
-
-			if level == conf.lowestLevel {
-				index := parentKey.getChildIndex(node.bucketKey)
-				parentBucketNodeOnDisk, err := fetchBucketNode(snapshotHandler, db.GetDBHandle(), parentKey)
-
-				if err !=nil {
-					logger.Errorf("<%s>, index<%d> in parent child num: <%d>, err: %s\n",
-						node.bucketKey, index, err)
-					return nil, err
-				}
-
-				if parentBucketNodeOnDisk ==nil {
-					logger.Debugf("<%s>, index<%d>, no parentKey<%s> ondisk\n", node.bucketKey, index, parentKey)
-				} else {
-					cryptoHash = parentBucketNodeOnDisk.childrenCryptoHash[index]
-					logger.Debugf("<%s>, index<%d> in parent child num: <%d>\n", node.bucketKey,
-						index,	len(parentBucketNodeOnDisk.childrenCryptoHash))
-				}
-			}
-
-			bucketNodeInMem := bucketTree.getOrCreateBucketNode(parentKey)
-			bucketNodeInMem.setChildCryptoHash(node.bucketKey, cryptoHash)
-			logger.Debugf("set <%s> hash into parent <%s>, hash<%x>\n",
-				node.bucketKey, parentKey, cryptoHash)
-		}
-	}
-
-	hash := bucketTree.getRootNode().computeCryptoHash()
-	logger.Infof("<%d-%d>: root hash <%x>\n", lv, bucketNum, 	hash)
-	return hash, nil
-}
-
-func byte2BucketTreeOffset(data []byte) (*pb.BucketTreeOffset, error) {
-	bucketTreeOffset := &pb.BucketTreeOffset{}
-	err := proto.Unmarshal(data, bucketTreeOffset)
-	return bucketTreeOffset, err
-}
-
-func bucketTreeOffset2Byte(offset *pb.BucketTreeOffset) ([]byte, error)  {
-	return offset.Byte()
-}

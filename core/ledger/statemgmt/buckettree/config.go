@@ -162,7 +162,7 @@ func (config *config) GetNumBuckets(level int) int {
 func (config *config) GetLowestLevel() int {
 	return config.lowestLevel
 }
-func (config *config) GetSyncLevel() int {
+func (config *config) getSyncLevel() int {
 	return config.lowestLevel - 1
 }
 

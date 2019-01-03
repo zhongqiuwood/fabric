@@ -292,6 +292,10 @@ function startpeer {
 
 function main {
 
+    if [ ! -f "${FABRIC_TOP}/core.yaml" ];then
+        ln -s ${FABRIC_TOP}/peer/core.yaml ${FABRIC_TOP}/core.yaml
+    fi
+
      if [ "$TARGET_STOPPED_PEER_ID" != "" ];then
         killbyname peer_fabric_$TARGET_STOPPED_PEER_ID
         exit

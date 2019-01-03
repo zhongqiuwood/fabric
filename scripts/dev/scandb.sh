@@ -10,6 +10,11 @@ EXECUTION=$FABRIC_TOP/tools/dbutility/dbscan/dbscan
 rm ${EXECUTION}
 
 cd $FABRIC_TOP/tools/dbutility/dbscan
+
+if [ ! -f "./core.yaml" ];then
+    ln -s ${FABRIC_TOP}/peer/core.yaml core.yaml
+fi
+
 go build
 ${EXECUTION} $@
 

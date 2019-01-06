@@ -98,10 +98,10 @@ func (impl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey string,
 }
 
 
-func (impl *StateImpl) GetStateDeltaFromDB(curOffset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {	return nil, nil}
+func (impl *StateImpl) GetStateDeltaFromDB(curOffset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {	return nil, nil}
 
-func (impl *StateImpl) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {	return nil, nil}
+func (impl *StateImpl) NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error) {	return nil, nil}
 
-func (impl *StateImpl) SaveStateOffset(committedOffset *protos.StateOffset) error {	return nil}
+func (impl *StateImpl) SaveStateOffset(committedOffset *protos.SyncOffset) error {	return nil}
 
 func (impl *StateImpl) VerifySyncState(syncState *protos.SyncState, snapshotHandler *db.DBSnapshot) error {return nil}

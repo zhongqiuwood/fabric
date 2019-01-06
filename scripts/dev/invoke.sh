@@ -97,3 +97,8 @@ function main {
 }
 
 main
+
+
+#	format := logging.MustStringFormatter(
+#		"%{time:15:04:05.000} [%{module}] %{shortfunc} %{level:.4s}-> %{message}",
+#	)

@@ -28,8 +28,6 @@ type ErrHandlerFatal struct {
 	error
 }
 
-
-
 func newStateSyncHandler(remoterId *pb.PeerID, l *ledger.Ledger, sstub *pb.StreamStub) pb.StreamHandlerImpl {
 	logger.Debug("create handler for peer", remoterId)
 
@@ -46,10 +44,10 @@ func (syncHandler *stateSyncHandler) runSyncBlock(ctx context.Context, targetSta
 
 	syncHandler.client = newSyncer(ctx, syncHandler)
 
-	defer logger.Infof("[%s]: Exit. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
+	defer logger.Infof("[%s]: Exit. Remote peer <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
 	defer syncHandler.fini()
 
-	logger.Infof("[%s]: Enter. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
+	logger.Infof("[%s]: Enter. Remote peer <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
 	//---------------------------------------------------------------------------
 	// 1. query
 	//---------------------------------------------------------------------------
@@ -65,10 +63,11 @@ func (syncHandler *stateSyncHandler) runSyncBlock(ctx context.Context, targetSta
 		logger.Errorf("[%s]: getSyncTargetBlockNumber err: %s", flogging.GoRDef, err)
 		return err
 	}
-	logger.Infof("[%s]: query done. mostRecentIdenticalHistoryPosition: %d, endBlockNumber: %d",
-		flogging.GoRDef, mostRecentIdenticalHistoryPosition, endBlockNumber)
 
 	startBlockNumber := mostRecentIdenticalHistoryPosition + 1
+
+	logger.Infof("[%s]: Query completed. Most recent identical block: %d, target block number: <%d-%d>",
+		flogging.GoRDef, mostRecentIdenticalHistoryPosition, startBlockNumber, endBlockNumber)
 
 	//---------------------------------------------------------------------------
 	// 2. switch to the right checkpoint
@@ -91,13 +90,15 @@ func (syncHandler *stateSyncHandler) runSyncBlock(ctx context.Context, targetSta
 	//---------------------------------------------------------------------------
 	// go to syncdelta state
 	syncHandler.fsmHandler.Event(enterGetDelta)
-	_, err = syncHandler.client.syncDeltas(startBlockNumber, endBlockNumber)
+	handler := newBlockMessageHandler(startBlockNumber, endBlockNumber, syncHandler.client)
+	syncHandler.client.syncMessageHandler = handler
+	err = syncHandler.client.executeSync()
 
 	if err != nil {
-		logger.Errorf("[%s]: sync detals err: %s", flogging.GoRDef, err)
+		logger.Errorf("[%s]: Failed to sync state detals. err: %s", flogging.GoRDef, err)
 		return err
 	}
-	logger.Infof("[%s]: sync detals done", flogging.GoRDef)
+	logger.Infof("[%s]: Sync state detals completed successfully!", flogging.GoRDef)
 
 	return err
 }

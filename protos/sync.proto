@@ -79,6 +79,7 @@ message SyncStateDeltas {
 message SyncBlockState {
     SyncBlockRange range = 1;
     repeated BlockState syncdata = 2;
+//    string failedReason = 3;
 }
 
 // Like chat, stateSync wrap messages used in a syncing session
@@ -149,11 +150,9 @@ message ChaincodeStateDelta {
 }
 
 message SyncStateChunk {
-    StateOffset offset = 1;
+    SyncOffset offset = 1;
     bytes roothash = 2;
-    string failedReason = 3;
-    map<string, ChaincodeStateDelta> ChaincodeStateDeltas = 4;
-
+    map<string, ChaincodeStateDelta> ChaincodeStateDeltas = 3;
 }
 
 enum SyncType {
@@ -165,28 +164,31 @@ enum SyncType {
 }
 
 message SyncMessage {
-    uint64 startNum = 1;
-    uint64 endNum = 2;
-    SyncType payloadType = 3;
-    bytes payload = 4;
-    StateOffset offset = 5;
+    SyncType payloadType = 1;
+    bytes payload = 2;
+    SyncOffset offset = 3;
+    uint64 correlationId = 4;
+    string failedReason = 5;
 }
-
 
 message SyncState {
     bytes  statehash = 1;
-    StateOffset offset = 2;
+    SyncOffset offset = 2;
 }
 
-message StateOffset {
+message SyncOffset {
     bytes data = 1;
 }
-
 
 message BucketTreeOffset {
     uint64 level = 1;
     uint64 bucketNum = 2;
     uint64 delta = 3;
+}
+
+message BlockOffset {
+    uint64 startNum = 1;
+    uint64 endNum = 2;
 }
 
 

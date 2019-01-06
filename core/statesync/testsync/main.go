@@ -35,7 +35,7 @@ func runTest() error {
 		} else {
 			logger.Infof("Stream Handler <%s> ready!!\n\n\n", peer)
 
-			blockSync := viper.GetBool("peer.syncByBlock")
+			blockSync := viper.GetString("peer.syncType")
 			err := syncStub.SyncToStateByPeer(nil,nil, peer, blockSync)
 			if err != nil {
 				logger.Infof("Failed to sync to <%s>: %s", peer, err)

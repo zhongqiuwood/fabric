@@ -377,7 +377,7 @@ func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, snapshotHan
 
 
 
-func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.StateOffset, snapshotHandler *db.DBSnapshot) (*pb.SyncStateChunk, error){
+func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.SyncOffset, snapshotHandler *db.DBSnapshot) (*pb.SyncStateChunk, error){
 
 	var err error
 	var stateDelta *statemgmt.StateDelta
@@ -437,7 +437,7 @@ func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.StateOffset, snapshot
 
 
 
-func (impl *StateImpl) SaveStateOffset(committedOffset *pb.StateOffset) error {
+func (impl *StateImpl) SaveStateOffset(committedOffset *pb.SyncOffset) error {
 
 	btoffset, err := committedOffset.Unmarshal()
 
@@ -455,7 +455,7 @@ func (impl *StateImpl) LoadStateOffsetFromDB() []byte {
 }
 
 
-func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffset, error) {
+func (impl *StateImpl) NextStateOffset(curOffset *pb.SyncOffset)(*pb.SyncOffset, error) {
 
 	var err error
 	var data []byte
@@ -476,7 +476,7 @@ func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffse
 		bucketTreeOffset.BucketNum = 1
 	} else {
 
-		stateOffset := &pb.StateOffset{data}
+		stateOffset := &pb.SyncOffset{data}
 		bucketTreeOffset, err = stateOffset.Unmarshal()
 		if err != nil {
 			return nil, err
@@ -493,7 +493,7 @@ func (impl *StateImpl) NextStateOffset(curOffset *pb.StateOffset)(*pb.StateOffse
 	}
 
 	logger.Debugf("Next state offset <%+v>", bucketTreeOffset)
-	nextOffset := &pb.StateOffset{}
+	nextOffset := &pb.SyncOffset{}
 	nextOffset.Data, err = bucketTreeOffset.Byte()
 
 	return nextOffset, err

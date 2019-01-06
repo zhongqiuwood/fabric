@@ -183,7 +183,7 @@ func DumpDataNodes() (dataNodes, error) {
 
 // return root hash of a bucket tree consisted of all dataNodes belong to bucket nodes between [lv-0, lv-bucketNum] include,
 // if lv is the lowest level, then the bucket tree contains all all dataNode [0, bucketNum]
-func ComputeStateHashByOffset(offset *pb.StateOffset, snapshotHandler *db.DBSnapshot) ([]byte, error) {
+func ComputeStateHashByOffset(offset *pb.SyncOffset, snapshotHandler *db.DBSnapshot) ([]byte, error) {
 
 	btoffset, err := offset.Unmarshal()
 

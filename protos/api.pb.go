@@ -83,8 +83,9 @@ It has these top-level messages:
 	SyncStateChunk
 	SyncMessage
 	SyncState
-	StateOffset
+	SyncOffset
 	BucketTreeOffset
+	BlockOffset
 */
 package protos
 

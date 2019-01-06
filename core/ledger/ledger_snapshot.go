@@ -21,7 +21,7 @@ func (sledger *LedgerSnapshot) VerifySyncState(offset *protos.SyncState) error {
 	return sledger.l.VerifySyncState(offset, sledger.DBSnapshot)
 }
 
-func (sledger *LedgerSnapshot) GetStateDeltaFromDB(offset *protos.StateOffset) (*protos.SyncStateChunk, error){
+func (sledger *LedgerSnapshot) GetStateDeltaFromDB(offset *protos.SyncOffset) (*protos.SyncStateChunk, error){
 	return sledger.l.GetStateDeltaFromDB(offset, sledger.DBSnapshot)
 }
 
@@ -80,8 +80,8 @@ func (sledger *LedgerSnapshot) GetStateDelta(blockNumber uint64) (*statemgmt.Sta
 		return nil, nil
 	}
 	stateDelta := statemgmt.NewStateDelta()
-	stateDelta.Unmarshal(stateDeltaBytes)
-	return stateDelta, nil
+	err = stateDelta.Unmarshal(stateDeltaBytes)
+	return stateDelta, err
 }
 
 func (sledger *LedgerSnapshot) GetStateSnapshot() (*state.StateSnapshot, error) {

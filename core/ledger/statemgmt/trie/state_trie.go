@@ -192,17 +192,17 @@ func (stateTrie *StateTrie) GetRangeScanIterator(chaincodeID string, startKey st
 }
 
 
-func (stateImpl *StateTrie) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
+func (stateImpl *StateTrie) GetStateDeltaFromDB(offset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
 	return nil, nil
 }
 
 
-func (impl *StateTrie) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
+func (impl *StateTrie) NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error) {
 	return nil, nil
 }
 
 
-func (impl *StateTrie) SaveStateOffset(committedOffset *protos.StateOffset) error {
+func (impl *StateTrie) SaveStateOffset(committedOffset *protos.SyncOffset) error {
 
 	return nil
 

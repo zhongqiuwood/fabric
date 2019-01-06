@@ -69,10 +69,10 @@ type HashableState interface {
 	PerfHintKeyChanged(chaincodeID string, key string)
 
 	VerifySyncState(offset *protos.SyncState, snapshotHandler *db.DBSnapshot) error
-	GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error)
+	GetStateDeltaFromDB(offset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error)
 
-	NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error)
-	SaveStateOffset(committedOffset *protos.StateOffset) error
+	NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error)
+	SaveStateOffset(committedOffset *protos.SyncOffset) error
 }
 
 // StateSnapshotIterator An interface that is to be implemented by the return value of

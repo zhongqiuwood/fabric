@@ -50,7 +50,7 @@ func (s *StateSyncStub) SyncToTarget(blockNumber uint64, blockHash []byte, peerI
 	result = false
 
 	for _, peer := range peerIDs {
-		err = s.SyncToStateByPeer(blockHash, nil, peer, true)
+		err = s.SyncToStateByPeer(blockHash, nil, peer, "block")
 		if err == nil {
 			result = true
 			break
@@ -79,7 +79,7 @@ func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID, sstub *pb.StreamStub) p
 	return newStateSyncHandler(id, s.ledger, sstub)
 }
 
-func (s *StateSyncStub) SyncToStateByPeer(targetState []byte, opt *syncOpt,	peer *pb.PeerID, blockSync bool) error {
+func (s *StateSyncStub) SyncToStateByPeer(targetState []byte, opt *syncOpt,	peer *pb.PeerID, blockSync string) error {
 
 	var err error
 	s.Lock()
@@ -106,10 +106,12 @@ func (s *StateSyncStub) SyncToStateByPeer(targetState []byte, opt *syncOpt,	peer
 			flogging.GoRDef, peer)
 	}
 
-	if blockSync {
+	if blockSync == "block"{
 		err = peerSyncHandler.runSyncBlock(s.curTask, targetState)
-	} else {
+	} else if blockSync == "state" {
 		err = peerSyncHandler.runSyncState(s.curTask, targetState)
+	} else {
+		panic("Invalid type!")
 	}
 
 	defer func() {

@@ -37,7 +37,7 @@ func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 			//{Name: pb.SyncMsg_SYNC_SESSION_BLOCKS.String(),    Src: []string{"syncblock"},     Dst: "syncblock"},
 			//{Name: pb.SyncMsg_SYNC_SESSION_SNAPSHOT.String(),  Src: []string{"syncsnapshot"},  Dst: "syncsnapshot"},
 			{Name: pb.SyncMsg_SYNC_SESSION_DELTAS_ACK.String(),    Src: []string{"syncdelta"},     Dst: "syncdelta"},
-			{Name: pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE_ACK.String(),    Src: []string{"synclocating", "syncstate"},     Dst: "syncstate"},
+			{Name: pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE_ACK.String(),    Src: []string{"synclocating", "syncdelta", "syncstate"},     Dst: "syncstate"},
 			{Name: enterSyncBegin,   Src: []string{"idle"}, Dst: "synchandshake"},
 			{Name: enterGetBlock,    Src: syncPhase,        Dst: "syncblock"},
 			{Name: enterGetSnapshot, Src: syncPhase,        Dst: "syncsnapshot"},
@@ -66,7 +66,7 @@ func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 			"after_" + pb.SyncMsg_SYNC_SESSION_START_ACK.String(): func(e *fsm.Event) { h.client.afterSyncStartResponse(e) },
 			"after_" + pb.SyncMsg_SYNC_SESSION_QUERY_ACK.String():  func(e *fsm.Event) { h.client.afterQueryResponse(e) },
 			//"after_" + pb.SyncMsg_SYNC_SESSION_BLOCKS.String():    func(e *fsm.Event) { h.client.afterSyncBlocks(e) },
-			"after_" + pb.SyncMsg_SYNC_SESSION_DELTAS_ACK.String():    func(e *fsm.Event) { h.client.afterSyncStateDeltas(e) },
+			//"after_" + pb.SyncMsg_SYNC_SESSION_DELTAS_ACK.String():    func(e *fsm.Event) { h.client.afterSyncStateDeltas(e) },
 			"after_" + pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE_ACK.String():    func(e *fsm.Event) { h.client.afterSyncMessage(e) },
 
 			"leave_synclocating":                                  func(e *fsm.Event) { h.client.leaveSyncLocating(e) },

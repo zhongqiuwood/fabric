@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger"
-	"github.com/abchain/fabric/core/ledger/statemgmt"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/flogging"
@@ -22,7 +21,7 @@ type syncer struct {
 	ledger     *ledger.Ledger
 
 	positionResp chan *pb.SyncStateResp
-	deltaResp    chan *pb.SyncBlockState
+	//deltaResp    chan *pb.SyncBlockState
 	syncMessageChan   chan *pb.SyncMessage
 	startResponseChan chan *pb.SyncStartResponse
 
@@ -59,7 +58,7 @@ func newSyncer(ctx context.Context, h *stateSyncHandler) (sts *syncer) {
 
 	var err error
 	sts.positionResp = make(chan *pb.SyncStateResp)
-	sts.deltaResp = make(chan *pb.SyncBlockState)
+	//sts.deltaResp = make(chan *pb.SyncBlockState)
 	sts.syncMessageChan = make(chan *pb.SyncMessage)
 	sts.startResponseChan = make(chan *pb.SyncStartResponse)
 
@@ -149,15 +148,15 @@ func (sts *syncer) afterQueryResponse(e *fsm.Event) {
 //---------------------------------------------------------------------------
 // 4. receive delta response
 //---------------------------------------------------------------------------
-func (sts *syncer) afterSyncStateDeltas(e *fsm.Event) {
-
-	payloadMsg := &pb.SyncBlockState{}
-	msg := sts.parent.onRecvSyncMsg(e, payloadMsg)
-	if msg == nil {
-		return
-	}
-	sts.deltaResp <- payloadMsg
-}
+//func (sts *syncer) afterSyncStateDeltas(e *fsm.Event) {
+//
+//	payloadMsg := &pb.SyncBlockState{}
+//	msg := sts.parent.onRecvSyncMsg(e, payloadMsg)
+//	if msg == nil {
+//		return
+//	}
+//	sts.deltaResp <- payloadMsg
+//}
 
 func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 
@@ -212,7 +211,7 @@ func (sts *syncer) getSyncTargetBlockNumber() (uint64, uint64, error) {
 	return targetBlockNumber, endBlockNumber, nil
 }
 
-func (sts *syncer) sanityCheckBlock(block *pb.Block, stateHash []byte,
+func (sts *syncer) sanityCheckBlock(block *pb.Block, stateHash []byte, blockNum uint64,
 	deltaMessage *pb.SyncBlockState) ([]byte, error) {
 
 	success := false
@@ -225,7 +224,7 @@ func (sts *syncer) sanityCheckBlock(block *pb.Block, stateHash []byte,
 	logger.Debugf("Played state forward from %s to block %d with StateHash (%x), "+
 		"block has StateHash (%x)",
 		sts.parent.remotePeerIdName(),
-		deltaMessage.Range.End, stateHash,
+		blockNum, stateHash,
 		block.StateHash)
 
 	if bytes.Equal(block.StateHash, stateHash) {
@@ -253,132 +252,132 @@ func (sts *syncer) sanityCheckBlock(block *pb.Block, stateHash []byte,
 }
 
 
-func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, error) {
-	logger.Debugf("Attempting to play state forward from %v to block %d",
-		sts.parent.remotePeerIdName(),
-		endBlockNumber)
-	var stateHash []byte
-
-	intermediateBlock := endBlockNumber
-	currentStateBlockNumber := startBlockNumber
-
-	localBlock, err := sts.ledger.GetBlockByNumber(startBlockNumber - 1)
-	if err != nil {
-		return startBlockNumber, err
-	}
-	lastStateHash := localBlock.StateHash
-
-	logger.Debugf("Requesting state delta range from %d to %d",
-		startBlockNumber, intermediateBlock)
-
-	syncBlockRange := &pb.SyncBlockRange{
-		sts.correlationId,
-		currentStateBlockNumber,
-		intermediateBlock,
-	}
-	payloadMsg := &pb.SyncStateDeltasRequest{Range: syncBlockRange}
-	err = sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_DELTAS, payloadMsg)
-
-	if err != nil {
-		return startBlockNumber, fmt.Errorf("Received an error while trying to get "+
-			"the state deltas for blocks %d through %d from %s",
-			currentStateBlockNumber, intermediateBlock, sts.parent.remotePeerIdName())
-	}
-
-	for currentStateBlockNumber <= intermediateBlock {
-		select {
-		case deltaMessage, ok := <-sts.deltaResp:
-			if !ok {
-				err = fmt.Errorf("Was only able to recover to block number %d when desired to recover to %d",
-					currentStateBlockNumber, endBlockNumber)
-				break
-			}
-
-			if deltaMessage.Range.Start != currentStateBlockNumber ||
-				deltaMessage.Range.End < deltaMessage.Range.Start ||
-				deltaMessage.Range.End > endBlockNumber {
-				err = fmt.Errorf(
-					"Received a state delta either in the wrong order (backwards) or "+
-						"not next in sequence, aborting, start=%d, end=%d",
-					deltaMessage.Range.Start, deltaMessage.Range.End)
-				break
-			}
-
-			for _, syncData := range deltaMessage.Syncdata {
-
-				logger.Debugf("deltaMessage.Syncdata len<%d>, block num: <%s>", len(deltaMessage.Syncdata),
-					deltaMessage.Range)
-
-				deltaByte := syncData.StateDelta
-
-				logger.Debugf("deltaMessage.Syncdata <%x>", deltaByte)
-				block := syncData.Block
-				umDelta := statemgmt.NewStateDelta()
-				if err := umDelta.Unmarshal(deltaByte); nil != err {
-					err = fmt.Errorf("Received a corrupt state delta from %s : %s",
-						sts.parent.remotePeerIdName(), err)
-					break
-				}
-				logger.Debugf("Recv block [<%d>, <%d>]. currentStateBlockNumber<%d>, umDelta len<%d>",
-					deltaMessage.Range.Start,
-					deltaMessage.Range.End,
-					currentStateBlockNumber, len(umDelta.ChaincodeStateDeltas))
-				sts.ledger.ApplyStateDelta(deltaMessage, umDelta)
-
-				if block != nil {
-					lastStateHash, err = sts.sanityCheckBlock(block, lastStateHash, deltaMessage)
-					if err != nil {
-						logger.Errorf("sanityCheckBlock err: %s", err)
-						break
-					}
-				}
-
-				logger.Debugf("sts.ledger.CommitStateDelta: sts.currentStateBlockNumber<%d>",
-					currentStateBlockNumber)
-
-				if err := sts.ledger.CommitAndIndexStateDelta(deltaMessage, currentStateBlockNumber); err != nil {
-					sts.stateValid = false
-					err = fmt.Errorf("Played state forward according to %s, "+
-						"hashes matched, but failed to commit, invalidated state", sts.parent.remotePeerIdName())
-					logger.Errorf("%s", err)
-					break
-				}
-
-				//we can still forward even if we can't persist the block
-				if err := sts.ledger.PutBlock(currentStateBlockNumber, block); err != nil {
-					logger.Warningf("err <Put block fail: %s>", err)
-				}
-
-				logger.Debugf("Moved state to %d, endBlockNumber: %d", currentStateBlockNumber, endBlockNumber)
-
-				if currentStateBlockNumber == endBlockNumber {
-					logger.Infof("Caught up to block %d", currentStateBlockNumber)
-
-					logger.Infof("State is now valid at block %d and hash %x", currentStateBlockNumber, stateHash)
-					return currentStateBlockNumber, err
-				}
-
-				currentStateBlockNumber++
-			}
-			if err != nil || currentStateBlockNumber == endBlockNumber {
-				break
-			}
-		case <-time.After(sts.StateDeltaRequestTimeout):
-			logger.Warningf("Timed out during state delta recovery from %s", sts.parent.remotePeerIdName())
-			err = fmt.Errorf("timed out during state delta recovery from %s", sts.parent.remotePeerIdName())
-			break
-		}
-
-		if err != nil {
-			break
-		}
-	}
-
-	if err == nil {
-		logger.Infof("State is now valid at block %d and hash %x", currentStateBlockNumber, stateHash)
-	}
-	return currentStateBlockNumber, err
-}
+//func (sts *syncer) syncDeltas(startBlockNumber, endBlockNumber uint64) (uint64, error) {
+//	logger.Debugf("Attempting to play state forward from %v to block %d",
+//		sts.parent.remotePeerIdName(),
+//		endBlockNumber)
+//	var stateHash []byte
+//
+//	intermediateBlock := endBlockNumber
+//	currentStateBlockNumber := startBlockNumber
+//
+//	localBlock, err := sts.ledger.GetBlockByNumber(startBlockNumber - 1)
+//	if err != nil {
+//		return startBlockNumber, err
+//	}
+//	lastStateHash := localBlock.StateHash
+//
+//	logger.Debugf("Requesting state delta range from %d to %d",
+//		startBlockNumber, intermediateBlock)
+//
+//	syncBlockRange := &pb.SyncBlockRange{
+//		sts.correlationId,
+//		currentStateBlockNumber,
+//		intermediateBlock,
+//	}
+//	payloadMsg := &pb.SyncStateDeltasRequest{Range: syncBlockRange}
+//	err = sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_DELTAS, payloadMsg)
+//
+//	if err != nil {
+//		return startBlockNumber, fmt.Errorf("Received an error while trying to get "+
+//			"the state deltas for blocks %d through %d from %s",
+//			currentStateBlockNumber, intermediateBlock, sts.parent.remotePeerIdName())
+//	}
+//
+//	for currentStateBlockNumber <= intermediateBlock {
+//		select {
+//		case deltaMessage, ok := <-sts.deltaResp:
+//			if !ok {
+//				err = fmt.Errorf("Was only able to recover to block number %d when desired to recover to %d",
+//					currentStateBlockNumber, endBlockNumber)
+//				break
+//			}
+//
+//			if deltaMessage.Range.Start != currentStateBlockNumber ||
+//				deltaMessage.Range.End < deltaMessage.Range.Start ||
+//				deltaMessage.Range.End > endBlockNumber {
+//				err = fmt.Errorf(
+//					"Received a state delta either in the wrong order (backwards) or "+
+//						"not next in sequence, aborting, start=%d, end=%d",
+//					deltaMessage.Range.Start, deltaMessage.Range.End)
+//				break
+//			}
+//
+//			for _, syncData := range deltaMessage.Syncdata {
+//
+//				logger.Debugf("deltaMessage.Syncdata len<%d>, block num: <%s>", len(deltaMessage.Syncdata),
+//					deltaMessage.Range)
+//
+//				deltaByte := syncData.StateDelta
+//
+//				logger.Debugf("deltaMessage.Syncdata <%x>", deltaByte)
+//				block := syncData.Block
+//				umDelta := statemgmt.NewStateDelta()
+//				if err := umDelta.Unmarshal(deltaByte); nil != err {
+//					err = fmt.Errorf("Received a corrupt state delta from %s : %s",
+//						sts.parent.remotePeerIdName(), err)
+//					break
+//				}
+//				logger.Debugf("Recv block [<%d>, <%d>]. currentStateBlockNumber<%d>, umDelta len<%d>",
+//					deltaMessage.Range.Start,
+//					deltaMessage.Range.End,
+//					currentStateBlockNumber, len(umDelta.ChaincodeStateDeltas))
+//				sts.ledger.ApplyStateDelta(deltaMessage, umDelta)
+//
+//				if block != nil {
+//					lastStateHash, err = sts.sanityCheckBlock(block, lastStateHash, currentStateBlockNumber, deltaMessage)
+//					if err != nil {
+//						logger.Errorf("sanityCheckBlock err: %s", err)
+//						break
+//					}
+//				}
+//
+//				logger.Debugf("sts.ledger.CommitStateDelta: sts.currentStateBlockNumber<%d>",
+//					currentStateBlockNumber)
+//
+//				if err := sts.ledger.CommitAndIndexStateDelta(deltaMessage, currentStateBlockNumber); err != nil {
+//					sts.stateValid = false
+//					err = fmt.Errorf("Played state forward according to %s, "+
+//						"hashes matched, but failed to commit, invalidated state", sts.parent.remotePeerIdName())
+//					logger.Errorf("%s", err)
+//					break
+//				}
+//
+//				//we can still forward even if we can't persist the block
+//				if err := sts.ledger.PutBlock(currentStateBlockNumber, block); err != nil {
+//					logger.Warningf("err <Put block fail: %s>", err)
+//				}
+//
+//				logger.Debugf("Moved state to %d, endBlockNumber: %d", currentStateBlockNumber, endBlockNumber)
+//
+//				if currentStateBlockNumber == endBlockNumber {
+//					logger.Infof("Caught up to block %d", currentStateBlockNumber)
+//
+//					logger.Infof("State is now valid at block %d and hash %x", currentStateBlockNumber, stateHash)
+//					return currentStateBlockNumber, err
+//				}
+//
+//				currentStateBlockNumber++
+//			}
+//			if err != nil || currentStateBlockNumber == endBlockNumber {
+//				break
+//			}
+//		case <-time.After(sts.StateDeltaRequestTimeout):
+//			logger.Warningf("Timed out during state delta recovery from %s", sts.parent.remotePeerIdName())
+//			err = fmt.Errorf("timed out during state delta recovery from %s", sts.parent.remotePeerIdName())
+//			break
+//		}
+//
+//		if err != nil {
+//			break
+//		}
+//	}
+//
+//	if err == nil {
+//		logger.Infof("State is now valid at block %d and hash %x", currentStateBlockNumber, stateHash)
+//	}
+//	return currentStateBlockNumber, err
+//}
 
 
 func (sts *syncer) leaveSyncLocating(e *fsm.Event) {
@@ -674,12 +673,12 @@ func (sts *syncer) stateSwitch(statehash []byte) (uint64, error) {
 
 func (sts *syncer) fini() {
 
-	select {
-	case <-sts.deltaResp:
-	default:
-		logger.Debugf("close deltaResp channel")
-		close(sts.deltaResp)
-	}
+	//select {
+	//case <-sts.deltaResp:
+	//default:
+	//	logger.Debugf("close deltaResp channel")
+	//	close(sts.deltaResp)
+	//}
 
 	select {
 	case <-sts.positionResp:

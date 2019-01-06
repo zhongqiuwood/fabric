@@ -12,16 +12,17 @@ import (
 type SyncMessageHandler interface {
 	produceSyncStartRequest() *pb.SyncStartRequest
 	feedPayload(syncMessage *pb.SyncMessage) error
-	processResponse(syncMessage *pb.SyncMessage) (*pb.StateOffset, error)
+	processResponse(syncMessage *pb.SyncMessage) (*pb.SyncOffset, error)
+	getInitialOffset() (*pb.SyncOffset, error)
 }
 
 type StateMessageHandler struct {
 	client *syncer
 	statehash []byte
-	offset *pb.StateOffset
+	offset *pb.SyncOffset
 }
 
-func newStateMessageHandler(offset *pb.StateOffset, statehash []byte, client *syncer) *StateMessageHandler {
+func newStateMessageHandler(offset *pb.SyncOffset, statehash []byte, client *syncer) *StateMessageHandler {
 	handler := &StateMessageHandler{}
 	handler.client = client
 	handler.offset = offset
@@ -33,6 +34,11 @@ func (h *StateMessageHandler) feedPayload(syncMessage *pb.SyncMessage) error {
 
 	syncMessage.PayloadType = pb.SyncType_SYNC_STATE
 	return nil
+}
+
+func (h *StateMessageHandler) getInitialOffset() (*pb.SyncOffset, error) {
+
+	return h.client.ledger.NextStateOffset(nil)
 }
 
 
@@ -57,7 +63,7 @@ func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 	return req
 }
 
-func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb.StateOffset, error) {
+func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb.SyncOffset, error) {
 
 	stateChunkArrayResp := &pb.SyncStateChunk{}
 	err := proto.Unmarshal(syncMessage.Payload, stateChunkArrayResp)
@@ -65,8 +71,8 @@ func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb
 		return nil, err
 	}
 
-	if len(stateChunkArrayResp.FailedReason) > 0 {
-		err = fmt.Errorf("Sync state failed! Reason: %s", stateChunkArrayResp.FailedReason)
+	if len(syncMessage.FailedReason) > 0 {
+		err = fmt.Errorf("Sync state failed! Reason: %s", syncMessage.FailedReason)
 		return nil, err
 	}
 
@@ -74,7 +80,7 @@ func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb
 		return nil, err
 	}
 
-	var nextOffset *pb.StateOffset
+	var nextOffset *pb.SyncOffset
 	nextOffset, err = h.client.ledger.NextStateOffset(syncMessage.Offset)
 	if err != nil {
 		return nil, err

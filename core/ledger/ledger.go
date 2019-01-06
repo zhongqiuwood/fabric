@@ -852,15 +852,15 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 
 
 
-func (ledger *Ledger) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
+func (ledger *Ledger) GetStateDeltaFromDB(offset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
 	return ledger.state.GetStateDeltaFromDB(offset, snapshotHandler)
 }
 
-func (ledger *Ledger) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
+func (ledger *Ledger) NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error) {
 	return ledger.state.NextStateOffset(curOffset)
 }
 
-func (ledger *Ledger) SaveStateOffset(committedOffset *protos.StateOffset) error {
+func (ledger *Ledger) SaveStateOffset(committedOffset *protos.SyncOffset) error {
 	return ledger.state.SaveStateOffset(committedOffset)
 }
 

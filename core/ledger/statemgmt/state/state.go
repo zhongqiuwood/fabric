@@ -406,15 +406,15 @@ func decodeStateDeltaKey(dbkey []byte) uint64 {
 }
 
 
-func (state *State) GetStateDeltaFromDB(offset *protos.StateOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {
+func (state *State) GetStateDeltaFromDB(offset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {
 	return state.stateImpl.GetStateDeltaFromDB(offset, snapshotHandler)
 }
 
-func (state *State) NextStateOffset(curOffset *protos.StateOffset)(netxOffset *protos.StateOffset, err error) {
+func (state *State) NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error) {
 	return state.stateImpl.NextStateOffset(curOffset)
 }
 
-func (state *State) SaveStateOffset(committedOffset *protos.StateOffset) error {
+func (state *State) SaveStateOffset(committedOffset *protos.SyncOffset) error {
 	return state.stateImpl.SaveStateOffset(committedOffset)
 }
 

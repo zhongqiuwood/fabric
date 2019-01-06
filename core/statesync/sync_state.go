@@ -38,7 +38,7 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 		logger.Debugf("GetCurrentStateHash: <%x>", hash)
 	}
 
-	offset := &pb.StateOffset{data}
+	offset := &pb.SyncOffset{data}
 	syncHandler.client.syncMessageHandler = newStateMessageHandler(offset, hash, syncHandler.client)
 	//---------------------------------------------------------------------------
 	// 2. handshake: send break point state hash and state offset to peer
@@ -47,7 +47,7 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 	_, err = syncHandler.client.issueSyncRequest(req)
 	if err == nil {
 		// sync all k-v(s)
-		err = syncHandler.client.runSyncState()
+		err = syncHandler.client.executeSync()
 	}
 
 	//---------------------------------------------------------------------------
@@ -64,7 +64,7 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 //////////////////////////////////////////////////////////////////////////////
 /////////  client
 //////////////////////////////////////////////////////////////////////////////
-func (sts *syncer) commitStateChunk(stateChunkArray *pb.SyncStateChunk, committedOffset *pb.StateOffset) error {
+func (sts *syncer) commitStateChunk(stateChunkArray *pb.SyncStateChunk, committedOffset *pb.SyncOffset) error {
 	var err error
 
 	umDelta := statemgmt.NewStateDelta()
@@ -88,9 +88,10 @@ func (sts *syncer) commitStateChunk(stateChunkArray *pb.SyncStateChunk, committe
 	return err
 }
 
-func (sts *syncer) runSyncState() error {
+func (sts *syncer) executeSync() error {
 
-	nextOffset, err := sts.ledger.NextStateOffset(nil)
+	nextOffset, err := sts.syncMessageHandler.getInitialOffset()
+
 	if err != nil {
 		return err
 	}
@@ -122,7 +123,7 @@ func (sts *syncer) runSyncState() error {
 			}
 
 		case <-sts.Done():
-			err = fmt.Errorf("Timed out during wait for start Response")
+			err = fmt.Errorf("Timed out during wait for sync message Response")
 			break
 		}
 
@@ -144,7 +145,6 @@ func (sts *syncer) runSyncState() error {
 
 	return err
 }
-
 
 
 func (sts *syncer) afterSyncMessage(e *fsm.Event) {
@@ -178,14 +178,105 @@ func (server *stateServer) beforeSyncMessage(e *fsm.Event) {
 }
 
 func (d *stateServer) sendSyncMessageResponse(e *fsm.Event, message *pb.SyncMessage) {
-
 	if message.PayloadType == pb.SyncType_SYNC_STATE {
-
 		d.sendStateChuck(e, message.Offset)
 	} else if message.PayloadType == pb.SyncType_SYNC_BLOCK {
-
+		d.sendStateDeltasArray(e, message.Offset, message.CorrelationId)
 	}
 }
+
+func (d *stateServer) sendStateDeltasArray(e *fsm.Event, offset *pb.SyncOffset, correlationId uint64) {
+
+	blockOffset, err := offset.Unmarshal2BlockOffset()
+	if err != nil {
+		logger.Errorf("Error Unmarshal2BlockOffset: %s", err)
+		panic("todo")
+	}
+
+	logger.Debugf("Sending state deltas for block range <%d-%d>", blockOffset.StartNum, blockOffset.EndNum)
+
+	var blockNums []uint64
+	syncBlockRange := &pb.SyncBlockRange{}
+
+	syncBlockRange.Start = blockOffset.StartNum
+	syncBlockRange.End = blockOffset.EndNum
+
+	if syncBlockRange.Start > syncBlockRange.End {
+		// Send in reverse order
+		for i := syncBlockRange.Start; i >= syncBlockRange.End; i-- {
+			blockNums = append(blockNums, i)
+		}
+	} else {
+		for i := syncBlockRange.Start; i <= syncBlockRange.End; i++ {
+			logger.Debugf("%s: Appending to blockNums: %d", flogging.GoRDef, i)
+			blockNums = append(blockNums, i)
+		}
+	}
+
+	blockStateArray := make([]*pb.BlockState, 0)
+
+	failedReason := ""
+	var currBlockNum uint64
+	for _, currBlockNum = range blockNums {
+
+		var block *pb.Block
+		block, err = d.ledger.GetBlockByNumber(currBlockNum)
+		if err != nil {
+			break
+		}
+
+		var stateDelta *statemgmt.StateDelta
+		// Get the state deltas for Block from coordinator
+		stateDelta, err = d.ledger.GetStateDelta(currBlockNum)
+		if err != nil {
+			break
+		}
+		if stateDelta == nil {
+			logger.Warningf("Requested to send a stateDelta for blockNum %d which has been discarded",
+				currBlockNum)
+			break
+		}
+		stateDeltaBytes := stateDelta.Marshal()
+
+		logger.Debugf("currBlockNum<%d>, stateDelta: <%s>", currBlockNum, stateDelta)
+
+		blockState := &pb.BlockState{StateDelta: stateDeltaBytes, Block: block}
+		blockStateArray = append(blockStateArray, blockState)
+	}
+
+	if err != nil {
+		failedReason += fmt.Sprintf("%s; ", err)
+	}
+
+	blockOffset.EndNum = currBlockNum
+	syncStateDeltas := &pb.SyncBlockState{
+		Range:    &pb.SyncBlockRange{Start: blockOffset.StartNum, End: currBlockNum, CorrelationId: correlationId},
+		Syncdata: blockStateArray}
+
+	var data []byte
+	data, err = blockOffset.Byte()
+	offset.Data = data
+
+	if err != nil {
+		failedReason += fmt.Sprintf("%s; ", err)
+	}
+
+	var syncMessage *pb.SyncMessage
+	syncMessage, err = feedSyncMessage(offset, syncStateDeltas, pb.SyncType_SYNC_BLOCK_ACK)
+
+	if err != nil {
+		failedReason += fmt.Sprintf("%s; ", err)
+	}
+	syncMessage.FailedReason = failedReason
+
+	err = d.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE_ACK, syncMessage)
+	if err != nil {
+		logger.Errorf("Error sending SYNC_SESSION_SYNC_MESSAGE_ACK: %s", err)
+	}
+
+	logger.Debugf("Successfully sent stateDeltas for blockNum %d-%d", blockOffset.StartNum, currBlockNum)
+}
+
 
 
 func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest) error {
@@ -201,14 +292,14 @@ func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest) error {
 }
 
 
-func (server *stateServer) sendStateChuck(e *fsm.Event, offset *pb.StateOffset) {
+func (server *stateServer) sendStateChuck(e *fsm.Event, offset *pb.SyncOffset) {
 
 	var err error
 	stateChunkArray, err := server.ledger.GetStateDeltaFromDB(offset)
 
+	var failedReason string = ""
 	if err != nil {
-		stateChunkArray  = &pb.SyncStateChunk{}
-		stateChunkArray.FailedReason = fmt.Sprintf("%s", err)
+		failedReason = fmt.Sprintf("%s; ", err)
 	} else {
 		logger.Debugf("send <%s> stateDelta: <%s>", server.parent.remotePeerId, stateChunkArray)
 	}
@@ -216,16 +307,17 @@ func (server *stateServer) sendStateChuck(e *fsm.Event, offset *pb.StateOffset) 
 	var syncMessage *pb.SyncMessage
 	syncMessage, err = feedSyncMessage(offset, stateChunkArray, pb.SyncType_SYNC_STATE_ACK)
 	if err != nil {
-		stateChunkArray.FailedReason += fmt.Sprintf(" %s", err)
+		failedReason += fmt.Sprintf("%s", err)
 	}
 
+	syncMessage.FailedReason = failedReason
 	err = server.parent.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE_ACK, syncMessage)
 	if err != nil {
 		logger.Errorf("Error sending SYNC_SESSION_SYNC_MESSAGE_ACK: %s", err)
 	}
 }
 
-func feedSyncMessage(offset *pb.StateOffset, payload proto.Message, syncType pb.SyncType) (*pb.SyncMessage, error) {
+func feedSyncMessage(offset *pb.SyncOffset, payload proto.Message, syncType pb.SyncType) (*pb.SyncMessage, error) {
 
 	syncMessage := &pb.SyncMessage{}
 	syncMessage.Offset = offset

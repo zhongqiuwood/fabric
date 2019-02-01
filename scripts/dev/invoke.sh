@@ -29,21 +29,23 @@ function deployAndInvoke {
     invoke $1 1
 }
 
+PEER_PORT=2055
+
+
 function invoke {
-    CORE_PEER_LOCALADDR=127.0.0.1:2${PEER_ID}56 ${FABRIC_TOP}/build/bin/$PEER_CLIENT_BINARY chaincode invoke \
-        -l golang -n $1 -c "{\"Args\":[\"invoke\", \"a\", \"b\", \"$2\"]}"
+    CORE_SERVICE_CLIADDRESS=127.0.0.1:${PEER_PORT} ${FABRIC_TOP}/build/bin/$PEER_CLIENT_BINARY chaincode invoke -l golang -n $1 -c "{\"Args\":[\"invoke\", \"a\", \"b\", \"$2\"]}"
 }
 
 function query {
-    CORE_PEER_LOCALADDR=127.0.0.1:2056 ${FABRIC_TOP}/build/bin/$PEER_CLIENT_BINARY chaincode query -n $1 \
+    CORE_SERVICE_CLIADDRESS=127.0.0.1:${PEER_PORT} ${FABRIC_TOP}/build/bin/$PEER_CLIENT_BINARY chaincode query -n $1 \
         -c '{"Args":["query", "a"]}'
-    CORE_PEER_LOCALADDR=127.0.0.1:2056 ${FABRIC_TOP}/build/bin/$PEER_CLIENT_BINARY chaincode query -n $1 \
+    CORE_SERVICE_CLIADDRESS=127.0.0.1:${PEER_PORT} ${FABRIC_TOP}/build/bin/$PEER_CLIENT_BINARY chaincode query -n $1 \
         -c '{"Args":["query", "b"]}'
 }
 
 
 function deploy {
-    CORE_PEER_LOCALADDR=127.0.0.1:2056 ${FABRIC_TOP}/build/bin/$PEER_CLIENT_BINARY chaincode deploy -n $1 \
+    CORE_SERVICE_CLIADDRESS=127.0.0.1:${PEER_PORT} ${FABRIC_TOP}/build/bin/$PEER_CLIENT_BINARY chaincode deploy -n $1 \
         -c '{"Function":"init", "Args": ["a","100000", "b", "200000"]}'
 }
 

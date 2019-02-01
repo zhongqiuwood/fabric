@@ -138,7 +138,7 @@ function build_peer {
 
 function build_embedded {
     CGO_CFLAGS=" " CGO_LDFLAGS="-lrocksdb -lstdc++ -lm -lz -lbz2 -lsnappy" \
-        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/examples/chaincode/go/embedded
+        GOBIN=${GOPATH}/src/$FABRIC_PATH/build/bin go install $FABRIC_PATH/examples/chaincode/embedded
 }
 
 function build_testsync {
@@ -242,7 +242,7 @@ function startpeer {
     export CORE_REST_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}50
 
     export CORE_SERVICE_ADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}51
-    export CORE_SERVICE_CLIADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}51
+#    export CORE_SERVICE_CLIADDRESS=127.0.0.1:${PORT_PREFIX}${PEER_ID}59
 
     export CORE_PEER_ID=${FULL_PEER_ID}
     export CORE_PEER_LOCALADDR=127.0.0.1:${PORT_PREFIX}${PEER_ID}56

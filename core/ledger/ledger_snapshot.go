@@ -15,6 +15,16 @@ type LedgerSnapshot struct {
 	*db.DBSnapshot
 }
 
+func (sledger *LedgerSnapshot) GetParitalRangeIterator(offset *protos.SyncOffset) (statemgmt.PartialRangeIterator, error) {
+
+	partialInf := sledger.l.state.GetDividableState()
+	if partialInf == nil {
+		return fmt.Errorf("State not support")
+	}
+
+	return partialInf.GetPartialRangeIterator(s.DBSnapshot)
+}
+
 func (sledger *LedgerSnapshot) GetBlockByNumber(blockNumber uint64) (*protos.Block, error) {
 	size, err := sledger.GetBlockchainSize()
 
@@ -70,8 +80,8 @@ func (sledger *LedgerSnapshot) GetStateDelta(blockNumber uint64) (*statemgmt.Sta
 		return nil, nil
 	}
 	stateDelta := statemgmt.NewStateDelta()
-	stateDelta.Unmarshal(stateDeltaBytes)
-	return stateDelta, nil
+	err = stateDelta.Unmarshal(stateDeltaBytes)
+	return stateDelta, err
 }
 
 func (sledger *LedgerSnapshot) GetStateSnapshot() (*state.StateSnapshot, error) {

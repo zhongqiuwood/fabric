@@ -377,6 +377,15 @@ func (e *DBSnapshot) GetFromBlockchainCFSnapshot(key []byte) ([]byte, error) {
 	return e.getFromSnapshot(e.snapshot, e.BlockchainCF, key)
 }
 
+func (e *DBSnapshot) GetFromStateCFSnapshot(key []byte) ([]byte, error) {
+
+	if e.snapshot == nil {
+		return nil, fmt.Errorf("Snapshot is not inited")
+	}
+
+	return e.getFromSnapshot(e.snapshot, e.StateCF, key)
+}
+
 // GetStateCFSnapshotIterator get iterator for column family - stateCF. This iterator
 // is based on a snapshot and should be used for long running scans, such as
 // reading the entire state. Remember to call iterator.Close() when you are done.

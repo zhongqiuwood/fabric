@@ -848,3 +848,19 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 
 	return
 }
+
+//partial related APIs
+type partialSync struct {
+	statemgmt.DividableSyncState
+}
+
+func (ledger *Ledger) StartPartialSync(stateHash []byte) (*partialSync, error) {
+
+	partialInf := ledger.state.GetDividableState()
+	if partialInf == nil {
+		return nil, fmt.Errorf("State not support")
+	}
+
+	partialInf.InitPartialSync(stateHash)
+	return &partialSync{partialInf}, nil
+}

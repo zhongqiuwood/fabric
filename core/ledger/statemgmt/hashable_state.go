@@ -18,6 +18,7 @@ package statemgmt
 
 import (
 	"github.com/abchain/fabric/core/db"
+	"github.com/abchain/fabric/protos"
 )
 
 // HashableState - Interface that is be implemented by state management
@@ -52,6 +53,7 @@ type HashableState interface {
 	// All the key-value of global state. A particular implementation may need to remove additional information
 	// that the implementation keeps for faster crypto-hash computation. For instance, filter a few of the
 	// key-values or remove some data from particular key-values.
+	// YA-fabric: this API will be deprecated and we recommend use partial iterator for syncing
 	GetStateSnapshotIterator(snapshot *db.DBSnapshot) (StateSnapshotIterator, error)
 
 	// GetRangeScanIterator - state implementation to provide an iterator that is supposed to give
@@ -66,6 +68,19 @@ type HashableState interface {
 	// A state implementation may use this hint for prefetching relevant data so as if this could improve
 	// the performance of ComputeCryptoHash method (when gets called at a later time)
 	PerfHintKeyChanged(chaincodeID string, key string)
+}
+
+type DividableSyncState interface {
+	InitPartialSync([]byte)
+	IsCompleted() bool
+	RequiredParts() ([]*protos.SyncOffset, error)
+	ApplyPartialSync(*protos.SyncStateChunk) error
+}
+
+type HashAndDividableState interface {
+	HashableState
+	DividableSyncState
+	GetPartialRangeIterator(*db.DBSnapshot) (PartialRangeIterator, error)
 }
 
 // StateSnapshotIterator An interface that is to be implemented by the return value of
@@ -94,4 +109,10 @@ type RangeScanIterator interface {
 
 	// Close releases resources occupied by the iterator
 	Close()
+}
+
+type PartialRangeIterator interface {
+	RangeScanIterator
+	Seek(*protos.SyncOffset) error
+	GetMetaData() []byte
 }

@@ -67,7 +67,7 @@ func ConstructRandomStateDelta(
 	}
 
 	for _, chaincodeDelta := range delta.ChaincodeStateDeltas {
-		sortedKeys := chaincodeDelta.getSortedKeys()
+		sortedKeys := chaincodeDelta.GetSortedKeys()
 		smallestKey := sortedKeys[0]
 		largestKey := sortedKeys[len(sortedKeys)-1]
 		t.Logf("chaincode=%s, numKeys=%d, smallestKey=%s, largestKey=%s", chaincodeDelta.ChaincodeID, len(sortedKeys), smallestKey, largestKey)

@@ -97,6 +97,12 @@ type StateSnapshotIterator interface {
 	Close()
 }
 
+type PartialRangeIterator interface {
+	StateSnapshotIterator
+	Seek(*protos.SyncOffset) error
+	GetMetaData() []byte
+}
+
 // RangeScanIterator - is to be implemented by the return value of
 // GetRangeScanIterator method in the implementation of HashableState interface
 type RangeScanIterator interface {
@@ -109,10 +115,4 @@ type RangeScanIterator interface {
 
 	// Close releases resources occupied by the iterator
 	Close()
-}
-
-type PartialRangeIterator interface {
-	RangeScanIterator
-	Seek(*protos.SyncOffset) error
-	GetMetaData() []byte
 }

@@ -51,6 +51,14 @@ func unmarshalBucketNode(bucketKey *bucketKey, serializedBytes []byte) *bucketNo
 	return bucketNode
 }
 
+func (bucketNode *bucketNode) Dump()  {
+
+	for i := 0; i < conf.getMaxGroupingAtEachLevel(); i++ {
+		logger.Infof("<%s> child[%d]: [%x]", bucketNode.bucketKey, i,
+			bucketNode.childrenCryptoHash[i])
+	}
+}
+
 func (bucketNode *bucketNode) marshal() []byte {
 	buffer := proto.NewBuffer([]byte{})
 	for i := 0; i < conf.getMaxGroupingAtEachLevel(); i++ {

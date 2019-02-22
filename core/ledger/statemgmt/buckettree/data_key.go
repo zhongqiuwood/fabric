@@ -21,12 +21,17 @@ import (
 
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/util"
+	"github.com/golang/protobuf/proto"
 )
 
 type dataKey struct {
 	bucketKey    *bucketKey
 	compositeKey []byte
 }
+
+// YA-fabric: we use new encoding for datakey, the original way make a max byte as 8
+// so we use a larger (15) byte as the prefix
+const dataKeyPrefixByte = byte(15)
 
 func newDataKey(chaincodeID string, key string) *dataKey {
 	logger.Debugf("Enter - newDataKey. chaincodeID=[%s], key=[%s]", chaincodeID, key)
@@ -56,12 +61,22 @@ func (key *dataKey) getBucketKey() *bucketKey {
 }
 
 func encodeBucketNumber(bucketNumber int) []byte {
-	return util.EncodeOrderPreservingVarUint64(uint64(bucketNumber))
+	return append([]byte{dataKeyPrefixByte}, proto.EncodeVarint(uint64(bucketNumber))...)
+	//return util.EncodeOrderPreservingVarUint64(uint64(bucketNumber))
 }
 
 func decodeBucketNumber(encodedBytes []byte) (int, int) {
-	bucketNum, bytesConsumed := util.DecodeOrderPreservingVarUint64(encodedBytes)
-	return int(bucketNum), bytesConsumed
+
+	if len(encodedBytes) == 0 {
+		return 0, 0
+	} else if prefix := encodedBytes[0]; prefix == dataKeyPrefixByte {
+		v, sz := proto.DecodeVarint(encodedBytes[1:])
+		return int(v), sz + 1
+	} else {
+		//so we can still read old key ...
+		bucketNum, bytesConsumed := util.DecodeOrderPreservingVarUint64(encodedBytes)
+		return int(bucketNum), bytesConsumed
+	}
 }
 
 func (key *dataKey) getEncodedBytes() []byte {

@@ -253,3 +253,11 @@ func DecodeToUint64(bytes []byte) uint64 {
 func EncodeStatehash(statehash []byte) string {
 	return fmt.Sprintf("%x", statehash)
 }
+
+func Min(v1, v2 uint64) uint64 {
+	if v1 > v2 {
+		return v2
+	}
+
+	return v1
+}

@@ -79,6 +79,7 @@ message SyncStateDeltas {
 message SyncBlockState {
     SyncBlockRange range = 1;
     repeated BlockState syncdata = 2;
+//    string failedReason = 3;
 }
 
 // Like chat, stateSync wrap messages used in a syncing session
@@ -89,19 +90,22 @@ message SyncMsg {
         SYNC_STATE_NOTIFY = 1;
         SYNC_STATE_OPT = 2;
 
-        SYNC_SESSION_START = 5;
-        SYNC_SESSION_QUERY = 6;
-        SYNC_SESSION_RESPONSE = 7;
+        SYNC_SESSION_START = 3;
+        SYNC_SESSION_START_ACK = 4;
+        SYNC_SESSION_QUERY = 5;
+        SYNC_SESSION_QUERY_ACK = 6;
         SYNC_SESSION_END = 8;
 
-        SYNC_SESSION_GET_BLOCKS = 11;
-        SYNC_SESSION_BLOCKS = 12;
+        //        SYNC_SESSION_GET_BLOCKS = 11;
+        //        SYNC_SESSION_BLOCKS = 12;
+        //        SYNC_SESSION_GET_SNAPSHOT = 14;
+        //        SYNC_SESSION_SNAPSHOT = 15;
 
-        SYNC_SESSION_GET_SNAPSHOT = 14;
-        SYNC_SESSION_SNAPSHOT = 15;
-        SYNC_SESSION_GET_DELTAS = 16;
-        SYNC_SESSION_DELTAS = 17;
-        SYNC_SESSION_START_ACK = 18;
+        SYNC_SESSION_DELTAS = 16;
+        SYNC_SESSION_DELTAS_ACK = 17;
+
+        SYNC_SESSION_SYNC_MESSAGE  = 18;
+        SYNC_SESSION_SYNC_MESSAGE_ACK  = 19;
     }
     Type type = 1;
     uint64 correlationId = 2;
@@ -122,7 +126,73 @@ message SyncStateResp {
   uint64  blockHeight = 5;
 }
 
-
 message SyncStartRequest {
     uint32  id = 1;
+    SyncType payloadType = 2;
+    bytes  payload   = 3;
+
 }
+
+message SyncStartResponse {
+    uint32  id = 1;
+    string  rejectedReason = 2;
+    bytes  statehash   = 4;
+    uint64  blockHeight = 5;
+}
+
+message UpdatedValue {
+    bytes  Value   = 1;
+    bytes  PreviousValue   = 2;
+}
+
+message ChaincodeStateDelta {
+    map<string, UpdatedValue> UpdatedKVs = 1;
+}
+
+message SyncStateChunk {
+    SyncOffset offset = 1;
+//    bytes roothash = 2;
+    bytes metaData = 4;
+    map<string, ChaincodeStateDelta> ChaincodeStateDeltas = 3;
+}
+
+enum SyncType {
+    UNDEFINED      = 0;
+    SYNC_BLOCK     = 1;
+    SYNC_BLOCK_ACK = 2;
+    SYNC_STATE     = 3;
+    SYNC_STATE_ACK = 4;
+}
+
+message SyncMessage {
+    SyncType payloadType = 1;
+    bytes payload = 2;
+    SyncOffset offset = 3;
+    uint64 correlationId = 4;
+    string failedReason = 5;
+}
+
+message SyncState {
+    bytes  statehash = 1;
+    SyncOffset offset = 2;
+}
+
+message SyncOffset {
+    bytes data = 1;
+}
+
+message BucketTreeOffset {
+    uint64 level = 1;
+    uint64 bucketNum = 2;
+    uint64 delta = 3;
+}
+
+message BlockOffset {
+    uint64 startNum = 1;
+    uint64 endNum = 2;
+}
+
+
+
+
+

@@ -19,26 +19,26 @@ package buckettree
 import (
 	"fmt"
 
-	"github.com/golang/protobuf/proto"
 	openchainUtil "github.com/abchain/fabric/core/util"
+	"github.com/golang/protobuf/proto"
 )
 
 type bucketNode struct {
-	bucketKey          *bucketKey
+	bucketKey          bucketKeyLite
 	childrenCryptoHash [][]byte
 	childrenUpdated    []bool
 	markedForDeletion  bool
 }
 
 func newBucketNode(bucketKey *bucketKey) *bucketNode {
-	maxChildren := conf.getMaxGroupingAtEachLevel()
-	return &bucketNode{bucketKey, make([][]byte, maxChildren), make([]bool, maxChildren), false}
+	maxChildren := bucketKey.getMaxGroupingAtEachLevel()
+	return &bucketNode{bucketKey.bucketKeyLite, make([][]byte, maxChildren), make([]bool, maxChildren), false}
 }
 
 func unmarshalBucketNode(bucketKey *bucketKey, serializedBytes []byte) *bucketNode {
 	bucketNode := newBucketNode(bucketKey)
 	buffer := proto.NewBuffer(serializedBytes)
-	for i := 0; i < conf.getMaxGroupingAtEachLevel(); i++ {
+	for i := 0; i < len(bucketNode.childrenCryptoHash); i++ {
 		childCryptoHash, err := buffer.DecodeRawBytes(false)
 		if err != nil {
 			panic(fmt.Errorf("this error should not occur: %s", err))
@@ -51,18 +51,17 @@ func unmarshalBucketNode(bucketKey *bucketKey, serializedBytes []byte) *bucketNo
 	return bucketNode
 }
 
-func (bucketNode *bucketNode) Dump()  {
+func (bucketNode *bucketNode) Dump() {
 
-	for i := 0; i < conf.getMaxGroupingAtEachLevel(); i++ {
-		logger.Infof("<%s> child[%d]: [%x]", bucketNode.bucketKey, i,
-			bucketNode.childrenCryptoHash[i])
+	for i, hash := range bucketNode.childrenCryptoHash {
+		logger.Infof("<%s> child[%d]: [%x]", bucketNode.bucketKey, i, hash)
 	}
 }
 
 func (bucketNode *bucketNode) marshal() []byte {
 	buffer := proto.NewBuffer([]byte{})
-	for i := 0; i < conf.getMaxGroupingAtEachLevel(); i++ {
-		buffer.EncodeRawBytes(bucketNode.childrenCryptoHash[i])
+	for i, hash := range bucketNode.childrenCryptoHash {
+		buffer.EncodeRawBytes(hash)
 	}
 	return buffer.Bytes()
 }
@@ -74,7 +73,7 @@ func (bucketNode *bucketNode) setChildCryptoHash(childKey *bucketKey, cryptoHash
 }
 
 func (bucketNode *bucketNode) mergeBucketNode(anotherBucketNode *bucketNode) {
-	if !bucketNode.bucketKey.equals(anotherBucketNode.bucketKey) {
+	if !bucketNode.bucketKey.equals(&anotherBucketNode.bucketKey) {
 		panic(fmt.Errorf("Nodes with different keys can not be merged. BaseKey=[%#v], MergeKey=[%#v]", bucketNode.bucketKey, anotherBucketNode.bucketKey))
 	}
 	for i, childCryptoHash := range anotherBucketNode.childrenCryptoHash {
@@ -90,7 +89,7 @@ func (bucketNode *bucketNode) computeCryptoHash() []byte {
 	for i, childCryptoHash := range bucketNode.childrenCryptoHash {
 		if childCryptoHash != nil {
 			numChildren++
-			logger.Debugf("Appending crypto-hash for child bucket = [%s]", bucketNode.bucketKey.getChildKey(i))
+			logger.Debugf("Appending crypto-hash for child bucket %d in bucket %d", i, bucketNode.bucketKey.bucketNumber)
 			cryptoHashContent = append(cryptoHashContent, childCryptoHash...)
 		}
 	}

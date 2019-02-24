@@ -39,19 +39,19 @@ func (dataNodes dataNodes) Less(i, j int) bool {
 }
 
 type dataNodesDelta struct {
-	byBucket map[bucketKey]dataNodes
+	byBucket map[bucketKeyLite]dataNodes
 }
 
-func newDataNodesDelta(stateDelta *statemgmt.StateDelta) *dataNodesDelta {
-	dataNodesDelta := &dataNodesDelta{make(map[bucketKey]dataNodes)}
+func newDataNodesDelta(conf *config, stateDelta *statemgmt.StateDelta) *dataNodesDelta {
+	dataNodesDelta := &dataNodesDelta{make(map[bucketKeyLite]dataNodes)}
 	chaincodeIDs := stateDelta.GetUpdatedChaincodeIds(false)
 	for _, chaincodeID := range chaincodeIDs {
 		updates := stateDelta.GetUpdates(chaincodeID)
 		for key, updatedValue := range updates {
 			if stateDelta.RollBackwards {
-				dataNodesDelta.add(chaincodeID, key, updatedValue.GetPreviousValue())
+				dataNodesDelta.add(conf, chaincodeID, key, updatedValue.GetPreviousValue())
 			} else {
-				dataNodesDelta.add(chaincodeID, key, updatedValue.GetValue())
+				dataNodesDelta.add(conf, chaincodeID, key, updatedValue.GetValue())
 			}
 		}
 	}
@@ -61,16 +61,16 @@ func newDataNodesDelta(stateDelta *statemgmt.StateDelta) *dataNodesDelta {
 	return dataNodesDelta
 }
 
-func (dataNodesDelta *dataNodesDelta) add(chaincodeID string, key string, value []byte) {
-	dataKey := newDataKey(chaincodeID, key)
+func (dataNodesDelta *dataNodesDelta) add(conf *config, chaincodeID string, key string, value []byte) {
+	dataKey := newDataKey(conf, chaincodeID, key)
 	bucketKey := dataKey.getBucketKey()
 	dataNode := newDataNode(dataKey, value)
 	logger.Debugf("Adding dataNode=[%s] against bucketKey=[%s]", dataNode, bucketKey)
-	dataNodesDelta.byBucket[*bucketKey] = append(dataNodesDelta.byBucket[*bucketKey], dataNode)
+	dataNodesDelta.byBucket[bucketKey] = append(dataNodesDelta.byBucket[bucketKey], dataNode)
 }
 
-func (dataNodesDelta *dataNodesDelta) getAffectedBuckets() []*bucketKey {
-	changedBuckets := []*bucketKey{}
+func (dataNodesDelta *dataNodesDelta) getAffectedBuckets() []*bucketKeyLite {
+	changedBuckets := []*bucketKeyLite{}
 	for bucketKey := range dataNodesDelta.byBucket {
 		copyOfBucketKey := bucketKey.clone()
 		logger.Debugf("Adding changed bucket [%s]", copyOfBucketKey)
@@ -80,6 +80,6 @@ func (dataNodesDelta *dataNodesDelta) getAffectedBuckets() []*bucketKey {
 	return changedBuckets
 }
 
-func (dataNodesDelta *dataNodesDelta) getSortedDataNodesFor(bucketKey *bucketKey) dataNodes {
+func (dataNodesDelta *dataNodesDelta) getSortedDataNodesFor(bucketKey *bucketKeyLite) dataNodes {
 	return dataNodesDelta.byBucket[*bucketKey]
 }

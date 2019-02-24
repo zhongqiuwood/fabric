@@ -25,7 +25,7 @@ import (
 )
 
 type dataKey struct {
-	bucketKey    *bucketKey
+	bucketKey    bucketKeyLite
 	compositeKey []byte
 }
 
@@ -33,18 +33,18 @@ type dataKey struct {
 // so we use a larger (15) byte as the prefix
 const dataKeyPrefixByte = byte(15)
 
-func newDataKey(chaincodeID string, key string) *dataKey {
+func newDataKey(conf *config, chaincodeID string, key string) *dataKey {
 	logger.Debugf("Enter - newDataKey. chaincodeID=[%s], key=[%s]", chaincodeID, key)
 	compositeKey := statemgmt.ConstructCompositeKey(chaincodeID, key)
 	bucketHash := conf.computeBucketHash(compositeKey)
 	// Adding one because - we start bucket-numbers 1 onwards
 	bucketNumber := int(bucketHash)%conf.getNumBucketsAtLowestLevel() + 1
-	dataKey := &dataKey{newBucketKeyAtLowestLevel(bucketNumber), compositeKey}
+	dataKey := &dataKey{bucketKeyLite{conf.getLowestLevel(), bucketNumber}, compositeKey}
 	logger.Debugf("Exit - newDataKey=[%s]", dataKey)
 	return dataKey
 }
 
-func minimumPossibleDataKeyBytesFor(bucketKey *bucketKey) []byte {
+func minimumPossibleDataKeyBytesFor(bucketKey *bucketKeyLite) []byte {
 	min := encodeBucketNumber(bucketKey.bucketNumber)
 	min = append(min, byte(0))
 	return min
@@ -56,8 +56,8 @@ func minimumPossibleDataKeyBytes(bucketNumber int, chaincodeID string, key strin
 	return b
 }
 
-func (key *dataKey) getBucketKey() *bucketKey {
-	return key.bucketKey
+func (key *dataKey) getBucketKey() *bucketKeyLite {
+	return &key.bucketKey
 }
 
 func encodeBucketNumber(bucketNumber int) []byte {
@@ -85,10 +85,10 @@ func (key *dataKey) getEncodedBytes() []byte {
 	return encodedBytes
 }
 
-func newDataKeyFromEncodedBytes(encodedBytes []byte) *dataKey {
+func newDataKeyFromEncodedBytes(conf *config, encodedBytes []byte) *dataKey {
 	bucketNum, l := decodeBucketNumber(encodedBytes)
 	compositeKey := encodedBytes[l:]
-	return &dataKey{newBucketKeyAtLowestLevel(bucketNum), compositeKey}
+	return &dataKey{bucketKeyLite{conf.getLowestLevel(), bucketNum}, compositeKey}
 }
 
 func (key *dataKey) String() string {
@@ -96,6 +96,6 @@ func (key *dataKey) String() string {
 }
 
 func (key *dataKey) clone() *dataKey {
-	clone := &dataKey{key.bucketKey.clone(), key.compositeKey}
+	clone := &dataKey{key.bucketKey, key.compositeKey}
 	return clone
 }

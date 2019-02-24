@@ -50,7 +50,7 @@ func (s *StateSyncStub) SyncToTarget(blockNumber uint64, blockHash []byte, peerI
 	result = false
 
 	for _, peer := range peerIDs {
-		err = s.SyncToStateByPeer(context.Background(), blockHash, nil, peer)
+		err = s.SyncToStateByPeer(blockHash, nil, peer, "block")
 		if err == nil {
 			result = true
 			break
@@ -79,34 +79,23 @@ func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID, sstub *pb.StreamStub) p
 	return newStateSyncHandler(id, s.ledger, sstub)
 }
 
-func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byte, opt *syncOpt,
-	peer *pb.PeerID) error {
+func (s *StateSyncStub) SyncToStateByPeer(targetState []byte, opt *syncOpt,	peer *pb.PeerID, blockSync string) error {
 
 	var err error
 	s.Lock()
-	if s.curTask != nil {
-		s.Unlock()
-		return &ErrInProcess{fmt.Errorf("Another task is running")}
-	}
-
-	s.curTask = ctx
 	s.curCorrrelation++
 	s.Unlock()
 
 	// use stream stub get stream handler by PeerId
 	// down cast stream handler to stateSyncHandler
 	// call stateSyncHandler run
+
+	logger.Debugf("[%s]: StreamStub<%+v>, <%+v>", 	flogging.GoRDef, s.StreamStub, s)
+
 	handler := s.StreamStub.PickHandler(peer)
 
 	if handler == nil {
-
-		logger.Errorf("[%s]: Failed to find sync handler for peer <%v>",
-			flogging.GoRDef, peer)
-
-		err = fmt.Errorf("[%s]: Failed to find sync handler for peer <%v>",
-			flogging.GoRDef, peer)
-
-		return err
+		return fmt.Errorf("[%s]: Failed to find sync handler for peer <%v>",flogging.GoRDef, peer)
 	}
 
 	peerSyncHandler, ok := handler.StreamHandlerImpl.(*stateSyncHandler)
@@ -117,7 +106,13 @@ func (s *StateSyncStub) SyncToStateByPeer(ctx context.Context, targetState []byt
 			flogging.GoRDef, peer)
 	}
 
-	peerSyncHandler.run(ctx, targetState)
+	if blockSync == "block"{
+		err = peerSyncHandler.runSyncBlock(s.curTask, targetState)
+	} else if blockSync == "state" {
+		err = peerSyncHandler.runSyncState(s.curTask, targetState)
+	} else {
+		panic("Invalid type!")
+	}
 
 	defer func() {
 		s.Lock()

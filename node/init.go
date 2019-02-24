@@ -15,6 +15,7 @@ import (
 	"github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
+	"github.com/abchain/fabric/core/statesync"
 )
 
 func addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, error) {
@@ -170,7 +171,7 @@ func (ne *NodeEngine) ExecInit() error {
 		if err := p.Init(vp, ne, tag); err != nil {
 			return fmt.Errorf("Create peer %s fail: %s", tag, err)
 		}
-		logger.Info("Create peer:", tag)
+		logger.Infof("Create peer: %s", tag)
 	}
 
 	if defaultTag == "" {
@@ -195,6 +196,10 @@ func (ne *NodeEngine) Init() error {
 
 func (pe *PeerEngine) PreInit(node *NodeEngine) {
 	pe.TxHandlerOpts.ccSpecValidator = NewCCSpecValidator(node.Cred.ccSpecValidator)
+}
+
+func (p *PeerEngine) GetSyncStub() *statesync.StateSyncStub {
+	return p.StateSyncStub
 }
 
 func (pe *PeerEngine) Init(vp *viper.Viper, node *NodeEngine, tag string) error {

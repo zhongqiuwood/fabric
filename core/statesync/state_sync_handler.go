@@ -40,14 +40,14 @@ func newStateSyncHandler(remoterId *pb.PeerID, l *ledger.Ledger, sstub *pb.Strea
 	return h
 }
 
-func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte) error {
+func (syncHandler *stateSyncHandler) runSyncBlock(ctx context.Context, targetState []byte) error {
 
 	syncHandler.client = newSyncer(ctx, syncHandler)
 
-	defer logger.Infof("[%s]: Exit. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
+	defer logger.Infof("[%s]: Exit. Remote peer <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
 	defer syncHandler.fini()
 
-	logger.Infof("[%s]: Enter. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
+	logger.Infof("[%s]: Enter. Remote peer <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
 	//---------------------------------------------------------------------------
 	// 1. query
 	//---------------------------------------------------------------------------
@@ -63,10 +63,11 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 		logger.Errorf("[%s]: getSyncTargetBlockNumber err: %s", flogging.GoRDef, err)
 		return err
 	}
-	logger.Infof("[%s]: query done. mostRecentIdenticalHistoryPosition: %d, endBlockNumber: %d",
-		flogging.GoRDef, mostRecentIdenticalHistoryPosition, endBlockNumber)
 
 	startBlockNumber := mostRecentIdenticalHistoryPosition + 1
+
+	logger.Infof("[%s]: Query completed. Most recent identical block: %d, target block number: <%d-%d>",
+		flogging.GoRDef, mostRecentIdenticalHistoryPosition, startBlockNumber, endBlockNumber)
 
 	//---------------------------------------------------------------------------
 	// 2. switch to the right checkpoint
@@ -89,13 +90,15 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 	//---------------------------------------------------------------------------
 	// go to syncdelta state
 	syncHandler.fsmHandler.Event(enterGetDelta)
-	_, err = syncHandler.client.syncDeltas(startBlockNumber, endBlockNumber)
+	handler := newBlockMessageHandler(startBlockNumber, endBlockNumber, syncHandler.client)
+	syncHandler.client.syncMessageHandler = handler
+	err = syncHandler.client.executeSync()
 
 	if err != nil {
-		logger.Errorf("[%s]: sync detals err: %s", flogging.GoRDef, err)
+		logger.Errorf("[%s]: Failed to sync state detals. err: %s", flogging.GoRDef, err)
 		return err
 	}
-	logger.Infof("[%s]: sync detals done", flogging.GoRDef)
+	logger.Infof("[%s]: Sync state detals completed successfully!", flogging.GoRDef)
 
 	return err
 }
@@ -105,26 +108,32 @@ func (syncHandler *stateSyncHandler) run(ctx context.Context, targetState []byte
 //---------------------------------------------------------------------------
 func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 
-	msg := &pb.SyncStartRequest{}
+	logger.Infof("[%s]: sync beforeSyncStart done", flogging.GoRDef)
 
-	syncMsg := syncHandler.onRecvSyncMsg(e, msg)
+	startRequest := &pb.SyncStartRequest{}
+	syncMsg := syncHandler.onRecvSyncMsg(e, startRequest)
 
 	if syncMsg == nil {
+		e.Cancel(fmt.Errorf("unexpected sync message"))
 		return
 	}
 
 	syncHandler.server = newStateServer(syncHandler)
-
 	syncHandler.server.correlationId = syncMsg.CorrelationId
+	resp := &pb.SyncStartResponse{}
 
-	size, err := syncHandler.server.ledger.GetBlockchainSize()
-	if err != nil {
-		e.Cancel(err)
-		return
+	var err error
+	if startRequest.PayloadType == pb.SyncType_SYNC_BLOCK {
+		resp.BlockHeight, err = syncHandler.server.ledger.GetBlockchainSize()
+	} else if startRequest.PayloadType == pb.SyncType_SYNC_STATE {
+		err = syncHandler.server.verifySyncStateReq(startRequest)
 	}
 
-	resp := &pb.SyncStateResp{}
-	resp.BlockHeight = size
+	if err != nil {
+		resp.RejectedReason = fmt.Sprintf("%s", err)
+		logger.Errorf("[%s]: RejectedReason: %s", flogging.GoRDef, resp.RejectedReason)
+		e.Cancel(err)
+	}
 
 	err = syncHandler.sendSyncMsg(e, pb.SyncMsg_SYNC_SESSION_START_ACK, resp)
 	if err != nil {
@@ -135,7 +144,6 @@ func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 func (syncHandler *stateSyncHandler) fini() {
 
 	err := syncHandler.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_END, nil)
-
 	if err != nil {
 		logger.Errorf("[%s]: sendSyncMsg SyncMsg_SYNC_SESSION_END err: %s", flogging.GoRDef, err)
 	}
@@ -150,6 +158,7 @@ func (syncHandler *stateSyncHandler) sendSyncMsg(e *fsm.Event, msgType pb.SyncMs
 
 	if payloadMsg != nil {
 		tmp, err := proto.Marshal(payloadMsg)
+
 		if err != nil {
 			lerr := fmt.Errorf("Error Marshalling payload message for <%s>: %s", msgType.String(), err)
 			logger.Info(lerr.Error())
@@ -246,7 +255,11 @@ func (h *stateSyncHandler) HandleMessage(m proto.Message) error {
 		if _, ok := err.(ErrHandlerFatal); ok {
 			return err
 		}
-		logger.Errorf("Handle sync message <%s> fail: %s", wrapmsg.Type.String(), err)
+
+		msg := fmt.Sprintf("%s", err)
+		if "no transition" != msg {
+			logger.Errorf("Handle sync message <%s> fail: %s", wrapmsg.Type.String(), err)
+		}
 	}
 
 	return nil

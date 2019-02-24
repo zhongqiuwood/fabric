@@ -25,12 +25,12 @@ import (
 )
 
 func TestDataNodesSort(t *testing.T) {
-	initConfig(nil)
+	conf := initConfig(nil)
 	dataNodes := dataNodes{}
-	dataNode1 := newDataNode(newDataKey("chaincodeID1", "key1"), []byte("value1_1"))
-	dataNode2 := newDataNode(newDataKey("chaincodeID1", "key2"), []byte("value1_2"))
-	dataNode3 := newDataNode(newDataKey("chaincodeID2", "key1"), []byte("value2_1"))
-	dataNode4 := newDataNode(newDataKey("chaincodeID2", "key2"), []byte("value2_2"))
+	dataNode1 := newDataNode(newDataKey(conf, "chaincodeID1", "key1"), []byte("value1_1"))
+	dataNode2 := newDataNode(newDataKey(conf, "chaincodeID1", "key2"), []byte("value1_2"))
+	dataNode3 := newDataNode(newDataKey(conf, "chaincodeID2", "key1"), []byte("value2_1"))
+	dataNode4 := newDataNode(newDataKey(conf, "chaincodeID2", "key2"), []byte("value2_2"))
 	dataNodes = append(dataNodes, []*dataNode{dataNode2, dataNode4, dataNode3, dataNode1}...)
 	sort.Sort(dataNodes)
 	testutil.AssertSame(t, dataNodes[0], dataNode1)
@@ -40,7 +40,7 @@ func TestDataNodesSort(t *testing.T) {
 }
 
 func TestDataNodesDelta(t *testing.T) {
-	conf = newConfig(26, 3, fnvHash)
+	conf := newConfig(26, 3, fnvHash)
 	stateDelta := statemgmt.NewStateDelta()
 	stateDelta.Set("chaincodeID1", "key1", []byte("value1_1"), nil)
 	stateDelta.Set("chaincodeID1", "key2", []byte("value1_2"), nil)
@@ -49,9 +49,9 @@ func TestDataNodesDelta(t *testing.T) {
 
 	dataNodesDelta := newDataNodesDelta(stateDelta)
 	affectedBuckets := dataNodesDelta.getAffectedBuckets()
-	testutil.AssertContains(t, affectedBuckets, newDataKey("chaincodeID1", "key1").getBucketKey())
-	testutil.AssertContains(t, affectedBuckets, newDataKey("chaincodeID1", "key2").getBucketKey())
-	testutil.AssertContains(t, affectedBuckets, newDataKey("chaincodeID2", "key1").getBucketKey())
-	testutil.AssertContains(t, affectedBuckets, newDataKey("chaincodeID2", "key2").getBucketKey())
+	testutil.AssertContains(t, affectedBuckets, newDataKey(conf, "chaincodeID1", "key1").getBucketKey())
+	testutil.AssertContains(t, affectedBuckets, newDataKey(conf, "chaincodeID1", "key2").getBucketKey())
+	testutil.AssertContains(t, affectedBuckets, newDataKey(conf, "chaincodeID2", "key1").getBucketKey())
+	testutil.AssertContains(t, affectedBuckets, newDataKey(conf, "chaincodeID2", "key2").getBucketKey())
 
 }

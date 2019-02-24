@@ -18,7 +18,7 @@ package buckettree
 
 import (
 	"fmt"
-	"github.com/spf13/viper/cast"
+	"github.com/spf13/cast"
 	"hash/fnv"
 	"math"
 )
@@ -40,8 +40,6 @@ const ConfigBucketCacheMaxSize = "bucketCacheSize"
 const DefaultNumBuckets = 10009
 
 const DefaultSyncDeltaNumBuckets = 100
-
-const defaultBucketCacheMaxSize = 100 // MBs
 
 // DefaultMaxGroupingAtEachLevel - Number of max buckets to group at each level.
 // Grouping is started from left. The last group may have less buckets
@@ -84,14 +82,13 @@ func initConfig(configs map[string]interface{}) *config {
 		logger.Debugf("buckettree: syncDelta: [%d]", syncDelta)
 	}
 
-	conf := newConfig(numBuckets, maxGroupingAtEachLevel, syncDelta, hashFunction)
-
 	//TODO: what the hell ...
 	hashFunction, ok := configs[ConfigHashFunction].(hashFunc)
 	if !ok {
 		hashFunction = fnvHash
 	}
 
+	conf := newConfig(numBuckets, maxGroupingAtEachLevel)
 	conf.syncDelta = syncDelta
 	conf.hashFunc = hashFunction
 	conf.bucketCacheMaxSize = bucketCacheMaxSize
@@ -99,7 +96,7 @@ func initConfig(configs map[string]interface{}) *config {
 	return conf
 }
 
-func newConfig(numBuckets, maxGroupingAtEachLevel) *config {
+func newConfig(numBuckets, maxGroupingAtEachLevel int) *config {
 	conf := &config{maxGroupingAtEachLevel: maxGroupingAtEachLevel,
 		lowestLevel:          -1,
 		levelToNumBucketsMap: make(map[int]int),
@@ -174,7 +171,7 @@ func (config *config) Verify(level, startBucket, endBucket int) error {
 		return fmt.Errorf("Invalid level")
 	}
 
-	if endBucket > config.GetNumBuckets(level) {
+	if endBucket > config.getNumBuckets(level) {
 		return fmt.Errorf("Invalid end bucket num")
 	}
 
@@ -185,23 +182,23 @@ func (config *config) Verify(level, startBucket, endBucket int) error {
 	return nil
 }
 
-func (c *config) getLeafBuckets(level int, bucketNum int) (start, end int) {
+// func (c *config) getLeafBuckets(level int, bucketNum int) (start, end int) {
 
-	if level > c.lowestLevel || bucketNum > conf.GetNumBuckets(level) {
-		return 0, 0
-	}
+// 	if level > c.lowestLevel || bucketNum > c.getNumBuckets(level) {
+// 		return 0, 0
+// 	}
 
-	res := pow(c.maxGroupingAtEachLevel, c.lowestLevel-level)
+// 	res := pow(c.maxGroupingAtEachLevel, c.lowestLevel-level)
 
-	end = int(res) * bucketNum
-	if numbuckets := c.getNumBucketsAtLowestLevel(); end > numbuckets {
-		end = c.numbuckets
-	}
+// 	end = int(res) * bucketNum
+// 	if numbuckets := c.getNumBucketsAtLowestLevel(); end > numbuckets {
+// 		end = c.numbuckets
+// 	}
 
-	start = 1 + (bucketNum-1)*int(res)
-	logger.Debugf("LeafBuckets: %d-%d\n", start, end)
-	return start, end
-}
+// 	start = 1 + (bucketNum-1)*int(res)
+// 	logger.Debugf("LeafBuckets: %d-%d\n", start, end)
+// 	return start, end
+// }
 
 func (conf *config) getNecessaryBuckets(level int, bucketNum int) []*bucketKey {
 
@@ -221,14 +218,14 @@ func (conf *config) getNecessaryBuckets(level int, bucketNum int) []*bucketKey {
 		}
 		deltaOffset := pow(baseNumber, logarithmic)
 		offset += deltaOffset
-		bk := &bucketKey{level - logarithmic, offset / deltaOffset}
+		bk := newBucketKey(conf, level-logarithmic, offset/deltaOffset)
 		bucketKeyList = append(bucketKeyList, bk)
 
 		logger.Debugf("bucketKey[%s], delta level[%d], offset[%d]\n", bk, logarithmic, offset)
 		antilogarithm -= deltaOffset
 		if antilogarithm < baseNumber {
 			for offset < bucketNum {
-				bk := &bucketKey{level, offset + 1}
+				bk := newBucketKey(conf, level, offset+1)
 				bucketKeyList = append(bucketKeyList, bk)
 				logger.Debugf("bucketKey[%s]\n", bk)
 				offset++

@@ -24,16 +24,16 @@ import (
 
 func TestDataKey(t *testing.T) {
 	conf = newConfig(26, 3, fnvHash)
-	dataKey := newDataKey("chaincodeID", "key")
+	dataKey := newDataKey(conf, "chaincodeID", "key")
 	encodedBytes := dataKey.getEncodedBytes()
-	dataKeyFromEncodedBytes := newDataKeyFromEncodedBytes(encodedBytes)
+	dataKeyFromEncodedBytes := newDataKeyFromEncodedBytes(conf, encodedBytes)
 	testutil.AssertEquals(t, dataKey, dataKeyFromEncodedBytes)
 }
 
 func TestDataKeyGetBucketKey(t *testing.T) {
 	conf = newConfig(26, 3, fnvHash)
-	newDataKey("chaincodeID1", "key1").getBucketKey()
-	newDataKey("chaincodeID1", "key2").getBucketKey()
-	newDataKey("chaincodeID2", "key1").getBucketKey()
-	newDataKey("chaincodeID2", "key2").getBucketKey()
+	newDataKey(conf, "chaincodeID1", "key1").getBucketKey()
+	newDataKey(conf, "chaincodeID1", "key2").getBucketKey()
+	newDataKey(conf, "chaincodeID2", "key1").getBucketKey()
+	newDataKey(conf, "chaincodeID2", "key2").getBucketKey()
 }

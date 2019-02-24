@@ -5,7 +5,6 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/protos"
-	"github.com/tecbot/gorocksdb"
 )
 
 type PartialSnapshotIterator struct {
@@ -82,7 +81,7 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 	if level == partialItr.getLowestLevel() {
 		//transfer datanode
 		//seek to target datanode
-		partialItr.Seek(minimumPossibleDataKeyBytesFor(newBucketKey(level, startNum)))
+		partialItr.Seek(minimumPossibleDataKeyBytesFor(newBucketKey(partialItr.config, level, startNum)))
 		partialItr.Prev()
 		partialItr.lastBucketNum = endNum
 	} else {

@@ -23,19 +23,19 @@ import (
 )
 
 func TestBucketHashCalculator(t *testing.T) {
-	initConfig(nil)
-	c := newBucketHashCalculator(newBucketKey(1, 1))
+	conf := initConfig(nil)
+	c := newBucketHashCalculator(newBucketKey(conf, 1, 1))
 
 	testutil.AssertEquals(t, c.computeCryptoHash(), nil)
 
-	c.addNextNode(newDataNode(newDataKey("chaincodeID1", "key1"), []byte("value1")))
+	c.addNextNode(newDataNode(newDataKey(conf, "chaincodeID1", "key1"), []byte("value1")))
 
-	c.addNextNode(newDataNode(newDataKey("chaincodeID_2", "key_1"), []byte("value_1")))
-	c.addNextNode(newDataNode(newDataKey("chaincodeID_2", "key_2"), []byte("value_2")))
+	c.addNextNode(newDataNode(newDataKey(conf, "chaincodeID_2", "key_1"), []byte("value_1")))
+	c.addNextNode(newDataNode(newDataKey(conf, "chaincodeID_2", "key_2"), []byte("value_2")))
 
-	c.addNextNode(newDataNode(newDataKey("chaincodeID3", "key1"), []byte("value1")))
-	c.addNextNode(newDataNode(newDataKey("chaincodeID3", "key2"), []byte("value2")))
-	c.addNextNode(newDataNode(newDataKey("chaincodeID3", "key3"), []byte("value3")))
+	c.addNextNode(newDataNode(newDataKey(conf, "chaincodeID3", "key1"), []byte("value1")))
+	c.addNextNode(newDataNode(newDataKey(conf, "chaincodeID3", "key2"), []byte("value2")))
+	c.addNextNode(newDataNode(newDataKey(conf, "chaincodeID3", "key3"), []byte("value3")))
 
 	hash := c.computeCryptoHash()
 	expectedHashContent := expectedBucketHashContentForTest(

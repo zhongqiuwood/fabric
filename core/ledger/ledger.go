@@ -850,11 +850,11 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 }
 
 //partial related APIs
-type partialSync struct {
+type PartialSync struct {
 	statemgmt.DividableSyncState
 }
 
-func (ledger *Ledger) StartPartialSync(stateHash []byte) (*partialSync, error) {
+func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
 
 	partialInf := ledger.state.GetDividableState()
 	if partialInf == nil {
@@ -862,5 +862,5 @@ func (ledger *Ledger) StartPartialSync(stateHash []byte) (*partialSync, error) {
 	}
 
 	partialInf.InitPartialSync(stateHash)
-	return &partialSync{partialInf}, nil
+	return &PartialSync{partialInf}, nil
 }

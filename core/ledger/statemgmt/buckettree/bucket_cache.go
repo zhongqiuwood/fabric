@@ -36,7 +36,7 @@ var defaultBucketCacheMaxSize = 100 // MBs
 type bucketCache struct {
 	*db.OpenchainDB
 	isEnabled bool
-	c         map[bucketKey]*bucketNode
+	c         map[bucketKeyLite]*bucketNode
 	lock      sync.RWMutex
 	size      uint64
 	maxSize   uint64
@@ -49,10 +49,10 @@ func newBucketCache(maxSizeMBs int, db *db.OpenchainDB) *bucketCache {
 	} else {
 		logger.Infof("Constructing bucket-cache with max bucket cache size = [%d] MBs", maxSizeMBs)
 	}
-	return &bucketCache{OpenchainDB: db, c: make(map[bucketKey]*bucketNode), maxSize: uint64(maxSizeMBs * 1024 * 1024), isEnabled: isEnabled}
+	return &bucketCache{OpenchainDB: db, c: make(map[bucketKeyLite]*bucketNode), maxSize: uint64(maxSizeMBs * 1024 * 1024), isEnabled: isEnabled}
 }
 
-func (cache *bucketCache) loadAllBucketNodesFromDB() {
+func (cache *bucketCache) loadAllBucketNodesFromDB(conf *config) {
 	if !cache.isEnabled {
 		return
 	}
@@ -69,16 +69,16 @@ func (cache *bucketCache) loadAllBucketNodesFromDB() {
 			itr.Value().Free()
 			break
 		}
-		bKey := decodeBucketKey(statemgmt.Copy(itr.Key().Data()))
+		bKey := decodeBucketKey(conf, statemgmt.Copy(itr.Key().Data()))
 		nodeBytes := statemgmt.Copy(itr.Value().Data())
-		bucketNode := unmarshalBucketNode(&bKey, nodeBytes)
+		bucketNode := unmarshalBucketNode(bKey, nodeBytes)
 		size := bKey.size() + bucketNode.size()
 		cache.size += size
 		if cache.size >= cache.maxSize {
 			cache.size -= size
 			break
 		}
-		cache.c[bKey] = bucketNode
+		cache.c[bKey.bucketKeyLite] = bucketNode
 		itr.Key().Free()
 		itr.Value().Free()
 		count++
@@ -86,7 +86,7 @@ func (cache *bucketCache) loadAllBucketNodesFromDB() {
 	logger.Infof("Loaded buckets data in cache. Total buckets in DB = [%d]. Total cache size:=%d", count, cache.size)
 }
 
-func (cache *bucketCache) putWithoutLock(key bucketKey, node *bucketNode) {
+func (cache *bucketCache) putWithoutLock(key bucketKeyLite, node *bucketNode) {
 	if !cache.isEnabled {
 		return
 	}
@@ -113,21 +113,21 @@ func (cache *bucketCache) putWithoutLock(key bucketKey, node *bucketNode) {
 	}
 }
 
-func (cache *bucketCache) get(key bucketKey) (*bucketNode, error) {
+func (cache *bucketCache) get(conf *config, key bucketKeyLite) (*bucketNode, error) {
 	defer perfstat.UpdateTimeStat("timeSpent", time.Now())
 	if !cache.isEnabled {
-		return fetchBucketNodeFromDB(cache.OpenchainDB, &key)
+		return fetchBucketNodeFromDB(cache.OpenchainDB, &bucketKey{key, conf})
 	}
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
 	bucketNode := cache.c[key]
 	if bucketNode == nil {
-		return fetchBucketNodeFromDB(cache.OpenchainDB, &key)
+		return fetchBucketNodeFromDB(cache.OpenchainDB, &bucketKey{key, conf})
 	}
 	return bucketNode, nil
 }
 
-func (cache *bucketCache) removeWithoutLock(key bucketKey) {
+func (cache *bucketCache) removeWithoutLock(key bucketKeyLite) {
 	if !cache.isEnabled {
 		return
 	}
@@ -138,7 +138,7 @@ func (cache *bucketCache) removeWithoutLock(key bucketKey) {
 	}
 }
 
-func (bk bucketKey) size() uint64 {
+func (bk bucketKeyLite) size() uint64 {
 	return uint64(unsafe.Sizeof(bk))
 }
 

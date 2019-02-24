@@ -22,60 +22,12 @@ import (
 	"github.com/golang/protobuf/proto"
 )
 
-type bucketKey struct {
+type bucketKeyLite struct {
 	level        int
 	bucketNumber int
 }
 
-func newBucketKey(level int, bucketNumber int) *bucketKey {
-	if level > conf.getLowestLevel() || level < 0 {
-		panic(fmt.Errorf("Invalid Level [%d] for bucket key. Level can be between 0 and [%d]", level, conf.lowestLevel))
-	}
-
-	if bucketNumber < 1 || bucketNumber > conf.getNumBuckets(level) {
-		panic(fmt.Errorf("Invalid bucket number [%d]. Bucket nuber at level [%d] can be between 1 and [%d]", bucketNumber, level, conf.getNumBuckets(level)))
-	}
-	return &bucketKey{level, bucketNumber}
-}
-
-func newBucketKeyAtLowestLevel(bucketNumber int) *bucketKey {
-	return newBucketKey(conf.getLowestLevel(), bucketNumber)
-}
-
-func constructRootBucketKey() *bucketKey {
-	return newBucketKey(0, 1)
-}
-
-func decodeBucketKey(keyBytes []byte) bucketKey {
-	level, numBytesRead := proto.DecodeVarint(keyBytes[1:])
-	bucketNumber, _ := proto.DecodeVarint(keyBytes[numBytesRead+1:])
-	return bucketKey{int(level), int(bucketNumber)}
-}
-
-func (bucketKey *bucketKey) getParentKey() *bucketKey {
-	return newBucketKey(bucketKey.level-1, conf.computeParentBucketNumber(bucketKey.bucketNumber))
-}
-
-func (bucketKey *bucketKey) equals(anotherBucketKey *bucketKey) bool {
-	return bucketKey.level == anotherBucketKey.level && bucketKey.bucketNumber == anotherBucketKey.bucketNumber
-}
-
-func (bucketKey *bucketKey) getChildIndex(childKey *bucketKey) int {
-	bucketNumberOfFirstChild := ((bucketKey.bucketNumber - 1) * conf.getMaxGroupingAtEachLevel()) + 1
-	bucketNumberOfLastChild := bucketKey.bucketNumber * conf.getMaxGroupingAtEachLevel()
-	if childKey.bucketNumber < bucketNumberOfFirstChild || childKey.bucketNumber > bucketNumberOfLastChild {
-		panic(fmt.Errorf("[%#v] is not a valid child bucket of [%#v]", childKey, bucketKey))
-	}
-	return childKey.bucketNumber - bucketNumberOfFirstChild
-}
-
-func (bucketKey *bucketKey) getChildKey(index int) *bucketKey {
-	bucketNumberOfFirstChild := ((bucketKey.bucketNumber - 1) * conf.getMaxGroupingAtEachLevel()) + 1
-	bucketNumberOfChild := bucketNumberOfFirstChild + index
-	return newBucketKey(bucketKey.level+1, bucketNumberOfChild)
-}
-
-func (bucketKey *bucketKey) getEncodedBytes() []byte {
+func (bucketKey *bucketKeyLite) getEncodedBytes() []byte {
 	encodedBytes := []byte{}
 	encodedBytes = append(encodedBytes, byte(0))
 	encodedBytes = append(encodedBytes, proto.EncodeVarint(uint64(bucketKey.level))...)
@@ -83,10 +35,63 @@ func (bucketKey *bucketKey) getEncodedBytes() []byte {
 	return encodedBytes
 }
 
-func (bucketKey *bucketKey) String() string {
+func (bucketKey *bucketKeyLite) String() string {
 	return fmt.Sprintf("level=[%d], bucketNumber=[%d]", bucketKey.level, bucketKey.bucketNumber)
 }
 
-func (bucketKey *bucketKey) clone() *bucketKey {
-	return newBucketKey(bucketKey.level, bucketKey.bucketNumber)
+func (bucketKey *bucketKeyLite) equals(anotherBucketKey *bucketKeyLite) bool {
+	return bucketKey.level == anotherBucketKey.level && bucketKey.bucketNumber == anotherBucketKey.bucketNumber
+}
+
+func (bucketKey *bucketKeyLite) clone() *bucketKeyLite {
+	return &bucketKeyLite{bucketKey.level, bucketKey.bucketNumber}
+}
+
+func (bucketKey *bucketKeyLite) getChildIndex(childKey *bucketKey) int {
+	bucketNumberOfFirstChild := ((bucketKey.bucketNumber - 1) * childKey.getMaxGroupingAtEachLevel()) + 1
+	bucketNumberOfLastChild := bucketKey.bucketNumber * childKey.getMaxGroupingAtEachLevel()
+	if childKey.bucketNumber < bucketNumberOfFirstChild || childKey.bucketNumber > bucketNumberOfLastChild {
+		panic(fmt.Errorf("[%#v] is not a valid child bucket of [%#v]", childKey, bucketKey))
+	}
+	return childKey.bucketNumber - bucketNumberOfFirstChild
+}
+
+type bucketKey struct {
+	bucketKeyLite
+	*config
+}
+
+func newBucketKey(conf *config, level int, bucketNumber int) *bucketKey {
+	if level > conf.getLowestLevel() || level < 0 {
+		panic(fmt.Errorf("Invalid Level [%d] for bucket key. Level can be between 0 and [%d]", level, conf.lowestLevel))
+	}
+
+	if bucketNumber < 1 || bucketNumber > conf.getNumBuckets(level) {
+		panic(fmt.Errorf("Invalid bucket number [%d]. Bucket nuber at level [%d] can be between 1 and [%d]", bucketNumber, level, conf.getNumBuckets(level)))
+	}
+	return &bucketKey{bucketKeyLite{level, bucketNumber}, conf}
+}
+
+func newBucketKeyAtLowestLevel(conf *config, bucketNumber int) *bucketKey {
+	return newBucketKey(conf, conf.getLowestLevel(), bucketNumber)
+}
+
+func constructRootBucketKey(conf *config) *bucketKey {
+	return newBucketKey(conf, 0, 1)
+}
+
+func decodeBucketKey(conf *config, keyBytes []byte) *bucketKey {
+	level, numBytesRead := proto.DecodeVarint(keyBytes[1:])
+	bucketNumber, _ := proto.DecodeVarint(keyBytes[numBytesRead+1:])
+	return newBucketKey(conf, int(level), int(bucketNumber))
+}
+
+func (bucketKey *bucketKey) getParentKey() *bucketKey {
+	return newBucketKey(bucketKey.config, bucketKey.level-1, bucketKey.computeParentBucketNumber(bucketKey.bucketNumber))
+}
+
+func (bucketKey *bucketKey) getChildKey(index int) *bucketKey {
+	bucketNumberOfFirstChild := ((bucketKey.bucketNumber - 1) * bucketKey.getMaxGroupingAtEachLevel()) + 1
+	bucketNumberOfChild := bucketNumberOfFirstChild + index
+	return newBucketKey(bucketKey.config, bucketKey.level+1, bucketNumberOfChild)
 }

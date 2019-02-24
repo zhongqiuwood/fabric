@@ -1,46 +1,36 @@
-/*
-Copyright BlackPai Corp. 2016 All Rights Reserved.
-
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
-
-		 http://www.apache.org/licenses/LICENSE-2.0
-
-Unless required by applicable law or agreed to in writing, software
-distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
-
 package main
 
 import (
-	"flag"
-	"fmt"
-	"os"
-
 	"github.com/abchain/fabric/core/db"
-	"github.com/abchain/fabric/protos"
-	"github.com/spf13/viper"
-	"github.com/abchain/fabric/flogging"
-	"github.com/op/go-logging"
-	"github.com/tecbot/gorocksdb"
-	"github.com/abchain/fabric/core/util"
+	"fmt"
 	"strconv"
+	"os"
+	"flag"
+	"github.com/spf13/viper"
+	"github.com/tecbot/gorocksdb"
+	"github.com/op/go-logging"
+	"github.com/abchain/fabric/protos"
+	"github.com/abchain/fabric/core/util"
+	"github.com/abchain/fabric/core/ledger/statemgmt/buckettree"
+	node "github.com/abchain/fabric/node/start"
+	pb "github.com/abchain/fabric/protos"
+
 )
 
-var logger = logging.MustGetLogger("dbscan")
+var logger *logging.Logger
+
+//var logger = logging.MustGetLogger("dbscan")
 
 type detailPrinter func(data []byte)
+
 
 func main() {
 	flagSetName := os.Args[0]
 	flagSet := flag.NewFlagSet(flagSetName, flag.ExitOnError)
 	dbDirPtr := flagSet.String("dbpath", "", "path to db dump")
 	switchPtr := flagSet.String("switch", "", "statehash for db to switch")
-	dumpPtr := flagSet.String("dump", "", "dump db")
+	dumpBlockPtr := flagSet.String("block", "", "dump db")
+	dumpStatePtr := flagSet.String("state", "", "dump db")
 	flagSet.Parse(os.Args[1:])
 
 	dbDir := *dbDirPtr
@@ -51,8 +41,7 @@ func main() {
 
 	switchTargetNum, _ := strconv.Atoi(switchTarget)
 
-
-	flogging.LoggingInit("client")
+	_ = switchTargetNum
 
 	if len(dbDir) == 0 {
 		fmt.Fprintf(os.Stderr, "Usage of %s:\n", flagSetName)
@@ -73,31 +62,72 @@ func main() {
 		os.Exit(5)
 	}
 
-	db.Start()
+	reg := func() error {
 
-	orgdb := db.GetDBHandle()
+		logger = logging.MustGetLogger("dbscan")
 
-	if switchTarget != "" {
-		swtch(uint64(switchTargetNum), orgdb)
+		orgdb := db.GetDBHandle()
+		txdb := db.GetGlobalDBHandle()
+
+		if len(*dumpStatePtr) > 0 {
+			buckettree.DumpDataNodes()
+			dumpBreakPointRootHash(-1)
+		}
+
+		if len(*dumpBlockPtr) > 0 {
+			scan(orgdb.GetIterator(db.IndexesCF).Iterator, db.IndexesCF, nil)
+			scan(orgdb.GetIterator(db.BlockchainCF).Iterator, db.BlockchainCF, blockDetailPrinter)
+			scan(orgdb.GetIterator(db.StateCF).Iterator, db.StateCF, nil)
+			scan(orgdb.GetIterator(db.StateDeltaCF).Iterator, db.StateDeltaCF, nil)
+			scan(orgdb.GetIterator(db.PersistCF).Iterator, db.PersistCF, nil)
+			scan(txdb.GetIterator(db.TxCF), db.TxCF, txDetailPrinter)
+			scan(txdb.GetIterator(db.GlobalCF), db.GlobalCF, gsDetailPrinter)
+			scan(txdb.GetIterator(db.PersistCF), db.PersistCF, nil)
+		}
+		os.Exit(0)
+		return nil
 	}
 
-	txdb := db.GetGlobalDBHandle()
-	defer db.Stop()
-
-	if len(*dumpPtr) > 0 {
-
-		scan(orgdb.GetIterator(db.IndexesCF).Iterator, db.IndexesCF, nil)
-		scan(orgdb.GetIterator(db.BlockchainCF).Iterator, db.BlockchainCF, blockDetailPrinter)
-		scan(orgdb.GetIterator(db.StateCF).Iterator, db.StateCF, nil)
-		scan(orgdb.GetIterator(db.StateDeltaCF).Iterator, db.StateDeltaCF, nil)
-		scan(orgdb.GetIterator(db.PersistCF).Iterator, db.PersistCF, nil)
-
-		scan(txdb.GetIterator(db.TxCF), db.TxCF, txDetailPrinter)
-		scan(txdb.GetIterator(db.GlobalCF), db.GlobalCF, gsDetailPrinter)
-		scan(txdb.GetIterator(db.PersistCF), db.PersistCF, nil)
-	}
+	node.RunNode(&node.NodeConfig{PostRun: reg})
 }
 
+func dumpBucketNodesRootHash(expectedLevel int) {
+	output("=========================================================")
+	output("== Dump level[%d]:", expectedLevel)
+	output("=========================================================")
+	maxNum := buckettree.BucketTreeConfig().GetNumBuckets(expectedLevel)
+	for i := 1; i <= maxNum; i++ {
+
+		stateOffset := pb.NewStateOffset(uint64(expectedLevel), uint64(i))
+		buckettree.ComputeStateHashByOffset(stateOffset,  nil)
+	}
+
+}
+
+
+func dumpBreakPointRootHash(level int) {
+
+	if level < 0 {
+		// dump all levels
+		for levelIdx := 0; levelIdx <= buckettree.BucketTreeConfig().GetLowestLevel(); levelIdx++{
+			dumpBucketNodesRootHash(levelIdx)
+		}
+	} else {
+		// dump specified level
+		dumpBucketNodesRootHash(level)
+	}
+
+	output("=========================================================")
+	output("== Bucket tree dump completed!")
+	output("=========================================================")
+}
+
+func output(format string, a ...interface{}) (n int, err error) {
+	format += "\n"
+
+	logger.Infof(format, a...)
+	return fmt.Printf(format, a...)
+}
 
 func swtch(target uint64, orgdb *db.OpenchainDB) error {
 
@@ -135,8 +165,6 @@ func getBlockStateHash(blockNumber uint64) []byte {
 	if err != nil {
 		return nil
 	}
-
-	//fmt.Printf("====== Dump[%d] %v: ====== \n", blockNumber, block)
 
 	return block.StateHash
 }

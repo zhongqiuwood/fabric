@@ -33,7 +33,7 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 		}
 
 		logger.Errorf("Recorded sync state [%x] is invalid: %s", targetStateHash, err)
-		parent.DeleteKey(db.StateCF, dbItr.Key())
+		parent.DeleteKey(db.StateCF, dbItr.Key().Data())
 	}
 
 	return nil
@@ -45,9 +45,9 @@ func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 		StateImpl:       parent,
 		targetStateHash: stateHash,
 		current: &protos.BucketTreeOffset{
-			Level:     parent.currentConfig.getLowestLevel(),
+			Level:     uint64(parent.currentConfig.getLowestLevel()),
 			BucketNum: 1,
-			Delta:     uint64(min(parent.currentConfig.syncDelta, parent.currentConfig.getNumBucketsAtLowestLevel())),
+			Delta:     min(uint64(parent.currentConfig.syncDelta), uint64(parent.currentConfig.getNumBucketsAtLowestLevel())),
 		},
 	}
 }
@@ -56,7 +56,7 @@ func (proc *syncProcess) RequiredParts() ([]*protos.SyncOffset, error) {
 
 	conf := proc.currentConfig
 
-	maxNum := uint64(conf.GetNumBuckets(int(proc.current.Level)))
+	maxNum := uint64(conf.getNumBuckets(int(proc.current.Level)))
 	nextNum := proc.current.BucketNum + proc.current.Delta
 
 	if maxNum <= nextNum-1 {

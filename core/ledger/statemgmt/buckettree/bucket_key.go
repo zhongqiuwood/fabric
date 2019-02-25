@@ -47,6 +47,10 @@ func (bucketKey *bucketKeyLite) clone() *bucketKeyLite {
 	return &bucketKeyLite{bucketKey.level, bucketKey.bucketNumber}
 }
 
+func (bklite *bucketKeyLite) getBucketKey(conf *config) *bucketKey {
+	return &bucketKey{*bklite, conf}
+}
+
 func (bucketKey *bucketKeyLite) getChildIndex(childKey *bucketKey) int {
 	bucketNumberOfFirstChild := ((bucketKey.bucketNumber - 1) * childKey.getMaxGroupingAtEachLevel()) + 1
 	bucketNumberOfLastChild := bucketKey.bucketNumber * childKey.getMaxGroupingAtEachLevel()
@@ -94,4 +98,8 @@ func (bucketKey *bucketKey) getChildKey(index int) *bucketKey {
 	bucketNumberOfFirstChild := ((bucketKey.bucketNumber - 1) * bucketKey.getMaxGroupingAtEachLevel()) + 1
 	bucketNumberOfChild := bucketNumberOfFirstChild + index
 	return newBucketKey(bucketKey.config, bucketKey.level+1, bucketNumberOfChild)
+}
+
+func (bucketKey *bucketKey) equals(anotherBucketKey *bucketKey) bool {
+	return bucketKey.bucketKeyLite.equals(&anotherBucketKey.bucketKeyLite)
 }

@@ -41,7 +41,7 @@ func unmarshalBucketNode(bucketKey *bucketKey, serializedBytes []byte) *bucketNo
 	for i := 0; i < len(bucketNode.childrenCryptoHash); i++ {
 		childCryptoHash, err := buffer.DecodeRawBytes(false)
 		if err != nil {
-			panic(fmt.Errorf("this error should not occur: %s", err))
+			panic(fmt.Errorf("this error should not occur: %s [parsing %x on %d parses]", err, serializedBytes, i))
 		}
 		//protobuf's buffer.EncodeRawBytes/buffer.DecodeRawBytes convert a nil into a zero length byte-array, so nil check would not work
 		if len(childCryptoHash) != 0 {
@@ -60,7 +60,7 @@ func (bucketNode *bucketNode) Dump() {
 
 func (bucketNode *bucketNode) marshal() []byte {
 	buffer := proto.NewBuffer([]byte{})
-	for i, hash := range bucketNode.childrenCryptoHash {
+	for _, hash := range bucketNode.childrenCryptoHash {
 		buffer.EncodeRawBytes(hash)
 	}
 	return buffer.Bytes()

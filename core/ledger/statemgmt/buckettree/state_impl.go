@@ -49,7 +49,7 @@ func NewStateImpl(db *db.OpenchainDB) *StateImpl {
 // Initialize - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 	stateImpl.currentConfig = initConfig(configs)
-	rootBucketNode, err := fetchBucketNodeFromDB(stateImpl.OpenchainDB, constructRootBucketKey())
+	rootBucketNode, err := fetchBucketNodeFromDB(stateImpl.OpenchainDB, constructRootBucketKey(stateImpl.currentConfig))
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func (stateImpl *StateImpl) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) 
 		logger.Debug("Ignoring working-set as it is empty")
 		return nil
 	}
-	stateImpl.dataNodesDelta = newDataNodesDelta(stateDelta)
+	stateImpl.dataNodesDelta = newDataNodesDelta(stateImpl.currentConfig, stateDelta)
 	stateImpl.bucketTreeDelta = newBucketTreeDelta()
 	stateImpl.recomputeCryptoHash = true
 	return nil
@@ -126,8 +126,9 @@ func (stateImpl *StateImpl) ComputeCryptoHash() ([]byte, error) {
 
 func (stateImpl *StateImpl) processDataNodeDelta() error {
 	afftectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
-	for _, bucketKey := range afftectedBuckets {
-		updatedDataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(bucketKey)
+	for _, bucketKeyLite := range afftectedBuckets {
+		bucketKey := bucketKeyLite.getBucketKey(stateImpl.currentConfig)
+		updatedDataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(bucketKeyLite)
 		existingDataNodes, err := fetchDataNodesFromDBFor(stateImpl.OpenchainDB, bucketKey)
 		if err != nil {
 			return err
@@ -143,14 +144,14 @@ func (stateImpl *StateImpl) processDataNodeDelta() error {
 }
 
 func (stateImpl *StateImpl) processBucketTreeDelta(tillLevel int) error {
-	secondLastLevel := conf.getLowestLevel() - 1
+	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
 	for level := secondLastLevel; level >= tillLevel; level-- {
 		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
 		logger.Debugf("Bucket tree delta. Number of buckets at level [%d] are [%d]", level, len(bucketNodes))
 		for _, bucketNode := range bucketNodes {
 			logger.Debugf("bucketNode in tree-delta [%s]", bucketNode)
 			// get middle node from db
-			dbBucketNode, err := stateImpl.bucketCache.get(stateImpl.currentConfig, *bucketNode.bucketKey)
+			dbBucketNode, err := stateImpl.bucketCache.get(stateImpl.currentConfig, bucketNode.bucketKey)
 			logger.Debugf("bucket node from db [%s]", dbBucketNode)
 			if err != nil {
 				return err
@@ -166,11 +167,12 @@ func (stateImpl *StateImpl) processBucketTreeDelta(tillLevel int) error {
 			}
 			logger.Debugf("Computing cryptoHash for bucket [%s]", bucketNode)
 			cryptoHash := bucketNode.computeCryptoHash()
-			logger.Debugf("cryptoHash for bucket [%s] is [%x]", bucketNode, cryptoHash)
-			parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketNode.bucketKey.getParentKey())
+			bucketKey := bucketNode.bucketKey.getBucketKey(stateImpl.currentConfig)
+			logger.Debugf("cryptoHash for bucket [%s] is [%x]", bucketKey, cryptoHash)
+			parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
 
 			logger.Debugf("Feed bucketNode <%s> to parentBucket [%+v]", bucketNode.bucketKey, parentBucket.bucketKey)
-			parentBucket.setChildCryptoHash(bucketNode.bucketKey, cryptoHash)
+			parentBucket.setChildCryptoHash(bucketKey, cryptoHash)
 		}
 	}
 	return nil
@@ -262,7 +264,7 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *db.DBWr
 
 func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *db.DBWriteBatch) {
 	openchainDB := writeBatch.GetDBHandle()
-	secondLastLevel := conf.getLowestLevel() - 1
+	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
 	for level := secondLastLevel; level >= 0; level-- {
 		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
 		for _, bucketNode := range bucketNodes {
@@ -286,11 +288,11 @@ func (stateImpl *StateImpl) updateBucketCache() {
 	}
 	stateImpl.bucketCache.lock.Lock()
 	defer stateImpl.bucketCache.lock.Unlock()
-	secondLastLevel := conf.getLowestLevel() - 1
+	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
 	for level := 0; level <= secondLastLevel; level++ {
 		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
 		for _, bucketNode := range bucketNodes {
-			key := *bucketNode.bucketKey
+			key := bucketNode.bucketKey
 			if bucketNode.markedForDeletion {
 				stateImpl.bucketCache.removeWithoutLock(key)
 			} else {
@@ -320,7 +322,7 @@ func (stateImpl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey st
 
 func (stateImpl *StateImpl) GetPartialRangeIterator(snapshot *db.DBSnapshot) (statemgmt.PartialRangeIterator, error) {
 	if stateImpl.currentConfig == nil {
-		return fmt.Errorf("Not inited")
+		return nil, fmt.Errorf("Not inited")
 	}
 
 	return newPartialSnapshotIterator(snapshot, stateImpl.currentConfig)
@@ -345,7 +347,7 @@ func (stateImpl *StateImpl) IsCompleted() bool {
 
 func (stateImpl *StateImpl) RequiredParts() ([]*pb.SyncOffset, error) {
 	if stateImpl.underSync == nil {
-		return fmt.Errorf("Not in sync process")
+		return nil, fmt.Errorf("Not in sync process")
 	}
 
 	return stateImpl.underSync.RequiredParts()

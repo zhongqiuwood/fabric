@@ -23,7 +23,7 @@ import (
 )
 
 func TestBucketTreeDeltaBasic(t *testing.T) {
-	conf = newConfig(26, 3, fnvHash)
+	conf := newConfig(26, 3)
 	bucketTreeDelta := newBucketTreeDelta()
 	b1 := bucketTreeDelta.getOrCreateBucketNode(newBucketKey(conf, 2, 1))
 	testutil.AssertSame(t, bucketTreeDelta.getOrCreateBucketNode(newBucketKey(conf, 2, 1)), b1)
@@ -48,7 +48,7 @@ func TestBucketTreeDeltaBasic(t *testing.T) {
 }
 
 func TestBucketTreeDeltaGetRootWithoutProcessing(t *testing.T) {
-	conf = newConfig(26, 3, fnvHash)
+	conf := newConfig(26, 3)
 	bucketTreeDelta := newBucketTreeDelta()
 	bucketKey1 := newBucketKey(conf, 2, 1)
 	bucketTreeDelta.getOrCreateBucketNode(bucketKey1)

@@ -23,7 +23,7 @@ import (
 )
 
 func TestBucketNodeComputeHash(t *testing.T) {
-	conf = newConfig(26, 3, fnvHash)
+	conf := newConfig(26, 3)
 	bucketNode := newBucketNode(newBucketKey(conf, 2, 7))
 	testutil.AssertEquals(t, bucketNode.computeCryptoHash(), nil)
 
@@ -41,7 +41,7 @@ func TestBucketNodeComputeHash(t *testing.T) {
 }
 
 func TestBucketNodeMerge(t *testing.T) {
-	conf = newConfig(26, 3, fnvHash)
+	conf := newConfig(26, 3)
 	bucketNode := newBucketNode(newBucketKey(conf, 2, 7))
 	bucketNode.childrenCryptoHash[0] = []byte("cryptoHashChild1")
 	bucketNode.childrenUpdated[0] = true
@@ -59,7 +59,7 @@ func TestBucketNodeMerge(t *testing.T) {
 }
 
 func TestBucketNodeMarshalUnmarshal(t *testing.T) {
-	conf = newConfig(26, 3, fnvHash)
+	conf := newConfig(26, 3)
 	bucketNode := newBucketNode(newBucketKey(conf, 2, 7))
 	childKey1 := newBucketKey(conf, 3, 19)
 	bucketNode.setChildCryptoHash(childKey1, []byte("cryptoHashChild1"))

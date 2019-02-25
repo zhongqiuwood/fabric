@@ -17,14 +17,14 @@ type PartialSnapshotIterator struct {
 func newPartialSnapshotIterator(snapshot *db.DBSnapshot, cfg *config) (*PartialSnapshotIterator, error) {
 	iit, err := newStateSnapshotIterator(snapshot)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	return &PartialSnapshotIterator{
 		StateSnapshotIterator: *iit,
 		config:                cfg,
 		lastBucketNum:         cfg.getNumBucketsAtLowestLevel(),
-	}
+	}, nil
 }
 
 //overwrite the original GetRawKeyValue and Next
@@ -41,7 +41,7 @@ func (partialItr *PartialSnapshotIterator) Next() bool {
 	valueBytes := statemgmt.Copy(partialItr.dbItr.Value().Data())
 	dataNode := unmarshalDataNodeFromBytes(keyBytes, valueBytes)
 
-	if dataNode.dataKey.bucketKey.bucketNumber > partialItr.lastBucketNum {
+	if dataNode.dataKey.bucketNumber > partialItr.lastBucketNum {
 		return false
 	}
 
@@ -61,7 +61,7 @@ func (partialItr *PartialSnapshotIterator) GetRawKeyValue() ([]byte, []byte) {
 
 func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error {
 
-	bucketTreeOffset, err := offset.Unmarshal()
+	bucketTreeOffset, err := offset.Unmarshal2BucketTree()
 	if err != nil {
 		return err
 	}
@@ -81,8 +81,8 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 	if level == partialItr.getLowestLevel() {
 		//transfer datanode
 		//seek to target datanode
-		partialItr.Seek(minimumPossibleDataKeyBytesFor(newBucketKey(partialItr.config, level, startNum)))
-		partialItr.Prev()
+		partialItr.dbItr.Seek(minimumPossibleDataKeyBytesFor(newBucketKey(partialItr.config, level, startNum)))
+		partialItr.dbItr.Prev()
 		partialItr.lastBucketNum = endNum
 	} else {
 		//TODO: transfer bucketnode in metadata

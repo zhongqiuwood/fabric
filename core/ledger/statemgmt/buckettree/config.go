@@ -24,17 +24,17 @@ import (
 )
 
 // ConfigNumBuckets - config name 'numBuckets' as it appears in yaml file
-const ConfigNumBuckets = "numBuckets"
+const ConfigNumBuckets = "numbuckets"
 
 // ConfigMaxGroupingAtEachLevel - config name 'maxGroupingAtEachLevel' as it appears in yaml file
-const ConfigMaxGroupingAtEachLevel = "maxGroupingAtEachLevel"
+const ConfigMaxGroupingAtEachLevel = "maxgroupingateachlevel"
 
 // ConfigHashFunction - config name 'hashFunction'. This is not exposed in yaml file. This configuration is used for testing with custom hash-function
-const ConfigHashFunction = "hashFunction"
+const ConfigHashFunction = "hashfunction"
 
-const ConfigPartialDelta = "syncDelta"
+const ConfigPartialDelta = "syncdelta"
 
-const ConfigBucketCacheMaxSize = "bucketCacheSize"
+const ConfigBucketCacheMaxSize = "bucketcachesize"
 
 // DefaultNumBuckets - total buckets
 const DefaultNumBuckets = 10009
@@ -78,8 +78,8 @@ func initConfig(configs map[string]interface{}) *config {
 
 	bucketCacheMaxSize := defaultBucketCacheMaxSize
 	if v, ok := configs[ConfigBucketCacheMaxSize]; !ok {
-		syncDelta = cast.ToInt(v)
-		logger.Debugf("buckettree: syncDelta: [%d]", syncDelta)
+		bucketCacheMaxSize = cast.ToInt(v)
+		logger.Debugf("buckettree: bucketCacheMaxSize: [%d]", bucketCacheMaxSize)
 	}
 
 	//TODO: what the hell ...
@@ -100,6 +100,7 @@ func newConfig(numBuckets, maxGroupingAtEachLevel int) *config {
 	conf := &config{maxGroupingAtEachLevel: maxGroupingAtEachLevel,
 		lowestLevel:          -1,
 		levelToNumBucketsMap: make(map[int]int),
+		hashFunc:             fnvHash,
 	}
 
 	currentLevel := 0

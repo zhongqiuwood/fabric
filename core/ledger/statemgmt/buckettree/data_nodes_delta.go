@@ -63,10 +63,10 @@ func newDataNodesDelta(conf *config, stateDelta *statemgmt.StateDelta) *dataNode
 
 func (dataNodesDelta *dataNodesDelta) add(conf *config, chaincodeID string, key string, value []byte) {
 	dataKey := newDataKey(conf, chaincodeID, key)
-	bucketKey := dataKey.getBucketKey()
+	bucketKey := dataKey.getBucketKey(conf)
 	dataNode := newDataNode(dataKey, value)
 	logger.Debugf("Adding dataNode=[%s] against bucketKey=[%s]", dataNode, bucketKey)
-	dataNodesDelta.byBucket[bucketKey] = append(dataNodesDelta.byBucket[bucketKey], dataNode)
+	dataNodesDelta.byBucket[*bucketKey] = append(dataNodesDelta.byBucket[*bucketKey], dataNode)
 }
 
 func (dataNodesDelta *dataNodesDelta) getAffectedBuckets() []*bucketKeyLite {

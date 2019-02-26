@@ -23,6 +23,15 @@ import (
 	"github.com/abchain/fabric/core/ledger/testutil"
 )
 
+func TestStateImpl_Newfeature(t *testing.T) {
+	testDBWrapper.CleanDB(t)
+	stateImplTestWrapper := newStateImplTestWrapper(t)
+
+	var newinf statemgmt.HashAndDividableState
+	newinf = stateImplTestWrapper.stateImpl
+	testutil.AssertNotNil(t, newinf)
+}
+
 func TestStateImpl_ComputeHash_AllInMemory_NoContents(t *testing.T) {
 	testDBWrapper.CleanDB(t)
 	stateImplTestWrapper := newStateImplTestWrapper(t)
@@ -366,7 +375,7 @@ func TestStateImpl_DB_Changes(t *testing.T) {
 
 	// fetch first bucket at second level
 	bucketNodeFromDB, _ := fetchBucketNodeFromDB(testDBWrapper.GetDB(), newBucketKey(conf, 2, 1))
-	testutil.AssertEquals(t, bucketNodeFromDB.bucketKey, newBucketKey(conf, 2, 1))
+	testutil.AssertEquals(t, bucketNodeFromDB.bucketKey.getBucketKey(conf), newBucketKey(conf, 2, 1))
 	//check childrenCryptoHash entries in the bucket node from DB
 	testutil.AssertEquals(t, bucketNodeFromDB.childrenCryptoHash[0],
 		expectedBucketHashForTest([]string{"chaincodeID1", "key1", "value1", "key2", "value2"}))

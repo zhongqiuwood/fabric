@@ -29,8 +29,8 @@ type StateSnapshot struct {
 }
 
 // newStateSnapshot creates a new snapshot of the global state for the current block.
-func newStateSnapshot(blockNumber uint64, dbSnapshot *db.DBSnapshot) (*StateSnapshot, error) {
-	itr, err := stateImpl.GetStateSnapshotIterator(dbSnapshot)
+func newStateSnapshot(s *State, blockNumber uint64, dbSnapshot *db.DBSnapshot) (*StateSnapshot, error) {
+	itr, err := s.stateImpl.GetStateSnapshotIterator(dbSnapshot)
 	if err != nil {
 		return nil, err
 	}

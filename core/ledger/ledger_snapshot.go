@@ -19,10 +19,10 @@ func (sledger *LedgerSnapshot) GetParitalRangeIterator(offset *protos.SyncOffset
 
 	partialInf := sledger.l.state.GetDividableState()
 	if partialInf == nil {
-		return fmt.Errorf("State not support")
+		return nil, fmt.Errorf("State not support")
 	}
 
-	return partialInf.GetPartialRangeIterator(s.DBSnapshot)
+	return partialInf.GetPartialRangeIterator(sledger.DBSnapshot)
 }
 
 func (sledger *LedgerSnapshot) GetBlockByNumber(blockNumber uint64) (*protos.Block, error) {

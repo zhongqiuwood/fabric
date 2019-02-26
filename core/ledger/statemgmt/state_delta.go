@@ -20,9 +20,9 @@ import (
 	"bytes"
 	"sort"
 
-	"github.com/golang/protobuf/proto"
 	"github.com/abchain/fabric/core/util"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 
 	"fmt"
 )
@@ -101,7 +101,7 @@ func (stateDelta *StateDelta) ApplyChanges(anotherStateDelta *StateDelta) {
 			if valueHolder.IsDeleted() {
 				stateDelta.Delete(chaincodeID, key, previousValue)
 			} else {
-				stateDelta.Set(chaincodeID, key, valueHolder.Value, previousValue)
+				stateDelta.Set(chaincodeID, key, valueHolder.GetValue(), previousValue)
 			}
 		}
 	}
@@ -161,7 +161,7 @@ func (stateDelta *StateDelta) ComputeCryptoHash() []byte {
 			buffer.WriteString(key)
 			updatedValue := chaincodeStateDelta.Get(key)
 			if !updatedValue.IsDeleted() {
-				buffer.Write(updatedValue.Value)
+				buffer.Write(updatedValue.GetValue())
 			}
 		}
 	}
@@ -169,7 +169,6 @@ func (stateDelta *StateDelta) ComputeCryptoHash() []byte {
 	logger.Debugf("computing hash on %#v", hashingContent)
 	return util.ComputeCryptoHash(hashingContent)
 }
-
 
 // marshalling / Unmarshalling code
 // We need to revisit the following when we define proto messages

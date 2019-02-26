@@ -136,7 +136,7 @@ func (stateImpl *StateImpl) processDataNodeDelta() error {
 		cryptoHashForBucket := computeDataNodesCryptoHash(bucketKey, updatedDataNodes, existingDataNodes)
 		logger.Debugf("Crypto-hash for lowest-level bucket [%s] is [%x]", bucketKey, cryptoHashForBucket)
 		parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
-		logger.Debugf("Feed DataNode<%s> to parentBucket [%+v]", bucketKey, parentBucket.bucketKey)
+		logger.Debugf("Feed DataNode<%s> to parentBucket [%s]", bucketKey, &parentBucket.bucketKey)
 		// set second last level children hash by index
 		parentBucket.setChildCryptoHash(bucketKey, cryptoHashForBucket)
 	}
@@ -171,7 +171,7 @@ func (stateImpl *StateImpl) processBucketTreeDelta(tillLevel int) error {
 			logger.Debugf("cryptoHash for bucket [%s] is [%x]", bucketKey, cryptoHash)
 			parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
 
-			logger.Debugf("Feed bucketNode <%s> to parentBucket [%+v]", bucketNode.bucketKey, parentBucket.bucketKey)
+			logger.Debugf("Feed bucketNode <%s> to parentBucket [%+v]", &bucketNode.bucketKey, parentBucket.bucketKey)
 			parentBucket.setChildCryptoHash(bucketKey, cryptoHash)
 		}
 	}

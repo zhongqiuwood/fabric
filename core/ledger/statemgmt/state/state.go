@@ -25,7 +25,6 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/raw"
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/abchain/fabric/core/util"
-	"github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
 )
 
@@ -307,7 +306,7 @@ func (state *State) getStateDelta() *statemgmt.StateDelta {
 // GetSnapshot returns a snapshot of the global state for the current block. stateSnapshot.Release()
 // must be called once you are done.
 func (state *State) GetSnapshot(blockNumber uint64, dbSnapshot *db.DBSnapshot) (*StateSnapshot, error) {
-	return newStateSnapshot(blockNumber, dbSnapshot)
+	return newStateSnapshot(state, blockNumber, dbSnapshot)
 }
 
 // FetchStateDeltaFromDB fetches the StateDelta corrsponding to given blockNumber
@@ -333,15 +332,15 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.
 	}
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 
-	if blockNumber == 0 {
-		logger.Debug("state.addChangesForPersistence()...finished")
-		return
-	}
-
 	serializedStateDelta := state.stateDelta.Marshal()
 	cf := writeBatch.GetDBHandle().StateDeltaCF
 	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
 	writeBatch.PutCF(cf, encodeStateDeltaKey(blockNumber), serializedStateDelta)
+
+	if blockNumber == 0 {
+		logger.Debug("state.addChangesForPersistence()...finished for block 0")
+		return
+	}
 
 	if blockNumber >= state.historyStateDeltaSize {
 		blockNumberToDelete := blockNumber - state.historyStateDeltaSize
@@ -392,15 +391,15 @@ func (state *State) DeleteState() error {
 	logger.Infof("Re-Initializing state implementation")
 	switch state.configBackup.stateImplName {
 	case buckettreeType:
-		stateImpl = buckettree.NewStateImpl(db)
+		stateImpl = buckettree.NewStateImpl(state.OpenchainDB)
 	case trieType:
-		stateImpl = trie.NewStateImpl(db)
+		stateImpl = trie.NewStateImpl(state.OpenchainDB)
 	case rawType:
-		stateImpl = raw.NewStateImpl(db)
+		stateImpl = raw.NewStateImpl(state.OpenchainDB)
 	default:
 		panic("Should not reach here.")
 	}
-	if err := stateImpl.Initialize(config.stateImplConfigs); err != nil {
+	if err := stateImpl.Initialize(state.configBackup.stateImplConfigs); err != nil {
 		return err
 	}
 
@@ -418,7 +417,7 @@ func (state *State) DeleteState() error {
 }
 
 func (state *State) GetDividableState() statemgmt.HashAndDividableState {
-	inf, ok := state.stateImpl.(HashAndDividableState)
+	inf, ok := state.stateImpl.(statemgmt.HashAndDividableState)
 	if ok {
 		return inf
 	} else {

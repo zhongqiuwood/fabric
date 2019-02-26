@@ -102,7 +102,7 @@ func (bucketNode *bucketNode) computeCryptoHash() []byte {
 		logger.Debugf("Propagating crypto-hash of single child node for bucket = [%s]", bucketNode.bucketKey)
 		return cryptoHashContent
 	}
-	logger.Debugf("Computing crypto-hash for bucket [%s] by merging [%d] children", bucketNode.bucketKey, numChildren)
+	logger.Debugf("Computing crypto-hash for bucket [%s] by merging [%d] children", &bucketNode.bucketKey, numChildren)
 	return openchainUtil.ComputeCryptoHash(cryptoHashContent)
 }
 

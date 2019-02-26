@@ -213,7 +213,7 @@ func (g *txPoolGlobal) MakeUpdate(d_in model.Digest) model.Update {
 		return txPoolGlobalUpdateOut{g, 0}
 	}
 
-	d, ok := d_in.(*pb.GossipMsg_Digest)
+	d, ok := d_in.(*pb.GossipMsg_Digest_PeerStates)
 
 	if !ok {
 		panic("Type error, not Gossip_Digest")
@@ -688,7 +688,7 @@ func (c *hotTxCat) TransDigestToPb(d_in model.Digest) *pb.GossipMsg_Digest {
 
 func (c *hotTxCat) TransPbToDigest(msg *pb.GossipMsg_Digest) model.Digest {
 
-	return parsePbDigestStd(msg, msg)
+	return parsePbDigestStd(msg, msg.GetPeer())
 
 }
 

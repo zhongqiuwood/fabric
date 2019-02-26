@@ -233,7 +233,7 @@ func (h *sessionHandler) EncodeDigest(d model.Digest) proto.Message {
 	msg := &pb.GossipMsg{
 		Seq:     getGlobalSeq(),
 		Catalog: h.Name(),
-		M:       &pb.GossipMsg_Dig{h.TransDigestToPb(d)},
+		M:       &pb.GossipMsg_Dig{Dig: h.TransDigestToPb(d)},
 	}
 
 	//a responding pull should never require more responding,

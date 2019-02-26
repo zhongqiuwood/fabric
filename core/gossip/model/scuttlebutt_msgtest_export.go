@@ -9,8 +9,8 @@ func TestPbToDigest(dig *pb.GossipMsg_Digest) Digest {
 
 	ret := NewscuttlebuttDigest(nil)
 
-	for id, v := range dig.Data {
-		ret.SetPeerDigest(id, testVClock(int(v.Num)))
+	for _, v := range dig.GetPeer().GetPeerD() {
+		ret.SetPeerDigest(v.GetPeerName(), testVClock(int(v.Num)))
 	}
 
 	return ret
@@ -24,13 +24,15 @@ func TestDigestToPb(d_in Digest) *pb.GossipMsg_Digest {
 		panic("type error, not ScuttlebuttDigest")
 	}
 
-	ret := &pb.GossipMsg_Digest{Data: make(map[string]*pb.GossipMsg_Digest_PeerState)}
+	ret := &pb.GossipMsg_Digest_PeerStates{}
 
 	for _, v := range d.PeerDigest() {
-		ret.Data[v.Id] = &pb.GossipMsg_Digest_PeerState{Num: uint64(transVClock(v.V))}
+		ret.PeerD = append(ret.PeerD, &pb.GossipMsg_Digest_PeerState{
+			PeerName: v.Id,
+			Num:      uint64(transVClock(v.V))})
 	}
 
-	return ret
+	return &pb.GossipMsg_Digest{D: &pb.GossipMsg_Digest_Peer{Peer: ret}}
 
 }
 

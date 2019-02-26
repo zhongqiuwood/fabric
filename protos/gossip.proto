@@ -12,14 +12,23 @@ service Gossip {
 message GossipMsg {
 
     message Digest{
+
         message PeerState{
             bytes state = 1;
             uint64 num  = 2;
+            string peerName = 3;
         }
-/*string is used to represent peerID*/        
-        map<string, PeerState> data = 1;
-        bytes epoch = 2;
-        bool isFull = 3;//indicate digest include all peers I have known
+
+        message PeerStates{
+            bytes epoch = 1;
+            bool isFull = 2;//indicate digest include all peers I have known
+            repeated PeerState peerD = 3;
+        }
+
+        oneof d{
+            PeerStates peer = 6; 
+        }
+        
         bool noResp = 4;//prohibit a "responding pulling" from far end
     }
 

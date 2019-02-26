@@ -35,9 +35,8 @@ func TestTxGlobal(t *testing.T) {
 
 	const testpeername = "testpeer"
 	//make test peer is known
-	pbin := &pb.GossipMsg_Digest{
-		Data: map[string]*pb.GossipMsg_Digest_PeerState{testpeername: &pb.GossipMsg_Digest_PeerState{}},
-	}
+	pbin := &pb.GossipMsg_Digest{}
+	pbin.PeerD = append(pbin.PeerD, &pb.GossipMsg_Digest_PeerState{PeerName: testpeername})
 
 	m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
 
@@ -129,8 +128,12 @@ func TestTxGlobal(t *testing.T) {
 	}
 
 	//pick 2
-	pbin.Data[testpeername].Num = 2
-	pbin.Data[peerG.selfId] = &pb.GossipMsg_Digest_PeerState{}
+	for i, p := range pbin.PeerD {
+		if p.PeerName == testpeername {
+			pbin.PeerD[i].Num = 2
+		}
+	}
+	pbin.PeerD = append(pbin.PeerD, &pb.GossipMsg_Digest_PeerState{PeerName: peerG.selfId})
 
 	uout2 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
 

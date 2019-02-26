@@ -69,34 +69,36 @@ func (a standardVClock) Less(b_in model.VClock) bool {
 }
 
 func toPbDigestStd(d model.ScuttlebuttDigest, epoch []byte) *pb.GossipMsg_Digest {
-	msg := new(pb.GossipMsg_Digest)
+	dmsg := new(pb.GossipMsg_Digest_PeerStates)
 
 	if len(epoch) != 0 {
-		msg.Epoch = epoch
+		dmsg.Epoch = epoch
 	}
 
-	msg.Data = make(map[string]*pb.GossipMsg_Digest_PeerState)
+	dmsg.PeerD = make([]*pb.GossipMsg_Digest_PeerState, 0, len(d.PeerDigest()))
 
 	for _, pd := range d.PeerDigest() {
 
-		msg.Data[pd.Id] = &pb.GossipMsg_Digest_PeerState{
-			Num: uint64(toStandardVClock(pd.V)),
-		}
+		dmsg.PeerD = append(dmsg.PeerD, &pb.GossipMsg_Digest_PeerState{
+			PeerName: pd.Id,
+			Num:      uint64(toStandardVClock(pd.V)),
+		})
 	}
 
-	msg.IsFull = !d.IsPartial()
-	return msg
+	dmsg.IsFull = !d.IsPartial()
+	return &pb.GossipMsg_Digest{D: &pb.GossipMsg_Digest_Peer{Peer: dmsg}}
 }
 
 func parsePbDigestStd(msg *pb.GossipMsg_Digest, core interface{}) model.ScuttlebuttDigest {
 
+	dmsg := msg.GetPeer()
 	dout := model.NewscuttlebuttDigest(model.Digest(core))
 
-	for id, ps := range msg.Data {
-		dout.SetPeerDigest(id, standardVClock(ps.GetNum()))
+	for _, ps := range dmsg.GetPeerD() {
+		dout.SetPeerDigest(ps.PeerName, standardVClock(ps.GetNum()))
 	}
 
-	if !msg.GetIsFull() {
+	if !dmsg.GetIsFull() {
 		dout.MarkDigestIsPartial()
 	}
 

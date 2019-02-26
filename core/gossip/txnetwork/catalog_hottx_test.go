@@ -516,9 +516,8 @@ func TestCatalogyHandler(t *testing.T) {
 	m := model.NewGossipModel(smodel)
 
 	//try to build a proto directly
-	dig_in := &pb.GossipMsg_Digest{Data: make(map[string]*pb.GossipMsg_Digest_PeerState)} //any epoch is ok
-
-	dig_in.Data[testname] = &pb.GossipMsg_Digest_PeerState{}
+	dig_in := &pb.GossipMsg_Digest{} //any epoch is ok
+	dig_in.PeerD = append(dig_in.PeerD, &pb.GossipMsg_Digest_PeerState{PeerName: testname})
 
 	dig := hotTx.TransPbToDigest(dig_in)
 
@@ -528,7 +527,14 @@ func TestCatalogyHandler(t *testing.T) {
 	dig = m.GenPullDigest()
 	dig_out := hotTx.TransDigestToPb(dig)
 
-	if _, ok := dig_out.Data[testname]; !ok {
+	var ok bool
+	for _, p := range dig_out.PeerD {
+		if p.PeerName == testname {
+			ok = true
+			break
+		}
+	}
+	if !ok {
 		t.Fatal("model not known expected peer", dig_out)
 	}
 
@@ -549,7 +555,11 @@ func TestCatalogyHandler(t *testing.T) {
 
 	formTestData(l, indexs, [][]int{nil, []int{8, 12, 15}, []int{23, 13}, []int{7, 38}})
 
-	dig_in.Data[testname].Num = 20
+	for i, p := range dig_in.PeerD {
+		if p.PeerName == testname {
+			dig_in.PeerD[i].Num = 20
+		}
+	}
 
 	blk, _ := l.GetBlockByNumber(3)
 	dig_in.Epoch = blk.GetStateHash()

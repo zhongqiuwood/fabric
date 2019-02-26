@@ -16,10 +16,13 @@ func (m *GossipMsg) EstimateSize() (total int) {
 
 	switch v := m.GetM().(type) {
 	case (*GossipMsg_Dig):
-		for _, i := range v.Dig.Data {
-			total = total + len(i.State) + 8 //the bytes of a num
+		switch d := v.Dig.GetD().(type) {
+		case (*GossipMsg_Digest_Peer):
+			for _, i := range d.Peer.GetPeerD() {
+				total = total + len(i.State) + 8 //the bytes of a num
+				total = total + len(d.Peer.Epoch)
+			}
 		}
-		total = total + len(v.Dig.Epoch)
 	case (*GossipMsg_Ud):
 		total = len(v.Ud.Payload)
 	default:

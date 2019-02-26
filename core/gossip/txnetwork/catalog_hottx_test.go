@@ -516,10 +516,10 @@ func TestCatalogyHandler(t *testing.T) {
 	m := model.NewGossipModel(smodel)
 
 	//try to build a proto directly
-	dig_in := &pb.GossipMsg_Digest{} //any epoch is ok
+	dig_in := &pb.GossipMsg_Digest_PeerStates{} //any epoch is ok
 	dig_in.PeerD = append(dig_in.PeerD, &pb.GossipMsg_Digest_PeerState{PeerName: testname})
 
-	dig := hotTx.TransPbToDigest(dig_in)
+	dig := hotTx.TransPbToDigest(&pb.GossipMsg_Digest{D: &pb.GossipMsg_Digest_Peer{Peer: dig_in}})
 
 	//now model should know peer test
 	m.RecvPullDigest(dig)
@@ -528,7 +528,7 @@ func TestCatalogyHandler(t *testing.T) {
 	dig_out := hotTx.TransDigestToPb(dig)
 
 	var ok bool
-	for _, p := range dig_out.PeerD {
+	for _, p := range dig_out.GetPeer().PeerD {
 		if p.PeerName == testname {
 			ok = true
 			break
@@ -567,7 +567,7 @@ func TestCatalogyHandler(t *testing.T) {
 		panic("no state hash")
 	}
 
-	dig = hotTx.TransPbToDigest(dig_in)
+	dig = hotTx.TransPbToDigest(&pb.GossipMsg_Digest{D: &pb.GossipMsg_Digest_Peer{Peer: dig_in}})
 
 	u_out, ok := hotTx.EncodeUpdate(nil, m.RecvPullDigest(dig), new(pb.Gossip_Tx)).(*pb.Gossip_Tx)
 	if !ok {

@@ -35,10 +35,10 @@ func TestTxGlobal(t *testing.T) {
 
 	const testpeername = "testpeer"
 	//make test peer is known
-	pbin := &pb.GossipMsg_Digest{}
+	pbin := &pb.GossipMsg_Digest_PeerStates{}
 	pbin.PeerD = append(pbin.PeerD, &pb.GossipMsg_Digest_PeerState{PeerName: testpeername})
 
-	m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
+	m.RecvPullDigest(globalcat.TransPbToDigest(&pb.GossipMsg_Digest{D: &pb.GossipMsg_Digest_Peer{Peer: pbin}}))
 
 	if _, ok := peerG.lruIndex[testpeername]; !ok {
 		t.Fatalf("%s is not known", testpeername)
@@ -87,7 +87,7 @@ func TestTxGlobal(t *testing.T) {
 	}
 	//pick 1
 
-	uout1 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
+	uout1 := m.RecvPullDigest(globalcat.TransPbToDigest(&pb.GossipMsg_Digest{D: &pb.GossipMsg_Digest_Peer{Peer: pbin}}))
 
 	msgout1 := globalcat.EncodeUpdate(nil, uout1, globalcat.UpdateMessage()).(*pb.Gossip_TxState)
 
@@ -135,7 +135,7 @@ func TestTxGlobal(t *testing.T) {
 	}
 	pbin.PeerD = append(pbin.PeerD, &pb.GossipMsg_Digest_PeerState{PeerName: peerG.selfId})
 
-	uout2 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
+	uout2 := m.RecvPullDigest(globalcat.TransPbToDigest(&pb.GossipMsg_Digest{D: &pb.GossipMsg_Digest_Peer{Peer: pbin}}))
 
 	msgout2 := globalcat.EncodeUpdate(nil, uout2, globalcat.UpdateMessage()).(*pb.Gossip_TxState)
 
@@ -180,7 +180,7 @@ func TestTxGlobal(t *testing.T) {
 		t.Fatal("wrong lru queue")
 	}
 
-	uout3 := m.RecvPullDigest(globalcat.TransPbToDigest(pbin))
+	uout3 := m.RecvPullDigest(globalcat.TransPbToDigest(&pb.GossipMsg_Digest{D: &pb.GossipMsg_Digest_Peer{Peer: pbin}}))
 
 	msgout3 := globalcat.EncodeUpdate(nil, uout3, globalcat.UpdateMessage()).(*pb.Gossip_TxState)
 

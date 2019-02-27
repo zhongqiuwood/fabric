@@ -20,7 +20,11 @@ func (m *GossipMsg) EstimateSize() (total int) {
 		case (*GossipMsg_Digest_Peer):
 			for _, i := range d.Peer.GetPeerD() {
 				total = total + len(i.State) + 8 //the bytes of a num
-				total = total + len(d.Peer.Epoch)
+			}
+			total = total + len(d.Peer.Epoch)
+		case (*GossipMsg_Digest_Tx):
+			for _, id := range d.Tx.GetTxID() {
+				total = total + len(id)
 			}
 		}
 	case (*GossipMsg_Ud):

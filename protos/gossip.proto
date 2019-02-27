@@ -25,8 +25,13 @@ message GossipMsg {
             repeated PeerState peerD = 3;
         }
 
+        message TxStates{
+            repeated string txID = 1;
+        }
+
         oneof d{
             PeerStates peer = 6; 
+            TxStates tx = 7;
         }
         
         bool noResp = 4;//prohibit a "responding pulling" from far end

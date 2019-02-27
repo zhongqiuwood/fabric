@@ -37,6 +37,14 @@ func TxidFromDigest(digest []byte) string {
 	return fmt.Sprintf("%x", digest)
 }
 
+func (t *Transaction) IsValid() bool {
+	if d, err := t.digest(util.DefaultCryptoHash()); err != nil {
+		return false
+	} else {
+		return t.GetTxid() == TxidFromDigest(d)
+	}
+}
+
 func (t *Transaction) Digest() ([]byte, error) {
 	return t.digest(util.DefaultCryptoHash())
 }

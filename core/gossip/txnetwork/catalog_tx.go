@@ -14,9 +14,10 @@ const (
 )
 
 type txsyncCat struct {
-	policy   gossip.CatalogPolicies
-	tasklist map[string]bool
-	network  *txNetworkGlobal
+	policy       gossip.CatalogPolicies
+	tasklist     map[string]bool
+	tasklistSent []string
+	network      *txNetworkGlobal
 }
 
 type txUpdate struct {
@@ -55,7 +56,15 @@ func (c *txsyncCat) Name() string                        { return syncTxCatName 
 func (c *txsyncCat) GetPolicies() gossip.CatalogPolicies { return c.policy }
 
 func (c *txsyncCat) GenDigest() model.Digest {
-	return c.tasklist
+
+	if len(c.tasklistSent) < len(c.tasklist) {
+		c.tasklistSent = make([]string, 0, len(c.tasklist))
+		for id, _ := range c.tasklist {
+			c.tasklistSent = append(c.tasklistSent, id)
+		}
+	}
+
+	return taskList(c.tasklistSent)
 }
 
 func (c *txsyncCat) Update(u model.Update) error {
@@ -63,14 +72,15 @@ func (c *txsyncCat) Update(u model.Update) error {
 	case txUpdate:
 		logger.Debugf("receive %d txs synced", len(ut.Transactions))
 		for _, tx := range ut.Transactions {
-			delete(txsyncCat.tasklist, tx.GetTxid())
+			delete(c.tasklist, tx.GetTxid())
 		}
-		l := c.network.txPool.ledger.PoolTransactions(ut.Transactions)
+		c.network.txPool.ledger.PoolTransactions(ut.Transactions)
+		c.tasklistSent = nil
 	case taskList:
 		for _, id := range ut {
-			txsyncCat.tasklist[id] = true
+			c.tasklist[id] = true
 		}
-		logger.Debugf("add %d tx tasks, now <%d>", len(ut), len(txsyncCat.tasklist))
+		logger.Debugf("add %d tx tasks, now <%d>", len(ut), len(c.tasklist))
 	default:
 		return fmt.Errorf("Not recognized type of update: %v", u)
 	}
@@ -107,11 +117,26 @@ func (c *txsyncCat) MakeUpdate(d model.Digest) model.Update {
 }
 
 func (c *txsyncCat) TransDigestToPb(d_in model.Digest) *pb.GossipMsg_Digest {
-	return nil
+
+	d, ok := d_in.(taskList)
+
+	if !ok {
+		panic("Type error, not string array")
+	}
+
+	return &pb.GossipMsg_Digest{
+		D:      &pb.GossipMsg_Digest_Tx{Tx: &pb.GossipMsg_Digest_TxStates{TxID: []string(d)}},
+		NoResp: true,
+	}
 }
 
 func (c *txsyncCat) TransPbToDigest(msg *pb.GossipMsg_Digest) model.Digest {
-	return nil
+
+	if s := msg.GetTx(); s == nil {
+		return nil
+	} else {
+		return taskList(s.TxID)
+	}
 }
 
 func (c *txsyncCat) UpdateMessage() proto.Message { return new(pb.HotTransactionBlock) }

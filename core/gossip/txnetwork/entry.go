@@ -103,6 +103,21 @@ func (e *TxNetworkEntry) ResetPeer(endorser cred.TxEndorserFactory) error {
 	return e.catalogHandlerUpdateLocal(globalCatName, peerStatus{selfState}, nil)
 }
 
+func (e *TxNetworkEntry) catalogHandlerUpdate(catName string, ug model.Update) error {
+	cat := e.stub.GetCatalogHandler(catName)
+	if cat == nil {
+		return fmt.Errorf("Can't not found corresponding cataloghandler [%s]", catName)
+	}
+
+	if err := cat.Model().RecvUpdate(ug); err != nil {
+		return err
+	} else {
+		//notify our peer is updated
+		cat.SelfUpdate()
+		return nil
+	}
+}
+
 func (e *TxNetworkEntry) catalogHandlerUpdateLocal(catName string, u model.ScuttlebuttPeerUpdate, ug model.Update) error {
 	cat := e.stub.GetCatalogHandler(catName)
 	if cat == nil {
@@ -127,6 +142,10 @@ func (e *TxNetworkEntry) UpdateLocalPeer(s *pb.PeerTxState) error {
 
 func (e *TxNetworkEntry) UpdateLocalHotTx(txs *pb.HotTransactionBlock) error {
 	return e.catalogHandlerUpdateLocal(hotTxCatName, txPeerUpdate{txs}, nil)
+}
+
+func (e *TxNetworkEntry) RequestTx(ids []string) error {
+	return e.catalogHandlerUpdate(syncTxCatName, taskList(ids))
 }
 
 func (e *TxNetworkEntry) GetPeerStatus() (*pb.PeerTxState, string) {

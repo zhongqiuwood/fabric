@@ -323,6 +323,11 @@ func (state *State) FetchStateDeltaFromDB(blockNumber uint64) (*statemgmt.StateD
 	return stateDelta, nil
 }
 
+//func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.DBWriteBatch) {
+//	state.stateImpl.PrepareWorkingSet(state.stateDelta)
+//	state.stateImpl.AddChangesForPersistence(writeBatch)
+//}
+
 // AddChangesForPersistence adds key-value pairs to writeBatch
 func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.DBWriteBatch) {
 	logger.Debug("state.addChangesForPersistence()...start")

@@ -53,6 +53,7 @@ func (sledger *LedgerSnapshot) GetBlockByNumber(blockNumber uint64) (*protos.Blo
 }
 
 func (sledger *LedgerSnapshot) GetBlockchainSize() (uint64, error) {
+
 	bytes, err := sledger.GetFromBlockchainCFSnapshot(blockCountKey)
 	if err != nil {
 		return 0, err

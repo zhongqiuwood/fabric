@@ -2,6 +2,7 @@ package statesync
 
 import (
 	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
@@ -12,6 +13,7 @@ type stateServer struct {
 	parent        *stateSyncHandler
 	ledger        *ledger.LedgerSnapshot
 	correlationId uint64
+	pit           statemgmt.PartialRangeIterator
 }
 
 func newStateServer(h *stateSyncHandler) (s *stateServer) {
@@ -21,6 +23,10 @@ func newStateServer(h *stateSyncHandler) (s *stateServer) {
 	}
 	l, _ := ledger.GetLedger()
 	s.ledger = l.CreateSnapshot()
+
+	pit, _ := s.ledger.GetParitalRangeIterator(nil)
+
+	s.pit = pit
 	return
 
 }
@@ -94,7 +100,6 @@ func (sts *stateServer) dumpStateUpdate(stateUpdate string) {
 		stateUpdate, sts.correlationId, sts.parent.remotePeerIdName())
 }
 
-
 //---------------------------------------------------------------------------
 // 5. acknowledge sync end
 //---------------------------------------------------------------------------
@@ -106,7 +111,6 @@ func (server *stateServer) beforeSyncEnd(e *fsm.Event) {
 
 	server.ledger.Release()
 }
-
 
 func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.SyncStateDeltasRequest) {
 	logger.Debugf("Sending state deltas for block range %d-%d", syncStateDeltasRequest.Range.Start,
@@ -160,7 +164,6 @@ func (d *stateServer) sendStateDeltas(e *fsm.Event, syncStateDeltasRequest *pb.S
 		logger.Debugf("Successfully sent stateDeltas for blockNum %d", currBlockNum)
 	}
 }
-
 
 // sendBlocks sends the blocks based upon the supplied SyncBlockRange over the stream.
 //func (d *stateServer) sendBlocks(e *fsm.Event, syncBlockRange *pb.SyncBlockRange) {

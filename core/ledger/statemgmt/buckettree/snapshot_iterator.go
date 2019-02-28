@@ -34,10 +34,14 @@ func newStateSnapshotIterator(snapshot *db.DBSnapshot) (*StateSnapshotIterator, 
 	return &StateSnapshotIterator{dbItr}, nil
 }
 
+const invalidDataPrefix = dataKeyPrefixByte + 1
+
 // Next - see interface 'statemgmt.StateSnapshotIterator' for details
 func (snapshotItr *StateSnapshotIterator) Next() bool {
 	snapshotItr.dbItr.Next()
-	return snapshotItr.dbItr.Valid()
+
+	//now we need to check the iterator is in valid range for datanode (1-15)
+	return snapshotItr.dbItr.Valid() && snapshotItr.dbItr.Key().Data()[0] < invalidDataPrefix
 }
 
 // GetRawKeyValue - see interface 'statemgmt.StateSnapshotIterator' for details

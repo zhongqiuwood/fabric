@@ -19,13 +19,11 @@ package buckettree
 import (
 	"bytes"
 
+	"fmt"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/op/go-logging"
 	pb "github.com/abchain/fabric/protos"
-	"github.com/abchain/fabric/core/ledger/statemgmt/persist"
-	"fmt"
-	"github.com/spf13/viper"
+	"github.com/op/go-logging"
 )
 
 var logger = logging.MustGetLogger("buckettree")
@@ -33,11 +31,13 @@ var logger = logging.MustGetLogger("buckettree")
 // StateImpl - implements the interface - 'statemgmt.HashableState'
 type StateImpl struct {
 	*db.OpenchainDB
+	currentConfig          *config
 	dataNodesDelta         *dataNodesDelta  // bucket nodes map  level-bucketNum -> node, stores users key-value
 	bucketTreeDelta        *bucketTreeDelta // bucket tree, each node contains all its child hash
 	persistedStateHash     []byte
 	lastComputedCryptoHash []byte
 	recomputeCryptoHash    bool
+	underSync              *syncProcess
 	bucketCache            *bucketCache
 }
 
@@ -48,8 +48,8 @@ func NewStateImpl(db *db.OpenchainDB) *StateImpl {
 
 // Initialize - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
-	initConfig(configs)
-	rootBucketNode, err := fetchBucketNodeFromDB(stateImpl.OpenchainDB, constructRootBucketKey())
+	stateImpl.currentConfig = initConfig(configs)
+	rootBucketNode, err := fetchBucketNodeFromDB(stateImpl.OpenchainDB, constructRootBucketKey(stateImpl.currentConfig))
 	if err != nil {
 		return err
 	}
@@ -58,18 +58,14 @@ func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 		stateImpl.lastComputedCryptoHash = stateImpl.persistedStateHash
 	}
 
-	bucketCacheMaxSize, ok := configs["bucketCacheSize"].(int)
-	if !ok {
-		bucketCacheMaxSize = defaultBucketCacheMaxSize
-	}
-	stateImpl.bucketCache = newBucketCache(bucketCacheMaxSize, stateImpl.OpenchainDB)
-	stateImpl.bucketCache.loadAllBucketNodesFromDB()
+	stateImpl.bucketCache = newBucketCache(stateImpl.currentConfig.bucketCacheMaxSize, stateImpl.OpenchainDB)
+	stateImpl.bucketCache.loadAllBucketNodesFromDB(stateImpl.currentConfig)
 	return nil
 }
 
 // Get - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) Get(chaincodeID string, key string) ([]byte, error) {
-	dataKey := newDataKey(chaincodeID, key)
+	dataKey := newDataKey(stateImpl.currentConfig, chaincodeID, key)
 	dataNode, err := fetchDataNodeFromDB(stateImpl.OpenchainDB, dataKey)
 	if err != nil {
 		return nil, err
@@ -87,14 +83,15 @@ func (stateImpl *StateImpl) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) 
 		logger.Debug("Ignoring working-set as it is empty")
 		return nil
 	}
-	stateImpl.dataNodesDelta = newDataNodesDelta(stateDelta)
+	stateImpl.dataNodesDelta = newDataNodesDelta(stateImpl.currentConfig, stateDelta)
 	stateImpl.bucketTreeDelta = newBucketTreeDelta()
 	stateImpl.recomputeCryptoHash = true
 	return nil
 }
 
 // ClearWorkingSet - method implementation for interface 'statemgmt.HashableState'
-func (stateImpl *StateImpl) ClearWorkingSet(changesPersisted bool, reloadCache bool) {
+func (stateImpl *StateImpl) ClearWorkingSet(changesPersisted bool) {
+	logger.Debug("Enter - ClearWorkingSet()")
 	if changesPersisted {
 		stateImpl.persistedStateHash = stateImpl.lastComputedCryptoHash
 		stateImpl.updateBucketCache()
@@ -104,10 +101,6 @@ func (stateImpl *StateImpl) ClearWorkingSet(changesPersisted bool, reloadCache b
 	stateImpl.dataNodesDelta = nil
 	stateImpl.bucketTreeDelta = nil
 	stateImpl.recomputeCryptoHash = false
-
-	if reloadCache {
-		stateImpl.bucketCache.loadAllBucketNodesFromDB()
-	}
 }
 
 // ComputeCryptoHash - method implementation for interface 'statemgmt.HashableState'
@@ -119,7 +112,7 @@ func (stateImpl *StateImpl) ComputeCryptoHash() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		err = stateImpl.processBucketTreeDelta()  // feed all other nodes(level n-2 to level 0)
+		err = stateImpl.processBucketTreeDelta(0) // feed all other nodes(level n-2 to level 0)
 		if err != nil {
 			return nil, err
 		}
@@ -133,37 +126,32 @@ func (stateImpl *StateImpl) ComputeCryptoHash() ([]byte, error) {
 
 func (stateImpl *StateImpl) processDataNodeDelta() error {
 	afftectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
-
-	it := stateImpl.OpenchainDB.GetIterator(db.StateCF)
-	defer it.Close()
-
-	for _, bucketKey := range afftectedBuckets {
-
-		updatedDataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(bucketKey)
-
-		existingDataNodes, err := fetchDataNodesFromDBFor(it, bucketKey)
+	for _, bucketKeyLite := range afftectedBuckets {
+		bucketKey := bucketKeyLite.getBucketKey(stateImpl.currentConfig)
+		updatedDataNodes := stateImpl.dataNodesDelta.getSortedDataNodesFor(bucketKeyLite)
+		existingDataNodes, err := fetchDataNodesFromDBFor(stateImpl.OpenchainDB, bucketKey)
 		if err != nil {
 			return err
 		}
 		cryptoHashForBucket := computeDataNodesCryptoHash(bucketKey, updatedDataNodes, existingDataNodes)
 		logger.Debugf("Crypto-hash for lowest-level bucket [%s] is [%x]", bucketKey, cryptoHashForBucket)
 		parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
-		logger.Debugf("Feed DataNode<%s> to parentBucket [%+v]", bucketKey, parentBucket.bucketKey)
+		logger.Debugf("Feed DataNode<%s> to parentBucket [%s]", bucketKey, &parentBucket.bucketKey)
 		// set second last level children hash by index
 		parentBucket.setChildCryptoHash(bucketKey, cryptoHashForBucket)
 	}
 	return nil
 }
 
-func (stateImpl *StateImpl) processBucketTreeDelta() error {
-	secondLastLevel := conf.getLowestLevel() - 1
-	for level := secondLastLevel; level >= 0; level-- {
+func (stateImpl *StateImpl) processBucketTreeDelta(tillLevel int) error {
+	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
+	for level := secondLastLevel; level >= tillLevel; level-- {
 		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
 		logger.Debugf("Bucket tree delta. Number of buckets at level [%d] are [%d]", level, len(bucketNodes))
 		for _, bucketNode := range bucketNodes {
 			logger.Debugf("bucketNode in tree-delta [%s]", bucketNode)
 			// get middle node from db
-			dbBucketNode, err := stateImpl.bucketCache.get(*bucketNode.bucketKey)
+			dbBucketNode, err := stateImpl.bucketCache.get(stateImpl.currentConfig, bucketNode.bucketKey)
 			logger.Debugf("bucket node from db [%s]", dbBucketNode)
 			if err != nil {
 				return err
@@ -179,11 +167,12 @@ func (stateImpl *StateImpl) processBucketTreeDelta() error {
 			}
 			logger.Debugf("Computing cryptoHash for bucket [%s]", bucketNode)
 			cryptoHash := bucketNode.computeCryptoHash()
-			logger.Debugf("cryptoHash for bucket [%s] is [%x]", bucketNode, cryptoHash)
-			parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketNode.bucketKey.getParentKey())
+			bucketKey := bucketNode.bucketKey.getBucketKey(stateImpl.currentConfig)
+			logger.Debugf("cryptoHash for bucket [%s] is [%x]", bucketKey, cryptoHash)
+			parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
 
-			logger.Debugf("Feed bucketNode <%s> to parentBucket [%+v]", bucketNode.bucketKey, parentBucket.bucketKey)
-			parentBucket.setChildCryptoHash(bucketNode.bucketKey, cryptoHash)
+			logger.Debugf("Feed bucketNode <%s> to parentBucket [%+v]", &bucketNode.bucketKey, parentBucket.bucketKey)
+			parentBucket.setChildCryptoHash(bucketKey, cryptoHash)
 		}
 	}
 	return nil
@@ -241,6 +230,11 @@ func computeDataNodesCryptoHash(bucketKey *bucketKey, updatedNodes dataNodes, ex
 // AddChangesForPersistence - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *db.DBWriteBatch) error {
 
+
+	//stateImpl.dataNodesDelta = newDataNodesDelta(stateImpl.currentConfig, stateDelta)
+	//stateImpl.bucketTreeDelta = newBucketTreeDelta()
+	//stateImpl.recomputeCryptoHash = true
+
 	if stateImpl.dataNodesDelta == nil {
 		return nil
 	}
@@ -266,9 +260,7 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *db.DBWr
 				logger.Debugf("Deleting data node key = %#v", dataNode.dataKey)
 				writeBatch.DeleteCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes())
 			} else {
-				logger.Debugf("Adding data node with dataKey<%x>, compositedKey<%s>, value = %#v",
-					dataNode.dataKey.getEncodedBytes(),
-					dataNode.dataKey.compositeKey, dataNode.value)
+				logger.Debugf("Adding data node with value = %#v", dataNode.value)
 				writeBatch.PutCF(openchainDB.StateCF, dataNode.dataKey.getEncodedBytes(), dataNode.value)
 			}
 		}
@@ -277,7 +269,7 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *db.DBWr
 
 func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *db.DBWriteBatch) {
 	openchainDB := writeBatch.GetDBHandle()
-	secondLastLevel := conf.getLowestLevel() - 1
+	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
 	for level := secondLastLevel; level >= 0; level-- {
 		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
 		for _, bucketNode := range bucketNodes {
@@ -285,8 +277,8 @@ func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *db.DB
 				writeBatch.DeleteCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes())
 			} else {
 
-				logger.Debugf("Adding data node<%s> with dataKey<%x>, value <%x>",bucketNode.bucketKey,
-					bucketNode.bucketKey.getEncodedBytes(),	bucketNode.marshal())
+				// logger.Debugf("Adding data node<%s> with dataKey<%x>, value <%x>", bucketNode.bucketKey,
+				// 	bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
 
 				writeBatch.PutCF(openchainDB.StateCF,
 					bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
@@ -301,11 +293,11 @@ func (stateImpl *StateImpl) updateBucketCache() {
 	}
 	stateImpl.bucketCache.lock.Lock()
 	defer stateImpl.bucketCache.lock.Unlock()
-	secondLastLevel := conf.getLowestLevel() - 1
+	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
 	for level := 0; level <= secondLastLevel; level++ {
 		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
 		for _, bucketNode := range bucketNodes {
-			key := *bucketNode.bucketKey
+			key := bucketNode.bucketKey
 			if bucketNode.markedForDeletion {
 				stateImpl.bucketCache.removeWithoutLock(key)
 			} else {
@@ -331,172 +323,245 @@ func (stateImpl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey st
 	return newRangeScanIterator(stateImpl.OpenchainDB, chaincodeID, startKey, endKey)
 }
 
-// report local root hash to server
-func (stateImpl *StateImpl) getRootStateHashFromDB(snapshotHandler *db.DBSnapshot) ([]byte, error) {
+// ---- HashAndDividableState interface -----
 
-	var persistedStateHash []byte = nil
-	var rootBucketNode *bucketNode
-	var err error
-
-	rootBucketNode, err = fetchBucketNode(snapshotHandler, stateImpl.OpenchainDB, constructRootBucketKey())
-
-	if err == nil && rootBucketNode != nil {
-		persistedStateHash = rootBucketNode.computeCryptoHash()
+func (stateImpl *StateImpl) GetPartialRangeIterator(snapshot *db.DBSnapshot) (statemgmt.PartialRangeIterator, error) {
+	if stateImpl.currentConfig == nil {
+		return nil, fmt.Errorf("Not inited")
 	}
-	return persistedStateHash, err
+
+	return newPartialSnapshotIterator(snapshot, stateImpl.currentConfig)
 }
 
-func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, snapshotHandler *db.DBSnapshot) error {
+func (stateImpl *StateImpl) InitPartialSync(statehash []byte) {
+	stateImpl.underSync = newSyncProcess(stateImpl, statehash)
+	//clear bucket cache
+	stateImpl.lastComputedCryptoHash = statehash
+	stateImpl.persistedStateHash = nil
+	stateImpl.dataNodesDelta = nil
+	stateImpl.bucketTreeDelta = nil
+	stateImpl.recomputeCryptoHash = true
+	stateImpl.bucketCache = newBucketCache(stateImpl.currentConfig.bucketCacheMaxSize, stateImpl.OpenchainDB)
 
-	var err error
-	var localHash []byte
-	btOffset, err := syncState.Offset.Unmarshal()
-	if err != nil {
+	logger.Infof("start sync to state %x", statehash)
+}
+
+func (stateImpl *StateImpl) IsCompleted() bool {
+	return stateImpl.underSync == nil
+}
+
+func (stateImpl *StateImpl) RequiredParts() ([]*pb.SyncOffset, error) {
+	if stateImpl.underSync == nil {
+		return nil, fmt.Errorf("Not in sync process")
+	}
+
+	return stateImpl.underSync.RequiredParts()
+}
+
+func (stateImpl *StateImpl) CurrentOffset() (*pb.SyncOffset, error) {
+	if stateImpl.underSync == nil {
+		return nil, fmt.Errorf("Not in sync process")
+	}
+
+	return stateImpl.underSync.CurrentOffset(), nil
+}
+
+
+//An PrepareWorkingSet must have been called before, we do this like a calling of
+//ClearWorkingSet(true), verify the delta
+func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error {
+
+	if md := syncData.GetMetaData(); len(md) > 0 {
+		if err := stateImpl.applyPartialMetalData(md); err != nil {
+			return err
+		}
+	}
+
+	umDelta := statemgmt.NewStateDelta()
+	umDelta.ChaincodeStateDeltas = syncData.ChaincodeStateDeltas
+
+	stateImpl.dataNodesDelta = newDataNodesDelta(stateImpl.currentConfig, umDelta)
+	stateImpl.bucketTreeDelta = newBucketTreeDelta()
+
+	logger.Debug("Start computing partial crypto-hash...")
+	if err := stateImpl.processDataNodeDelta(); err != nil {
+		return err
+	}
+	//TODO: we only need calc. until the level which has the root of partial data buckets
+	if err := stateImpl.processBucketTreeDelta(0); err != nil {
 		return err
 	}
 
-	logger.Infof("state offset: <%+v>, config<%v>", btOffset, conf)
+	//TODO: read calc. root in bucket delta and compare it to exist bucketnode
+	stateImpl.recomputeCryptoHash = true
+	//stateImpl.lastComputedCryptoHash = stateImpl.computeRootNodeCryptoHash()
 
-	if btOffset.BucketNum == 0 {
-		if syncState.Statehash != nil {
-			err = fmt.Errorf("Invalid Statehash<%x>. The nil expected", syncState.Statehash)
-		}
-	} else {
-
-		localHash, err = ComputeStateHashByOffset(syncState.Offset, snapshotHandler)
-		if !bytes.Equal(localHash, syncState.Statehash) {
-			err = fmt.Errorf("Wrong Statehash, at level-num<%d-%d>\n" +
-				"remote hash<%x>\n" +
-				"local  hash<%x>",
-				btOffset.Level, btOffset.BucketNum,
-				syncState.Statehash, localHash)
-		}
-	}
-	return err
+	return nil
 }
 
-
-
-func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.SyncOffset, snapshotHandler *db.DBSnapshot) (*pb.SyncStateChunk, error){
-
-	var err error
-	var stateDelta *statemgmt.StateDelta
-	stateChunk := &pb.SyncStateChunk{}
-
-	bucketTreeOffset, err := offset.Unmarshal()
-
-	if err != nil {
-		return nil, err
-	}
-
-	level := int(bucketTreeOffset.Level)
-	startNum := int(bucketTreeOffset.BucketNum)
-	endNum := int(bucketTreeOffset.Delta + bucketTreeOffset.BucketNum - 1)
-
-	if level > conf.GetLowestLevel() {
-		return nil, fmt.Errorf("invalid level")
-	}
-
-	maxBucketNum := conf.GetNumBuckets(level)
-	if maxBucketNum < endNum {
-		return nil, fmt.Errorf("invalid offset")
-	} else if maxBucketNum == endNum {
-		stateChunk.Roothash, err = stateImpl.getRootStateHashFromDB(snapshotHandler)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	stateDeltaAll := statemgmt.NewStateDelta()
-
-	itr := snapshotHandler.GetStateCFSnapshotIterator()
-	defer itr.Close()
-
-	for index := startNum; index <= endNum; index++ {
-
-		if viper.GetBool("peer.breakpoint") {
-			// for test only
-			if index > maxBucketNum / 2 {
-				err = fmt.Errorf("hit breakpoint at <%d-%d>, bucket tree: level<%d>, bucketNum<%d>",
-					level, index, level, maxBucketNum, )
-				break
-			}
-		}
-
-		start, end := conf.getLeafBuckets(int(level), int(index))
-		stateDelta, err = produceStateDeltaFromDB(start, end, itr)
-		if err != nil {
-			break
-		}
-		stateDeltaAll.ApplyChanges(stateDelta)
-	}
-	stateChunk.ChaincodeStateDeltas = stateDeltaAll.ChaincodeStateDeltas
-
-	return stateChunk, err
+func (stateImpl *StateImpl) applyPartialMetalData(md []byte) error {
+	return nil
 }
 
+// // report local root hash to server
+// func (stateImpl *StateImpl) getRootStateHashFromDB(snapshotHandler *db.DBSnapshot) ([]byte, error) {
 
+// 	var persistedStateHash []byte = nil
+// 	var rootBucketNode *bucketNode
+// 	var err error
 
-func (impl *StateImpl) SaveStateOffset(committedOffset *pb.SyncOffset) error {
+// 	rootBucketNode, err = fetchBucketNode(snapshotHandler, stateImpl.OpenchainDB, constructRootBucketKey())
 
-	btoffset, err := committedOffset.Unmarshal()
+// 	if err == nil && rootBucketNode != nil {
+// 		persistedStateHash = rootBucketNode.computeCryptoHash()
+// 	}
+// 	return persistedStateHash, err
+// }
 
-	if err != nil {
-		return err
-	}
-	logger.Debugf("Committed state offset: level-num<%d-%d>",
-		btoffset.Level,	btoffset.BucketNum + btoffset.Delta - 1)
+// func (stateImpl *StateImpl) VerifySyncState(syncState *pb.SyncState, snapshotHandler *db.DBSnapshot) error {
 
-	return persist.StoreSyncPosition(committedOffset.Data)
-}
+// 	var err error
+// 	var localHash []byte
+// 	btOffset, err := syncState.Offset.Unmarshal()
+// 	if err != nil {
+// 		return err
+// 	}
 
-func (impl *StateImpl) LoadStateOffsetFromDB() []byte {
-	return persist.LoadSyncPosition()
-}
+// 	logger.Infof("state offset: <%+v>, config<%v>", btOffset, conf)
 
+// 	if btOffset.BucketNum == 0 {
+// 		if syncState.Statehash != nil {
+// 			err = fmt.Errorf("Invalid Statehash<%x>. The nil expected", syncState.Statehash)
+// 		}
+// 	} else {
 
-func (impl *StateImpl) NextStateOffset(curOffset *pb.SyncOffset)(*pb.SyncOffset, error) {
+// 		localHash, err = ComputeStateHashByOffset(syncState.Offset, snapshotHandler)
+// 		if !bytes.Equal(localHash, syncState.Statehash) {
+// 			err = fmt.Errorf("Wrong Statehash, at level-num<%d-%d>\n"+
+// 				"remote hash<%x>\n"+
+// 				"local  hash<%x>",
+// 				btOffset.Level, btOffset.BucketNum,
+// 				syncState.Statehash, localHash)
+// 		}
+// 	}
+// 	return err
+// }
 
-	var err error
-	var data []byte
-	var bucketTreeOffset *pb.BucketTreeOffset
+// func (stateImpl *StateImpl) GetStateDeltaFromDB(offset *pb.SyncOffset, snapshotHandler *db.DBSnapshot) (*pb.SyncStateChunk, error) {
 
-	if curOffset == nil {
-		data = persist.LoadSyncPosition()
-	} else {
-		data = curOffset.Data
-	}
+// 	var err error
+// 	var stateDelta *statemgmt.StateDelta
+// 	stateChunk := &pb.SyncStateChunk{}
 
-	if data == nil {
-		bucketTreeOffset = &pb.BucketTreeOffset{}
-		bucketTreeOffset.Level = uint64(conf.getSyncLevel())
-		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
+// 	bucketTreeOffset, err := offset.Unmarshal()
 
-		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum)
-		bucketTreeOffset.BucketNum = 1
-	} else {
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-		stateOffset := &pb.SyncOffset{data}
-		bucketTreeOffset, err = stateOffset.Unmarshal()
-		if err != nil {
-			return nil, err
-		}
+// 	level := int(bucketTreeOffset.Level)
+// 	startNum := int(bucketTreeOffset.BucketNum)
+// 	endNum := int(bucketTreeOffset.Delta + bucketTreeOffset.BucketNum - 1)
 
-		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
+// 	if level > conf.GetLowestLevel() {
+// 		return nil, fmt.Errorf("invalid level")
+// 	}
 
-		bucketTreeOffset.BucketNum += bucketTreeOffset.Delta
-		if maxNum <= bucketTreeOffset.BucketNum - 1 {
-			logger.Infof("Hit maxBucketNum<%d>, target BucketNum<%d>", maxNum,  bucketTreeOffset.BucketNum)
-			return nil, nil
-		}
-		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum - bucketTreeOffset.BucketNum + 1)
-	}
+// 	maxBucketNum := conf.GetNumBuckets(level)
+// 	if maxBucketNum < endNum {
+// 		return nil, fmt.Errorf("invalid offset")
+// 	} else if maxBucketNum == endNum {
+// 		stateChunk.Roothash, err = stateImpl.getRootStateHashFromDB(snapshotHandler)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 	}
 
-	logger.Debugf("Next state offset <%+v>", bucketTreeOffset)
-	nextOffset := &pb.SyncOffset{}
-	nextOffset.Data, err = bucketTreeOffset.Byte()
+// 	stateDeltaAll := statemgmt.NewStateDelta()
 
-	return nextOffset, err
-}
+// 	itr := snapshotHandler.GetStateCFSnapshotIterator()
+// 	defer itr.Close()
 
+// 	for index := startNum; index <= endNum; index++ {
 
+// 		if viper.GetBool("peer.breakpoint") {
+// 			// for test only
+// 			if index > maxBucketNum/2 {
+// 				err = fmt.Errorf("hit breakpoint at <%d-%d>, bucket tree: level<%d>, bucketNum<%d>",
+// 					level, index, level, maxBucketNum)
+// 				break
+// 			}
+// 		}
+
+// 		start, end := conf.getLeafBuckets(int(level), int(index))
+// 		stateDelta, err = produceStateDeltaFromDB(start, end, itr)
+// 		if err != nil {
+// 			break
+// 		}
+// 		stateDeltaAll.ApplyChanges(stateDelta)
+// 	}
+// 	stateChunk.ChaincodeStateDeltas = stateDeltaAll.ChaincodeStateDeltas
+
+// 	return stateChunk, err
+// }
+
+// func (impl *StateImpl) SaveStateOffset(committedOffset *pb.SyncOffset) error {
+
+// 	btoffset, err := committedOffset.Unmarshal()
+
+// 	if err != nil {
+// 		return err
+// 	}
+// 	logger.Debugf("Committed state offset: level-num<%d-%d>",
+// 		btoffset.Level, btoffset.BucketNum+btoffset.Delta-1)
+
+// 	return persist.StoreSyncPosition(committedOffset.Data)
+// }
+
+// func (impl *StateImpl) LoadStateOffsetFromDB() []byte {
+// 	return persist.LoadSyncPosition()
+// }
+
+// func (impl *StateImpl) NextStateOffset(curOffset *pb.SyncOffset) (*pb.SyncOffset, error) {
+
+// 	var err error
+// 	var data []byte
+// 	var bucketTreeOffset *pb.BucketTreeOffset
+
+// 	if curOffset == nil {
+// 		data = persist.LoadSyncPosition()
+// 	} else {
+// 		data = curOffset.Data
+// 	}
+
+// 	if data == nil {
+// 		bucketTreeOffset = &pb.BucketTreeOffset{}
+// 		bucketTreeOffset.Level = uint64(conf.getSyncLevel())
+// 		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
+
+// 		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum)
+// 		bucketTreeOffset.BucketNum = 1
+// 	} else {
+
+// 		stateOffset := &pb.SyncOffset{data}
+// 		bucketTreeOffset, err = stateOffset.Unmarshal()
+// 		if err != nil {
+// 			return nil, err
+// 		}
+
+// 		maxNum := uint64(conf.GetNumBuckets(int(bucketTreeOffset.Level)))
+
+// 		bucketTreeOffset.BucketNum += bucketTreeOffset.Delta
+// 		if maxNum <= bucketTreeOffset.BucketNum-1 {
+// 			logger.Infof("Hit maxBucketNum<%d>, target BucketNum<%d>", maxNum, bucketTreeOffset.BucketNum)
+// 			return nil, nil
+// 		}
+// 		bucketTreeOffset.Delta = min(uint64(conf.syncDelta), maxNum-bucketTreeOffset.BucketNum+1)
+// 	}
+
+// 	logger.Debugf("Next state offset <%+v>", bucketTreeOffset)
+// 	nextOffset := &pb.SyncOffset{}
+// 	nextOffset.Data, err = bucketTreeOffset.Byte()
+
+// 	return nextOffset, err
+// }

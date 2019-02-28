@@ -3,6 +3,10 @@
 #    Peer section
 #
 ###############################################################################
+logging:
+   test: debug
+
+
 peer:
     # Path on the file system where peer will store data
     fileSystemPath: /var/hyperledger/test/ledge/statemgmt/state/testdb

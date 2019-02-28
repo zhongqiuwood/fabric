@@ -35,6 +35,7 @@ func TestBucketCache(t *testing.T) {
 }
 
 func testGetRootHashes(t *testing.T, enableBlockCache bool) ([]byte, []byte, []byte, []byte) {
+
 	// number of buckets at each level 26,9,3,1
 	testHasher, stateImplTestWrapper, stateDelta := createFreshDBAndInitTestStateImplWithCustomHasher(t, 26, 3)
 	// populate hash function such that they intersect at higher level buckets
@@ -45,6 +46,7 @@ func testGetRootHashes(t *testing.T, enableBlockCache bool) ([]byte, []byte, []b
 	if !enableBlockCache {
 		stateImplTestWrapper.stateImpl.bucketCache = newBucketCache(0, db.GetDBHandle())
 	}
+
 	stateDelta.Set("chaincodeID1", "key1", []byte("value1"), nil)
 	stateDelta.Set("chaincodeID2", "key2", []byte("value2"), nil)
 	stateDelta.Set("chaincodeID3", "key3", []byte("value3"), nil)
@@ -62,8 +64,9 @@ func testGetRootHashes(t *testing.T, enableBlockCache bool) ([]byte, []byte, []b
 	stateImplTestWrapper.persistChangesAndResetInMemoryChanges()
 
 	if enableBlockCache {
+		conf := stateImplTestWrapper.stateImpl.currentConfig
 		stateImplTestWrapper.stateImpl.bucketCache = newBucketCache(20, db.GetDBHandle())
-		stateImplTestWrapper.stateImpl.bucketCache.loadAllBucketNodesFromDB()
+		stateImplTestWrapper.stateImpl.bucketCache.loadAllBucketNodesFromDB(conf)
 	}
 	stateDelta = statemgmt.NewStateDelta()
 	stateDelta.Set("chaincodeID3", "key3", []byte("value3_new"), nil)

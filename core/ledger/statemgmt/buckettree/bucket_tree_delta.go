@@ -16,21 +16,17 @@ limitations under the License.
 
 package buckettree
 
-import "sync"
 type byBucketNumber map[int]*bucketNode
 
 type bucketTreeDelta struct {
 	byLevel map[int]byBucketNumber
-	lock *sync.Mutex
 }
 
 func newBucketTreeDelta() *bucketTreeDelta {
-	return &bucketTreeDelta{make(map[int]byBucketNumber), &sync.Mutex{}}
+	return &bucketTreeDelta{make(map[int]byBucketNumber)}
 }
 
 func (bucketTreeDelta *bucketTreeDelta) getOrCreateBucketNode(bucketKey *bucketKey) *bucketNode {
-	bucketTreeDelta.lock.Lock()
-	defer bucketTreeDelta.lock.Unlock()
 	byBucketNumber := bucketTreeDelta.byLevel[bucketKey.level]
 	if byBucketNumber == nil {
 		byBucketNumber = make(map[int]*bucketNode)
@@ -49,9 +45,6 @@ func (bucketTreeDelta *bucketTreeDelta) isEmpty() bool {
 }
 
 func (bucketTreeDelta *bucketTreeDelta) getBucketNodesAt(level int) []*bucketNode {
-	bucketTreeDelta.lock.Lock()
-	defer bucketTreeDelta.lock.Unlock()
-
 	bucketNodes := []*bucketNode{}
 	byBucketNumber := bucketTreeDelta.byLevel[level]
 	if byBucketNumber == nil {

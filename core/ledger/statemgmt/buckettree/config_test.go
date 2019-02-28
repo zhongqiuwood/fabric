@@ -28,12 +28,13 @@ func TestConfigInit(t *testing.T) {
 	testDBWrapper.CleanDB(t)
 	stateImpl := NewStateImpl(testDBWrapper.GetDB())
 	stateImpl.Initialize(configs)
+	conf := stateImpl.currentConfig
 	testutil.AssertEquals(t, conf.getNumBucketsAtLowestLevel(), configs[ConfigNumBuckets])
 	testutil.AssertEquals(t, conf.getMaxGroupingAtEachLevel(), configs[ConfigMaxGroupingAtEachLevel])
 }
 
 func TestConfig(t *testing.T) {
-	testConf := newConfig(26, 2, fnvHash)
+	testConf := newConfig(26, 2)
 	t.Logf("conf.levelToNumBucketsMap: [%#v]", testConf.levelToNumBucketsMap)
 	testutil.AssertEquals(t, testConf.getLowestLevel(), 5)
 	testutil.AssertEquals(t, testConf.getNumBuckets(0), 1)
@@ -47,7 +48,7 @@ func TestConfig(t *testing.T) {
 	testutil.AssertEquals(t, testConf.computeParentBucketNumber(9), 5)
 	testutil.AssertEquals(t, testConf.computeParentBucketNumber(10), 5)
 
-	testConf = newConfig(26, 3, fnvHash)
+	testConf = newConfig(26, 3)
 	t.Logf("conf.levelToNumBucketsMap: [%#v]", testConf.levelToNumBucketsMap)
 	testutil.AssertEquals(t, testConf.getLowestLevel(), 3)
 	testutil.AssertEquals(t, testConf.getNumBuckets(0), 1)

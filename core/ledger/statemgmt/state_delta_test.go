@@ -65,7 +65,7 @@ func TestStateDeltaEmptyArrayValue(t *testing.T) {
 
 	v := stateDelta1.Get("chaincode2", "key2")
 	if v.GetValue() == nil || len(v.GetValue()) > 0 {
-		t.Fatalf("An empty array expected. found = %#v", v)
+		t.Fatalf("An empty array expected. found = %#v, GetValue() = %#v", v, v.GetValue())
 	}
 
 	v = stateDelta1.Get("chaincode3", "key3")

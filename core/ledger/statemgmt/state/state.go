@@ -26,15 +26,11 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/trie"
 	"github.com/abchain/fabric/core/util"
 	"github.com/op/go-logging"
-	"github.com/abchain/fabric/protos"
-	"github.com/abchain/fabric/core/ledger/statemgmt/persist"
 )
 
 var logger = logging.MustGetLogger("state")
 
 const defaultStateImpl = "buckettree"
-
-var stateImpl statemgmt.HashableState
 
 type stateImplType string
 
@@ -49,6 +45,7 @@ const (
 // This is not thread safe
 type State struct {
 	*db.OpenchainDB
+	configBackup          *stateConfig
 	stateImpl             statemgmt.HashableState
 	stateDelta            *statemgmt.StateDelta
 	currentTxStateDelta   *statemgmt.StateDelta
@@ -61,6 +58,7 @@ type State struct {
 // NewState constructs a new State. This Initializes encapsulated state implementation
 func NewState(db *db.OpenchainDB, config *stateConfig) *State {
 
+	var stateImpl statemgmt.HashableState
 	logger.Infof("Initializing state implementation [%s]", config.stateImplName)
 	switch config.stateImplName {
 	case buckettreeType:
@@ -76,7 +74,7 @@ func NewState(db *db.OpenchainDB, config *stateConfig) *State {
 	if err != nil {
 		panic(fmt.Errorf("Error during initialization of state implementation: %s", err))
 	}
-	return &State{db, stateImpl, statemgmt.NewStateDelta(), statemgmt.NewStateDelta(), "", make(map[string][]byte),
+	return &State{db, config, stateImpl, statemgmt.NewStateDelta(), statemgmt.NewStateDelta(), "", make(map[string][]byte),
 		false, uint64(config.deltaHistorySize)}
 }
 
@@ -294,10 +292,10 @@ func (state *State) GetTxStateDeltaHash() map[string][]byte {
 }
 
 // ClearInMemoryChanges remove from memory all the changes to state
-func (state *State) ClearInMemoryChanges(changesPersisted, reloadCache bool) {
+func (state *State) ClearInMemoryChanges(changesPersisted bool) {
 	state.stateDelta = statemgmt.NewStateDelta()
 	state.txStateDeltaHash = make(map[string][]byte)
-	state.stateImpl.ClearWorkingSet(changesPersisted, reloadCache)
+	state.stateImpl.ClearWorkingSet(changesPersisted)
 }
 
 // getStateDelta get changes in state after most recent call to method clearInMemoryChanges
@@ -308,7 +306,7 @@ func (state *State) getStateDelta() *statemgmt.StateDelta {
 // GetSnapshot returns a snapshot of the global state for the current block. stateSnapshot.Release()
 // must be called once you are done.
 func (state *State) GetSnapshot(blockNumber uint64, dbSnapshot *db.DBSnapshot) (*StateSnapshot, error) {
-	return newStateSnapshot(blockNumber, dbSnapshot)
+	return newStateSnapshot(state, blockNumber, dbSnapshot)
 }
 
 // FetchStateDeltaFromDB fetches the StateDelta corrsponding to given blockNumber
@@ -325,6 +323,11 @@ func (state *State) FetchStateDeltaFromDB(blockNumber uint64) (*statemgmt.StateD
 	return stateDelta, nil
 }
 
+//func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.DBWriteBatch) {
+//	state.stateImpl.PrepareWorkingSet(state.stateDelta)
+//	state.stateImpl.AddChangesForPersistence(writeBatch)
+//}
+
 // AddChangesForPersistence adds key-value pairs to writeBatch
 func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.DBWriteBatch) {
 	logger.Debug("state.addChangesForPersistence()...start")
@@ -334,15 +337,15 @@ func (state *State) AddChangesForPersistence(blockNumber uint64, writeBatch *db.
 	}
 	state.stateImpl.AddChangesForPersistence(writeBatch)
 
-	if blockNumber == 0 {
-		logger.Debug("state.addChangesForPersistence()...finished")
-		return
-	}
-
 	serializedStateDelta := state.stateDelta.Marshal()
 	cf := writeBatch.GetDBHandle().StateDeltaCF
 	logger.Debugf("Adding state-delta corresponding to block number[%d]", blockNumber)
 	writeBatch.PutCF(cf, encodeStateDeltaKey(blockNumber), serializedStateDelta)
+
+	if blockNumber == 0 {
+		logger.Debug("state.addChangesForPersistence()...finished for block 0")
+		return
+	}
 
 	if blockNumber >= state.historyStateDeltaSize {
 		blockNumberToDelete := blockNumber - state.historyStateDeltaSize
@@ -388,13 +391,43 @@ func (state *State) CommitStateDelta() error {
 // only used during state synchronization when creating a new state from
 // a snapshot.
 func (state *State) DeleteState() error {
-	err := state.OpenchainDB.DeleteState()
-	if err != nil {
-		logger.Errorf("Error deleting state: %s", err)
+
+	var stateImpl statemgmt.HashableState
+	logger.Infof("Re-Initializing state implementation")
+	switch state.configBackup.stateImplName {
+	case buckettreeType:
+		stateImpl = buckettree.NewStateImpl(state.OpenchainDB)
+	case trieType:
+		stateImpl = trie.NewStateImpl(state.OpenchainDB)
+	case rawType:
+		stateImpl = raw.NewStateImpl(state.OpenchainDB)
+	default:
+		panic("Should not reach here.")
+	}
+	if err := stateImpl.Initialize(state.configBackup.stateImplConfigs); err != nil {
+		return err
 	}
 
-	state.ClearInMemoryChanges(false, true)
-	return err
+	if err := state.OpenchainDB.DeleteState(); err != nil {
+		return err
+	}
+
+	state.stateImpl = stateImpl
+	state.stateDelta = statemgmt.NewStateDelta()
+	state.currentTxStateDelta = statemgmt.NewStateDelta()
+	state.currentTxID = ""
+	state.txStateDeltaHash = make(map[string][]byte)
+	state.updateStateImpl = false
+	return nil
+}
+
+func (state *State) GetDividableState() statemgmt.HashAndDividableState {
+	inf, ok := state.stateImpl.(statemgmt.HashAndDividableState)
+	if ok {
+		return inf
+	} else {
+		return nil
+	}
 }
 
 func encodeStateDeltaKey(blockNumber uint64) []byte {
@@ -404,29 +437,3 @@ func encodeStateDeltaKey(blockNumber uint64) []byte {
 func decodeStateDeltaKey(dbkey []byte) uint64 {
 	return util.DecodeToUint64(dbkey)
 }
-
-
-func (state *State) GetStateDeltaFromDB(offset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {
-	return state.stateImpl.GetStateDeltaFromDB(offset, snapshotHandler)
-}
-
-func (state *State) NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error) {
-	return state.stateImpl.NextStateOffset(curOffset)
-}
-
-func (state *State) SaveStateOffset(committedOffset *protos.SyncOffset) error {
-	return state.stateImpl.SaveStateOffset(committedOffset)
-}
-
-func (state *State) VerifySyncState(offset *protos.SyncState, snapshotHandler *db.DBSnapshot) error {
-	return state.stateImpl.VerifySyncState(offset, snapshotHandler)
-}
-
-func (state *State) LoadStateOffsetFromDB() []byte {
-	return persist.LoadSyncPosition()
-}
-
-func (state *State) ClearStateOffsetFromDB() {
-	persist.ClearSyncPosition()
-}
-

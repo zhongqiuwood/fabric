@@ -19,20 +19,7 @@ package buckettree
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"fmt"
-	"github.com/tecbot/gorocksdb"
-	pb "github.com/abchain/fabric/protos"
 )
-
-// db or snapshot Iterator
-type stateCfIterator interface {
-	Seek(key []byte)
-	Next()
-	Close()
-	Valid() bool
-	Key() *gorocksdb.Slice
-	Value() *gorocksdb.Slice
-}
 
 // fetch one DataNode FromDB by a dataKey
 func fetchDataNodeFromDB(odb *db.OpenchainDB, dataKey *dataKey) (*dataNode, error) {
@@ -63,14 +50,12 @@ func fetchBucketNodeFromDB(odb *db.OpenchainDB, bucketKey *bucketKey) (*bucketNo
 	return unmarshalBucketNode(bucketKey, nodeBytes), nil
 }
 
+type rawKey []byte
 
-// fetch a DataNode array belone to a Lowest Level bucketKey FromDB
-func fetchDataNodesFromDBFor(itr stateCfIterator, bucketKey *bucketKey) (dataNodes, error) {
+func fetchDataNodesFromDBFor(odb *db.OpenchainDB, bucketKey *bucketKey) (dataNodes, error) {
 
-	if bucketKey.level != conf.GetLowestLevel() {
-		return nil, fmt.Errorf("Invalid bucketKey")
-	}
-
+	itr := odb.GetIterator(db.StateCF)
+	defer itr.Close()
 	minimumDataKeyBytes := minimumPossibleDataKeyBytesFor(bucketKey)
 
 	logger.Debugf("Fetching from DB data nodes for bucket [%s], minimumDataKeyBytes<%x>",
@@ -88,7 +73,7 @@ func fetchDataNodesFromDBFor(itr stateCfIterator, bucketKey *bucketKey) (dataNod
 
 		dataKey := newDataKeyFromEncodedBytes(keyBytes)
 		logger.Debugf("Retrieved data key [%s] from DB for bucket [%s]", dataKey, bucketKey)
-		if !dataKey.getBucketKey().equals(bucketKey) {
+		if !bucketKey.bucketKeyLite.equals(dataKey.getBucketKey(bucketKey.config)) {
 			logger.Debugf("Data key [%s] from DB does not belong to bucket = [%s]. Stopping further iteration and returning results [%v]", dataKey, bucketKey, dataNodes)
 			return dataNodes, nil
 		}
@@ -102,152 +87,151 @@ func fetchDataNodesFromDBFor(itr stateCfIterator, bucketKey *bucketKey) (dataNod
 	return dataNodes, nil
 }
 
-func fetchBucketNode(snapshotHandler *db.DBSnapshot, odb *db.OpenchainDB, bucketKey *bucketKey) (*bucketNode, error) {
+//func fetchBucketNode(snapshotHandler *db.DBSnapshot, odb *db.OpenchainDB, bucketKey *bucketKey) (*bucketNode, error) {
+//
+//	var nodeBytes []byte
+//	var err error
+//
+//	if snapshotHandler != nil {
+//		nodeBytes, err = snapshotHandler.GetFromStateCFSnapshot(bucketKey.getEncodedBytes())
+//	} else {
+//		return fetchBucketNodeFromDB(odb, bucketKey)
+//	}
+//
+//	if err != nil {
+//		return nil, err
+//	}
+//	if nodeBytes == nil {
+//		return nil, nil
+//	}
+//	return unmarshalBucketNode(bucketKey, nodeBytes), nil
+//}
 
-	var nodeBytes []byte
-	var err error
+// func produceStateDeltaFromDB(start, end int, itr stateCfIterator) (*statemgmt.StateDelta, error) {
 
-	if snapshotHandler != nil {
-		nodeBytes, err = snapshotHandler.GetFromSnapshot(db.StateCF, bucketKey.getEncodedBytes())
-	} else {
-		return fetchBucketNodeFromDB(odb, bucketKey)
-	}
+// 	var dataNodes dataNodes = nil
+// 	for i := start; i <= end; i++ {
 
-	if err != nil {
-		return nil, err
-	}
-	if nodeBytes == nil {
-		return nil, nil
-	}
-	return unmarshalBucketNode(bucketKey, nodeBytes), nil
-}
+// 		detal, err := fetchDataNodesFromDBFor(itr, &bucketKey{conf.lowestLevel, i})
 
-func produceStateDeltaFromDB(start, end int, itr stateCfIterator) (*statemgmt.StateDelta, error) {
+// 		if err != nil {
+// 			return nil, err
+// 		}
 
-	var dataNodes dataNodes = nil
-	for i := start; i <= end ; i++ {
+// 		if dataNodes == nil {
+// 			dataNodes = detal
+// 		} else {
+// 			dataNodes = append(dataNodes, detal...)
+// 		}
+// 	}
 
-		detal, err := fetchDataNodesFromDBFor(itr, &bucketKey{conf.lowestLevel, i})
+// 	stateDelta := statemgmt.NewStateDelta()
+// 	for _, dataNode := range dataNodes {
+// 		ccdId, key := dataNode.getKeyElements()
 
-		if err != nil {
-			return nil, err
-		}
+// 		logger.Infof("<%s> stateDelta.Set: [%s][%s]: %s", dataNode.dataKey.bucketKey,
+// 			ccdId, key, dataNode.getValue())
+// 		stateDelta.Set(ccdId, key, dataNode.getValue(), nil)
+// 	}
 
-		if dataNodes == nil {
-			dataNodes = detal
-		} else {
-			dataNodes = append(dataNodes, detal...)
-		}
-	}
+// 	return stateDelta, nil
+// }
 
-	stateDelta := statemgmt.NewStateDelta()
-	for _, dataNode := range dataNodes {
-		ccdId, key := dataNode.getKeyElements()
-
-		logger.Infof("<%s> stateDelta.Set: [%s][%s]: %s", dataNode.dataKey.bucketKey,
-			ccdId, key, dataNode.getValue())
-		stateDelta.Set(ccdId, key, dataNode.getValue(), nil)
-	}
-
-	return stateDelta, nil
-}
-
-func DumpDataNodes() (dataNodes, error) {
-	itr := db.GetDBHandle().GetIterator(db.StateCF)
-	defer itr.Close()
-	minimumDataKeyBytes := minimumPossibleDataKeyBytesFor(newBucketKeyAtLowestLevel(1))
-
-	logger.Infof("minimumDataKeyBytes [%x]", minimumDataKeyBytes)
-
-	var dataNodes dataNodes
-	itr.Seek(minimumDataKeyBytes)
-
-	idx := 1
-	for ; itr.Valid(); itr.Next() {
-		// making a copy of key-value bytes because, underlying key bytes are reused by itr.
-		// no need to free slices as iterator frees memory when closed.
-		keyBytes := statemgmt.Copy(itr.Key().Data())
-		valueBytes := statemgmt.Copy(itr.Value().Data())
-
-		dataKey := newDataKeyFromEncodedBytes(keyBytes)
-		dataNode := unmarshalDataNode(dataKey, valueBytes)
-
-		logger.Infof("Data node[%d]: [%s]", idx, dataNode)
-		idx++
-		dataNodes = append(dataNodes, dataNode)
-	}
-	logger.Debugf("Returning results [%v]", dataNodes)
-	return dataNodes, nil
-}
-
+//func DumpDataNodes() (dataNodes, error) {
+//	itr := db.GetDBHandle().GetIterator(db.StateCF)
+//	defer itr.Close()
+//	minimumDataKeyBytes := minimumPossibleDataKeyBytesFor(newBucketKeyAtLowestLevel(config,1))
+//
+//	logger.Infof("minimumDataKeyBytes [%x]", minimumDataKeyBytes)
+//
+//	var dataNodes dataNodes
+//	itr.Seek(minimumDataKeyBytes)
+//
+//	idx := 1
+//	for ; itr.Valid(); itr.Next() {
+//		// making a copy of key-value bytes because, underlying key bytes are reused by itr.
+//		// no need to free slices as iterator frees memory when closed.
+//		keyBytes := statemgmt.Copy(itr.Key().Data())
+//		valueBytes := statemgmt.Copy(itr.Value().Data())
+//
+//		dataKey := newDataKeyFromEncodedBytes(keyBytes)
+//		dataNode := unmarshalDataNode(dataKey, valueBytes)
+//
+//		logger.Infof("Data node[%d]: [%s]", idx, dataNode)
+//		idx++
+//		dataNodes = append(dataNodes, dataNode)
+//	}
+//	logger.Debugf("Returning results [%v]", dataNodes)
+//	return dataNodes, nil
+//}
 
 // return root hash of a bucket tree consisted of all dataNodes belong to bucket nodes between [lv-0, lv-bucketNum] include,
 // if lv is the lowest level, then the bucket tree contains all all dataNode [0, bucketNum]
-func ComputeStateHashByOffset(offset *pb.SyncOffset, snapshotHandler *db.DBSnapshot) ([]byte, error) {
+// func ComputeStateHashByOffset(offset *pb.SyncOffset, snapshotHandler *db.DBSnapshot) ([]byte, error) {
 
-	btoffset, err := offset.Unmarshal()
+// 	btoffset, err := offset.Unmarshal2BucketTree()
 
-	if err != nil {
-		return nil, err
-	}
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	lv, bucketNum := int(btoffset.Level), int(btoffset.BucketNum + btoffset.Delta - 1)
-	necessaryBuckets := conf.getNecessaryBuckets(lv, bucketNum)
-	bucketTree := newBucketTreeDelta()
-	for _, bucketKey := range necessaryBuckets {
-		bucketNode, err := fetchBucketNode(snapshotHandler, db.GetDBHandle(), bucketKey)
+// 	lv, bucketNum := int(btoffset.Level), int(btoffset.BucketNum+btoffset.Delta-1)
+// 	necessaryBuckets := conf.getNecessaryBuckets(lv, bucketNum)
+// 	bucketTree := newBucketTreeDelta()
+// 	for _, bucketKey := range necessaryBuckets {
+// 		bucketNode, err := fetchBucketNode(snapshotHandler, db.GetDBHandle(), bucketKey)
 
-		if err !=nil {
-			logger.Errorf("Failed to fetch BucketNode<%s> From Snapshot, err: %s\n", bucketKey, err)
-			return nil, err
-		}
+// 		if err != nil {
+// 			logger.Errorf("Failed to fetch BucketNode<%s> From Snapshot, err: %s\n", bucketKey, err)
+// 			return nil, err
+// 		}
 
-		bucketTree.getOrCreateBucketNode(bucketKey)
-		if bucketNode != nil && bucketNode.childrenCryptoHash != nil {
-			logger.Debugf("<%s>: %d children\n", bucketKey, len(bucketNode.childrenCryptoHash))
-			bucketTree.byLevel[bucketKey.level][bucketKey.bucketNumber] = bucketNode
-		} else {
-			logger.Debugf("<%s>: 0 children\n", bucketKey)
-		}
-	}
+// 		bucketTree.getOrCreateBucketNode(bucketKey)
+// 		if bucketNode != nil && bucketNode.childrenCryptoHash != nil {
+// 			logger.Debugf("<%s>: %d children\n", bucketKey, len(bucketNode.childrenCryptoHash))
+// 			bucketTree.byLevel[bucketKey.level][bucketKey.bucketNumber] = bucketNode
+// 		} else {
+// 			logger.Debugf("<%s>: 0 children\n", bucketKey)
+// 		}
+// 	}
 
-	for level := conf.lowestLevel; level > 0; level-- {
-		bucketNodes := bucketTree.getBucketNodesAt(level)
+// 	for level := conf.lowestLevel; level > 0; level-- {
+// 		bucketNodes := bucketTree.getBucketNodesAt(level)
 
-		for _, node := range bucketNodes {
+// 		for _, node := range bucketNodes {
 
-			logger.Debugf("node.bucketKey<%s>", node.bucketKey)
+// 			logger.Debugf("node.bucketKey<%s>", node.bucketKey)
 
-			parentKey := node.bucketKey.getParentKey()
-			cryptoHash := node.computeCryptoHash()
+// 			parentKey := node.bucketKey.getParentKey()
+// 			cryptoHash := node.computeCryptoHash()
 
-			if level == conf.lowestLevel {
-				index := parentKey.getChildIndex(node.bucketKey)
-				parentBucketNodeOnDisk, err := fetchBucketNode(snapshotHandler, db.GetDBHandle(), parentKey)
+// 			if level == conf.lowestLevel {
+// 				index := parentKey.getChildIndex(node.bucketKey)
+// 				parentBucketNodeOnDisk, err := fetchBucketNode(snapshotHandler, db.GetDBHandle(), parentKey)
 
-				if err !=nil {
-					logger.Errorf("<%s>, index<%d> in parent child num: <%d>, err: %s\n",
-						node.bucketKey, index, err)
-					return nil, err
-				}
+// 				if err != nil {
+// 					logger.Errorf("<%s>, index<%d> in parent child num: <%d>, err: %s\n",
+// 						node.bucketKey, index, err)
+// 					return nil, err
+// 				}
 
-				if parentBucketNodeOnDisk ==nil {
-					logger.Debugf("<%s>, index<%d>, no parentKey<%s> ondisk\n", node.bucketKey, index, parentKey)
-				} else {
-					cryptoHash = parentBucketNodeOnDisk.childrenCryptoHash[index]
-					logger.Debugf("<%s>, index<%d> in parent child num: <%d>\n", node.bucketKey,
-						index,	len(parentBucketNodeOnDisk.childrenCryptoHash))
-				}
-			}
+// 				if parentBucketNodeOnDisk == nil {
+// 					logger.Debugf("<%s>, index<%d>, no parentKey<%s> ondisk\n", node.bucketKey, index, parentKey)
+// 				} else {
+// 					cryptoHash = parentBucketNodeOnDisk.childrenCryptoHash[index]
+// 					logger.Debugf("<%s>, index<%d> in parent child num: <%d>\n", node.bucketKey,
+// 						index, len(parentBucketNodeOnDisk.childrenCryptoHash))
+// 				}
+// 			}
 
-			bucketNodeInMem := bucketTree.getOrCreateBucketNode(parentKey)
-			bucketNodeInMem.setChildCryptoHash(node.bucketKey, cryptoHash)
-			logger.Debugf("set <%s> hash into parent <%s>, hash<%x>\n",
-				node.bucketKey, parentKey, cryptoHash)
-		}
-	}
+// 			bucketNodeInMem := bucketTree.getOrCreateBucketNode(parentKey)
+// 			bucketNodeInMem.setChildCryptoHash(node.bucketKey, cryptoHash)
+// 			logger.Debugf("set <%s> hash into parent <%s>, hash<%x>\n",
+// 				node.bucketKey, parentKey, cryptoHash)
+// 		}
+// 	}
 
-	hash := bucketTree.getRootNode().computeCryptoHash()
-	logger.Infof("<level-bucketNum><%d-%d>: root hash <%x>\n", lv, bucketNum, 	hash)
-	return hash, nil
-}
+// 	hash := bucketTree.getRootNode().computeCryptoHash()
+// 	logger.Infof("<level-bucketNum><%d-%d>: root hash <%x>\n", lv, bucketNum, hash)
+// 	return hash, nil
+// }

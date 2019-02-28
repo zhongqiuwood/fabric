@@ -21,25 +21,31 @@ import (
 
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/util"
+	//"github.com/golang/protobuf/proto"
 )
 
 type dataKey struct {
-	bucketKey    *bucketKey
+	bucketNumber int
 	compositeKey []byte
 }
 
-func newDataKey(chaincodeID string, key string) *dataKey {
+// YA-fabric: we use new encoding for datakey, the original way make a max byte as 8
+// so we use a larger (15) byte as the prefix
+const dataKeyPrefixByte = byte(15)
+
+func newDataKey(conf *config, chaincodeID string, key string) *dataKey {
 	logger.Debugf("Enter - newDataKey. chaincodeID=[%s], key=[%s]", chaincodeID, key)
 	compositeKey := statemgmt.ConstructCompositeKey(chaincodeID, key)
 	bucketHash := conf.computeBucketHash(compositeKey)
 	// Adding one because - we start bucket-numbers 1 onwards
 	bucketNumber := int(bucketHash)%conf.getNumBucketsAtLowestLevel() + 1
-	dataKey := &dataKey{newBucketKeyAtLowestLevel(bucketNumber), compositeKey}
+	dataKey := &dataKey{bucketNumber, compositeKey}
 	logger.Debugf("Exit - newDataKey=[%s]", dataKey)
 	return dataKey
 }
 
 func minimumPossibleDataKeyBytesFor(bucketKey *bucketKey) []byte {
+	//TODO: must calc or the verify the number is for lowest level
 	min := encodeBucketNumber(bucketKey.bucketNumber)
 	min = append(min, byte(0))
 	return min
@@ -51,8 +57,8 @@ func minimumPossibleDataKeyBytes(bucketNumber int, chaincodeID string, key strin
 	return b
 }
 
-func (key *dataKey) getBucketKey() *bucketKey {
-	return key.bucketKey
+func (key *dataKey) getBucketKey(conf *config) *bucketKeyLite {
+	return &newBucketKeyAtLowestLevel(conf, key.bucketNumber).bucketKeyLite
 }
 
 func encodeBucketNumber(bucketNumber int) []byte {
@@ -60,12 +66,18 @@ func encodeBucketNumber(bucketNumber int) []byte {
 }
 
 func decodeBucketNumber(encodedBytes []byte) (int, int) {
-	bucketNum, bytesConsumed := util.DecodeOrderPreservingVarUint64(encodedBytes)
-	return int(bucketNum), bytesConsumed
+
+	if len(encodedBytes) == 0 {
+		return 0, 0
+	} else {
+		//so we can still read old key ...
+		bucketNum, bytesConsumed := util.DecodeOrderPreservingVarUint64(encodedBytes)
+		return int(bucketNum), bytesConsumed
+	}
 }
 
 func (key *dataKey) getEncodedBytes() []byte {
-	encodedBytes := encodeBucketNumber(key.bucketKey.bucketNumber)
+	encodedBytes := encodeBucketNumber(key.bucketNumber)
 	encodedBytes = append(encodedBytes, key.compositeKey...)
 	return encodedBytes
 }
@@ -73,14 +85,14 @@ func (key *dataKey) getEncodedBytes() []byte {
 func newDataKeyFromEncodedBytes(encodedBytes []byte) *dataKey {
 	bucketNum, l := decodeBucketNumber(encodedBytes)
 	compositeKey := encodedBytes[l:]
-	return &dataKey{newBucketKeyAtLowestLevel(bucketNum), compositeKey}
+	return &dataKey{bucketNum, compositeKey}
 }
 
 func (key *dataKey) String() string {
-	return fmt.Sprintf("bucketKey=[%s], compositeKey=[%s]", key.bucketKey, string(key.compositeKey))
+	return fmt.Sprintf("bucketNum=[%v], compositeKey=[%8x]", key.bucketNumber, key.compositeKey)
 }
 
 func (key *dataKey) clone() *dataKey {
-	clone := &dataKey{key.bucketKey.clone(), key.compositeKey}
+	clone := &dataKey{key.bucketNumber, key.compositeKey}
 	return clone
 }

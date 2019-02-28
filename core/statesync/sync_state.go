@@ -1,6 +1,7 @@
 package statesync
 
 import (
+	"github.com/abchain/fabric/core/ledger"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/looplab/fsm"
 	pb "github.com/abchain/fabric/protos"
@@ -17,6 +18,7 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 
 	var err error
 	var hash []byte
+	//var data []byte
 
 	syncHandler.client = newSyncer(ctx, syncHandler)
 
@@ -26,20 +28,22 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 	//---------------------------------------------------------------------------
 	// 1. query local break point state hash and state offset
 	//---------------------------------------------------------------------------
-	data := syncHandler.client.ledger.LoadStateOffsetFromDB()
-	if data == nil {
-		syncHandler.client.ledger.EmptyState()
-	} else {
-		// get break point state hash
-		hash, err = syncHandler.client.ledger.GetCurrentStateHash()
-		if err != nil {
-			return err
-		}
-		logger.Debugf("GetCurrentStateHash: <%x>", hash)
-	}
+	//data := syncHandler.client.ledger.LoadStateOffsetFromDB()
+	//if data == nil {
+	//	syncHandler.client.ledger.EmptyState()
+	//} else {
+	//	// get break point state hash
+	//	hash, err = syncHandler.client.ledger.GetCurrentStateHash()
+	//	if err != nil {
+	//		return err
+	//	}
+	//	logger.Debugf("GetCurrentStateHash: <%x>", hash)
+	//}
+	//
+	//offset := &pb.SyncOffset{data}
 
-	offset := &pb.SyncOffset{data}
-	syncHandler.client.syncMessageHandler = newStateMessageHandler(offset, hash, syncHandler.client)
+	syncHandler.client.ledger.EmptyState()
+	syncHandler.client.syncMessageHandler = newStateMessageHandler(syncHandler.client)
 	//---------------------------------------------------------------------------
 	// 2. handshake: send break point state hash and state offset to peer
 	//---------------------------------------------------------------------------
@@ -54,7 +58,7 @@ func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetSta
 	// 3. clear persisted position
 	//---------------------------------------------------------------------------
 	if err == nil {
-		syncHandler.client.ledger.ClearStateOffsetFromDB()
+		//syncHandler.client.ledger.ClearStateOffsetFromDB()
 		hash, _ = syncHandler.client.ledger.GetCurrentStateHash()
 		logger.Debugf("GetCurrentStateHash: <%x>", hash)
 	}
@@ -80,10 +84,10 @@ func (sts *syncer) commitStateChunk(stateChunkArray *pb.SyncStateChunk, committe
 		return err
 	}
 
-	err = sts.ledger.SaveStateOffset(committedOffset)
-	if err != nil {
-		return err
-	}
+	//err = sts.ledger.SaveStateOffset(committedOffset)
+	//if err != nil {
+	//	return err
+	//}
 
 	return err
 }
@@ -279,14 +283,20 @@ func (d *stateServer) sendStateDeltasArray(e *fsm.Event, offset *pb.SyncOffset, 
 
 
 
-func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest) error {
+func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest, resp *pb.SyncStartResponse) error {
 
 	syncState := &pb.SyncState{}
 	err := proto.Unmarshal(req.Payload, syncState)
 	if err == nil {
-		err = server.ledger.VerifySyncState(syncState)
+		//err = server.ledger.VerifySyncState(syncState)
 	}
-	logger.Infof("remoteHash: <%x>", syncState.Statehash)
+	// TODO: get state hash by snapshot
+	resp.Statehash = nil
+	resp.BlockHeight, _ = server.ledger.GetBlockchainSize()
+	l, _ := ledger.GetLedger()
+	localStatehash, _ := l.GetCurrentStateHash()
+
+	logger.Infof("localStatehash<%x>, remoteHash: <%x>", localStatehash, syncState.Statehash)
 
 	return err
 }
@@ -294,10 +304,13 @@ func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest) error {
 
 func (server *stateServer) sendStateChuck(e *fsm.Event, offset *pb.SyncOffset) {
 
-	var err error
-	stateChunkArray, err := server.ledger.GetStateDeltaFromDB(offset)
-
+	logger.Debugf("---------> remotePeerId <%s>，in", server.parent.remotePeerId)
 	var failedReason string = ""
+	var err error
+	var stateChunkArray *pb.SyncStateChunk
+
+	stateChunkArray, err = server.pit.GetRequiredParts(offset)
+
 	if err != nil {
 		failedReason = fmt.Sprintf("%s; ", err)
 	} else {
@@ -307,7 +320,7 @@ func (server *stateServer) sendStateChuck(e *fsm.Event, offset *pb.SyncOffset) {
 	var syncMessage *pb.SyncMessage
 	syncMessage, err = feedSyncMessage(offset, stateChunkArray, pb.SyncType_SYNC_STATE_ACK)
 	if err != nil {
-		failedReason += fmt.Sprintf("%s", err)
+		failedReason += fmt.Sprintf("===%s", err)
 	}
 
 	syncMessage.FailedReason = failedReason

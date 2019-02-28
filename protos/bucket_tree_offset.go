@@ -1,7 +1,7 @@
 package protos
 
 import (
-	"github.com/golang/proto"
+	"github.com/golang/protobuf/proto"
 )
 
 ////////////////////////////////////////////
@@ -15,6 +15,10 @@ func (m *SyncOffset) Unmarshal2BlockOffset() (*BlockOffset, error) {
 	offsetImpl := &BlockOffset{}
 	err := proto.Unmarshal(m.Data, offsetImpl)
 	return offsetImpl, err
+}
+
+func (m *SyncOffset) Unmarshal2BucketTree() (*BucketTreeOffset, error) {
+	return byte2BucketTreeOffset(m.Data)
 }
 
 func NewBlockOffset(start, end uint64) *SyncOffset {
@@ -41,11 +45,7 @@ func byte2BucketTreeOffset(data []byte) (*BucketTreeOffset, error) {
 	return bucketTreeOffset, err
 }
 
-func (m *SyncOffset) Unmarshal() (*BucketTreeOffset, error) {
-	return byte2BucketTreeOffset(m.Data)
-}
-
-func NewStateOffset(level, bucketNum uint64) *SyncOffset {
+func NewBucketTreeOffset(level, bucketNum uint64) *SyncOffset {
 	stateOffset := &SyncOffset{}
 
 	btOffset := &BucketTreeOffset{level, bucketNum, 1}

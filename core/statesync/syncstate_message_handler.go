@@ -2,6 +2,7 @@ package statesync
 
 import (
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger"
 	pb "github.com/abchain/fabric/protos"
 
 	"github.com/golang/proto"
@@ -20,13 +21,25 @@ type StateMessageHandler struct {
 	client *syncer
 	statehash []byte
 	offset *pb.SyncOffset
+	partialSync *ledger.PartialSync
 }
+func newStateMessageHandler(client *syncer) *StateMessageHandler {
 
-func newStateMessageHandler(offset *pb.SyncOffset, statehash []byte, client *syncer) *StateMessageHandler {
 	handler := &StateMessageHandler{}
 	handler.client = client
-	handler.offset = offset
-	handler.statehash = statehash
+	var err error
+
+	// TODO: load statehash from db
+	handler.partialSync, err = handler.client.ledger.StartPartialSync(handler.statehash)
+
+	var nextOffset *pb.SyncOffset
+	nextOffset, err = handler.partialSync.CurrentOffset()
+
+	if err != nil {
+		return nil
+	}
+	handler.offset = nextOffset
+
 	return handler
 }
 
@@ -37,10 +50,8 @@ func (h *StateMessageHandler) feedPayload(syncMessage *pb.SyncMessage) error {
 }
 
 func (h *StateMessageHandler) getInitialOffset() (*pb.SyncOffset, error) {
-
-	return h.client.ledger.NextStateOffset(nil)
+	return h.offset, nil
 }
-
 
 func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 
@@ -51,7 +62,8 @@ func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 	payload.Offset = h.offset
 	payload.Statehash = h.statehash
 
-	logger.Infof("Sync start at:<%v>", h)
+	logger.Infof("Sync start at: statehash<%x>, offset<%x>",
+		h.statehash, h.offset.Data)
 
 	var err error
 	req.Payload, err = proto.Marshal(payload)
@@ -76,17 +88,28 @@ func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb
 		return nil, err
 	}
 
-	if err = h.client.commitStateChunk(stateChunkArrayResp, syncMessage.Offset); err != nil {
-		return nil, err
-	}
+	//if err = h.client.commitStateChunk(stateChunkArrayResp, syncMessage.Offset); err != nil {
+	//	return nil, err
+	//}
 
-	var nextOffset *pb.SyncOffset
-	nextOffset, err = h.client.ledger.NextStateOffset(syncMessage.Offset)
+	err = h.partialSync.ApplyPartialSync(stateChunkArrayResp)
 	if err != nil {
 		return nil, err
 	}
 
-	if stateChunkArrayResp.Roothash != nil && nextOffset == nil {
+	var nextOffset []*pb.SyncOffset
+	nextOffset, err = h.partialSync.RequiredParts()
+
+	if err != nil {
+		return nil, err
+	}
+
+	var res *pb.SyncOffset
+	if nextOffset != nil {
+		res = nextOffset[0]
+	}
+
+	if stateChunkArrayResp.Roothash != nil && res == nil {
 		// all buckets synced, verify root hash
 		var localHash []byte
 		localHash, err = h.client.ledger.GetCurrentStateHash()
@@ -99,8 +122,7 @@ func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb
 					stateChunkArrayResp.Roothash, localHash)
 			}
 		}
-
 	}
 
-	return nextOffset, err
+	return res, err
 }

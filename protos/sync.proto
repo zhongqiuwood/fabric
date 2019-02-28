@@ -141,8 +141,13 @@ message SyncStartResponse {
 }
 
 message UpdatedValue {
-    bytes  Value   = 1;
-    bytes  PreviousValue   = 2;
+
+    message VSlice {
+        bytes Value = 1;
+    }
+
+    VSlice  valueWrap   = 1;
+    bytes  previousValue   = 2;
 }
 
 message ChaincodeStateDelta {
@@ -152,6 +157,7 @@ message ChaincodeStateDelta {
 message SyncStateChunk {
     SyncOffset offset = 1;
     bytes roothash = 2;
+    bytes metaData = 4;
     map<string, ChaincodeStateDelta> ChaincodeStateDeltas = 3;
 }
 

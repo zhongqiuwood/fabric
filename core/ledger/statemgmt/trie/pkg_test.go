@@ -63,7 +63,7 @@ func (stateTrieTestWrapper *stateTrieTestWrapper) PersistChangesAndResetInMemory
 	defer writeBatch.Destroy()
 	stateTrieTestWrapper.AddChangesForPersistence(writeBatch)
 	testDBWrapper.WriteToDB(stateTrieTestWrapper.t, writeBatch)
-	stateTrieTestWrapper.stateTrie.ClearWorkingSet(true, false)
+	stateTrieTestWrapper.stateTrie.ClearWorkingSet(true)
 }
 
 type trieNodeTestWrapper struct {

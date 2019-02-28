@@ -51,7 +51,7 @@ func (itr *RangeScanIterator) Next() bool {
 		return false
 	}
 
-	for itr.dbItr.Valid() {
+	for itr.dbItr.Valid() && itr.dbItr.Key().Data()[0] < invalidDataPrefix {
 
 		// making a copy of key-value bytes because, underlying key bytes are reused by itr.
 		// no need to free slices as iterator frees memory when closed.
@@ -62,9 +62,9 @@ func (itr *RangeScanIterator) Next() bool {
 		dataKey := dataNode.dataKey
 		chaincodeID, key := statemgmt.DecodeCompositeKey(dataNode.getCompositeKey())
 		value := dataNode.value
-		logger.Debugf("Evaluating data-key = %s", dataKey)
+		logger.Debugf("Evaluating data-key = %s, cc = %s, key = %s", dataKey, chaincodeID, key)
 
-		bucketNumber := dataKey.bucketKey.bucketNumber
+		bucketNumber := dataKey.bucketNumber
 		if bucketNumber > itr.currentBucketNumber {
 			itr.seekForStartKeyWithinBucket(bucketNumber)
 			continue

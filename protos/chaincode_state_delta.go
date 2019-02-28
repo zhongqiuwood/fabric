@@ -20,7 +20,6 @@ import (
 	"sort"
 )
 
-
 func NewChaincodeStateDelta() *ChaincodeStateDelta {
 	return &ChaincodeStateDelta{make(map[string]*UpdatedValue)}
 }
@@ -30,13 +29,21 @@ func (chaincodeStateDelta *ChaincodeStateDelta) Get(key string) *UpdatedValue {
 }
 
 func (chaincodeStateDelta *ChaincodeStateDelta) Set(key string, updatedValue, previousValue []byte) {
+
+	var updatedV *UpdatedValue_VSlice
+	if updatedValue != nil {
+		updatedV = &UpdatedValue_VSlice{Value: updatedValue}
+	}
+
 	updatedKV, ok := chaincodeStateDelta.UpdatedKVs[key]
 	if ok {
 		// Key already exists, just set the updated value
-		updatedKV.Value = updatedValue
+		updatedKV.ValueWrap = updatedV
 	} else {
 		// New key. Create a new entry in the map
-		chaincodeStateDelta.UpdatedKVs[key] = &UpdatedValue{updatedValue, previousValue}
+		chaincodeStateDelta.UpdatedKVs[key] = &UpdatedValue{
+			ValueWrap:     updatedV,
+			PreviousValue: previousValue}
 	}
 }
 
@@ -44,10 +51,10 @@ func (chaincodeStateDelta *ChaincodeStateDelta) Remove(key string, previousValue
 	updatedKV, ok := chaincodeStateDelta.UpdatedKVs[key]
 	if ok {
 		// Key already exists, just set the value
-		updatedKV.Value = nil
+		updatedKV.ValueWrap = nil
 	} else {
 		// New key. Create a new entry in the map
-		chaincodeStateDelta.UpdatedKVs[key] = &UpdatedValue{nil, previousValue}
+		chaincodeStateDelta.UpdatedKVs[key] = &UpdatedValue{PreviousValue: previousValue}
 	}
 }
 
@@ -65,8 +72,21 @@ func (chaincodeStateDelta *ChaincodeStateDelta) GetSortedKeys() []string {
 	return updatedKeys
 }
 
-
 // IsDeleted checks whether the key was deleted
 func (updatedValue *UpdatedValue) IsDeleted() bool {
-	return updatedValue.Value == nil
+	return updatedValue.GetValue() == nil
+}
+
+func (m *UpdatedValue) GetValue() []byte {
+	if m != nil {
+		if m.ValueWrap == nil {
+			return nil
+		} else if m.ValueWrap.Value == nil {
+			return []byte{}
+		} else {
+			return m.ValueWrap.Value
+		}
+
+	}
+	return nil
 }

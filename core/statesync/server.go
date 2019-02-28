@@ -2,6 +2,7 @@ package statesync
 
 import (
 	"github.com/abchain/fabric/core/ledger"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
@@ -12,7 +13,9 @@ type stateServer struct {
 	parent        *stateSyncHandler
 	ledger        *ledger.LedgerSnapshot
 	correlationId uint64
+	pit           statemgmt.PartialRangeIterator
 }
+
 
 func newStateServer(h *stateSyncHandler) (s *stateServer) {
 
@@ -21,6 +24,10 @@ func newStateServer(h *stateSyncHandler) (s *stateServer) {
 	}
 	l, _ := ledger.GetLedger()
 	s.ledger = l.CreateSnapshot()
+
+	pit, _ := s.ledger.GetParitalRangeIterator(nil)
+
+	s.pit = pit
 	return
 
 }

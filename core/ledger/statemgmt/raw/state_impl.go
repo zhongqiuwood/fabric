@@ -19,7 +19,6 @@ package raw
 import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/abchain/fabric/protos"
 )
 
 // StateImpl implements raw state management. This implementation does not support computation of crypto-hash of the state.
@@ -52,7 +51,7 @@ func (impl *StateImpl) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) error
 }
 
 // ClearWorkingSet - method implementation for interface 'statemgmt.HashableState'
-func (impl *StateImpl) ClearWorkingSet(changesPersisted bool, reloadCache bool) {
+func (impl *StateImpl) ClearWorkingSet(changesPersisted bool) {
 	impl.stateDelta = nil
 }
 
@@ -96,12 +95,3 @@ func (impl *StateImpl) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (statem
 func (impl *StateImpl) GetRangeScanIterator(chaincodeID string, startKey string, endKey string) (statemgmt.RangeScanIterator, error) {
 	panic("Not a full-fledged state implementation. Implemented only for measuring best-case performance benchmark")
 }
-
-
-func (impl *StateImpl) GetStateDeltaFromDB(curOffset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error) {	return nil, nil}
-
-func (impl *StateImpl) NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error) {	return nil, nil}
-
-func (impl *StateImpl) SaveStateOffset(committedOffset *protos.SyncOffset) error {	return nil}
-
-func (impl *StateImpl) VerifySyncState(syncState *protos.SyncState, snapshotHandler *db.DBSnapshot) error {return nil}

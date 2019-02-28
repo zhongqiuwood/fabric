@@ -39,7 +39,7 @@ function copy_diff_from_disk {
 
 function sync_from_disk {
 
-    export CORE_PEER_SYNCBYBLOCK=$2
+    export CORE_PEER_SYNCTYPE=$2
     copy_diff_from_disk $1
     start_peers_and_sync ${PEER_NUM}
 }
@@ -90,7 +90,7 @@ function sync_breakpoint_test {
 
 function sync_test {
 
-    export CORE_PEER_SYNCBYBLOCK=$2
+    export CORE_PEER_SYNCTYPE=$2
     $1 $1
     start_peers_and_sync ${PEER_NUM}
 }
@@ -104,7 +104,7 @@ function sync_test {
 
 function loadenv {
 
-    export CORE_LOGGING_NODE=debug:statesync=debug:state=info:buckettree=info:peer=info:statesyncstub=info:ledger=info
+    export CORE_LOGGING_NODE=debug:statesync=debug:state=info:buckettree=debug:peer=info:statesyncstub=debug:ledger=debug
 #    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=1000003
 #    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=5
 #    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_SYNCDELTA=100
@@ -116,8 +116,8 @@ function loadenv {
 
 loadenv
 #sync_breakpoint_test make_diff
-sync_test make_diff false
+#sync_test make_diff state
 
-
+sync_from_disk make_diff state
 
 

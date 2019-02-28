@@ -126,7 +126,9 @@ func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 	if startRequest.PayloadType == pb.SyncType_SYNC_BLOCK {
 		resp.BlockHeight, err = syncHandler.server.ledger.GetBlockchainSize()
 	} else if startRequest.PayloadType == pb.SyncType_SYNC_STATE {
-		err = syncHandler.server.verifySyncStateReq(startRequest)
+		err = syncHandler.server.verifySyncStateReq(startRequest, resp)
+		// TODO: A: send metaData and root hash
+		//       B: ok
 	}
 
 	if err != nil {

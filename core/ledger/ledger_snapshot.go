@@ -7,7 +7,6 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
-	"github.com/op/go-logging"
 )
 
 // Ledger - the struct for openchain ledger
@@ -16,13 +15,14 @@ type LedgerSnapshot struct {
 	*db.DBSnapshot
 }
 
-var logger = logging.MustGetLogger("LedgerSnapshot")
-func (sledger *LedgerSnapshot) VerifySyncState(offset *protos.SyncState) error {
-	return sledger.l.VerifySyncState(offset, sledger.DBSnapshot)
-}
+func (sledger *LedgerSnapshot) GetParitalRangeIterator(offset *protos.SyncOffset) (statemgmt.PartialRangeIterator, error) {
 
-func (sledger *LedgerSnapshot) GetStateDeltaFromDB(offset *protos.SyncOffset) (*protos.SyncStateChunk, error){
-	return sledger.l.GetStateDeltaFromDB(offset, sledger.DBSnapshot)
+	partialInf := sledger.l.state.GetDividableState()
+	if partialInf == nil {
+		return nil, fmt.Errorf("State not support")
+	}
+
+	return partialInf.GetPartialRangeIterator(sledger.DBSnapshot)
 }
 
 func (sledger *LedgerSnapshot) GetBlockByNumber(blockNumber uint64) (*protos.Block, error) {
@@ -53,6 +53,7 @@ func (sledger *LedgerSnapshot) GetBlockByNumber(blockNumber uint64) (*protos.Blo
 }
 
 func (sledger *LedgerSnapshot) GetBlockchainSize() (uint64, error) {
+
 	bytes, err := sledger.GetFromBlockchainCFSnapshot(blockCountKey)
 	if err != nil {
 		return 0, err

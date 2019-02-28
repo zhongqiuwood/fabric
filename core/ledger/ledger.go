@@ -30,7 +30,6 @@ import (
 	"github.com/op/go-logging"
 
 	"github.com/abchain/fabric/protos"
-
 )
 
 var ledgerLogger = logging.MustGetLogger("ledger")
@@ -800,7 +799,7 @@ func (ledger *Ledger) checkValidIDCommitORRollback(id interface{}) error {
 func (ledger *Ledger) resetForNextTxGroup(txCommited bool) {
 	ledgerLogger.Debug("resetting ledger state for next transaction batch")
 	ledger.currentID = nil
-	ledger.state.ClearInMemoryChanges(txCommited, false)
+	ledger.state.ClearInMemoryChanges(txCommited)
 }
 
 func sendProducerBlockEvent(block *protos.Block) {
@@ -850,33 +849,18 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 	return
 }
 
-
-
-func (ledger *Ledger) GetStateDeltaFromDB(offset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
-	return ledger.state.GetStateDeltaFromDB(offset, snapshotHandler)
+//partial related APIs
+type PartialSync struct {
+	statemgmt.DividableSyncState
 }
 
-func (ledger *Ledger) NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error) {
-	return ledger.state.NextStateOffset(curOffset)
+func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
+
+	partialInf := ledger.state.GetDividableState()
+	if partialInf == nil {
+		return nil, fmt.Errorf("State not support")
+	}
+
+	partialInf.InitPartialSync(stateHash)
+	return &PartialSync{partialInf}, nil
 }
-
-func (ledger *Ledger) SaveStateOffset(committedOffset *protos.SyncOffset) error {
-	return ledger.state.SaveStateOffset(committedOffset)
-}
-
-func (ledger *Ledger) VerifySyncState(offset *protos.SyncState, snapshotHandler *db.DBSnapshot) error {
-	return ledger.state.VerifySyncState(offset, snapshotHandler)
-}
-
-func (ledger *Ledger) LoadStateOffsetFromDB() []byte {
-	return ledger.state.LoadStateOffsetFromDB()
-}
-
-func (ledger *Ledger) ClearStateOffsetFromDB() {
-	ledger.state.ClearStateOffsetFromDB()
-}
-
-
-
-
-

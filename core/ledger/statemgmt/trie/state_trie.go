@@ -22,7 +22,6 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/op/go-logging"
-	"github.com/abchain/fabric/protos"
 )
 
 var stateTrieLogger = logging.MustGetLogger("stateTrie")
@@ -76,7 +75,7 @@ func (stateTrie *StateTrie) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) 
 }
 
 // ClearWorkingSet clears the existing delta
-func (stateTrie *StateTrie) ClearWorkingSet(changesPersisted bool, reloadCache bool) {
+func (stateTrie *StateTrie) ClearWorkingSet(changesPersisted bool) {
 	stateTrie.trieDelta = nil
 	stateTrie.recomputeCryptoHash = false
 
@@ -190,22 +189,3 @@ func (stateTrie *StateTrie) GetStateSnapshotIterator(snapshot *db.DBSnapshot) (s
 func (stateTrie *StateTrie) GetRangeScanIterator(chaincodeID string, startKey string, endKey string) (statemgmt.RangeScanIterator, error) {
 	return newRangeScanIterator(stateTrie.OpenchainDB, chaincodeID, startKey, endKey)
 }
-
-
-func (stateImpl *StateTrie) GetStateDeltaFromDB(offset *protos.SyncOffset, snapshotHandler *db.DBSnapshot) (*protos.SyncStateChunk, error){
-	return nil, nil
-}
-
-
-func (impl *StateTrie) NextStateOffset(curOffset *protos.SyncOffset)(netxOffset *protos.SyncOffset, err error) {
-	return nil, nil
-}
-
-
-func (impl *StateTrie) SaveStateOffset(committedOffset *protos.SyncOffset) error {
-
-	return nil
-
-}
-
-func (impl *StateTrie) VerifySyncState(syncState *protos.SyncState, snapshotHandler *db.DBSnapshot) error {return nil}

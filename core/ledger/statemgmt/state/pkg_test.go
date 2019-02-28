@@ -65,7 +65,7 @@ func (testWrapper *stateTestWrapper) persistAndClearInMemoryChanges(blockNumber 
 	defer writeBatch.Destroy()
 	testWrapper.state.AddChangesForPersistence(blockNumber, writeBatch)
 	testDBWrapper.WriteToDB(testWrapper.t, writeBatch)
-	testWrapper.state.ClearInMemoryChanges(true, false)
+	testWrapper.state.ClearInMemoryChanges(true)
 }
 
 func (testWrapper *stateTestWrapper) fetchStateDeltaFromDB(blockNumber uint64) *statemgmt.StateDelta {

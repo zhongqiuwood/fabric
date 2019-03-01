@@ -852,6 +852,14 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 //partial related APIs
 type PartialSync struct {
 	statemgmt.DividableSyncState
+	state *state.State
+}
+
+//overwrite ApplyPartialSync
+func (syncer *PartialSync) ApplyPartialSync(data *protos.SyncStateChunk) error {
+
+	writeBatch := syncer.state.OpenchainDB.NewWriteBatch()
+
 }
 
 func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
@@ -862,5 +870,5 @@ func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
 	}
 
 	partialInf.InitPartialSync(stateHash)
-	return &PartialSync{partialInf}, nil
+	return &PartialSync{partialInf, ledger.state}, nil
 }

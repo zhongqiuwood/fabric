@@ -4,19 +4,19 @@ import (
 	_ "github.com/abchain/fabric/core/ledger/statemgmt"
 	pb "github.com/abchain/fabric/protos"
 
-	"github.com/golang/proto"
 	"fmt"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/util"
+	"github.com/golang/protobuf/proto"
 )
 
 type BlockMessageHandler struct {
-	client *syncer
-	statehash []byte
-	startBlockNumber uint64
-	endBlockNumber uint64
+	client                  *syncer
+	statehash               []byte
+	startBlockNumber        uint64
+	endBlockNumber          uint64
 	currentStateBlockNumber uint64
-	delta uint64
+	delta                   uint64
 }
 
 func newBlockMessageHandler(startBlockNumber, endBlockNumber uint64, client *syncer) *BlockMessageHandler {
@@ -42,7 +42,7 @@ func (h *BlockMessageHandler) getInitialOffset() (*pb.SyncOffset, error) {
 	end = util.Min(end, h.endBlockNumber)
 
 	blockOffset := &pb.BlockOffset{h.startBlockNumber,
-	end}
+		end}
 
 	logger.Debugf("Initial offset: <%v>", blockOffset)
 
@@ -130,7 +130,7 @@ func (h *BlockMessageHandler) processBlockState(deltaMessage *pb.SyncBlockState)
 	return h.currentStateBlockNumber, err
 }
 
-func (h *BlockMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb.SyncOffset, error) {
+func (h *BlockMessageHandler) processResponse(syncMessage *pb.SyncMessage) (*pb.SyncOffset, error) {
 
 	syncBlockStateResp := &pb.SyncBlockState{}
 	err := proto.Unmarshal(syncMessage.Payload, syncBlockStateResp)
@@ -164,4 +164,3 @@ func (h *BlockMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb
 
 	return nextOffset, err
 }
-

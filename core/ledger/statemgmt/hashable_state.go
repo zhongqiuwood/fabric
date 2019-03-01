@@ -71,6 +71,7 @@ type HashableState interface {
 }
 
 type DividableSyncState interface {
+	HashableState
 	InitPartialSync([]byte)
 	IsCompleted() bool
 	RequiredParts() ([]*protos.SyncOffset, error)
@@ -78,7 +79,6 @@ type DividableSyncState interface {
 }
 
 type HashAndDividableState interface {
-	HashableState
 	DividableSyncState
 	GetPartialRangeIterator(*db.DBSnapshot) (PartialRangeIterator, error)
 }

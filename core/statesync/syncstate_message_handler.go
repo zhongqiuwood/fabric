@@ -1,13 +1,11 @@
 package statesync
 
 import (
-	_ "github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/abchain/fabric/core/ledger"
-	pb "github.com/abchain/fabric/protos"
-
-	"github.com/golang/proto"
 	"fmt"
-	"bytes"
+	"github.com/abchain/fabric/core/ledger"
+	_ "github.com/abchain/fabric/core/ledger/statemgmt"
+	pb "github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 )
 
 type SyncMessageHandler interface {
@@ -18,11 +16,12 @@ type SyncMessageHandler interface {
 }
 
 type StateMessageHandler struct {
-	client *syncer
+	client    *syncer
 	statehash []byte
-	offset *pb.SyncOffset
+	//	offset      *pb.SyncOffset
 	partialSync *ledger.PartialSync
 }
+
 func newStateMessageHandler(client *syncer) *StateMessageHandler {
 
 	handler := &StateMessageHandler{}
@@ -32,13 +31,13 @@ func newStateMessageHandler(client *syncer) *StateMessageHandler {
 	// TODO: load statehash from db
 	handler.partialSync, err = handler.client.ledger.StartPartialSync(handler.statehash)
 
-	var nextOffset *pb.SyncOffset
-	nextOffset, err = handler.partialSync.CurrentOffset()
+	// var nextOffset *pb.SyncOffset
+	// nextOffset, err = handler.partialSync.CurrentOffset()
 
 	if err != nil {
 		return nil
 	}
-	handler.offset = nextOffset
+	// handler.offset = nextOffset
 
 	return handler
 }
@@ -49,23 +48,37 @@ func (h *StateMessageHandler) feedPayload(syncMessage *pb.SyncMessage) error {
 	return nil
 }
 
+func (h *StateMessageHandler) getOneOffset() (*pb.SyncOffset, error) {
+	offsets, err := h.partialSync.RequiredParts()
+	if err != nil {
+		return nil, err
+	} else if len(offsets) == 0 {
+		return nil, fmt.Errorf("No task can be found, sync module has some problem")
+	} else {
+		return offsets[0], nil
+	}
+}
+
 func (h *StateMessageHandler) getInitialOffset() (*pb.SyncOffset, error) {
-	return h.offset, nil
+	return h.getOneOffset()
 }
 
 func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 
+	offset, err := h.getOneOffset()
+	if err != nil {
+		logger.Errorf("Can not get new task: %s", err)
+		return nil
+	}
+
 	req := &pb.SyncStartRequest{}
 	req.PayloadType = pb.SyncType_SYNC_STATE
 
-	payload := &pb.SyncState{}
-	payload.Offset = h.offset
-	payload.Statehash = h.statehash
+	payload := &pb.SyncState{Offset: offset, Statehash: h.statehash}
 
 	logger.Infof("Sync start at: statehash<%x>, offset<%x>",
-		h.statehash, h.offset.Data)
+		payload.Statehash, payload.Offset.Data)
 
-	var err error
 	req.Payload, err = proto.Marshal(payload)
 
 	if err != nil {
@@ -75,7 +88,7 @@ func (h *StateMessageHandler) produceSyncStartRequest() *pb.SyncStartRequest {
 	return req
 }
 
-func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb.SyncOffset, error) {
+func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage) (*pb.SyncOffset, error) {
 
 	stateChunkArrayResp := &pb.SyncStateChunk{}
 	err := proto.Unmarshal(syncMessage.Payload, stateChunkArrayResp)
@@ -88,41 +101,33 @@ func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage)  (*pb
 		return nil, err
 	}
 
-	//if err = h.client.commitStateChunk(stateChunkArrayResp, syncMessage.Offset); err != nil {
-	//	return nil, err
-	//}
-
 	err = h.partialSync.ApplyPartialSync(stateChunkArrayResp)
 	if err != nil {
 		return nil, err
 	}
 
-	var nextOffset []*pb.SyncOffset
-	nextOffset, err = h.partialSync.RequiredParts()
-
-	if err != nil {
-		return nil, err
+	if h.partialSync.IsCompleted() {
+		localHash, _ := h.client.ledger.GetCurrentStateHash()
+		logger.Infof("sync complete to state: <%x>", localHash)
+		return nil, nil
 	}
 
-	var res *pb.SyncOffset
-	if nextOffset != nil {
-		res = nextOffset[0]
-	}
+	return h.getOneOffset()
 
-	if stateChunkArrayResp.Roothash != nil && res == nil {
-		// all buckets synced, verify root hash
-		var localHash []byte
-		localHash, err = h.client.ledger.GetCurrentStateHash()
-		if err == nil {
-			logger.Infof("remote hash: <%x>", stateChunkArrayResp.Roothash)
-			logger.Infof("local hash:  <%x>", localHash)
+	// if stateChunkArrayResp.Roothash != nil && res == nil {
+	// 	// all buckets synced, verify root hash
+	// 	var localHash []byte
+	// 	localHash, err = h.client.ledger.GetCurrentStateHash()
+	// 	if err == nil {
+	// 		logger.Infof("remote hash: <%x>", stateChunkArrayResp.Roothash)
+	// 		logger.Infof("local hash:  <%x>", localHash)
 
-			if !bytes.Equal(localHash, stateChunkArrayResp.Roothash) {
-				err = fmt.Errorf("Sync state failed! Target root hash <%x>, local root hash <%x>",
-					stateChunkArrayResp.Roothash, localHash)
-			}
-		}
-	}
+	// 		if !bytes.Equal(localHash, stateChunkArrayResp.Roothash) {
+	// 			err = fmt.Errorf("Sync state failed! Target root hash <%x>, local root hash <%x>",
+	// 				stateChunkArrayResp.Roothash, localHash)
+	// 		}
+	// 	}
+	// }
 
-	return res, err
+	//  return res, err
 }

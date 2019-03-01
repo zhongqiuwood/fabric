@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger"
-	_ "github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/flogging"
 	pb "github.com/abchain/fabric/protos"
@@ -800,3 +800,141 @@ func (sts *syncer) fini() {
 //
 //	return err
 //}
+
+
+//////////////////////////////////////////////////////////////////////////////
+/////////  client
+//////////////////////////////////////////////////////////////////////////////
+func (sts *syncer) commitStateChunk(stateChunkArray *pb.SyncStateChunk, committedOffset *pb.SyncOffset) error {
+	var err error
+
+	umDelta := statemgmt.NewStateDelta()
+	umDelta.ChaincodeStateDeltas = stateChunkArray.ChaincodeStateDeltas
+
+	err = sts.ledger.ApplyStateDelta(stateChunkArray, umDelta)
+	if err != nil {
+		return err
+
+	}
+
+	err = sts.ledger.CommitAndIndexStateDelta(stateChunkArray, 0)
+	if err != nil {
+		return err
+	}
+
+	//err = sts.ledger.SaveStateOffset(committedOffset)
+	//if err != nil {
+	//	return err
+	//}
+
+	return err
+}
+
+func (sts *syncer) executeSync() error {
+
+	nextOffset, err := sts.syncMessageHandler.getInitialOffset()
+
+	if err != nil {
+		return err
+	}
+
+	for {
+		syncMessage := &pb.SyncMessage{}
+		syncMessage.Offset = nextOffset
+
+		// 1. feed payload
+		err = sts.syncMessageHandler.feedPayload(syncMessage)
+		if err != nil {
+			break
+		}
+
+		err = sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_SYNC_MESSAGE, syncMessage)
+		if err != nil {
+			break
+		}
+
+		// 2. process response
+		var syncMessageResp *pb.SyncMessage
+		var ok bool
+
+		select {
+		case syncMessageResp, ok = <- sts.syncMessageChan:
+			if !ok {
+				err = fmt.Errorf("sync Message channel close")
+				break
+			}
+
+		case <-sts.Done():
+			err = fmt.Errorf("Timed out during wait for sync message Response")
+			break
+		}
+
+		if !ok {
+			err = fmt.Errorf("sts.syncMessageChan error")
+			break
+		}
+
+		nextOffset, err = sts.syncMessageHandler.processResponse(syncMessageResp)
+		if err != nil {
+			break
+		}
+
+		// 3. no more data to sync
+		if nextOffset == nil {
+			break
+		}
+	}
+
+	return err
+}
+
+
+func (sts *syncer) afterSyncMessage(e *fsm.Event) {
+
+	payloadMsg := &pb.SyncMessage{}
+	msg := sts.parent.onRecvSyncMsg(e, payloadMsg)
+	if msg == nil {
+		return
+	}
+
+	defer func() {
+		if x := recover(); x != nil {
+			logger.Errorf("Error sending syncMessageChan to channel: %v, <%v>", x, payloadMsg)
+		}
+	}()
+
+	sts.syncMessageChan <- payloadMsg
+}
+
+
+
+func (sts *syncer) issueSyncRequest(request *pb.SyncStartRequest) (uint64, error) {
+
+	sts.parent.fsmHandler.Event(enterSyncBegin)
+	err := sts.parent.sendSyncMsg(nil, pb.SyncMsg_SYNC_SESSION_START, request)
+	endBlockNumber := uint64(0)
+
+	if err != nil {
+		return 0, err
+	}
+
+	select {
+	case response, ok := <-sts.startResponseChan:
+		if !ok {
+			return 0, fmt.Errorf("startResponse channel close : %s", err)
+		}
+		logger.Infof("Sync request RejectedReason<%s>, Remote peer Blockchain Height <%d>",
+			response.RejectedReason, response.BlockHeight)
+
+		if len(response.RejectedReason) > 0 {
+			err = fmt.Errorf("Sync request rejected! Reason: %s", response.RejectedReason)
+		} else {
+			endBlockNumber = response.BlockHeight - 1
+		}
+
+	case <-sts.Done():
+		return 0, fmt.Errorf("Timed out during wait for start Response")
+	}
+
+	return endBlockNumber, err
+}

@@ -126,9 +126,7 @@ func (syncHandler *stateSyncHandler) beforeSyncStart(e *fsm.Event) {
 	if startRequest.PayloadType == pb.SyncType_SYNC_BLOCK {
 		resp.BlockHeight, err = syncHandler.server.ledger.GetBlockchainSize()
 	} else if startRequest.PayloadType == pb.SyncType_SYNC_STATE {
-		err = syncHandler.server.verifySyncStateReq(startRequest, resp)
-		// TODO: A: send metaData and root hash
-		//       B: ok
+		err = syncHandler.server.initStateSync(startRequest, resp)
 	}
 
 	if err != nil {
@@ -274,4 +272,41 @@ func (h *stateSyncHandler) BeforeSendMessage(proto.Message) error {
 
 func (h *stateSyncHandler) OnWriteError(e error) {
 	logger.Error("Sync handler encounter writer error:", e)
+}
+
+func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetStateHash []byte) error {
+
+	var err error
+	var hash []byte
+
+	syncHandler.client = newSyncer(ctx, syncHandler)
+
+	defer logger.Infof("[%s]: Exit. remotePeerIdName <%s>", flogging.GoRDef, syncHandler.remotePeerIdName())
+	defer syncHandler.fini()
+
+	//---------------------------------------------------------------------------
+	// 1. query local break point state hash and state offset
+	//---------------------------------------------------------------------------
+
+	syncHandler.client.ledger.EmptyState()
+	syncHandler.client.syncMessageHandler = newStateMessageHandler(syncHandler.client)
+	//---------------------------------------------------------------------------
+	// 2. handshake: send break point state hash and state offset to peer
+	//---------------------------------------------------------------------------
+	req := syncHandler.client.syncMessageHandler.produceSyncStartRequest()
+	_, err = syncHandler.client.issueSyncRequest(req)
+	if err == nil {
+		// sync all k-v(s)
+		err = syncHandler.client.executeSync()
+	}
+
+	//---------------------------------------------------------------------------
+	// 3. clear persisted position
+	//---------------------------------------------------------------------------
+	if err == nil {
+		//syncHandler.client.ledger.ClearStateOffsetFromDB()
+		hash, _ = syncHandler.client.ledger.GetCurrentStateHash()
+		logger.Debugf("GetCurrentStateHash: <%x>", hash)
+	}
+	return err
 }

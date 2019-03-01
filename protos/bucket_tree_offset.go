@@ -56,7 +56,3 @@ func NewBucketTreeOffset(level, bucketNum uint64) *SyncOffset {
 
 	return stateOffset
 }
-<<<<<<< HEAD
-=======
-
->>>>>>> f509019f0728ded86c3492eb9356e5ad3b0e97d7

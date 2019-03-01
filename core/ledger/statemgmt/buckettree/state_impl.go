@@ -230,6 +230,10 @@ func computeDataNodesCryptoHash(bucketKey *bucketKey, updatedNodes dataNodes, ex
 // AddChangesForPersistence - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *db.DBWriteBatch) error {
 
+	//stateImpl.dataNodesDelta = newDataNodesDelta(stateImpl.currentConfig, stateDelta)
+	//stateImpl.bucketTreeDelta = newBucketTreeDelta()
+	//stateImpl.recomputeCryptoHash = true
+
 	if stateImpl.dataNodesDelta == nil {
 		return nil
 	}
@@ -373,8 +377,9 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	}
 
 	//TODO: read calc. root in bucket delta and compare it to exist bucketnode
-
 	stateImpl.recomputeCryptoHash = true
+	//stateImpl.lastComputedCryptoHash = stateImpl.computeRootNodeCryptoHash()
+
 	return nil
 }
 

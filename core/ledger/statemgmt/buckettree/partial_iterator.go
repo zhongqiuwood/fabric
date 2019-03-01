@@ -55,7 +55,6 @@ func (partialItr *PartialSnapshotIterator) GetRawKeyValue() ([]byte, []byte) {
 
 	//sanity check
 	panic(partialItr.keyCache == nil)
-
 	return partialItr.keyCache, partialItr.valueCache
 }
 
@@ -65,6 +64,8 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 	if err != nil {
 		return err
 	}
+
+	logger.Debugf("Required bucketTreeOffset: [%+v]", bucketTreeOffset)
 
 	level := int(bucketTreeOffset.Level)
 	if level > partialItr.getLowestLevel() {

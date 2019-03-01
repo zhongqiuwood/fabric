@@ -2,17 +2,15 @@ package statesync
 
 import (
 	"github.com/abchain/fabric/core/ledger"
-	_ "github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/looplab/fsm"
 	pb "github.com/abchain/fabric/protos"
+	"github.com/looplab/fsm"
 
-	"github.com/abchain/fabric/flogging"
 	"context"
-	"github.com/abchain/fabric/core/ledger/statemgmt"
-	"github.com/golang/proto"
 	"fmt"
+	"github.com/abchain/fabric/core/ledger/statemgmt"
+	"github.com/abchain/fabric/flogging"
+	"github.com/golang/proto"
 )
-
 
 func (syncHandler *stateSyncHandler) runSyncState(ctx context.Context, targetStateHash []byte) error {
 
@@ -120,7 +118,7 @@ func (sts *syncer) executeSync() error {
 		var ok bool
 
 		select {
-		case syncMessageResp, ok = <- sts.syncMessageChan:
+		case syncMessageResp, ok = <-sts.syncMessageChan:
 			if !ok {
 				err = fmt.Errorf("sync Message channel close")
 				break
@@ -149,7 +147,6 @@ func (sts *syncer) executeSync() error {
 
 	return err
 }
-
 
 func (sts *syncer) afterSyncMessage(e *fsm.Event) {
 
@@ -281,8 +278,6 @@ func (d *stateServer) sendStateDeltasArray(e *fsm.Event, offset *pb.SyncOffset, 
 	logger.Debugf("Successfully sent stateDeltas for blockNum %d-%d", blockOffset.StartNum, currBlockNum)
 }
 
-
-
 func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest, resp *pb.SyncStartResponse) error {
 
 	syncState := &pb.SyncState{}
@@ -301,7 +296,6 @@ func (server *stateServer) verifySyncStateReq(req *pb.SyncStartRequest, resp *pb
 	return err
 }
 
-
 func (server *stateServer) sendStateChuck(e *fsm.Event, offset *pb.SyncOffset) {
 
 	logger.Debugf("---------> remotePeerId <%s>，in", server.parent.remotePeerId)
@@ -309,7 +303,7 @@ func (server *stateServer) sendStateChuck(e *fsm.Event, offset *pb.SyncOffset) {
 	var err error
 	var stateChunkArray *pb.SyncStateChunk
 
-	stateChunkArray, err = server.pit.GetRequiredParts(offset)
+	stateChunkArray, err = statemgmt.GetRequiredParts(server.pit, offset)
 
 	if err != nil {
 		failedReason = fmt.Sprintf("%s; ", err)
@@ -339,8 +333,6 @@ func feedSyncMessage(offset *pb.SyncOffset, payload proto.Message, syncType pb.S
 	syncMessage.Payload, err = proto.Marshal(payload)
 	return syncMessage, err
 }
-
-
 
 func (sts *syncer) issueSyncRequest(request *pb.SyncStartRequest) (uint64, error) {
 

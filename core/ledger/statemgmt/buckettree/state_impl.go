@@ -60,7 +60,9 @@ func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 
 	stateImpl.bucketCache = newBucketCache(stateImpl.currentConfig.bucketCacheMaxSize, stateImpl.OpenchainDB)
 	stateImpl.bucketCache.loadAllBucketNodesFromDB(stateImpl.currentConfig)
-	return nil
+	stateImpl.underSync = checkSyncProcess(stateImpl)
+
+	return stateImpl.underSync
 }
 
 // Get - method implementation for interface 'statemgmt.HashableState'
@@ -354,7 +356,7 @@ func (stateImpl *StateImpl) IsCompleted() bool {
 
 func (stateImpl *StateImpl) RequiredParts() ([]*pb.SyncOffset, error) {
 	if stateImpl.underSync == nil {
-		return nil, fmt.Errorf("Not in sync process")
+		return nil, fmt.Errorf("Not under syncing progress")
 	}
 
 	return stateImpl.underSync.RequiredParts()
@@ -363,6 +365,15 @@ func (stateImpl *StateImpl) RequiredParts() ([]*pb.SyncOffset, error) {
 //An PrepareWorkingSet must have been called before, we do this like a calling of
 //ClearWorkingSet(true), verify the delta
 func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error {
+
+	if stateImpl.underSync == nil {
+		return fmt.Errorf("Not under syncing progress")
+	}
+
+	offset, err := syncData.GetOffset().Unmarshal2BucketTree()
+	if err != nil {
+		return err
+	}
 
 	if md := syncData.GetMetaData(); len(md) > 0 {
 		if err := stateImpl.applyPartialMetalData(md); err != nil {
@@ -376,6 +387,11 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	}
 	//TODO: we only need calc. until the level which has the root of partial data buckets
 	if err := stateImpl.processBucketTreeDelta(0); err != nil {
+		return err
+	}
+
+	//TODO: verify the hash we calculated with which it obatined
+	if err := stateImpl.underSync.CompletePart(offset); err != nil {
 		return err
 	}
 

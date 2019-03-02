@@ -13,12 +13,12 @@ func (m *BlockOffset) Byte() ([]byte, error) {
 
 func (m *SyncOffset) Unmarshal2BlockOffset() (*BlockOffset, error) {
 	offsetImpl := &BlockOffset{}
-	err := proto.Unmarshal(m.Data, offsetImpl)
+	err := proto.Unmarshal(m.GetData(), offsetImpl)
 	return offsetImpl, err
 }
 
 func (m *SyncOffset) Unmarshal2BucketTree() (*BucketTreeOffset, error) {
-	return byte2BucketTreeOffset(m.Data)
+	return byte2BucketTreeOffset(m.GetData())
 }
 
 func NewBlockOffset(start, end uint64) *SyncOffset {

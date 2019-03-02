@@ -70,6 +70,15 @@ type HashableState interface {
 	PerfHintKeyChanged(chaincodeID string, key string)
 }
 
+//An stateimpl supporting DividableSyncState interface may report this error
+//in the calling of Initialize, indicating the initialize is success but the
+//state is under a syncing progress so it was not possible to use it for
+//query or updating
+type SyncInProgress interface {
+	error
+	IsSyncInProgress()
+}
+
 type DividableSyncState interface {
 	HashableState
 	InitPartialSync([]byte)

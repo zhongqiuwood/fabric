@@ -1,6 +1,7 @@
 package buckettree
 
 import (
+	"fmt"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/protos"
@@ -55,6 +56,10 @@ func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 	}
 }
 
+//implement for syncinprogress interface
+func (proc *syncProcess) IsSyncInProgress() {}
+func (proc *syncProcess) Error() string     { return "buckettree: state syncing is in progress" }
+
 func (proc *syncProcess) PersistProgress(writeBatch *db.DBWriteBatch) error {
 
 	key := append([]byte{partialStatusKeyPrefixByte}, proc.targetStateHash...)
@@ -70,6 +75,26 @@ func (proc *syncProcess) PersistProgress(writeBatch *db.DBWriteBatch) error {
 
 func (proc *syncProcess) RequiredParts() ([]*protos.SyncOffset, error) {
 
+	if proc.current == nil {
+		return nil, nil
+	}
+
+	if data, err := proc.current.Byte(); err != nil {
+		return nil, err
+	} else {
+		return []*protos.SyncOffset{&protos.SyncOffset{Data: data}}, err
+	}
+
+}
+
+func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
+
+	if proc.current == nil {
+		return fmt.Errorf("No task left")
+	} else if proc.current.Level != part.GetLevel() || proc.current.BucketNum != part.GetBucketNum() {
+		return fmt.Errorf("Not current task (expect <%v> but has <%v>", proc.current, part)
+	}
+
 	conf := proc.currentConfig
 
 	maxNum := uint64(conf.getNumBuckets(int(proc.current.Level)))
@@ -77,7 +102,8 @@ func (proc *syncProcess) RequiredParts() ([]*protos.SyncOffset, error) {
 
 	if maxNum <= nextNum-1 {
 		logger.Infof("Hit maxBucketNum<%d>, target BucketNum<%d>", maxNum, nextNum)
-		return nil, nil
+		proc.current = nil
+		return nil
 	}
 	delta := min(uint64(conf.syncDelta), maxNum-nextNum+1)
 
@@ -85,10 +111,5 @@ func (proc *syncProcess) RequiredParts() ([]*protos.SyncOffset, error) {
 	proc.current.Delta = delta
 
 	logger.Debugf("Next state offset <%+v>", proc.current)
-	if data, err := proc.current.Byte(); err != nil {
-		return nil, err
-	} else {
-		return []*protos.SyncOffset{&protos.SyncOffset{Data: data}}, err
-	}
-
+	return nil
 }

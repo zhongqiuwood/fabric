@@ -25,6 +25,9 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 		offset, err := data.Unmarshal2BucketTree()
 
 		if err == nil {
+
+			//TODO: should verify the partial data ...
+
 			return &syncProcess{
 				StateImpl:       parent,
 				targetStateHash: targetStateHash,
@@ -50,6 +53,19 @@ func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 			Delta:     min(uint64(parent.currentConfig.syncDelta), uint64(parent.currentConfig.getNumBucketsAtLowestLevel())),
 		},
 	}
+}
+
+func (proc *syncProcess) PersistProgress(writeBatch *db.DBWriteBatch) error {
+
+	key := append([]byte{partialStatusKeyPrefixByte}, proc.targetStateHash...)
+	if value, err := proc.current.Byte(); err == nil {
+		logger.Debugf("Persisting current sync process = %#v", proc.current)
+		writeBatch.PutCF(writeBatch.GetDBHandle().StateCF, key, value)
+	} else {
+		return err
+	}
+
+	return nil
 }
 
 func (proc *syncProcess) RequiredParts() ([]*protos.SyncOffset, error) {

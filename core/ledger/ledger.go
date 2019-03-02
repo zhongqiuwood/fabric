@@ -858,8 +858,25 @@ type PartialSync struct {
 //overwrite ApplyPartialSync
 func (syncer *PartialSync) ApplyPartialSync(data *protos.SyncStateChunk) error {
 
-	writeBatch := syncer.state.OpenchainDB.NewWriteBatch()
+	umDelta := statemgmt.NewStateDelta()
+	umDelta.ChaincodeStateDeltas = data.ChaincodeStateDeltas
 
+	if err := syncer.PrepareWorkingSet(umDelta); err != nil {
+		return err
+	}
+
+	if err := syncer.DividableSyncState.ApplyPartialSync(data); err != nil {
+		return err
+	}
+
+	writeBatch := syncer.state.OpenchainDB.NewWriteBatch()
+	defer writeBatch.Destroy()
+
+	if err := syncer.AddChangesForPersistence(writeBatch); err != nil {
+		return err
+	}
+
+	return writeBatch.BatchCommit()
 }
 
 func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
@@ -867,6 +884,13 @@ func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
 	partialInf := ledger.state.GetDividableState()
 	if partialInf == nil {
 		return nil, fmt.Errorf("State not support")
+	}
+
+	//DONT CHANGE: sync from a state is heavy and rare task so we log it as a warning
+	ledgerLogger.Warningf("----- Now we start a STATE SYNCING target for [%x] ----", stateHash)
+
+	if err := ledger.state.DeleteState(); err != nil {
+		return nil, err
 	}
 
 	partialInf.InitPartialSync(stateHash)

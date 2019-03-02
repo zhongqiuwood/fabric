@@ -45,7 +45,6 @@ const (
 // This is not thread safe
 type State struct {
 	*db.OpenchainDB
-	configBackup          *stateConfig
 	stateImpl             statemgmt.HashableState
 	stateDelta            *statemgmt.StateDelta
 	currentTxStateDelta   *statemgmt.StateDelta
@@ -74,7 +73,7 @@ func NewState(db *db.OpenchainDB, config *stateConfig) *State {
 	if err != nil {
 		panic(fmt.Errorf("Error during initialization of state implementation: %s", err))
 	}
-	return &State{db, config, stateImpl, statemgmt.NewStateDelta(), statemgmt.NewStateDelta(), "", make(map[string][]byte),
+	return &State{db, stateImpl, statemgmt.NewStateDelta(), statemgmt.NewStateDelta(), "", make(map[string][]byte),
 		false, uint64(config.deltaHistorySize)}
 }
 
@@ -392,33 +391,13 @@ func (state *State) CommitStateDelta() error {
 // a snapshot.
 func (state *State) DeleteState() error {
 
-	var stateImpl statemgmt.HashableState
-	logger.Infof("Re-Initializing state implementation")
-	switch state.configBackup.stateImplName {
-	case buckettreeType:
-		stateImpl = buckettree.NewStateImpl(state.OpenchainDB)
-	case trieType:
-		stateImpl = trie.NewStateImpl(state.OpenchainDB)
-	case rawType:
-		stateImpl = raw.NewStateImpl(state.OpenchainDB)
-	default:
-		panic("Should not reach here.")
+	state.ClearInMemoryChanges(false)
+	err := state.OpenchainDB.DeleteState()
+	if err != nil {
+		logger.Errorf("Error deleting state: %s", err)
 	}
-	if err := stateImpl.Initialize(state.configBackup.stateImplConfigs); err != nil {
-		return err
-	}
+	return err
 
-	if err := state.OpenchainDB.DeleteState(); err != nil {
-		return err
-	}
-
-	state.stateImpl = stateImpl
-	state.stateDelta = statemgmt.NewStateDelta()
-	state.currentTxStateDelta = statemgmt.NewStateDelta()
-	state.currentTxID = ""
-	state.txStateDeltaHash = make(map[string][]byte)
-	state.updateStateImpl = false
-	return nil
 }
 
 func (state *State) GetDividableState() statemgmt.HashAndDividableState {

@@ -16,9 +16,9 @@ type SyncMessageHandler interface {
 }
 
 type StateMessageHandler struct {
-	client    *syncer
-	statehash []byte
-	//	offset      *pb.SyncOffset
+	client      *syncer
+	statehash   []byte
+	offsets     []*pb.SyncOffset
 	partialSync *ledger.PartialSync
 }
 
@@ -49,13 +49,19 @@ func (h *StateMessageHandler) feedPayload(syncMessage *pb.SyncMessage) error {
 }
 
 func (h *StateMessageHandler) getOneOffset() (*pb.SyncOffset, error) {
-	offsets, err := h.partialSync.RequiredParts()
-	if err != nil {
-		return nil, err
-	} else if len(offsets) == 0 {
+
+	var err error
+	if len(h.offsets) == 0 {
+		h.offsets, err = h.partialSync.RequiredParts()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(h.offsets) == 0 {
 		return nil, fmt.Errorf("No task can be found, sync module has some problem")
 	} else {
-		return offsets[0], nil
+		return h.offsets[0], nil
 	}
 }
 
@@ -104,6 +110,13 @@ func (h *StateMessageHandler) processResponse(syncMessage *pb.SyncMessage) (*pb.
 	err = h.partialSync.ApplyPartialSync(stateChunkArrayResp)
 	if err != nil {
 		return nil, err
+	}
+
+	//we suppose always the first offset we cached is handled
+	if len(h.offsets) == 0 {
+		return nil, fmt.Errorf("handling an unexist offset <%v>?")
+	} else {
+		h.offsets = h.offsets[1:]
 	}
 
 	if h.partialSync.IsCompleted() {

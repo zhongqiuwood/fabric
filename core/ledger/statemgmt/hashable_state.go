@@ -74,6 +74,9 @@ type DividableSyncState interface {
 	HashableState
 	InitPartialSync([]byte)
 	IsCompleted() bool
+	//get all tasks current available, caller is encouraged to CACHE the result,
+	//complete and apply all of them, then call RequiredParts again for more
+	//tasks (it was all right to call it at anytime but the cost may be remarkable)
 	RequiredParts() ([]*protos.SyncOffset, error)
 	ApplyPartialSync(*protos.SyncStateChunk) error
 }

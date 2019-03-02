@@ -11,11 +11,11 @@ import (
 	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/ledger/genesis"
 	"github.com/abchain/fabric/core/peer"
+	"github.com/abchain/fabric/core/statesync"
 	sync_stub "github.com/abchain/fabric/core/statesync/stub"
 	"github.com/abchain/fabric/events/litekfk"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/spf13/viper"
-	"github.com/abchain/fabric/core/statesync"
 )
 
 func addLedger(vp *viper.Viper, tag string) (*ledger.Ledger, error) {

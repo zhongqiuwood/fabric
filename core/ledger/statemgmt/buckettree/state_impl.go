@@ -237,11 +237,18 @@ func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *db.DBWriteBatch
 	if stateImpl.recomputeCryptoHash {
 		_, err := stateImpl.ComputeCryptoHash()
 		if err != nil {
-			return nil
+			return err
 		}
 	}
 	stateImpl.addDataNodeChangesForPersistence(writeBatch)
 	stateImpl.addBucketNodeChangesForPersistence(writeBatch)
+	if stateImpl.underSync != nil {
+		err := stateImpl.underSync.PersistProgress(writeBatch)
+		if err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -371,12 +378,8 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	if err := stateImpl.processBucketTreeDelta(0); err != nil {
 		return err
 	}
-	writeBatch := stateImpl.OpenchainDB.NewWriteBatch()
-	defer writeBatch.Destroy()
 
-	stateImpl.addDataNodeChangesForPersistence(writeBatch)
-	stateImpl.addBucketNodeChangesForPersistence(writeBatch)
-	return writeBatch.BatchCommit()
+	return nil
 }
 
 func (stateImpl *StateImpl) applyPartialMetalData(md []byte) error {

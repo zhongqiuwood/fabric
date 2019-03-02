@@ -395,6 +395,11 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 		return err
 	}
 
+	if stateImpl.underSync.current == nil {
+		logger.Infof("---- Syncing to state [%x] finish -----", stateImpl.underSync.targetStateHash)
+		stateImpl.underSync = nil
+	}
+
 	return nil
 }
 

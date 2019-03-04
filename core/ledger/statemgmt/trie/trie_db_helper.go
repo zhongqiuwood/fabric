@@ -38,3 +38,24 @@ func fetchTrieNodeFromDB(odb *db.OpenchainDB, key *trieKey) (*trieNode, error) {
 	stateTrieLogger.Debugf("Exit fetchTrieNodeFromDB() for trieKey [%s]", key)
 	return trieNode, nil
 }
+
+func fetchTrieNodeFromSnapshot(sn *db.DBSnapshot, key *trieKey) (*trieNode, error) {
+	stateTrieLogger.Debugf("Enter fetchTrieNodeFromSnapshot() for trieKey [%s]", key)
+	trieNodeBytes, err := sn.GetFromStateCFSnapshot(key.getEncodedBytes())
+	if err != nil {
+		stateTrieLogger.Errorf("Error in retrieving trie node from DB snapshot for triekey [%s]. Error:%s", key, err)
+		return nil, err
+	}
+
+	if trieNodeBytes == nil {
+		return nil, nil
+	}
+
+	trieNode, err := unmarshalTrieNode(key, trieNodeBytes)
+	if err != nil {
+		stateTrieLogger.Errorf("Error in unmarshalling trie node for triekey [%s]. Error:%s", key, err)
+		return nil, err
+	}
+	stateTrieLogger.Debugf("Exit fetchTrieNodeFromSnapshot() for trieKey [%s]", key)
+	return trieNode, nil
+}

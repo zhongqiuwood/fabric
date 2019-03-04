@@ -29,6 +29,8 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 
 			//TODO: should verify the partial data ...
 
+			logger.Info("Restore sync task to target [%x]", targetStateHash)
+
 			return &syncProcess{
 				StateImpl:       parent,
 				targetStateHash: targetStateHash,

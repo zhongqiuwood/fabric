@@ -32,6 +32,9 @@ type HashableState interface {
 	// Get get the value from DB
 	Get(chaincodeID string, key string) ([]byte, error)
 
+	// Should replace the original Get
+	GetSafe(sn *db.DBSnapshot, chaincodeID string, key string) ([]byte, error)
+
 	// PrepareWorkingSet passes a stateDelta that captures the changes that needs to be applied to the state
 	PrepareWorkingSet(stateDelta *StateDelta) error
 

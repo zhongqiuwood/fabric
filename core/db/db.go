@@ -228,6 +228,9 @@ type extHandler struct {
 	*ocDB
 }
 
+//protect the close function declared in ocDB to avoiding a wrong calling
+func (extHandler) Close(extHandler) {}
+
 type DBSnapshot struct {
 	extHandler
 	snapshot *gorocksdb.Snapshot

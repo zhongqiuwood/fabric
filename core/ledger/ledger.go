@@ -468,8 +468,6 @@ func (ledger *Ledger) GetState(chaincodeID string, key string, committed bool) (
 	return ledger.state.Get(chaincodeID, key, committed)
 }
 
-// GetState get state for chaincodeID and key. If committed is false, this first looks in memory
-// and if missing, pulls from db.  If committed is true, this pulls from the db only.
 func (ledger *Ledger) GetTransientState(chaincodeID string, key string, runningDelta *statemgmt.StateDelta) ([]byte, error) {
 	return ledger.state.GetTransient(chaincodeID, key, runningDelta)
 }

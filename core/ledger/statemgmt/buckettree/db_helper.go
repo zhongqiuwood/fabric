@@ -39,6 +39,24 @@ func fetchDataNodeFromDB(odb *db.OpenchainDB, dataKey *dataKey) (*dataNode, erro
 	return unmarshalDataNode(dataKey, nodeBytes), nil
 }
 
+// fetch one DataNode FromDB by a dataKey
+func fetchDataNodeFromSnapshot(sn *db.DBSnapshot, dataKey *dataKey) (*dataNode, error) {
+	nodeBytes, err := sn.GetFromStateCFSnapshot(dataKey.getEncodedBytes())
+	if err != nil {
+		return nil, err
+	}
+	if nodeBytes == nil {
+		logger.Debug("nodeBytes from db is nil")
+	} else if len(nodeBytes) == 0 {
+		logger.Debug("nodeBytes from db is an empty array")
+	}
+	// key does not exist
+	if nodeBytes == nil {
+		return nil, nil
+	}
+	return unmarshalDataNode(dataKey, nodeBytes), nil
+}
+
 func fetchBucketNodeFromDB(odb *db.OpenchainDB, bucketKey *bucketKey) (*bucketNode, error) {
 	nodeBytes, err := odb.GetValue(db.StateCF, bucketKey.getEncodedBytes())
 	if err != nil {

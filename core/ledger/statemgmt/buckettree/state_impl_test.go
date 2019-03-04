@@ -354,11 +354,13 @@ func TestStateImpl_DB_Changes(t *testing.T) {
 
 	// fetch datanode from DB
 	conf := stateImplTestWrapper.stateImpl.currentConfig
-	dataNodeFromDB, _ := fetchDataNodeFromDB(testDBWrapper.GetDB(), newDataKey(conf, "chaincodeID2", "key1"))
+	sn := testDBWrapper.GetDB().GetSnapshot()
+	defer sn.Release()
+	dataNodeFromDB, _ := fetchDataNodeFromSnapshot(sn, newDataKey(conf, "chaincodeID2", "key1"))
 	testutil.AssertEquals(t, dataNodeFromDB, newDataNode(newDataKey(conf, "chaincodeID2", "key1"), []byte("value3")))
 
 	//fetch non-existing data node from DB
-	dataNodeFromDB, _ = fetchDataNodeFromDB(testDBWrapper.GetDB(), newDataKey(conf, "chaincodeID10", "key10"))
+	dataNodeFromDB, _ = fetchDataNodeFromSnapshot(sn, newDataKey(conf, "chaincodeID10", "key10"))
 	t.Logf("isNIL...[%t]", dataNodeFromDB == nil)
 	testutil.AssertNil(t, dataNodeFromDB)
 

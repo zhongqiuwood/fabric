@@ -43,6 +43,9 @@ func NewStateDelta() *StateDelta {
 
 // Get get the state from delta if exists
 func (stateDelta *StateDelta) Get(chaincodeID string, key string) *pb.UpdatedValue {
+	if stateDelta == nil {
+		return nil
+	}
 	// TODO Cache?
 	chaincodeStateDelta, ok := stateDelta.ChaincodeStateDeltas[chaincodeID]
 	if ok {

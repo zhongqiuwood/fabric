@@ -62,13 +62,30 @@ func (stateImpl *StateImpl) Initialize(configs map[string]interface{}) error {
 	stateImpl.bucketCache.loadAllBucketNodesFromDB(stateImpl.currentConfig)
 	stateImpl.underSync = checkSyncProcess(stateImpl)
 
-	return stateImpl.underSync
+	if stateImpl.underSync != nil {
+		return stateImpl.underSync
+	} else {
+		return nil
+	}
+
 }
 
 // Get - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) Get(chaincodeID string, key string) ([]byte, error) {
 	dataKey := newDataKey(stateImpl.currentConfig, chaincodeID, key)
 	dataNode, err := fetchDataNodeFromDB(stateImpl.OpenchainDB, dataKey)
+	if err != nil {
+		return nil, err
+	}
+	if dataNode == nil {
+		return nil, nil
+	}
+	return dataNode.value, nil
+}
+
+func (stateImpl *StateImpl) GetSafe(sn *db.DBSnapshot, chaincodeID string, key string) ([]byte, error) {
+	dataKey := newDataKey(stateImpl.currentConfig, chaincodeID, key)
+	dataNode, err := fetchDataNodeFromSnapshot(sn, dataKey)
 	if err != nil {
 		return nil, err
 	}

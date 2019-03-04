@@ -67,6 +67,17 @@ func (stateTrie *StateTrie) Get(chaincodeID string, key string) ([]byte, error) 
 	return trieNode.value, nil
 }
 
+func (stateTrie *StateTrie) GetSafe(sn *db.DBSnapshot, chaincodeID string, key string) ([]byte, error) {
+	trieNode, err := fetchTrieNodeFromSnapshot(sn, newTrieKey(chaincodeID, key))
+	if err != nil {
+		return nil, err
+	}
+	if trieNode == nil {
+		return nil, nil
+	}
+	return trieNode.value, nil
+}
+
 // PrepareWorkingSet creates the start of a new delta
 func (stateTrie *StateTrie) PrepareWorkingSet(stateDelta *statemgmt.StateDelta) error {
 	stateTrie.trieDelta = newTrieDelta(stateDelta)

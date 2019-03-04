@@ -7,9 +7,9 @@ import (
 	"github.com/abchain/fabric/core/ledger/statemgmt/state"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
+	"sync"
 )
 
-// Ledger - the struct for openchain ledger
 type LedgerSnapshot struct {
 	l *Ledger
 	*db.DBSnapshot
@@ -112,4 +112,58 @@ func (ledger *Ledger) GetStateSnapshot() (*state.StateSnapshot, error) {
 		return nil, fmt.Errorf("Blockchain has no blocks, cannot determine block number")
 	}
 	return ledger.state.GetSnapshot(blockHeight-1, snapshotL.DBSnapshot)
+}
+
+//maintain a series of snapshot for state querying
+type LedgerHistory struct {
+	sync.RWMutex
+	db               *db.OpenchainDB
+	snapshotInterval int
+	beginIntervalNum uint64
+	currentNum       uint64
+	current          *db.DBSnapshot
+	sns              []*db.DBSnapshot
+}
+
+const defaultSnapshotTotal = 8
+const defaultSnapshotInterval = 16
+
+func (lh *LedgerHistory) getCurrentSnapshot() *db.DBSnapshot {
+	lh.RLock()
+	defer lh.RUnlock()
+
+	return lh.current
+}
+
+func (lh *LedgerHistory) getSnapshot(blknum uint64) *db.DBSnapshot {
+	lh.RLock()
+	defer lh.RUnlock()
+
+	return lh.sns[lh.historyIndex(blknum)]
+}
+
+func (lh *LedgerHistory) historyIndex(blknum uint64) int {
+
+	sec := blknum / uint64(lh.snapshotInterval)
+
+	if sec < lh.beginIntervalNum {
+		return int(lh.beginIntervalNum % uint64(len(lh.sns)))
+	} else {
+		return int(sec % uint64(len(lh.sns)))
+	}
+}
+
+func (lh *LedgerHistory) update(blknum uint64) {
+	lh.Lock()
+	defer lh.Unlock()
+
+	replaced := lh.current
+	lh.current = lh.db.GetSnapshot()
+
+	if blknum%uint64(lh.snapshotInterval) == 0 {
+		//keep this snapshot
+
+	} else {
+		replaced.Release()
+	}
 }

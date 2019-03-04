@@ -436,7 +436,12 @@ func (openchainDB *baseHandler) getFromSnapshot(snapshot *gorocksdb.Snapshot,
 		return nil, err
 	}
 	defer slice.Free()
-	data := append([]byte(nil), slice.Data()...)
+
+	if slice.Data() == nil {
+		return nil, nil
+	}
+
+	data := makeCopy(slice.Data())
 	return data, nil
 }
 

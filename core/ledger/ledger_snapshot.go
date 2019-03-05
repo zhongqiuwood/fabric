@@ -128,42 +128,58 @@ type LedgerHistory struct {
 const defaultSnapshotTotal = 8
 const defaultSnapshotInterval = 16
 
-func (lh *LedgerHistory) getCurrentSnapshot() *db.DBSnapshot {
+func (lh *LedgerHistory) Release() {
+	for _, sn := range lh.sns {
+		sn.Release()
+	}
+}
+
+func (lh *LedgerHistory) GetCurrentSnapshot() *db.DBSnapshot {
 	lh.RLock()
 	defer lh.RUnlock()
 
 	return lh.current
 }
 
-func (lh *LedgerHistory) getSnapshot(blknum uint64) *db.DBSnapshot {
+func (lh *LedgerHistory) GetSnapshot(blknum uint64) (*db.DBSnapshot, uint64) {
 	lh.RLock()
 	defer lh.RUnlock()
 
-	return lh.sns[lh.historyIndex(blknum)]
+	sni, blkn := lh.historyIndex(blknum)
+	return lh.sns[sni], blkn
 }
 
-func (lh *LedgerHistory) historyIndex(blknum uint64) int {
+func (lh *LedgerHistory) historyIndex(blknum uint64) (int, uint64) {
 
 	sec := blknum / uint64(lh.snapshotInterval)
 
 	if sec < lh.beginIntervalNum {
-		return int(lh.beginIntervalNum % uint64(len(lh.sns)))
+		return int(lh.beginIntervalNum % uint64(len(lh.sns))), lh.beginIntervalNum * uint64(lh.snapshotInterval)
 	} else {
-		return int(sec % uint64(len(lh.sns)))
+		return int(sec % uint64(len(lh.sns))), sec * uint64(lh.snapshotInterval)
 	}
 }
 
-func (lh *LedgerHistory) update(blknum uint64) {
+func (lh *LedgerHistory) Update(blknum uint64) {
 	lh.Lock()
 	defer lh.Unlock()
 
-	replaced := lh.current
-	lh.current = lh.db.GetSnapshot()
-
-	if blknum%uint64(lh.snapshotInterval) == 0 {
-		//keep this snapshot
-
-	} else {
-		replaced.Release()
+	if blknum <= lh.currentNum {
+		ledgerLogger.Errorf("Try update a less blocknumber %d (current %d), not accept", blknum, lh.currentNum)
+		return
 	}
+
+	//can keep this snapshot
+	if lh.currentNum%uint64(lh.snapshotInterval) == 0 {
+		sec := blknum / uint64(lh.snapshotInterval)
+		indx := int(sec % uint64(len(lh.sns)))
+		lh.sns[indx] = lh.current
+		ledgerLogger.Debugf("Cache snapshot of %d at %d", lh.currentNum, indx)
+		if lh.beginIntervalNum+uint64(len(lh.sns)) <= sec {
+			lh.beginIntervalNum = sec - uint64(len(lh.sns)+1)
+			ledgerLogger.Debugf("Move update begin to %d", lh.beginIntervalNum)
+		}
+
+	}
+	lh.current = lh.db.GetSnapshot()
 }

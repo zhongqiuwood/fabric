@@ -78,7 +78,7 @@ func initConfig(configs map[string]interface{}) *config {
 	logger.Debugf("buckettree: syncDelta: [%d]", syncDelta)
 
 	bucketCacheMaxSize := defaultBucketCacheMaxSize
-	if v, ok := configs[ConfigBucketCacheMaxSize]; !ok {
+	if v, ok := configs[ConfigBucketCacheMaxSize]; ok {
 		bucketCacheMaxSize = cast.ToInt(v)
 		logger.Debugf("buckettree: bucketCacheMaxSize: [%d]", bucketCacheMaxSize)
 	}

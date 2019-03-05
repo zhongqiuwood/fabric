@@ -33,7 +33,9 @@ type HashableState interface {
 	Get(chaincodeID string, key string) ([]byte, error)
 
 	// Should replace the original Get
-	GetSafe(sn *db.DBSnapshot, chaincodeID string, key string) ([]byte, error)
+	// offset indicate the actual state we wished is early than the given one by <offset>
+	// states, some implement (like trie) may be able to inference the target state
+	GetSafe(sn *db.DBSnapshot, offset int, chaincodeID string, key string) ([]byte, error)
 
 	// PrepareWorkingSet passes a stateDelta that captures the changes that needs to be applied to the state
 	PrepareWorkingSet(stateDelta *StateDelta) error

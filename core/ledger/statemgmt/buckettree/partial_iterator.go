@@ -53,29 +53,11 @@ func (partialItr *PartialSnapshotIterator) Next() bool {
 
 func (partialItr *PartialSnapshotIterator) NextBucketNode() bool {
 
-	partialItr.keyCache = nil
-	partialItr.valueCache = nil
-
-	if !partialItr.StateSnapshotIterator.Next() {
-		return false
+	//sanity check
+	if partialItr.keyCache == nil {
+		panic("Called after Next return false")
 	}
-
-	keyBytes := statemgmt.Copy(partialItr.dbItr.Key().Data())
-	valueBytes := statemgmt.Copy(partialItr.dbItr.Value().Data())
-
-	bucketKey := decodeBucketKey(partialItr.config, keyBytes)
-
-	if bucketKey.bucketNumber > partialItr.lastBucketNum {
-		return false
-	}
-	bucketNode := unmarshalBucketNode(bucketKey, valueBytes)
-
-	partialItr.keyCache = bucketKey.getEncodedBytes()
-	partialItr.valueCache = bucketNode.computeCryptoHash()
-
-	//logger.Infof("-----------bucketNode: [%+v]", bucketNode)
-
-	return true
+	return partialItr.keyCache, partialItr.valueCache
 }
 
 

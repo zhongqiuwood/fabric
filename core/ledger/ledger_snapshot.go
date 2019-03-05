@@ -115,7 +115,7 @@ func (ledger *Ledger) GetStateSnapshot() (*state.StateSnapshot, error) {
 }
 
 //maintain a series of snapshot for state querying
-type LedgerHistory struct {
+type ledgerHistory struct {
 	sync.RWMutex
 	db               *db.OpenchainDB
 	snapshotInterval int
@@ -128,20 +128,34 @@ type LedgerHistory struct {
 const defaultSnapshotTotal = 8
 const defaultSnapshotInterval = 16
 
-func (lh *LedgerHistory) Release() {
+func initNewLedgerSnapshotManager(db *db.OpenchainDB, blkheight uint64, config *ledgerConfig) *ledgerHistory {
+	lsm := new(ledgerHistory)
+	//TODO: read config
+	lsm.snapshotInterval = defaultSnapshotInterval
+	lsm.sns = make([]*db.DBSnapshot, defaultSnapshotTotal)
+
+	lsm.beginIntervalNum = blkheight / uint64(lsm.snapshotInterval)
+	lsm.currentNum = blkheight
+	lsm.current = db.GetSnapshot()
+	lsm.db = db
+
+	return lsm
+}
+
+func (lh *ledgerHistory) Release() {
 	for _, sn := range lh.sns {
 		sn.Release()
 	}
 }
 
-func (lh *LedgerHistory) GetCurrentSnapshot() *db.DBSnapshot {
+func (lh *ledgerHistory) GetCurrentSnapshot() *db.DBSnapshot {
 	lh.RLock()
 	defer lh.RUnlock()
 
 	return lh.current
 }
 
-func (lh *LedgerHistory) GetSnapshot(blknum uint64) (*db.DBSnapshot, uint64) {
+func (lh *ledgerHistory) GetSnapshot(blknum uint64) (*db.DBSnapshot, uint64) {
 	lh.RLock()
 	defer lh.RUnlock()
 
@@ -149,7 +163,7 @@ func (lh *LedgerHistory) GetSnapshot(blknum uint64) (*db.DBSnapshot, uint64) {
 	return lh.sns[sni], blkn
 }
 
-func (lh *LedgerHistory) historyIndex(blknum uint64) (int, uint64) {
+func (lh *ledgerHistory) historyIndex(blknum uint64) (int, uint64) {
 
 	sec := blknum / uint64(lh.snapshotInterval)
 

@@ -83,7 +83,7 @@ func (stateImpl *StateImpl) Get(chaincodeID string, key string) ([]byte, error) 
 	return dataNode.value, nil
 }
 
-func (stateImpl *StateImpl) GetSafe(sn *db.DBSnapshot, chaincodeID string, key string) ([]byte, error) {
+func (stateImpl *StateImpl) GetSafe(sn *db.DBSnapshot, _ int, chaincodeID string, key string) ([]byte, error) {
 	dataKey := newDataKey(stateImpl.currentConfig, chaincodeID, key)
 	dataNode, err := fetchDataNodeFromSnapshot(sn, dataKey)
 	if err != nil {

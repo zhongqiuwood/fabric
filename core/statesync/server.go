@@ -322,6 +322,8 @@ func (server *stateServer) sendStateChuck(e *fsm.Event, offset *pb.SyncOffset) {
 	}
 
 	var syncMessage *pb.SyncMessage
+
+	stateChunkArray.Offset = offset
 	syncMessage, err = feedSyncMessage(offset, stateChunkArray, pb.SyncType_SYNC_STATE_ACK)
 	if err != nil {
 		failedReason += fmt.Sprintf("%s", err)

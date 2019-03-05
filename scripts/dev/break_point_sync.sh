@@ -104,7 +104,7 @@ function sync_test {
 
 function loadenv {
 
-    export CORE_LOGGING_NODE=debug:statesync=debug:state=info:buckettree=debug:peer=info:statesyncstub=debug:ledger=debug
+    export CORE_LOGGING_NODE=debug:statesync=debug:state=info:buckettree=info:peer=info:statesyncstub=debug:ledger=debug
 #    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=1000003
 #    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=5
 #    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_SYNCDELTA=100

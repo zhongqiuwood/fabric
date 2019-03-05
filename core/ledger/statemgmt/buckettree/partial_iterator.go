@@ -5,6 +5,7 @@ import (
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/protos"
+	"github.com/golang/protobuf/proto"
 )
 
 type PartialSnapshotIterator struct {
@@ -12,6 +13,7 @@ type PartialSnapshotIterator struct {
 	*config
 	keyCache, valueCache []byte
 	lastBucketNum        int
+	curLevel        int
 }
 
 func newPartialSnapshotIterator(snapshot *db.DBSnapshot, cfg *config) (*PartialSnapshotIterator, error) {
@@ -29,6 +31,10 @@ func newPartialSnapshotIterator(snapshot *db.DBSnapshot, cfg *config) (*PartialS
 
 //overwrite the original GetRawKeyValue and Next
 func (partialItr *PartialSnapshotIterator) Next() bool {
+
+	if partialItr.curLevel != partialItr.getLowestLevel() {
+		return false
+	}
 
 	partialItr.keyCache = nil
 	partialItr.valueCache = nil
@@ -52,14 +58,34 @@ func (partialItr *PartialSnapshotIterator) Next() bool {
 }
 
 func (partialItr *PartialSnapshotIterator) NextBucketNode() bool {
+	partialItr.keyCache = nil
+	partialItr.valueCache = nil
 
-	//sanity check
-	if partialItr.keyCache == nil {
-		panic("Called after Next return false")
+	if !partialItr.StateSnapshotIterator.Next() {
+		return false
 	}
-	return partialItr.keyCache, partialItr.valueCache
-}
 
+	keyBytes := statemgmt.Copy(partialItr.dbItr.Key().Data())
+	valueBytes := statemgmt.Copy(partialItr.dbItr.Value().Data())
+
+	bucketKey := decodeBucketKey(partialItr.config, keyBytes)
+
+	if bucketKey.bucketNumber > partialItr.lastBucketNum {
+		return false
+	}
+	if bucketKey.level > partialItr.curLevel {
+		return false
+	}
+
+	bucketNode := unmarshalBucketNode(bucketKey, valueBytes)
+
+	partialItr.keyCache = bucketKey.getEncodedBytes()
+	partialItr.valueCache = bucketNode.computeCryptoHash()
+
+	logger.Infof("-----------bucketNode: [%+v]", bucketNode.bucketKey)
+
+	return true
+}
 
 func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error {
 
@@ -68,12 +94,11 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 		return err
 	}
 
-	logger.Infof("-----------Required bucketTreeOffset: [%+v]", bucketTreeOffset)
-
 	level := int(bucketTreeOffset.Level)
 	if level > partialItr.getLowestLevel() {
 		return fmt.Errorf("level %d outbound: [%d]", level, partialItr.getLowestLevel())
 	}
+	partialItr.curLevel = level
 
 	startNum := int(bucketTreeOffset.BucketNum)
 	if startNum > partialItr.getNumBuckets(level) {
@@ -81,29 +106,30 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 	}
 
 	endNum := int(bucketTreeOffset.Delta + bucketTreeOffset.BucketNum - 1)
+	if endNum > partialItr.getNumBuckets(level) {
+		endNum = partialItr.getNumBuckets(level)
+	}
+
+	logger.Infof("-----------Required bucketTreeOffset: [%+v] start-end [%d-%d]",
+		bucketTreeOffset, startNum, endNum)
 
 	if level == partialItr.getLowestLevel() {
-		//transfer datanode
-		//seek to target datanode
 		partialItr.dbItr.Seek(minimumPossibleDataKeyBytesFor(newBucketKey(partialItr.config, level, startNum)))
-		partialItr.dbItr.Prev()
-		partialItr.lastBucketNum = endNum
 	} else {
-		//TODO: transfer bucketnode in metadata
-
-
 		partialItr.dbItr.Seek(newBucketKey(partialItr.config, level, startNum).getEncodedBytes())
-		partialItr.dbItr.Prev()
-
-		partialItr.GetMetaData()
-		//return fmt.Errorf("No implement")
 	}
+	partialItr.dbItr.Prev()
+	partialItr.lastBucketNum = endNum
 
 	return nil
 
 }
 
 func (partialItr *PartialSnapshotIterator) GetMetaData() []byte {
+
+	if partialItr.curLevel == partialItr.getLowestLevel() {
+		return nil
+	}
 
 	md := &protos.SyncMetadata{}
 
@@ -116,16 +142,17 @@ func (partialItr *PartialSnapshotIterator) GetMetaData() []byte {
 		md.BucketNodeHashList = append(md.BucketNodeHashList, v)
 	}
 
+	metadata, _ := proto.Marshal(md)
 
-	return nil
+
+	logger.Infof("-----------send metadata [%x]", metadata)
+	return metadata
 }
 
 func (partialItr *PartialSnapshotIterator) GetRawKeyValue() ([]byte, []byte) {
-
 	//sanity check
 	if partialItr.keyCache == nil {
-		panic(partialItr.keyCache == nil)
+		panic("Called after Next return false")
 	}
-
 	return partialItr.keyCache, partialItr.valueCache
 }

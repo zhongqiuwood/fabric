@@ -50,7 +50,6 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 
 func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 
-	//syncLevel := parent.currentConfig.getSyncLevel()
 	sp := &syncProcess{
 		StateImpl:       parent,
 		targetStateHash: stateHash,
@@ -61,8 +60,8 @@ func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 	sp.current = &protos.BucketTreeOffset{
 		Level:     uint64(syncLevel),
 		BucketNum: 1,
-		Delta:     min(uint64(parent.currentConfig.syncDelta),
-			uint64(parent.currentConfig.getNumBuckets(syncLevel))),
+		Delta:     min(uint64(sp.currentConfig.syncDelta),
+			uint64(sp.currentConfig.getNumBuckets(syncLevel))),
 	}
 
 	logger.Infof("===========newSyncProcess: curLevelIndex[%d], syncLevels[%v]", sp.curLevelIndex, sp.syncLevels)
@@ -75,18 +74,24 @@ func setSyncLevels(proc *syncProcess) {
 	proc.syncLevels = make([]int, 0)
 
 	height := proc.StateImpl.currentConfig.lowestLevel + 1
-	diff := 2
 
+	fmt.Printf("append %d\n", height-1)
 	proc.syncLevels = append(proc.syncLevels, proc.StateImpl.currentConfig.lowestLevel)
-	fmt.Printf("%d\n", height - 1)
 
-	res := int(sqrt(float64(height)))
-	proc.syncLevels = append(proc.syncLevels, res)
-	for res >= diff {
+	enableMetadata := true
+	enableMetadata = false
 
-		fmt.Printf("%d\n", res)
-		res = int(sqrt(float64(res)))
-		proc.syncLevels = append(proc.syncLevels, res)
+	if enableMetadata {
+		diff := 2
+
+		res := int(sqrt(float64(height)))
+		for res >= diff {
+
+			fmt.Printf("append %d\n", res)
+			proc.syncLevels = append(proc.syncLevels, res)
+
+			res = int(sqrt(float64(res)))
+		}
 	}
 	proc.curLevelIndex = len(proc.syncLevels) - 1
 }
@@ -138,9 +143,31 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 	nextNum := proc.current.BucketNum + proc.current.Delta
 
 	if maxNum <= nextNum-1 {
-		logger.Infof("Hit maxBucketNum<%d>, target BucketNum<%d>", maxNum, nextNum)
-		proc.current = nil
-		return nil
+
+		if proc.curLevelIndex > 0 {
+			proc.curLevelIndex--
+			syncLevel := proc.syncLevels[proc.curLevelIndex]
+
+			proc.current = &protos.BucketTreeOffset{
+				Level:     uint64(syncLevel),
+				BucketNum: 1,
+				Delta:     min(uint64(proc.currentConfig.syncDelta),
+					uint64(proc.currentConfig.getNumBuckets(syncLevel))),
+			}
+
+			maxNum = uint64(conf.getNumBuckets(int(proc.current.Level)))
+			nextNum = proc.current.BucketNum + proc.current.Delta
+
+			logger.Infof("--------------Go to Next level state offset <%+v>", proc.current)
+			return nil
+
+		} else {
+
+			logger.Infof("Finally hit maxBucketNum<%d>, target BucketNum<%d>", maxNum, nextNum)
+			proc.current = nil
+			return nil
+		}
+
 	}
 	delta := min(uint64(conf.syncDelta), maxNum-nextNum+1)
 

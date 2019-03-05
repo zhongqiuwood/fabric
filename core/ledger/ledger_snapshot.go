@@ -132,7 +132,7 @@ func initNewLedgerSnapshotManager(db *db.OpenchainDB, blkheight uint64, config *
 	lsm := new(ledgerHistory)
 	//TODO: read config
 	lsm.snapshotInterval = defaultSnapshotInterval
-	lsm.sns = make([]*db.DBSnapshot, defaultSnapshotTotal)
+	//lsm.sns = make([]*db.DBSnapshot, defaultSnapshotTotal)
 
 	lsm.beginIntervalNum = blkheight / uint64(lsm.snapshotInterval)
 	lsm.currentNum = blkheight
@@ -174,7 +174,7 @@ func (lh *ledgerHistory) historyIndex(blknum uint64) (int, uint64) {
 	}
 }
 
-func (lh *LedgerHistory) Update(blknum uint64) {
+func (lh *ledgerHistory) Update(blknum uint64) {
 	lh.Lock()
 	defer lh.Unlock()
 

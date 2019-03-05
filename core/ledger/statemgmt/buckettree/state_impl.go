@@ -388,6 +388,9 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	}
 
 	offset, err := syncData.GetOffset().Unmarshal2BucketTree()
+
+	logger.Infof("---- ApplyPartialSync offset [%v]  -----", offset)
+
 	if err != nil {
 		return err
 	}

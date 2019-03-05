@@ -113,7 +113,7 @@ func (bucketNode *bucketNode) String() string {
 			numChildren++
 		}
 	}
-	str := fmt.Sprintf("bucketKey={%s}\n NumChildren={%d}\n", bucketNode.bucketKey, numChildren)
+	str := fmt.Sprintf("bucketKey={%v}\n NumChildren={%d}\n", bucketNode.bucketKey, numChildren)
 	if numChildren == 0 {
 		return str
 	}

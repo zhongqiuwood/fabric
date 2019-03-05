@@ -23,7 +23,7 @@ func newPartialSnapshotIterator(snapshot *db.DBSnapshot, cfg *config) (*PartialS
 	return &PartialSnapshotIterator{
 		StateSnapshotIterator: *iit,
 		config:                cfg,
-		lastBucketNum:         cfg.getNumBucketsAtLowestLevel(),
+		lastBucketNum:         cfg.getNumBuckets(cfg.getSyncLevel()),
 	}, nil
 }
 
@@ -51,12 +51,33 @@ func (partialItr *PartialSnapshotIterator) Next() bool {
 	return true
 }
 
-func (partialItr *PartialSnapshotIterator) GetRawKeyValue() ([]byte, []byte) {
+func (partialItr *PartialSnapshotIterator) NextBucketNode() bool {
 
-	//sanity check
-	//panic(partialItr.keyCache == nil)
-	return partialItr.keyCache, partialItr.valueCache
+	partialItr.keyCache = nil
+	partialItr.valueCache = nil
+
+	if !partialItr.StateSnapshotIterator.Next() {
+		return false
+	}
+
+	keyBytes := statemgmt.Copy(partialItr.dbItr.Key().Data())
+	valueBytes := statemgmt.Copy(partialItr.dbItr.Value().Data())
+
+	bucketKey := decodeBucketKey(partialItr.config, keyBytes)
+
+	if bucketKey.bucketNumber > partialItr.lastBucketNum {
+		return false
+	}
+	bucketNode := unmarshalBucketNode(bucketKey, valueBytes)
+
+	partialItr.keyCache = bucketKey.getEncodedBytes()
+	partialItr.valueCache = bucketNode.computeCryptoHash()
+
+	//logger.Infof("-----------bucketNode: [%+v]", bucketNode)
+
+	return true
 }
+
 
 func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error {
 
@@ -65,7 +86,7 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 		return err
 	}
 
-	logger.Debugf("Required bucketTreeOffset: [%+v]", bucketTreeOffset)
+	logger.Infof("-----------Required bucketTreeOffset: [%+v]", bucketTreeOffset)
 
 	level := int(bucketTreeOffset.Level)
 	if level > partialItr.getLowestLevel() {
@@ -73,7 +94,7 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 	}
 
 	startNum := int(bucketTreeOffset.BucketNum)
-	if startNum >= partialItr.getNumBuckets(level) {
+	if startNum > partialItr.getNumBuckets(level) {
 		return fmt.Errorf("Start numbucket %d outbound: [%d]", startNum, partialItr.getNumBuckets(level))
 	}
 
@@ -87,7 +108,13 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 		partialItr.lastBucketNum = endNum
 	} else {
 		//TODO: transfer bucketnode in metadata
-		return fmt.Errorf("No implement")
+
+
+		partialItr.dbItr.Seek(newBucketKey(partialItr.config, level, startNum).getEncodedBytes())
+		partialItr.dbItr.Prev()
+
+		partialItr.GetMetaData()
+		//return fmt.Errorf("No implement")
 	}
 
 	return nil
@@ -95,6 +122,28 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 }
 
 func (partialItr *PartialSnapshotIterator) GetMetaData() []byte {
-	//TODO: return a series of bucketNode for the first offset
+
+	md := &protos.SyncMetadata{}
+
+	for partialItr.NextBucketNode() {
+		k, v := partialItr.GetRawKeyValue()
+
+		bucketKey := decodeBucketKey(partialItr.config, k)
+		logger.Infof("bucketKey[%+v], CryptoHash[%x]", bucketKey, v)
+
+		md.BucketNodeHashList = append(md.BucketNodeHashList, v)
+	}
+
+
 	return nil
+}
+
+func (partialItr *PartialSnapshotIterator) GetRawKeyValue() ([]byte, []byte) {
+
+	//sanity check
+	if partialItr.keyCache == nil {
+		panic(partialItr.keyCache == nil)
+	}
+
+	return partialItr.keyCache, partialItr.valueCache
 }

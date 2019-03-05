@@ -11,7 +11,10 @@ type syncProcess struct {
 	*StateImpl
 	targetStateHash []byte
 	current         *protos.BucketTreeOffset
+	syncLevels		[]int
+	curLevelIndex	int
 }
+
 
 const partialStatusKeyPrefixByte = byte(16)
 
@@ -47,16 +50,48 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 
 func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 
-	return &syncProcess{
+	//syncLevel := parent.currentConfig.getSyncLevel()
+	sp := &syncProcess{
 		StateImpl:       parent,
 		targetStateHash: stateHash,
-		current: &protos.BucketTreeOffset{
-			Level:     uint64(parent.currentConfig.getLowestLevel()),
-			BucketNum: 1,
-			Delta:     min(uint64(parent.currentConfig.syncDelta), uint64(parent.currentConfig.getNumBucketsAtLowestLevel())),
-		},
 	}
+
+	setSyncLevels(sp)
+	syncLevel := sp.syncLevels[sp.curLevelIndex]
+	sp.current = &protos.BucketTreeOffset{
+		Level:     uint64(syncLevel),
+		BucketNum: 1,
+		Delta:     min(uint64(parent.currentConfig.syncDelta),
+			uint64(parent.currentConfig.getNumBuckets(syncLevel))),
+	}
+
+	logger.Infof("===========newSyncProcess: curLevelIndex[%d], syncLevels[%v]", sp.curLevelIndex, sp.syncLevels)
+	return sp
 }
+
+
+func setSyncLevels(proc *syncProcess) {
+
+	proc.syncLevels = make([]int, 0)
+
+	height := proc.StateImpl.currentConfig.lowestLevel + 1
+	diff := 2
+
+	proc.syncLevels = append(proc.syncLevels, proc.StateImpl.currentConfig.lowestLevel)
+	fmt.Printf("%d\n", height - 1)
+
+	res := int(sqrt(float64(height)))
+	proc.syncLevels = append(proc.syncLevels, res)
+	for res >= diff {
+
+		fmt.Printf("%d\n", res)
+		res = int(sqrt(float64(res)))
+		proc.syncLevels = append(proc.syncLevels, res)
+	}
+	proc.curLevelIndex = len(proc.syncLevels) - 1
+}
+
+
 
 //implement for syncinprogress interface
 func (proc *syncProcess) IsSyncInProgress() {}
@@ -114,4 +149,30 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 
 	logger.Debugf("Next state offset <%+v>", proc.current)
 	return nil
+}
+
+func sqrt(x float64) float64 {
+	z := 1.0
+
+	if x < 0 {
+		return 0
+	} else if x == 0 {
+		return 0
+	} else {
+
+		getabs := func(x float64) float64 {
+			if x < 0 {
+				return -x
+			}
+			if x == 0 {
+				return 0
+			}
+			return x
+		}
+
+		for getabs(z*z-x) > 1e-6 {
+			z = (z + x/z) / 2
+		}
+		return z
+	}
 }

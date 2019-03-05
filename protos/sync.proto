@@ -198,6 +198,9 @@ message BlockOffset {
 }
 
 
+message SyncMetadata {
+    repeated bytes bucketNodeHashList = 1;
 
+}
 
 

@@ -116,8 +116,8 @@ function loadenv {
 
 loadenv
 #sync_breakpoint_test make_diff
-#sync_test make_diff state
+sync_test make_diff state
 
-sync_from_disk make_diff state
+#sync_from_disk make_diff state
 
 

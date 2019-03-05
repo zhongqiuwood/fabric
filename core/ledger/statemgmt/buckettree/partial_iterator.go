@@ -54,7 +54,7 @@ func (partialItr *PartialSnapshotIterator) Next() bool {
 func (partialItr *PartialSnapshotIterator) GetRawKeyValue() ([]byte, []byte) {
 
 	//sanity check
-	//panic(partialItr.keyCache == nil)
+	panic(partialItr.keyCache == nil)
 	return partialItr.keyCache, partialItr.valueCache
 }
 

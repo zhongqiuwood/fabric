@@ -82,7 +82,7 @@ func fetchDataNodesFromDBFor(odb *db.OpenchainDB, bucketKey *bucketKey) (dataNod
 	var dataNodes dataNodes
 	itr.Seek(minimumDataKeyBytes)
 
-	for ; itr.Valid(); itr.Next() {
+	for ; itr.Valid() && itr.Key().Data()[0] < invalidDataPrefix; itr.Next() {
 
 		// making a copy of key-value bytes because, underlying key bytes are reused by itr.
 		// no need to free slices as iterator frees memory when closed.

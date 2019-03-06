@@ -116,23 +116,20 @@ func (state *State) txInProgress() bool {
 
 // Get returns state for chaincodeID and key. If committed is false, this first looks in memory and if missing,
 // pulls from db. If committed is true, this pulls from the db only.
-func (state *State) Get(chaincodeID string, key string, committed bool) ([]byte, error) {
-	if !committed {
-		valueHolder := state.currentTxStateDelta.Get(chaincodeID, key)
-		if valueHolder != nil {
-			return valueHolder.GetValue(), nil
-		}
-		valueHolder = state.stateDelta.Get(chaincodeID, key)
-		if valueHolder != nil {
-			return valueHolder.GetValue(), nil
-		}
+func (state *State) Get(chaincodeID string, key string, sn *db.DBSnapshot, offset int) ([]byte, error) {
+	if offset < 0 {
+		return nil, fmt.Errorf("Unexpected (less than zero) offset")
 	}
-	return state.stateImpl.Get(chaincodeID, key)
+	return state.stateImpl.GetSafe(sn, offset, chaincodeID, key)
 }
 
 func (state *State) GetTransient(chaincodeID string, key string, runningDelta *statemgmt.StateDelta) ([]byte, error) {
 
 	valueHolder := runningDelta.Get(chaincodeID, key)
+	if valueHolder != nil {
+		return valueHolder.GetValue(), nil
+	}
+	valueHolder = state.currentTxStateDelta.Get(chaincodeID, key)
 	if valueHolder != nil {
 		return valueHolder.GetValue(), nil
 	}
@@ -187,7 +184,7 @@ func (state *State) Set(chaincodeID string, key string, value []byte) error {
 		state.currentTxStateDelta.Set(chaincodeID, key, value, nil)
 	} else {
 		// Need to lookup the previous value
-		previousValue, err := state.Get(chaincodeID, key, true)
+		previousValue, err := state.stateImpl.Get(chaincodeID, key)
 		if err != nil {
 			return err
 		}
@@ -211,7 +208,7 @@ func (state *State) Delete(chaincodeID string, key string) error {
 		state.currentTxStateDelta.Delete(chaincodeID, key, nil)
 	} else {
 		// Need to lookup the previous value
-		previousValue, err := state.Get(chaincodeID, key, true)
+		previousValue, err := state.stateImpl.Get(chaincodeID, key)
 		if err != nil {
 			return err
 		}
@@ -238,18 +235,18 @@ func (state *State) CopyState(sourceChaincodeID string, destChaincodeID string) 
 	return nil
 }
 
-// GetMultipleKeys returns the values for the multiple keys.
-func (state *State) GetMultipleKeys(chaincodeID string, keys []string, committed bool) ([][]byte, error) {
-	var values [][]byte
-	for _, k := range keys {
-		v, err := state.Get(chaincodeID, k, committed)
-		if err != nil {
-			return nil, err
-		}
-		values = append(values, v)
-	}
-	return values, nil
-}
+// // GetMultipleKeys returns the values for the multiple keys.
+// func (state *State) GetMultipleKeys(chaincodeID string, keys []string, committed bool) ([][]byte, error) {
+// 	var values [][]byte
+// 	for _, k := range keys {
+// 		v, err := state.Get(chaincodeID, k, committed)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+// 		values = append(values, v)
+// 	}
+// 	return values, nil
+// }
 
 // SetMultipleKeys sets the values for the multiple keys.
 func (state *State) SetMultipleKeys(chaincodeID string, kvs map[string][]byte) error {

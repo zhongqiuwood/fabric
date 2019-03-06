@@ -834,6 +834,20 @@ func TestRangeScanIterator(t *testing.T) {
 	itr.Close()
 }
 
+func getMultipleKeys(wrapper *ledgerTestWrapper, chaincodeID string, keys []string) ([][]byte, error) {
+	var ret [][]byte
+	for _, key := range keys {
+		r, err := wrapper.ledger.GetState(chaincodeID, key, true)
+		if err != nil {
+			return nil, err
+		}
+
+		ret = append(ret, r)
+	}
+
+	return ret, nil
+}
+
 func TestGetSetMultipleKeys(t *testing.T) {
 	ledgerTestWrapper := createFreshDBAndTestLedgerWrapper(t)
 	l := ledgerTestWrapper.ledger
@@ -844,7 +858,7 @@ func TestGetSetMultipleKeys(t *testing.T) {
 	tx, _ := buildTestTx(t)
 	l.CommitTxBatch(1, []*protos.Transaction{tx}, nil, nil)
 
-	values, _ := l.GetStateMultipleKeys("chaincodeID", []string{"key1", "key2"}, true)
+	values, _ := getMultipleKeys(ledgerTestWrapper, "chaincodeID", []string{"key1", "key2"})
 	testutil.AssertEquals(t, values, [][]byte{[]byte("value1"), []byte("value2")})
 }
 
@@ -866,7 +880,7 @@ func TestCopyState(t *testing.T) {
 	tx, _ = buildTestTx(t)
 	l.CommitTxBatch(2, []*protos.Transaction{tx}, nil, nil)
 
-	values, _ := l.GetStateMultipleKeys("chaincodeID2", []string{"key1", "key2", "key3"}, true)
+	values, _ := getMultipleKeys(ledgerTestWrapper, "chaincodeID2", []string{"key1", "key2", "key3"})
 	testutil.AssertEquals(t, values, [][]byte{[]byte("value1"), []byte("value2"), []byte("value3")})
 }
 

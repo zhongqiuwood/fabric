@@ -48,7 +48,13 @@ func newStateTestWrapper(t *testing.T) *stateTestWrapper {
 }
 
 func (testWrapper *stateTestWrapper) get(chaincodeID string, key string, committed bool) []byte {
-	value, err := testWrapper.state.Get(chaincodeID, key, committed)
+	var value []byte
+	var err error
+	if committed {
+		value, err = testWrapper.state.stateImpl.Get(chaincodeID, key)
+	} else {
+		value, err = testWrapper.state.GetTransient(chaincodeID, key, nil)
+	}
 	testutil.AssertNoError(testWrapper.t, err, "Error while getting state")
 	return value
 }

@@ -120,7 +120,7 @@ type ledgerHistory struct {
 	db               *db.OpenchainDB
 	snapshotInterval int
 	beginIntervalNum uint64
-	currentNum       uint64
+	currentHeight    uint64
 	current          *db.DBSnapshot
 	sns              []*db.DBSnapshot
 }
@@ -128,16 +128,19 @@ type ledgerHistory struct {
 const defaultSnapshotTotal = 8
 const defaultSnapshotInterval = 16
 
-func initNewLedgerSnapshotManager(db *db.OpenchainDB, blkheight uint64, config *ledgerConfig) *ledgerHistory {
+func initNewLedgerSnapshotManager(odb *db.OpenchainDB, blkheight uint64, config *ledgerConfig) *ledgerHistory {
 	lsm := new(ledgerHistory)
 	//TODO: read config
 	lsm.snapshotInterval = defaultSnapshotInterval
 	lsm.sns = make([]*db.DBSnapshot, defaultSnapshotTotal)
 
-	lsm.beginIntervalNum = blkheight / uint64(lsm.snapshotInterval)
-	lsm.currentNum = blkheight
-	lsm.current = db.GetSnapshot()
-	lsm.db = db
+	if blkheight > 0 {
+		lsm.beginIntervalNum = (blkheight - 1) / uint64(lsm.snapshotInterval)
+		lsm.currentHeight = blkheight
+		lsm.current = odb.GetSnapshot()
+	}
+
+	lsm.db = odb
 
 	return lsm
 }
@@ -160,40 +163,65 @@ func (lh *ledgerHistory) GetSnapshot(blknum uint64) (*db.DBSnapshot, uint64) {
 	defer lh.RUnlock()
 
 	sni, blkn := lh.historyIndex(blknum)
-	return lh.sns[sni], blkn
+	if sni == -1 {
+		return lh.current, blkn
+	} else {
+		return lh.sns[sni], blkn
+	}
 }
 
 func (lh *ledgerHistory) historyIndex(blknum uint64) (int, uint64) {
 
 	sec := blknum / uint64(lh.snapshotInterval)
-
 	if sec < lh.beginIntervalNum {
 		return int(lh.beginIntervalNum % uint64(len(lh.sns))), lh.beginIntervalNum * uint64(lh.snapshotInterval)
 	} else {
-		return int(sec % uint64(len(lh.sns))), sec * uint64(lh.snapshotInterval)
+		//ceiling ....
+		if blknum%uint64(lh.snapshotInterval) != 0 {
+			sec++
+		}
+
+		corblk := sec * uint64(lh.snapshotInterval)
+		if corblk >= lh.currentHeight {
+			return -1, lh.currentHeight - 1
+		}
+
+		return int(sec % uint64(len(lh.sns))), corblk
 	}
 }
 
-func (lh *LedgerHistory) Update(blknum uint64) {
+//force update current state
+func (lh *ledgerHistory) ForceUpdate() {
 	lh.Lock()
 	defer lh.Unlock()
 
-	if blknum <= lh.currentNum {
-		ledgerLogger.Errorf("Try update a less blocknumber %d (current %d), not accept", blknum, lh.currentNum)
+	lh.current.Release()
+	lh.current = lh.db.GetSnapshot()
+}
+
+func (lh *ledgerHistory) Update(blknum uint64) {
+	lh.Lock()
+	defer lh.Unlock()
+
+	if blknum < lh.currentHeight {
+		ledgerLogger.Errorf("Try update a less blocknumber %d (current %d), not accept", blknum, lh.currentHeight-1)
 		return
 	}
 
-	//can keep this snapshot
-	if lh.currentNum%uint64(lh.snapshotInterval) == 0 {
-		sec := blknum / uint64(lh.snapshotInterval)
+	if currentNum := lh.currentHeight - 1; currentNum%uint64(lh.snapshotInterval) == 0 {
+		//can keep this snapshot
+		sec := currentNum / uint64(lh.snapshotInterval)
 		indx := int(sec % uint64(len(lh.sns)))
 		lh.sns[indx] = lh.current
-		ledgerLogger.Debugf("Cache snapshot of %d at %d", lh.currentNum, indx)
-		if lh.beginIntervalNum+uint64(len(lh.sns)) <= sec {
-			lh.beginIntervalNum = sec - uint64(len(lh.sns)+1)
+		ledgerLogger.Debugf("Cache snapshot of %d at %d", lh.currentHeight-1, indx)
+		if lh.beginIntervalNum+uint64(len(lh.sns)) <= sec && lh.currentHeight > 0 {
+			lh.beginIntervalNum = sec - uint64(len(lh.sns)-1)
 			ledgerLogger.Debugf("Move update begin to %d", lh.beginIntervalNum)
 		}
 
+	} else {
+		lh.current.Release()
 	}
+	lh.currentHeight = blknum + 1
 	lh.current = lh.db.GetSnapshot()
 }

@@ -80,6 +80,7 @@ type Ledger struct {
 	*LedgerGlobal
 	blockchain       *blockchain
 	state            *state.State
+	snapshots        *ledgerHistory
 	currentID        interface{}
 	currentStateHash []byte
 	dbVer            int
@@ -137,7 +138,9 @@ func GetNewLedger(db *db.OpenchainDB, config *ledgerConfig) (*Ledger, error) {
 		}
 	}
 
-	return &Ledger{gledger, blockchain, st, nil, nil, ver}, nil
+	sns := initNewLedgerSnapshotManager(db, blockchain.getSize(), config)
+
+	return &Ledger{gledger, blockchain, st, sns, nil, nil, ver}, nil
 }
 
 //we need this check and correction for handling the inconsistent between two db (global
@@ -374,6 +377,7 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	ledger.resetForNextTxGroup(true)
 	//this step also index all txs
 	ledger.blockchain.blockPersistenceStatus(true)
+	ledger.snapshots.Update(newBlockNumber)
 
 	sendProducerBlockEvent(block)
 
@@ -465,7 +469,31 @@ func (ledger *Ledger) GetTempStateHashWithTxDeltaStateHashes() ([]byte, map[stri
 // YA-fabric 0.9: Notice the commited has been deprecated and don't use this flag with false,
 // Use GetTransientState instead
 func (ledger *Ledger) GetState(chaincodeID string, key string, committed bool) ([]byte, error) {
-	return ledger.state.Get(chaincodeID, key, committed)
+	if committed {
+		sn := ledger.snapshots.GetCurrentSnapshot()
+		if sn == nil {
+			return nil, ErrResourceNotFound
+		}
+		return ledger.state.Get(chaincodeID, key, sn, 0)
+
+	} else {
+		return ledger.state.GetTransient(chaincodeID, key, nil)
+	}
+}
+
+func (ledger *Ledger) GetSnapshotState(chaincodeID string, key string, blknum uint64) ([]byte, uint64, error) {
+	if blknum >= ledger.blockchain.getSize() {
+		return nil, 0, ErrOutOfBounds
+	}
+
+	sn, actualblk := ledger.snapshots.GetSnapshot(blknum)
+	//sanity check
+	if blknum > actualblk {
+		panic("Unexpect history offset")
+	}
+
+	v, err := ledger.state.Get(chaincodeID, key, sn, int(actualblk-blknum))
+	return v, actualblk, err
 }
 
 func (ledger *Ledger) GetTransientState(chaincodeID string, key string, runningDelta *statemgmt.StateDelta) ([]byte, error) {
@@ -508,9 +536,10 @@ func (ledger *Ledger) CopyState(sourceChaincodeID string, destChaincodeID string
 
 // GetStateMultipleKeys returns the values for the multiple keys.
 // This method is mainly to amortize the cost of grpc communication between chaincode shim peer
-func (ledger *Ledger) GetStateMultipleKeys(chaincodeID string, keys []string, committed bool) ([][]byte, error) {
-	return ledger.state.GetMultipleKeys(chaincodeID, keys, committed)
-}
+// YA-fabric: deprecated this method for we have more sophisticated entries for getting (transient/snapshot)
+// func (ledger *Ledger) GetStateMultipleKeys(chaincodeID string, keys []string, committed bool) ([][]byte, error) {
+// 	return ledger.state.GetMultipleKeys(chaincodeID, keys, committed)
+// }
 
 // SetStateMultipleKeys sets the values for the multiple keys.
 // This method is mainly to amortize the cost of grpc communication between chaincode shim peer
@@ -574,7 +603,13 @@ func (ledger *Ledger) CommitStateDelta(id interface{}) error {
 	}
 	defer ledger.resetForNextTxGroup(true)
 
-	return ledger.state.CommitStateDelta()
+	err = ledger.state.CommitStateDelta()
+	if err != nil {
+		return err
+	}
+
+	ledger.snapshots.ForceUpdate()
+	return nil
 }
 
 // CommitStateDelta will commit the state delta passed to ledger.ApplyStateDelta
@@ -589,7 +624,14 @@ func (ledger *Ledger) CommitAndIndexStateDelta(id interface{}, blockNumber uint6
 	writeBatch := ledger.state.NewWriteBatch()
 	defer writeBatch.Destroy()
 	ledger.state.AddChangesForPersistence(blockNumber, writeBatch)
-	return writeBatch.BatchCommit()
+
+	err = writeBatch.BatchCommit()
+	if err != nil {
+		return err
+	}
+
+	ledger.snapshots.Update(blockNumber)
+	return nil
 }
 
 // RollbackStateDelta will discard the state delta passed

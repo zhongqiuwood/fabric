@@ -31,9 +31,7 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 		if err == nil {
 
 			//TODO: should verify the partial data ...
-
 			logger.Info("Restore sync task to target [%x]", targetStateHash)
-
 			return &syncProcess{
 				StateImpl:       parent,
 				targetStateHash: targetStateHash,
@@ -41,7 +39,7 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 			}
 		}
 
-		logger.Errorf("Recorded sync state [%x] is invalid: %s", targetStateHash, err)
+		logger.Infof("Recorded sync state [%x] is invalid: %s", targetStateHash, err)
 		parent.DeleteKey(db.StateCF, dbItr.Key().Data())
 	}
 
@@ -55,7 +53,7 @@ func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 		targetStateHash: stateHash,
 	}
 
-	setSyncLevels(sp)
+	calcSyncLevels(sp)
 	syncLevel := sp.syncLevels[sp.curLevelIndex]
 	sp.current = &protos.BucketTreeOffset{
 		Level:     uint64(syncLevel),
@@ -64,39 +62,49 @@ func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 			uint64(sp.currentConfig.getNumBuckets(syncLevel))),
 	}
 
-	logger.Infof("===========newSyncProcess: curLevelIndex[%d], syncLevels[%v]", sp.curLevelIndex, sp.syncLevels)
+	logger.Infof("newSyncProcess: curLevelIndex[%d], syncLevels[%+v]", sp.curLevelIndex, sp.syncLevels)
 	return sp
 }
 
-
-func setSyncLevels(proc *syncProcess) {
+// compute the levels by which metadata will be sent for sanity check
+func calcSyncLevels(proc *syncProcess) {
 
 	proc.syncLevels = make([]int, 0)
+	lowestLevel := proc.StateImpl.currentConfig.lowestLevel
 
-	height := proc.StateImpl.currentConfig.lowestLevel + 1
-
-	fmt.Printf("append %d\n", height-1)
 	proc.syncLevels = append(proc.syncLevels, proc.StateImpl.currentConfig.lowestLevel)
 
-	enableMetadata := true
-	enableMetadata = false
+	enableMetadataVerify := true
+	//enableMetadataVerify = false
 
-	if enableMetadata {
+	if enableMetadataVerify {
 		diff := 2
 
-		res := int(sqrt(float64(height)))
-		for res >= diff {
+		sqrtFunc := func() {
+			res := int(sqrt(float64(lowestLevel + 1)))
+			for res >= diff {
 
-			fmt.Printf("append %d\n", res)
-			proc.syncLevels = append(proc.syncLevels, res)
-
-			res = int(sqrt(float64(res)))
+				proc.syncLevels = append(proc.syncLevels, res)
+				res = int(sqrt(float64(res)))
+			}
 		}
+
+		decreamentFunc := func() {
+			res := lowestLevel - diff
+			for res >= diff {
+				proc.syncLevels = append(proc.syncLevels, res)
+				res -= diff
+			}
+		}
+
+		_ = sqrtFunc
+		_ = decreamentFunc
+
+		decreamentFunc()
+		//sqrtFunc()
 	}
 	proc.curLevelIndex = len(proc.syncLevels) - 1
 }
-
-
 
 //implement for syncinprogress interface
 func (proc *syncProcess) IsSyncInProgress() {}
@@ -106,7 +114,7 @@ func (proc *syncProcess) PersistProgress(writeBatch *db.DBWriteBatch) error {
 
 	key := append([]byte{partialStatusKeyPrefixByte}, proc.targetStateHash...)
 	if value, err := proc.current.Byte(); err == nil {
-		logger.Debugf("Persisting current sync process = %#v", proc.current)
+		logger.Infof("Persisting current sync process = %+v", proc.current)
 		writeBatch.PutCF(writeBatch.GetDBHandle().StateCF, key, value)
 	} else {
 		return err
@@ -158,23 +166,21 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 			maxNum = uint64(conf.getNumBuckets(int(proc.current.Level)))
 			nextNum = proc.current.BucketNum + proc.current.Delta
 
-			logger.Infof("--------------Go to Next level state offset <%+v>", proc.current)
-			return nil
+			logger.Infof("Go to Next level. state offset <%+v>", proc.current)
 
 		} else {
-
-			logger.Infof("Finally hit maxBucketNum<%d>, target BucketNum<%d>", maxNum, nextNum)
+			logger.Infof("Finally hit maxBucketNum<%d>, target Level<%d> BucketNum<%d>",
+				maxNum, proc.current.Level,	nextNum)
 			proc.current = nil
-			return nil
 		}
-
+		return nil
 	}
 	delta := min(uint64(conf.syncDelta), maxNum-nextNum+1)
 
 	proc.current.BucketNum = nextNum
 	proc.current.Delta = delta
 
-	logger.Debugf("Next state offset <%+v>", proc.current)
+	logger.Infof("Next state offset <%+v>", proc.current)
 	return nil
 }
 

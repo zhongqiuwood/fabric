@@ -18,6 +18,7 @@ package buckettree
 
 import (
 	"bytes"
+	"github.com/golang/protobuf/proto"
 
 	"fmt"
 	"github.com/abchain/fabric/core/db"
@@ -249,17 +250,21 @@ func computeDataNodesCryptoHash(bucketKey *bucketKey, updatedNodes dataNodes, ex
 // AddChangesForPersistence - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *db.DBWriteBatch) error {
 
-	if stateImpl.dataNodesDelta == nil {
+	if stateImpl.dataNodesDelta == nil && stateImpl.underSync == nil{
 		return nil
 	}
 
-	if stateImpl.recomputeCryptoHash {
-		_, err := stateImpl.ComputeCryptoHash()
-		if err != nil {
-			return err
+	if stateImpl.dataNodesDelta != nil {
+
+		if stateImpl.recomputeCryptoHash {
+			_, err := stateImpl.ComputeCryptoHash()
+			if err != nil {
+				return err
+			}
 		}
+		stateImpl.addDataNodeChangesForPersistence(writeBatch)
 	}
-	stateImpl.addDataNodeChangesForPersistence(writeBatch)
+
 	stateImpl.addBucketNodeChangesForPersistence(writeBatch)
 	if stateImpl.underSync != nil {
 		err := stateImpl.underSync.PersistProgress(writeBatch)
@@ -298,8 +303,10 @@ func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *db.DB
 				writeBatch.DeleteCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes())
 			} else {
 
-				// logger.Debugf("Adding data node<%s> with dataKey<%x>, value <%x>", bucketNode.bucketKey,
-				// 	bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
+				logger.Infof("Persist bucketNode<%+v>, dataKey<%x>, value <%x>",
+					bucketNode.bucketKey,
+					bucketNode.bucketKey.getEncodedBytes(),
+					bucketNode.marshal())
 
 				writeBatch.PutCF(openchainDB.StateCF,
 					bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
@@ -396,18 +403,18 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	}
 
 	if md := syncData.GetMetaData(); len(md) > 0 {
-		if err := stateImpl.applyPartialMetalData(md); err != nil {
+		if err := stateImpl.applyPartialMetalData(md, offset); err != nil {
 			return err
 		}
-	}
-
-	logger.Debug("Start computing partial crypto-hash...")
-	if err := stateImpl.processDataNodeDelta(); err != nil {
-		return err
-	}
-	//TODO: we only need calc. until the level which has the root of partial data buckets
-	if err := stateImpl.processBucketTreeDelta(0); err != nil {
-		return err
+	} else {
+		logger.Infof("no MetaData, Start computing partial crypto-hash...")
+		if err := stateImpl.processDataNodeDelta(); err != nil {
+			return err
+		}
+		//TODO: we only need calc. until the level which has the root of partial data buckets
+		if err := stateImpl.processBucketTreeDelta(0); err != nil {
+			return err
+		}
 	}
 
 	//TODO: verify the hash we calculated with which it obatined
@@ -423,6 +430,36 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	return nil
 }
 
-func (stateImpl *StateImpl) applyPartialMetalData(md []byte) error {
-	return nil
+func (stateImpl *StateImpl) applyPartialMetalData(md []byte, offset *pb.BucketTreeOffset) error {
+
+	metadata := &pb.SyncMetadata{}
+	err := proto.Unmarshal(md, metadata)
+
+	if err != nil {
+		return err
+	}
+
+	if int(offset.Delta) != len(metadata.BucketNodeHashList) {
+		logger.Infof("recv metadata: offset[%+v] len[%d]", offset,
+			len(metadata.BucketNodeHashList))
+		panic("Invalid metadata!")
+	}
+
+	stateImpl.bucketTreeDelta = newBucketTreeDelta()
+	index := 0
+	for bucketNum := offset.BucketNum; bucketNum <= offset.BucketNum + offset.Delta - 1; bucketNum++ {
+
+		bk := bucketKey{bucketKeyLite{int(offset.Level), int(bucketNum)},
+			stateImpl.currentConfig}
+		bkNode := stateImpl.bucketTreeDelta.getOrCreateBucketNode(&bk)
+		unmarshaledBucketNode := unmarshalBucketNode(&bk, metadata.BucketNodeHashList[index])
+		bkNode.childrenCryptoHash = unmarshaledBucketNode.childrenCryptoHash
+
+		logger.Infof("Recv metadata: bucketKey[%+v] computeCryptoHash[%x]", bk,
+			bkNode.computeCryptoHash())
+
+		index++
+	}
+
+	return err
 }

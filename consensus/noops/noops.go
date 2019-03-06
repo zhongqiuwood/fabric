@@ -95,46 +95,52 @@ func (i *Noops) RecvMsg(msg *pb.Message, senderHandle *pb.PeerID) error {
 		logger.Debugf("Handling Message of type: %s ", msg.Type)
 	}
 	if msg.Type == pb.Message_CHAIN_TRANSACTION {
-		if err := i.broadcastConsensusMsg(msg); nil != err {
-			return err
+
+		t := &pb.Transaction{}
+		if err := proto.Unmarshal(msg.Payload, t); err != nil {
+			return fmt.Errorf("Error unmarshalling payload of received Message:%s.", msg.Type)
 		}
+		logger.Debugf("Sending to channel tx uuid: %s", t.GetTxid())
+
+		i.channel <- t
 	}
 	if msg.Type == pb.Message_CONSENSUS {
-		tx, err := i.getTxFromMsg(msg)
-		if nil != err {
-			return err
-		}
-		if logger.IsEnabledFor(logging.DEBUG) {
-			logger.Debugf("Sending to channel tx uuid: %s", tx.Txid)
-		}
-		i.channel <- tx
+		logger.Errorf("Omit consensus message: no need")
+		// tx, err := i.getTxFromMsg(msg)
+		// if nil != err {
+		// 	return err
+		// }
+		// if logger.IsEnabledFor(logging.DEBUG) {
+		// 	logger.Debugf("Sending to channel tx uuid: %s", tx.Txid)
+		// }
+		// i.channel <- tx
 	}
 	return nil
 }
 
-func (i *Noops) broadcastConsensusMsg(msg *pb.Message) error {
-	t := &pb.Transaction{}
-	if err := proto.Unmarshal(msg.Payload, t); err != nil {
-		return fmt.Errorf("Error unmarshalling payload of received Message:%s.", msg.Type)
-	}
+// func (i *Noops) broadcastConsensusMsg(msg *pb.Message) error {
+// 	t := &pb.Transaction{}
+// 	if err := proto.Unmarshal(msg.Payload, t); err != nil {
+// 		return fmt.Errorf("Error unmarshalling payload of received Message:%s.", msg.Type)
+// 	}
 
-	// Change the msg type to consensus and broadcast to the network so that
-	// other validators may execute the transaction
-	msg.Type = pb.Message_CONSENSUS
-	if logger.IsEnabledFor(logging.DEBUG) {
-		logger.Debugf("Broadcasting %s", msg.Type)
-	}
-	txs := &pb.TransactionBlock{Transactions: []*pb.Transaction{t}}
-	payload, err := proto.Marshal(txs)
-	if err != nil {
-		return err
-	}
-	msg.Payload = payload
-	if errs := i.stack.Broadcast(msg, pb.PeerEndpoint_VALIDATOR); nil != errs {
-		return fmt.Errorf("Failed to broadcast with errors: %v", errs)
-	}
-	return nil
-}
+// 	// Change the msg type to consensus and broadcast to the network so that
+// 	// other validators may execute the transaction
+// 	msg.Type = pb.Message_CONSENSUS
+// 	if logger.IsEnabledFor(logging.DEBUG) {
+// 		logger.Debugf("Broadcasting %s", msg.Type)
+// 	}
+// 	txs := &pb.TransactionBlock{Transactions: []*pb.Transaction{t}}
+// 	payload, err := proto.Marshal(txs)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	msg.Payload = payload
+// 	if errs := i.stack.Broadcast(msg, pb.PeerEndpoint_VALIDATOR); nil != errs {
+// 		return fmt.Errorf("Failed to broadcast with errors: %v", errs)
+// 	}
+// 	return nil
+// }
 
 func (i *Noops) canProcessBlock(tx *pb.Transaction) bool {
 	// For NOOPS, if we have completed the sync since we last connected,

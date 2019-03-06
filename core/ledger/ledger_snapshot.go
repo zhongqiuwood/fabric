@@ -212,6 +212,7 @@ func (lh *ledgerHistory) Update(blknum uint64) {
 		//can keep this snapshot
 		sec := currentNum / uint64(lh.snapshotInterval)
 		indx := int(sec % uint64(len(lh.sns)))
+		lh.sns[indx].Release()
 		lh.sns[indx] = lh.current
 		ledgerLogger.Debugf("Cache snapshot of %d at %d", lh.currentHeight-1, indx)
 		if lh.beginIntervalNum+uint64(len(lh.sns)) <= sec && lh.currentHeight > 0 {

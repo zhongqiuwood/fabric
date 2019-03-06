@@ -24,6 +24,9 @@ import (
 
 // Chaincode interface must be implemented by all chaincodes. The fabric runs
 // the transactions by calling these functions as specified.
+
+//  -----  YA-fabric: the args in function should be deprecated for they are in byte form
+//  -----  use GetArgs()[1:] instead (the first element is function name)
 type Chaincode interface {
 	// Init is called during Deploy transaction after the container has been
 	// established, allowing the chaincode to initialize its internal data

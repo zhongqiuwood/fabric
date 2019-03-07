@@ -455,7 +455,7 @@ func (stateImpl *StateImpl) applyPartialMetalData(md []byte, offset *pb.BucketTr
 		unmarshaledBucketNode := unmarshalBucketNode(&bk, metadata.BucketNodeHashList[index])
 		bkNode.childrenCryptoHash = unmarshaledBucketNode.childrenCryptoHash
 
-		logger.Infof("Recv metadata: bucketKey[%+v] computeCryptoHash[%x]", bk,
+		logger.Infof("Recv metadata: bucketKey[%+v] cryptoHash[%x]", bk,
 			bkNode.computeCryptoHash())
 
 		index++

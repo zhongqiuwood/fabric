@@ -58,8 +58,7 @@ func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 	sp.current = &protos.BucketTreeOffset{
 		Level:     uint64(syncLevel),
 		BucketNum: 1,
-		Delta:     min(uint64(sp.currentConfig.syncDelta),
-			uint64(sp.currentConfig.getNumBuckets(syncLevel))),
+		Delta:     sp.currentConfig.getDelta(syncLevel),
 	}
 
 	logger.Infof("newSyncProcess: curLevelIndex[%d], syncLevels[%+v]", sp.curLevelIndex, sp.syncLevels)
@@ -104,6 +103,10 @@ func calcSyncLevels(proc *syncProcess) {
 		//sqrtFunc()
 	}
 	proc.curLevelIndex = len(proc.syncLevels) - 1
+
+	//map[0:1 1:2 2:4 3:7 4:13 5:25 6:50 7:100]
+
+	//[7 5 3]
 }
 
 //implement for syncinprogress interface
@@ -153,13 +156,20 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 	if maxNum <= nextNum-1 {
 
 		if proc.curLevelIndex > 0 {
+			lastLevel := proc.current.Level
+
 			proc.curLevelIndex--
 			syncLevel := proc.syncLevels[proc.curLevelIndex]
+
+			currentDelta := int(proc.currentConfig.syncDelta) *
+				pow(proc.currentConfig.getMaxGroupingAtEachLevel(), syncLevel - int(lastLevel))
+
+			logger.Infof(" ------------------compute Next level[%d].  delta<%d>", syncLevel, currentDelta)
 
 			proc.current = &protos.BucketTreeOffset{
 				Level:     uint64(syncLevel),
 				BucketNum: 1,
-				Delta:     min(uint64(proc.currentConfig.syncDelta),
+				Delta:     min(uint64(currentDelta),
 					uint64(proc.currentConfig.getNumBuckets(syncLevel))),
 			}
 
@@ -175,7 +185,7 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 		}
 		return nil
 	}
-	delta := min(uint64(conf.syncDelta), maxNum-nextNum+1)
+	delta := min(uint64(proc.current.Delta), maxNum-nextNum+1)
 
 	proc.current.BucketNum = nextNum
 	proc.current.Delta = delta

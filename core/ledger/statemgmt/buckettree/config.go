@@ -144,6 +144,10 @@ func (config *config) getLowestLevel() int {
 	return config.lowestLevel
 }
 
+func (config *config) getDelta(level int) uint64 {
+	return min(uint64(config.syncDelta), uint64(config.getNumBuckets(level)))
+}
+
 func (config *config) getMaxGroupingAtEachLevel() int {
 	return config.maxGroupingAtEachLevel
 }

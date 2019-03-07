@@ -194,9 +194,9 @@ func (h *Helper) ExecTxs(id interface{}, txs []*pb.Transaction) ([]byte, error) 
 	for i, e := range txerrs {
 		//NOTE- it'll be nice if we can have error values. For now success == 0, error == 1
 		if txerrs[i] != nil {
-			txresults[i] = &pb.TransactionResult{Txid: txs[i].Txid, Error: e.Error(), ErrorCode: 1, ChaincodeEvent: ccevents[i]}
+			txresults[i] = &pb.TransactionResult{Txid: txs[i].Txid, Error: e.Error(), ErrorCode: 1}
 		} else {
-			txresults[i] = &pb.TransactionResult{Txid: txs[i].Txid, ChaincodeEvent: ccevents[i]}
+			txresults[i] = &pb.TransactionResult{Txid: txs[i].Txid, ChaincodeEvents: []*pb.ChaincodeEvent{ccevents[i]}}
 		}
 	}
 	h.curBatchErrs = append(h.curBatchErrs, txresults...) // TODO, remove after issue 579

@@ -155,6 +155,9 @@ message ChaincodeMessage {
     // This event is then stored (currently)
     //with Block.NonHashData.TransactionResult
     ChaincodeEvent chaincodeEvent = 6;
+
+    //Extended chaincodeEvent 
+    repeated ChaincodeEvent chaincodeEvents = 7;
 }
 
 message PutStateInfo {

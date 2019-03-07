@@ -324,23 +324,28 @@ func (ledger *Ledger) CommitTxBatch(id interface{}, transactions []*protos.Trans
 	}()
 
 	ccEvents := []*protos.ChaincodeEvent{}
+	for _, txr := range transactionResults {
 
-	if transactionResults != nil {
-		ccEvents = make([]*protos.ChaincodeEvent, len(transactionResults))
-		for i := 0; i < len(transactionResults); i++ {
-			if transactionResults[i].ChaincodeEvent != nil {
-				ccEvents[i] = transactionResults[i].ChaincodeEvent
-			} else {
-				//We need the index so we can map the chaincode
-				//event to the transaction that generated it.
-				//Hence need an entry for cc event even if one
-				//wasn't generated for the transaction. We cannot
-				//use a nil cc event as protobuf does not like
-				//elements of a repeated array to be nil.
-				//
-				//We should discard empty events without chaincode
-				//ID when sending out events.
-				ccEvents[i] = &protos.ChaincodeEvent{}
+		if txr.ErrorCode != 0 {
+			//build an error event, (chaincodeID is omitted)
+			errEvt := &protos.ChaincodeEvent{
+				EventName: protos.EventName_TxError,
+				TxID:      txr.GetTxid(),
+			}
+			//use the payload to carry both error string and code
+			errEvt.Payload, _ = proto.Marshal(
+				&protos.TransactionResult{
+					Error:     txr.GetError(),
+					ErrorCode: txr.GetErrorCode(),
+				})
+			ccEvents = append(ccEvents, errEvt)
+		} else {
+			//need to filter out the nil/empty event passed in legacy code :(
+			for _, evts := range txr.ChaincodeEvents {
+				if evts.GetChaincodeID() != "" {
+					ccEvents = append(ccEvents, evts)
+				}
+
 			}
 		}
 	}
@@ -878,14 +883,15 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 
 	if trs != nil {
 		for _, tr := range trs {
-			//we store empty chaincode events in the protobuf repeated array to make protobuf happy.
-			//when we replay off a block ignore empty events
 			if tr.ErrorCode != 0 {
 				errcnt++
 				producer.Send(producer.CreateRejectionEvent2(tr.GetTxid(), tr.GetError()))
-			}
-			if tr.ChaincodeEvent != nil && tr.ChaincodeEvent.ChaincodeID != "" {
-				producer.Send(producer.CreateChaincodeEvent(tr.ChaincodeEvent))
+			} else {
+				for _, evt := range tr.ChaincodeEvents {
+					if evt.GetChaincodeID() != "" {
+						producer.Send(producer.CreateChaincodeEvent(evt))
+					}
+				}
 			}
 		}
 	}

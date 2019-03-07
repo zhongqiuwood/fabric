@@ -71,7 +71,8 @@ message TransactionResult {
   bytes result = 2;
   uint32 errorCode = 3;
   string error = 4;
-  ChaincodeEvent chaincodeEvent = 5;
+  //ChaincodeEvent chaincodeEvent = 5;
+  repeated ChaincodeEvent chaincodeEvents = 6;
 }
 
 // Block carries The data that describes a block in the blockchain.

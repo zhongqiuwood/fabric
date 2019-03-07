@@ -53,7 +53,7 @@ var loglevel string
 type ChaincodeStub struct {
 	TxID            string
 	securityContext *pb.ChaincodeSecurityContext
-	chaincodeEvent  *pb.ChaincodeEvent
+	chaincodeEvents []*pb.ChaincodeEvent
 	args            [][]byte
 	handler         *Handler
 }
@@ -847,7 +847,7 @@ func (stub *ChaincodeStub) insertRowInternal(tableName string, row Row, update b
 
 // SetEvent saves the event to be sent when a transaction is made part of a block
 func (stub *ChaincodeStub) SetEvent(name string, payload []byte) error {
-	stub.chaincodeEvent = &pb.ChaincodeEvent{EventName: name, Payload: payload}
+	stub.chaincodeEvents = append(stub.chaincodeEvents, &pb.ChaincodeEvent{EventName: name, Payload: payload})
 	return nil
 }
 

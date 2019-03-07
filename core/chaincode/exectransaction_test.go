@@ -280,7 +280,7 @@ func invoke(ctx context.Context, spec *pb.ChaincodeSpec, typ pb.Transaction_Type
 
 	var retval []byte
 	var execErr error
-	var ccevt *pb.ChaincodeEvent
+	var ccevt []*pb.ChaincodeEvent
 	if typ == pb.Transaction_CHAINCODE_QUERY {
 		retval, ccevt, execErr = Execute(ctx, GetChain(DefaultChain), transaction)
 	} else {
@@ -293,7 +293,11 @@ func invoke(ctx context.Context, spec *pb.ChaincodeSpec, typ pb.Transaction_Type
 		ledger.CommitTxBatch("1", []*pb.Transaction{transaction}, nil, nil)
 	}
 
-	return ccevt, uuid, retval, execErr
+	if len(ccevt) == 0 {
+		return emptyEvent, uuid, retval, execErr
+	} else {
+		return ccevt[0], uuid, retval, execErr
+	}
 }
 
 func closeListenerAndSleep(l net.Listener) {

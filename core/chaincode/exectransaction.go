@@ -30,7 +30,7 @@ import (
 
 type ExecuteResult struct {
 	State  ledger.TxExecStates
-	Events *pb.ChaincodeEvent
+	Events []*pb.ChaincodeEvent
 	Resp   []byte
 }
 
@@ -96,19 +96,26 @@ func Execute2(ctxt context.Context, ledgerObj *ledger.Ledger, chain *ChaincodeSu
 		return nil, fmt.Errorf("Failed to receive a response for (%s)", te.Txid)
 	}
 
-	if resp.ChaincodeEvent != nil {
-		resp.ChaincodeEvent.ChaincodeID = chaincode
-		resp.ChaincodeEvent.TxID = te.Txid
-	}
-
 	if resp.Type == pb.ChaincodeMessage_COMPLETED || resp.Type == pb.ChaincodeMessage_QUERY_COMPLETED {
 		// Success
 		txSuccess = true
+
+		evnts := resp.ChaincodeEvents
+		//respect the legacy code: which will pack at most one event in ChaincodeEvent (not -s!) field
+		if resp.ChaincodeEvent != nil {
+			evnts = append(evnts, resp.ChaincodeEvent)
+		}
+
+		for i, _ := range evnts {
+			evnts[i].ChaincodeID = chaincode
+			evnts[i].TxID = te.Txid
+		}
+
 		//		chaincodeLogger.Debugf("tx %s exec done: %x, %v", shorttxid(t.Txid), resp.Payload, resp.ChaincodeEvent)
-		return &ExecuteResult{outstate, resp.ChaincodeEvent, resp.Payload}, nil
+		return &ExecuteResult{outstate, evnts, resp.Payload}, nil
 	} else if resp.Type == pb.ChaincodeMessage_ERROR || resp.Type == pb.ChaincodeMessage_QUERY_ERROR {
 		// Rollback transaction
-		return &ExecuteResult{outstate, resp.ChaincodeEvent, nil}, fmt.Errorf("Transaction or query returned with failure: %s", string(resp.Payload))
+		return &ExecuteResult{outstate, nil, resp.Payload}, fmt.Errorf("Transaction or query returned with failure: %s", string(resp.Payload))
 	}
 	return nil, fmt.Errorf("receive a response for (%s) but in invalid state(%d)", te.Txid, resp.Type)
 
@@ -117,7 +124,7 @@ func Execute2(ctxt context.Context, ledgerObj *ledger.Ledger, chain *ChaincodeSu
 var legacyHandler = pb.DefaultTxHandler
 
 //Execute - execute transaction or a query
-func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) ([]byte, *pb.ChaincodeEvent, error) {
+func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) ([]byte, []*pb.ChaincodeEvent, error) {
 
 	// get a handle to ledger to mark the begin/finish of a tx
 	ledger, ledgerErr := ledger.GetLedger()
@@ -150,10 +157,14 @@ func Execute(ctxt context.Context, chain *ChaincodeSupport, t *pb.Transaction) (
 	}
 }
 
+var emptyEvent = new(pb.ChaincodeEvent)
+
 //ExecuteTransactions - will execute transactions on the array one by one
 //will return an array of errors one for each transaction. If the execution
 //succeeded, array element will be nil. returns []byte of state hash or
 //error
+//YA-fabric: ExecuteTransactions is badly designed, the events has been truncated to first one
+//and should be deprecated later
 func ExecuteTransactions(ctxt context.Context, cname ChainName, xacts []*pb.Transaction) (succeededTXs []*pb.Transaction, stateHash []byte, ccevents []*pb.ChaincodeEvent, txerrs []error, err error) {
 	var chain = GetChain(cname)
 	if chain == nil {
@@ -163,9 +174,16 @@ func ExecuteTransactions(ctxt context.Context, cname ChainName, xacts []*pb.Tran
 
 	txerrs = make([]error, len(xacts))
 	ccevents = make([]*pb.ChaincodeEvent, len(xacts))
+	var txEvnt []*pb.ChaincodeEvent
 	var succeededTxs = make([]*pb.Transaction, 0)
 	for i, t := range xacts {
-		_, ccevents[i], txerrs[i] = Execute(ctxt, chain, t)
+		_, txEvnt, txerrs[i] = Execute(ctxt, chain, t)
+		if len(txEvnt) > 0 {
+			//truncate the event array into only one ...
+			ccevents[i] = txEvnt[0]
+		} else {
+			ccevents[i] = emptyEvent
+		}
 		if txerrs[i] == nil {
 			succeededTxs = append(succeededTxs, t)
 		}

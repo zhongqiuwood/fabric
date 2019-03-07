@@ -9,6 +9,7 @@ import (
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/events/producer"
 	"github.com/abchain/fabric/node"
+	webapi "github.com/abchain/fabric/node/rest"
 	api "github.com/abchain/fabric/node/service"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/op/go-logging"
@@ -139,8 +140,9 @@ func InitFabricNode() error {
 		evtConf = config.SubViper("peer.validator.events")
 	}
 
+	devOps := api.NewDevopsServer(theNode)
 	pb.RegisterAdminServer(apisrv.Server, api.NewAdminServer())
-	pb.RegisterDevopsServer(apisrv.Server, api.NewDevopsServer(theNode))
+	pb.RegisterDevopsServer(apisrv.Server, devOps)
 	pb.RegisterEventsServer(evtsrv.Server, producer.NewEventsServer(
 		uint(evtConf.GetInt("buffersize")),
 		evtConf.GetInt("timeout")))
@@ -151,12 +153,11 @@ func InitFabricNode() error {
 		return fmt.Errorf("Error creating OpenchainServer: %s", err)
 	} else {
 		pb.RegisterOpenchainServer(apisrv.Server, ocsrv)
+		//finally the rest, may be abandoned later
+		if viper.GetBool("rest.enabled") {
+			go webapi.StartOpenchainRESTServer(ocsrv, devOps)
+		}
 	}
-
-	//finally the rest, may be abandoned later
-	// if viper.GetBool("rest.enabled") {
-	// 	go rest.StartOpenchainRESTServer(serverOpenchain, serverDevops)
-	// }
 
 	return nil
 

@@ -289,6 +289,10 @@ func (ledger *Ledger) GetTXBatchPreviewBlockInfo(id interface{},
 // flag to make legacy code works (i.e. tests)
 var poolTxBeforeCommit = false
 
+func UseLegacyModeOnLedger() {
+	poolTxBeforeCommit = true
+}
+
 // CommitTxBatch - gets invoked when the current transaction-batch needs to be committed
 // This function returns successfully iff the transactions details and state changes (that
 // may have happened during execution of this transaction-batch) have been committed to permanent storage

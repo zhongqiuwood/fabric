@@ -45,6 +45,7 @@ import (
 	"github.com/abchain/fabric/node/service"
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/golang/protobuf/ptypes/wrappers"
 )
 
 var restLogger = logging.MustGetLogger("rest")
@@ -693,7 +694,7 @@ func (s *ServerOpenchainREST) GetTransactionByID(rw web.ResponseWriter, req *web
 	txID := req.PathParams["id"]
 
 	// Retrieve the transaction matching the ID
-	tx, err := s.server.GetTransactionByID(context.Background(), txID)
+	tx, err := s.server.GetTransactionByID(context.Background(), &wrappers.StringValue{Value: txID})
 
 	encoder := json.NewEncoder(rw)
 

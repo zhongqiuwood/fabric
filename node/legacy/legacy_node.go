@@ -3,6 +3,7 @@ package legacynode
 import (
 	"fmt"
 	"github.com/abchain/fabric/consensus/helper"
+	"github.com/abchain/fabric/core/ledger"
 	"github.com/abchain/fabric/core/peer"
 	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/node"
@@ -28,11 +29,13 @@ func (e *LegacyEngineAdapter) Init() error {
 	}
 
 	logger.Info("Init legacy engine in old consensus module")
+	//IMPORTANT: also notify ledger use legacy mode
+	ledger.UseLegacyModeOnLedger()
 	return nil
 }
 
 func (e *LegacyEngineAdapter) Scheme(thenode *node.NodeEngine) {
-	//set node is not pool and topic
+	//set node is not pool and topic, all tx is handled by legacy module
 	for _, pr := range thenode.Peers {
 		pr.TxHandlerOpts.NoPooling = true
 	}

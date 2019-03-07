@@ -20,6 +20,7 @@ package protos;
 
 import "fabric.proto";
 import "google/protobuf/empty.proto";
+import "google/protobuf/wrappers.proto";
 
 // Interface exported by the server.
 service Openchain {
@@ -35,6 +36,9 @@ service Openchain {
     // GetBlockCount returns the current number of blocks in the blockchain data
     // structure.
     rpc GetBlockCount(google.protobuf.Empty) returns (BlockCount) {}
+
+    // returns a transaction by its txid
+    rpc GetTransactionByID(google.protobuf.StringValue) returns (Transaction) {}
 
     // GetPeers returns a list of all peer nodes currently connected to the target
     // peer.

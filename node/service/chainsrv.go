@@ -26,6 +26,7 @@ import (
 	pb "github.com/abchain/fabric/protos"
 	"github.com/golang/protobuf/proto"
 	"github.com/golang/protobuf/ptypes/empty"
+	"github.com/golang/protobuf/ptypes/wrappers"
 	"github.com/spf13/viper"
 )
 
@@ -149,8 +150,8 @@ func (s *ServerOpenchain) GetState(ctx context.Context, chaincodeID, key string)
 }
 
 // GetTransactionByID returns a transaction matching the specified ID
-func (s *ServerOpenchain) GetTransactionByID(ctx context.Context, txID string) (*pb.Transaction, error) {
-	transaction, err := s.ledger.GetTransactionByID(txID)
+func (s *ServerOpenchain) GetTransactionByID(ctx context.Context, txID *wrappers.StringValue) (*pb.Transaction, error) {
+	transaction, err := s.ledger.GetTransactionByID(txID.GetValue())
 	if err != nil {
 		switch err {
 		case ledger.ErrResourceNotFound:

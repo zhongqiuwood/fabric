@@ -82,7 +82,7 @@ func (partialItr *PartialSnapshotIterator) NextBucketNode() bool {
 	partialItr.keyCache = bucketKey.getEncodedBytes()
 	partialItr.valueCache = bucketNode.marshal()
 
-	logger.Infof("Sent metadata: bucketNode: [%+v], computeCryptoHash[%x]",
+	logger.Debugf("Sent metadata: bucketNode: [%+v], computeCryptoHash[%x]",
 		bucketNode.bucketKey,
 		bucketNode.computeCryptoHash())
 
@@ -112,7 +112,7 @@ func (partialItr *PartialSnapshotIterator) Seek(offset *protos.SyncOffset) error
 		endNum = partialItr.getNumBuckets(level)
 	}
 
-	logger.Infof("-----------Required bucketTreeOffset: [%+v] start-end [%d-%d]",
+	logger.Infof("Required bucketTreeOffset: [%+v] start-end [%d-%d]",
 		bucketTreeOffset, startNum, endNum)
 
 	if level == partialItr.getLowestLevel() {
@@ -138,9 +138,7 @@ func (partialItr *PartialSnapshotIterator) GetMetaData() []byte {
 		_, v := partialItr.GetRawKeyValue()
 		md.BucketNodeHashList = append(md.BucketNodeHashList, v)
 	}
-
 	metadata, _ := proto.Marshal(md)
-	//logger.Infof("-----------send metadata [%x]", metadata)
 	return metadata
 }
 

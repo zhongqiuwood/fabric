@@ -14,7 +14,7 @@ type syncProcess struct {
 	current         *protos.BucketTreeOffset
 	syncLevels		[]int
 	curLevelIndex	int
-	tempTreeDelta   *bucketTreeDelta // metadata
+	metadataTreeDelta   *bucketTreeDelta // metadata
 }
 
 
@@ -105,10 +105,6 @@ func calcSyncLevels(proc *syncProcess) {
 		//sqrtFunc()
 	}
 	proc.curLevelIndex = len(proc.syncLevels) - 1
-
-	//map[0:1 1:2 2:4 3:7 4:13 5:25 6:50 7:100]
-
-	//[7 5 3]
 }
 
 //implement for syncinprogress interface
@@ -153,10 +149,10 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 	conf := proc.currentConfig
 
 	err := proc.verifyMetadata()
-
 	if err != nil {
 		return err
 	}
+
 	maxNum := uint64(conf.getNumBuckets(int(proc.current.Level)))
 	nextNum := proc.current.BucketNum + proc.current.Delta
 
@@ -169,9 +165,10 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 			syncLevel := proc.syncLevels[proc.curLevelIndex]
 
 			currentDelta := int(proc.currentConfig.syncDelta) *
-				pow(proc.currentConfig.getMaxGroupingAtEachLevel(), syncLevel - int(lastLevel))
+				pow(proc.currentConfig.getMaxGroupingAtEachLevel(),
+					syncLevel - int(lastLevel))
 
-			logger.Infof(" ------------------compute Next level[%d].  delta<%d>", syncLevel, currentDelta)
+			logger.Infof("Compute Next level[%d], delta<%d>", syncLevel, currentDelta)
 
 			proc.current = &protos.BucketTreeOffset{
 				Level:     uint64(syncLevel),
@@ -204,48 +201,51 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 func (underSync *syncProcess) verifyMetadata() error {
 
 	curLevelIndex := underSync.curLevelIndex
-	underSync.tempTreeDelta = underSync.StateImpl.bucketTreeDelta
+	tempTreeDelta := underSync.StateImpl.bucketTreeDelta
+	if underSync.metadataTreeDelta != nil {
+		tempTreeDelta = underSync.metadataTreeDelta
+	}
+
+	var err error
 	if curLevelIndex < len(underSync.syncLevels) - 1 {
 
-		lastLevel := underSync.syncLevels[curLevelIndex + 1]
-		underSync.StateImpl.processBucketTreeDelta(lastLevel, underSync.tempTreeDelta, nil)
+		lastSyncLevel := underSync.syncLevels[curLevelIndex + 1]
+		bucketNodes := tempTreeDelta.getBucketNodesAt(lastSyncLevel)
 
-		bucketNodes := underSync.tempTreeDelta.getBucketNodesAt(lastLevel)
+		var localBucketNode *bucketNode
+		for _, bkNode := range bucketNodes {
 
-		for _, bucketNode := range bucketNodes {
-
-			localBucketNode, err := fetchBucketNodeFromDB(underSync.StateImpl.OpenchainDB,
-				bucketNode.bucketKey.getBucketKey(underSync.currentConfig))
+			localBucketNode, err = fetchBucketNodeFromDB(underSync.StateImpl.OpenchainDB,
+				bkNode.bucketKey.getBucketKey(underSync.currentConfig))
 
 			if err == nil {
-
-				if bytes.Equal(localBucketNode.computeCryptoHash(), bucketNode.computeCryptoHash()) {
-
+				if bytes.Equal(localBucketNode.computeCryptoHash(), bkNode.computeCryptoHash()) {
 					logger.Infof("Pass: verify metadata: bucketKey[%+v] cryptoHash[%x]",
-						bucketNode.bucketKey,
-						bucketNode.computeCryptoHash())
+						bkNode.bucketKey,
+						bkNode.computeCryptoHash())
 				} else {
-					return fmt.Errorf("Failed to verify metadata: bucketKey[%+v] cryptoHash[%x]",
-						bucketNode.bucketKey,
-						bucketNode.computeCryptoHash())
+					err = fmt.Errorf("Failed to verify metadata: error: mismatch, " +
+						"bucketKey[%+v] cryptoHash[%x] localCryptoHash[%x]",
+						bkNode.bucketKey,
+						bkNode.computeCryptoHash(),
+						localBucketNode.computeCryptoHash())
+					break
 				}
-
 			} else {
-
-				logger.Infof("Not Pass<%s>: verify metadata: bucketKey[%+v] cryptoHash[%x]",
+				err = fmt.Errorf("Failed to verify metadata: error: %s, bucketKey[%+v] cryptoHash[%x]",
 					err,
-					bucketNode.bucketKey,
-					bucketNode.computeCryptoHash())
+					bkNode.bucketKey,
+					bkNode.computeCryptoHash())
+				break
 			}
 
 		}
 	}
 
-	underSync.StateImpl.bucketTreeDelta = underSync.tempTreeDelta
-
-
-	return nil
+	underSync.metadataTreeDelta = nil
+	return err
 }
+
 func sqrt(x float64) float64 {
 	z := 1.0
 

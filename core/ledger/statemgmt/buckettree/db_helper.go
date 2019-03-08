@@ -76,7 +76,7 @@ func fetchDataNodesFromDBFor(odb *db.OpenchainDB, bucketKey *bucketKey) (dataNod
 	defer itr.Close()
 	minimumDataKeyBytes := minimumPossibleDataKeyBytesFor(bucketKey)
 
-	logger.Infof("Fetching from DB data nodes for bucket [%s], minimumDataKeyBytes<%x>",
+	logger.Debugf("Fetching from DB data nodes for bucket [%s], minimumDataKeyBytes<%x>",
 		bucketKey, minimumDataKeyBytes)
 
 	var dataNodes dataNodes

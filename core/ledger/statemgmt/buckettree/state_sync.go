@@ -1,6 +1,7 @@
 package buckettree
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
@@ -13,6 +14,7 @@ type syncProcess struct {
 	current         *protos.BucketTreeOffset
 	syncLevels		[]int
 	curLevelIndex	int
+	tempTreeDelta   *bucketTreeDelta // metadata
 }
 
 
@@ -150,6 +152,11 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 
 	conf := proc.currentConfig
 
+	err := proc.verifyMetadata()
+
+	if err != nil {
+		return err
+	}
 	maxNum := uint64(conf.getNumBuckets(int(proc.current.Level)))
 	nextNum := proc.current.BucketNum + proc.current.Delta
 
@@ -194,6 +201,51 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 	return nil
 }
 
+func (underSync *syncProcess) verifyMetadata() error {
+
+	curLevelIndex := underSync.curLevelIndex
+	underSync.tempTreeDelta = underSync.StateImpl.bucketTreeDelta
+	if curLevelIndex < len(underSync.syncLevels) - 1 {
+
+		lastLevel := underSync.syncLevels[curLevelIndex + 1]
+		underSync.StateImpl.processBucketTreeDelta(lastLevel, underSync.tempTreeDelta, nil)
+
+		bucketNodes := underSync.tempTreeDelta.getBucketNodesAt(lastLevel)
+
+		for _, bucketNode := range bucketNodes {
+
+			localBucketNode, err := fetchBucketNodeFromDB(underSync.StateImpl.OpenchainDB,
+				bucketNode.bucketKey.getBucketKey(underSync.currentConfig))
+
+			if err == nil {
+
+				if bytes.Equal(localBucketNode.computeCryptoHash(), bucketNode.computeCryptoHash()) {
+
+					logger.Infof("Pass: verify metadata: bucketKey[%+v] cryptoHash[%x]",
+						bucketNode.bucketKey,
+						bucketNode.computeCryptoHash())
+				} else {
+					return fmt.Errorf("Failed to verify metadata: bucketKey[%+v] cryptoHash[%x]",
+						bucketNode.bucketKey,
+						bucketNode.computeCryptoHash())
+				}
+
+			} else {
+
+				logger.Infof("Not Pass<%s>: verify metadata: bucketKey[%+v] cryptoHash[%x]",
+					err,
+					bucketNode.bucketKey,
+					bucketNode.computeCryptoHash())
+			}
+
+		}
+	}
+
+	underSync.StateImpl.bucketTreeDelta = underSync.tempTreeDelta
+
+
+	return nil
+}
 func sqrt(x float64) float64 {
 	z := 1.0
 

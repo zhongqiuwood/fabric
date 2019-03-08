@@ -82,7 +82,7 @@ func (partialItr *PartialSnapshotIterator) NextBucketNode() bool {
 	partialItr.keyCache = bucketKey.getEncodedBytes()
 	partialItr.valueCache = bucketNode.marshal()
 
-	logger.Debugf("Sent metadata: bucketNode: [%+v], computeCryptoHash[%x]",
+	logger.Debugf("Produce metadata: bucketNode[%+v], computeCryptoHash[%x]",
 		bucketNode.bucketKey,
 		bucketNode.computeCryptoHash())
 
@@ -138,7 +138,10 @@ func (partialItr *PartialSnapshotIterator) GetMetaData() []byte {
 		_, v := partialItr.GetRawKeyValue()
 		md.BucketNodeHashList = append(md.BucketNodeHashList, v)
 	}
-	metadata, _ := proto.Marshal(md)
+	metadata, err := proto.Marshal(md)
+	if err != nil {
+		return nil
+	}
 	return metadata
 }
 

@@ -908,6 +908,9 @@ type PartialSync struct {
 //overwrite ApplyPartialSync
 func (syncer *PartialSync) ApplyPartialSync(data *protos.SyncStateChunk) error {
 
+	ledgerLogger.Infof("----------------------------ApplyPartialSync begin -------------------------------------")
+	defer ledgerLogger.Infof("---------------------------------ApplyPartialSync end --------------------------------\n\n\n")
+
 	umDelta := statemgmt.NewStateDelta()
 	umDelta.ChaincodeStateDeltas = data.ChaincodeStateDeltas
 

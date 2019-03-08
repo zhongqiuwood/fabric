@@ -94,6 +94,9 @@ func initConfig(configs map[string]interface{}) *config {
 	conf.hashFunc = hashFunction
 	conf.bucketCacheMaxSize = bucketCacheMaxSize
 	logger.Infof("Initializing bucket tree state implemetation with configurations %+v", conf)
+	logger.Infof("bucket tree lowestLevel: %+v", conf.lowestLevel)
+	logger.Infof("bucket tree levelToNumBucketsMap: %+v", conf.levelToNumBucketsMap)
+
 	return conf
 }
 
@@ -141,6 +144,10 @@ func (config *config) getLowestLevel() int {
 	return config.lowestLevel
 }
 
+func (config *config) getDelta(level int) uint64 {
+	return min(uint64(config.syncDelta), uint64(config.getNumBuckets(level)))
+}
+
 func (config *config) getMaxGroupingAtEachLevel() int {
 	return config.maxGroupingAtEachLevel
 }
@@ -148,6 +155,7 @@ func (config *config) getMaxGroupingAtEachLevel() int {
 func (config *config) getNumBucketsAtLowestLevel() int {
 	return config.getNumBuckets(config.getLowestLevel())
 }
+
 
 func (config *config) computeParentBucketNumber(bucketNumber int) int {
 	logger.Debugf("Computing parent bucket number for bucketNumber [%d]", bucketNumber)

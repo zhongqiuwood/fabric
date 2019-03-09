@@ -22,6 +22,7 @@ type stateSyncHandler struct {
 	client       *syncer
 	streamStub   *pb.StreamStub
 	ledger       *ledger.Ledger
+	remotePeerState *pb.SyncStateResp
 }
 
 type ErrHandlerFatal struct {
@@ -38,6 +39,58 @@ func newStateSyncHandler(remoterId *pb.PeerID, l *ledger.Ledger, sstub *pb.Strea
 	}
 	h.fsmHandler = newFsmHandler(h)
 	return h
+}
+
+
+func (syncHandler *stateSyncHandler) handshake() error {
+	return syncHandler.sendLedgerInfo(pb.SyncMsg_SYNC_QUERY_LEDGER)
+}
+
+func (syncHandler *stateSyncHandler) sendLedgerInfo(code pb.SyncMsg_Type) error {
+
+	blockHeight := syncHandler.ledger.GetBlockchainSize()
+
+	localStatehash, err := syncHandler.ledger.GetCurrentStateHash()
+	if err == nil {
+		err = syncHandler.sendSyncMsg(nil, code, &pb.SyncStateResp{
+			Statehash:   localStatehash,
+			BlockHeight: blockHeight,})
+	}
+	return err
+}
+
+func (syncHandler *stateSyncHandler) onRecvLedgerInfo(e *fsm.Event) error {
+
+	syncStateResp := &pb.SyncStateResp{}
+	syncMsg := syncHandler.onRecvSyncMsg(e, syncStateResp)
+
+	var err error
+	if syncMsg == nil {
+		err =fmt.Errorf("unexpected sync message")
+		e.Cancel(err)
+	}
+
+	logger.Infof("Remote peer[%s]: block height<%d>, statehash<%x>. <%s>", syncHandler.remotePeerId,
+		syncStateResp.BlockHeight, syncStateResp.Statehash, err)
+
+	syncHandler.remotePeerState = syncStateResp
+	return err
+}
+
+
+func (syncHandler *stateSyncHandler) beforeQueryLedger(e *fsm.Event) {
+	err := syncHandler.onRecvLedgerInfo(e)
+	if err == nil {
+		err = syncHandler.sendLedgerInfo(pb.SyncMsg_SYNC_QUERY_LEDGER_ACK)
+
+	}
+	if err != nil {
+		e.Cancel(err)
+	}
+}
+
+func (syncHandler *stateSyncHandler) beforeQueryLedgerResponse(e *fsm.Event) {
+	syncHandler.onRecvLedgerInfo(e)
 }
 
 func (syncHandler *stateSyncHandler) runSyncBlock(ctx context.Context, targetState []byte) error {

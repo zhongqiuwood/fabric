@@ -86,6 +86,7 @@ It has these top-level messages:
 	SyncOffset
 	BucketTreeOffset
 	BlockOffset
+	SyncMetadata
 */
 package protos
 

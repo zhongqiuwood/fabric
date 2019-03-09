@@ -37,7 +37,7 @@ function copy_diff_from_disk {
     cp -rf ${BACKUP_TOP}/$1/production* ${DB_TOP}
 }
 
-function sync_from_disk {
+function syncdisk {
 
     export CORE_PEER_SYNCTYPE=$2
     copy_diff_from_disk $1
@@ -88,7 +88,7 @@ function sync_breakpoint_test {
 }
 
 
-function sync_test {
+function sync {
 
     export CORE_PEER_SYNCTYPE=$2
     $1 $1
@@ -109,15 +109,17 @@ function loadenv {
 #    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=5
 #    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_SYNCDELTA=100
 #
-    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=32
-    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=3
+#    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=32
+#    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=3
+#    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_SYNCDELTA=1
+    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_NUMBUCKETS=100
+    export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_MAXGROUPINGATEACHLEVEL=2
     export CORE_LEDGER_STATE_DATASTRUCTURE_CONFIGS_SYNCDELTA=1
 }
 
 loadenv
 #sync_breakpoint_test make_diff
-sync_test make_diff state
 
-#sync_from_disk make_diff state
+sync$1 make_diff state
 
 

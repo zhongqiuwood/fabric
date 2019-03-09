@@ -949,3 +949,16 @@ func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
 	partialInf.InitPartialSync(stateHash)
 	return &PartialSync{partialInf, ledger.state}, nil
 }
+
+func (ledger *Ledger) FinishPartialSync() {
+	//sanity check
+	partialInf := ledger.state.GetDividableState()
+	if partialInf == nil {
+		panic("You do sync process on a state impl which is not support partial syncing?")
+	} else if partialInf.IsCompleted() {
+		panic("sync is not complete yet!")
+	}
+
+	//something should be done after syncing
+	ledger.snapshots.ForceUpdate()
+}

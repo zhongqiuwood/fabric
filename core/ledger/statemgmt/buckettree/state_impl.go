@@ -18,6 +18,7 @@ package buckettree
 
 import (
 	"bytes"
+	"github.com/golang/protobuf/proto"
 
 	"fmt"
 	"github.com/abchain/fabric/core/db"
@@ -131,7 +132,7 @@ func (stateImpl *StateImpl) ComputeCryptoHash() ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		err = stateImpl.processBucketTreeDelta(0) // feed all other nodes(level n-2 to level 0)
+		err = stateImpl.processBucketTreeDelta(0, stateImpl.bucketTreeDelta, stateImpl.bucketCache, "ComputeCryptoHash") // feed all other nodes(level n-2 to level 0)
 		if err != nil {
 			return nil, err
 		}
@@ -162,24 +163,33 @@ func (stateImpl *StateImpl) processDataNodeDelta() error {
 	return nil
 }
 
-func (stateImpl *StateImpl) processBucketTreeDelta(tillLevel int) error {
+func (stateImpl *StateImpl) processBucketTreeDelta(tillLevel int,
+	treeDelta *bucketTreeDelta,
+	cache *bucketCache,
+	context string) error {
+
+	logger.Infof("Caller [%s]: tillLevel [%d]", context, tillLevel)
+
 	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
 	for level := secondLastLevel; level >= tillLevel; level-- {
-		bucketNodes := stateImpl.bucketTreeDelta.getBucketNodesAt(level)
+		bucketNodes := treeDelta.getBucketNodesAt(level)
 		logger.Debugf("Bucket tree delta. Number of buckets at level [%d] are [%d]", level, len(bucketNodes))
 		for _, bucketNode := range bucketNodes {
 			logger.Debugf("bucketNode in tree-delta [%s]", bucketNode)
 			// get middle node from db
-			dbBucketNode, err := stateImpl.bucketCache.get(stateImpl.currentConfig, bucketNode.bucketKey)
-			logger.Debugf("bucket node from db [%s]", dbBucketNode)
-			if err != nil {
-				return err
-			}
 
-			// merge updated child hash into middle node by index
-			if dbBucketNode != nil {
-				bucketNode.mergeBucketNode(dbBucketNode)
-				logger.Debugf("After merge... bucketNode in tree-delta [%s]", bucketNode)
+			if cache != nil {
+				dbBucketNode, err := cache.get(stateImpl.currentConfig, bucketNode.bucketKey)
+				logger.Debugf("bucket node from db [%s]", dbBucketNode)
+				if err != nil {
+					return err
+				}
+
+				// merge updated child hash into middle node by index
+				if dbBucketNode != nil {
+					bucketNode.mergeBucketNode(dbBucketNode)
+					logger.Debugf("After merge... bucketNode in tree-delta [%s]", bucketNode)
+				}
 			}
 			if level == 0 {
 				return nil
@@ -188,7 +198,7 @@ func (stateImpl *StateImpl) processBucketTreeDelta(tillLevel int) error {
 			cryptoHash := bucketNode.computeCryptoHash()
 			bucketKey := bucketNode.bucketKey.getBucketKey(stateImpl.currentConfig)
 			logger.Debugf("cryptoHash for bucket [%s] is [%x]", bucketKey, cryptoHash)
-			parentBucket := stateImpl.bucketTreeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
+			parentBucket := treeDelta.getOrCreateBucketNode(bucketKey.getParentKey())
 
 			logger.Debugf("Feed bucketNode <%s> to parentBucket [%+v]", &bucketNode.bucketKey, parentBucket.bucketKey)
 			parentBucket.setChildCryptoHash(bucketKey, cryptoHash)
@@ -249,17 +259,21 @@ func computeDataNodesCryptoHash(bucketKey *bucketKey, updatedNodes dataNodes, ex
 // AddChangesForPersistence - method implementation for interface 'statemgmt.HashableState'
 func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *db.DBWriteBatch) error {
 
-	if stateImpl.dataNodesDelta == nil {
+	if stateImpl.dataNodesDelta == nil && stateImpl.underSync == nil{
 		return nil
 	}
 
-	if stateImpl.recomputeCryptoHash {
-		_, err := stateImpl.ComputeCryptoHash()
-		if err != nil {
-			return err
+	if stateImpl.dataNodesDelta != nil {
+
+		if stateImpl.recomputeCryptoHash {
+			_, err := stateImpl.ComputeCryptoHash()
+			if err != nil {
+				return err
+			}
 		}
+		stateImpl.addDataNodeChangesForPersistence(writeBatch)
 	}
-	stateImpl.addDataNodeChangesForPersistence(writeBatch)
+
 	stateImpl.addBucketNodeChangesForPersistence(writeBatch)
 	if stateImpl.underSync != nil {
 		err := stateImpl.underSync.PersistProgress(writeBatch)
@@ -298,8 +312,10 @@ func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *db.DB
 				writeBatch.DeleteCF(openchainDB.StateCF, bucketNode.bucketKey.getEncodedBytes())
 			} else {
 
-				// logger.Debugf("Adding data node<%s> with dataKey<%x>, value <%x>", bucketNode.bucketKey,
-				// 	bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
+				logger.Debugf("Persist bucketNode<%+v>, dataKey<%x>, value <%x>",
+					bucketNode.bucketKey,
+					bucketNode.bucketKey.getEncodedBytes(),
+					bucketNode.marshal())
 
 				writeBatch.PutCF(openchainDB.StateCF,
 					bucketNode.bucketKey.getEncodedBytes(), bucketNode.marshal())
@@ -388,23 +404,26 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	}
 
 	offset, err := syncData.GetOffset().Unmarshal2BucketTree()
+
+	logger.Infof("---- ApplyPartialSync offset [%v]  -----", offset)
+
 	if err != nil {
 		return err
 	}
 
 	if md := syncData.GetMetaData(); len(md) > 0 {
-		if err := stateImpl.applyPartialMetalData(md); err != nil {
+		if err := stateImpl.applyPartialMetalData(md, offset); err != nil {
 			return err
 		}
-	}
-
-	logger.Debug("Start computing partial crypto-hash...")
-	if err := stateImpl.processDataNodeDelta(); err != nil {
-		return err
-	}
-	//TODO: we only need calc. until the level which has the root of partial data buckets
-	if err := stateImpl.processBucketTreeDelta(0); err != nil {
-		return err
+	} else {
+		logger.Infof("No MetaData, Start computing partial crypto-hash...")
+		if err := stateImpl.processDataNodeDelta(); err != nil {
+			return err
+		}
+		//TODO: we only need calc. until the level which has the root of partial data buckets
+		if err := stateImpl.processBucketTreeDelta(0, stateImpl.bucketTreeDelta, stateImpl.bucketCache, "ApplyPartialSync"); err != nil {
+			return err
+		}
 	}
 
 	//TODO: verify the hash we calculated with which it obatined
@@ -420,6 +439,58 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	return nil
 }
 
-func (stateImpl *StateImpl) applyPartialMetalData(md []byte) error {
-	return nil
+func (stateImpl *StateImpl) metalData2BucketTreeDelta(offset *pb.BucketTreeOffset,
+	metadata *pb.SyncMetadata) *bucketTreeDelta {
+
+	treeDelta := newBucketTreeDelta()
+	index := 0
+	for bucketNum := offset.BucketNum; bucketNum <= offset.BucketNum + offset.Delta - 1; bucketNum++ {
+
+		bk := bucketKey{bucketKeyLite{int(offset.Level), int(bucketNum)},
+			stateImpl.currentConfig}
+		bkNode := treeDelta.getOrCreateBucketNode(&bk)
+		unmarshaledBucketNode := unmarshalBucketNode(&bk, metadata.BucketNodeHashList[index])
+		bkNode.childrenCryptoHash = unmarshaledBucketNode.childrenCryptoHash
+
+		logger.Debugf("Recv metadata: bucketKey[%+v] cryptoHash[%x]", bk,
+			bkNode.computeCryptoHash())
+
+		index++
+	}
+
+	return treeDelta
+}
+
+func (stateImpl *StateImpl) applyPartialMetalData(md []byte, offset *pb.BucketTreeOffset) error {
+
+	logger.Infof("Start: applyPartialMetalData: offset[%+v]", offset)
+	defer logger.Infof("Fnished: applyPartialMetalData: offset[%+v]", offset)
+
+	metadata := &pb.SyncMetadata{}
+	err := proto.Unmarshal(md, metadata)
+
+	if err != nil {
+		return err
+	}
+
+	if int(offset.Delta) != len(metadata.BucketNodeHashList) {
+		err = fmt.Errorf("Invalid metadata: offset[%+v] metadata.BucketNodeHashList.len[%d]", offset,
+			len(metadata.BucketNodeHashList))
+		panic(err)
+	}
+	underSync := stateImpl.underSync
+
+	underSync.metadataTreeDelta = stateImpl.metalData2BucketTreeDelta(offset, metadata)
+	stateImpl.bucketTreeDelta = stateImpl.metalData2BucketTreeDelta(offset, metadata)
+
+	curLevelIndex := underSync.curLevelIndex
+
+	if curLevelIndex < len(underSync.syncLevels) - 1 {
+		lastLevel := underSync.syncLevels[curLevelIndex+1]
+
+		// compute metadata at this level to see if they match the metadata of last sync level
+		underSync.StateImpl.processBucketTreeDelta(lastLevel, underSync.metadataTreeDelta,
+			nil, "applyPartialMetalData")
+	}
+	return err
 }

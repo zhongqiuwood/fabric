@@ -106,6 +106,9 @@ message SyncMsg {
 
         SYNC_SESSION_SYNC_MESSAGE  = 18;
         SYNC_SESSION_SYNC_MESSAGE_ACK  = 19;
+
+        SYNC_QUERY_LEDGER      = 20;
+        SYNC_QUERY_LEDGER_ACK  = 21;
     }
     Type type = 1;
     uint64 correlationId = 2;

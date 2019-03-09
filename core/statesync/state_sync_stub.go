@@ -67,11 +67,24 @@ func (s *StateSyncStub) Configure(vp *viper.Viper) error {
 }
 
 func (s *StateSyncStub) Start() {
-
 }
 
 func (s *StateSyncStub) Stop() {
+}
 
+func (s *StateSyncStub) NotifyNewPeer(peer *pb.PeerID) {
+
+	handler := s.StreamStub.PickHandler(peer)
+	if handler != nil {
+		peerSyncHandler, ok := handler.StreamHandlerImpl.(*stateSyncHandler)
+		if ok && peerSyncHandler != nil {
+			err := peerSyncHandler.handshake()
+			if err != nil {
+				logger.Errorf("[%s]: Failed to handshake with peer <%+v>. Error: %s", flogging.GoRDef, peer, err)
+
+			}
+		}
+	}
 }
 
 func (s *StateSyncStub) CreateSyncHandler(id *pb.PeerID, sstub *pb.StreamStub) pb.StreamHandlerImpl {
@@ -90,7 +103,7 @@ func (s *StateSyncStub) SyncToStateByPeer(targetState []byte, opt *syncOpt,	peer
 	// down cast stream handler to stateSyncHandler
 	// call stateSyncHandler run
 
-	logger.Debugf("[%s]: StreamStub<%+v>, <%+v>", 	flogging.GoRDef, s.StreamStub, s)
+	logger.Debugf("[%s]: StreamStub<%+v>, <%+v>", flogging.GoRDef, s.StreamStub, s)
 
 	handler := s.StreamStub.PickHandler(peer)
 

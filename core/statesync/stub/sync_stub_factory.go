@@ -26,7 +26,7 @@ func InitStateSyncStub(bindPeer peer.Peer, l *ledger.Ledger, srv *grpc.Server) *
 		return nil
 	}
 
-	err := bindPeer.AddStreamStub("sync", SyncFactory{sstub})
+	err := bindPeer.AddStreamStub("sync", SyncFactory{sstub}, sstub)
 	if err != nil {
 		logger.Errorf("Failed to AddStreamStub: %s", err)
 		panic("Failed to AddStreamStub")

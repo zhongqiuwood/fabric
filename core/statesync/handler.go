@@ -20,7 +20,9 @@ func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 		"idle",
 		fsm.Events{
 			{Name: pb.SyncMsg_SYNC_STATE_NOTIFY.String(), Src: []string{"idle"}, Dst: "idle"},
-			{Name: pb.SyncMsg_SYNC_STATE_OPT.String(),    Src: []string{"idle"}, Dst: "idle"},
+			{Name: pb.SyncMsg_SYNC_STATE_OPT.String(),       Src: []string{"idle"}, Dst: "idle"},
+			{Name: pb.SyncMsg_SYNC_QUERY_LEDGER.String(),  Src: []string{"idle"}, Dst: "idle"},
+			{Name: pb.SyncMsg_SYNC_QUERY_LEDGER_ACK.String(), Src: []string{"idle"}, Dst: "idle"},
 
 			//serving phase
 			{Name: pb.SyncMsg_SYNC_SESSION_START.String(),        Src: []string{"idle"},  Dst: "serve"},
@@ -50,6 +52,9 @@ func newFsmHandler(h *stateSyncHandler) *fsm.FSM {
 			// for both server and client
 			"leave_idle":                                          func(e *fsm.Event) { h.leaveIdle(e) },
 			"enter_idle":                                          func(e *fsm.Event) { h.enterIdle(e) },
+
+			"before_" + pb.SyncMsg_SYNC_QUERY_LEDGER.String():        func(e *fsm.Event) { h.beforeQueryLedger(e) },
+			"before_" + pb.SyncMsg_SYNC_QUERY_LEDGER_ACK.String():    func(e *fsm.Event) { h.beforeQueryLedgerResponse(e) },
 
 			// server
 			"before_" + pb.SyncMsg_SYNC_SESSION_START.String():        func(e *fsm.Event) { h.beforeSyncStart(e) },

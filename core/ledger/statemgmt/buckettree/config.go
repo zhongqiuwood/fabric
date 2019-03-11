@@ -156,7 +156,6 @@ func (config *config) getNumBucketsAtLowestLevel() int {
 	return config.getNumBuckets(config.getLowestLevel())
 }
 
-
 func (config *config) computeParentBucketNumber(bucketNumber int) int {
 	logger.Debugf("Computing parent bucket number for bucketNumber [%d]", bucketNumber)
 	parentBucketNumber := bucketNumber / config.getMaxGroupingAtEachLevel()
@@ -164,6 +163,37 @@ func (config *config) computeParentBucketNumber(bucketNumber int) int {
 		parentBucketNumber++
 	}
 	return parentBucketNumber
+}
+
+//a "represent node" is the lowest sole node which just contain all the child node specified in arguments
+//return nil for there no any represent node can be calculated (for example, a delta larger than max nodes number
+//in that level)
+func (config *config) getRepresentNode(lvl int, blkNumber uint64, delta uint64) *bucketKey {
+
+	if delta == 0 || int(delta) > config.getNumBuckets(lvl) {
+		logger.Errorf("have wrong  arg in get RepresentNode: [%d, %d, %d]", lvl, blkNumber, delta)
+		return nil
+	}
+
+	//sanity check: the blkNumber must not 0
+	if blkNumber == 0 {
+		panic("malform arg of blkNumber")
+	}
+
+	lvlgroup := config.getMaxGroupingAtEachLevel()
+	//obtained the 0-start indexed, closed interval
+	begNum := int(blkNumber) - 1
+	endNum := int(blkNumber+delta) - 1
+
+	for i := lvl; i >= 0; i-- {
+		if endNum == begNum {
+			return newBucketKey(config, i, begNum+1)
+		}
+		begNum = begNum / lvlgroup
+		endNum = endNum / lvlgroup
+	}
+
+	return nil
 }
 
 // func (config *config) GetNumBuckets(level int) int {

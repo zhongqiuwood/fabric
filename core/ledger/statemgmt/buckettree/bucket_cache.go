@@ -113,16 +113,16 @@ func (cache *bucketCache) putWithoutLock(key bucketKeyLite, node *bucketNode) {
 	}
 }
 
-func (cache *bucketCache) get(conf *config, key bucketKeyLite) (*bucketNode, error) {
+func (cache *bucketCache) get(key *bucketKey) (*bucketNode, error) {
 	defer perfstat.UpdateTimeStat("timeSpent", time.Now())
 	if !cache.isEnabled {
-		return fetchBucketNodeFromDB(cache.OpenchainDB, &bucketKey{key, conf})
+		return fetchBucketNodeFromDB(cache.OpenchainDB, key)
 	}
 	cache.lock.RLock()
 	defer cache.lock.RUnlock()
-	bucketNode := cache.c[key]
+	bucketNode := cache.c[key.bucketKeyLite]
 	if bucketNode == nil {
-		return fetchBucketNodeFromDB(cache.OpenchainDB, &bucketKey{key, conf})
+		return fetchBucketNodeFromDB(cache.OpenchainDB, key)
 	}
 	return bucketNode, nil
 }

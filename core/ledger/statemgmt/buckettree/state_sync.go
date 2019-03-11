@@ -29,27 +29,34 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 
 		if err == nil {
 
-			logger.Info("Restore sync task to target [%x]", targetStateHash)
 			sp := &syncProcess{
 				StateImpl:       parent,
 				targetStateHash: targetStateHash,
 			}
 			sp.calcSyncLevels(parent.currentConfig)
 
-			if offset.GetLevel() == parent.currentConfig.getLowestLevel() {
+			if int(offset.GetLevel()) == parent.currentConfig.getLowestLevel() {
 				sp.syncLevels = []int{}
 				sp.current = offset
 			} else {
 				//we check current offset against the calculated sync plan ...
 				for i, lvl := range sp.syncLevels {
-					if lvl == int(offset.Level) {
-						sp.current = offset
-					} else if lvl < int(offset.Level) {
-						logger.Infof("We restored different level (%d, nearest is %d)", offset.Level, lvl)
-						sp.syncLevels = sp.syncLevels[:l]
+					if lvl <= int(offset.Level) {
+						sp.syncLevels = sp.syncLevels[:i+1]
+
+						if lvl == int(offset.Level) {
+							sp.current = offset
+						} else if lvl < int(offset.Level) {
+							logger.Infof("We restored different level (%d, nearest is %d)", offset.Level, lvl)
+							sp.resetCurrentOffset()
+						}
+						break
 					}
 				}
 			}
+
+			logger.Info("Restore sync task to target [%x] at offset %v", targetStateHash, sp.current)
+			return sp
 		}
 
 		logger.Infof("Recorded sync state [%x] is invalid: %s", targetStateHash, err)
@@ -77,14 +84,14 @@ var metaReferenceDelta = 125
 
 func (proc *syncProcess) resetCurrentOffset() {
 	if l := len(proc.syncLevels); l == 0 {
-		sp.current = &protos.BucketTreeOffset{
+		proc.current = &protos.BucketTreeOffset{
 			Level:     uint64(proc.StateImpl.currentConfig.getLowestLevel()),
 			BucketNum: 1,
 			Delta:     uint64(proc.StateImpl.currentConfig.syncDelta),
 		}
 
 	} else {
-		sp.current = &protos.BucketTreeOffset{
+		proc.current = &protos.BucketTreeOffset{
 			Level:     uint64(proc.syncLevels[l-1]),
 			BucketNum: 1,
 			Delta:     uint64(proc.metaDelta),
@@ -125,10 +132,6 @@ func (proc *syncProcess) calcSyncLevels(conf *config) {
 	proc.metaDelta = metaDelta
 	proc.syncLevels = syncLevels
 	logger.Infof("Calculate sync plan as: %v", syncLevels)
-}
-
-func (underSync *syncProcess) currentLevel() int {
-	return underSync.syncLevels[underSync.curLevelIndex]
 }
 
 //implement for syncinprogress interface

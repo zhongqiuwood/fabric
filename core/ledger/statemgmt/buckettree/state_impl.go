@@ -456,28 +456,6 @@ func (stateImpl *StateImpl) ApplyPartialSync(syncData *pb.SyncStateChunk) error 
 	return nil
 }
 
-func (stateImpl *StateImpl) metalData2BucketTreeDelta(offset *pb.BucketTreeOffset,
-	metadata *pb.SyncMetadata) *bucketTreeDelta {
-
-	treeDelta := newBucketTreeDelta()
-	index := 0
-	for bucketNum := offset.BucketNum; bucketNum <= offset.BucketNum+offset.Delta-1; bucketNum++ {
-
-		bk := bucketKey{bucketKeyLite{int(offset.Level), int(bucketNum)},
-			stateImpl.currentConfig}
-		bkNode := treeDelta.getOrCreateBucketNode(&bk)
-		unmarshaledBucketNode := unmarshalBucketNode(&bk, metadata.BucketNodeHashList[index])
-		bkNode.childrenCryptoHash = unmarshaledBucketNode.childrenCryptoHash
-
-		logger.Debugf("Recv metadata: bucketKey[%+v] cryptoHash[%x]", bk,
-			bkNode.computeCryptoHash())
-
-		index++
-	}
-
-	return treeDelta
-}
-
 func (stateImpl *StateImpl) applyPartialMetalData(md []byte, offset *pb.BucketTreeOffset) error {
 
 	logger.Infof("Start: applyPartialMetalData: offset[%+v]", offset)
@@ -490,18 +468,30 @@ func (stateImpl *StateImpl) applyPartialMetalData(md []byte, offset *pb.BucketTr
 		return err
 	}
 
-	if int(offset.Delta) != len(metadata.BucketNodeHashList) {
-		err = fmt.Errorf("Invalid metadata: offset[%+v] metadata.BucketNodeHashList.len[%d]", offset,
-			len(metadata.BucketNodeHashList))
-		panic(err)
+	if stateImpl.bucketTreeDelta == nil {
+		stateImpl.bucketTreeDelta = newBucketTreeDelta()
 	}
-	underSync := stateImpl.underSync
-	stateImpl.bucketTreeDelta = stateImpl.metalData2BucketTreeDelta(offset, metadata)
 
-	curLevelIndex := underSync.curLevelIndex
+	treeDelta := stateImpl.bucketTreeDelta
+	byBucketNumber := make(map[int]*bucketNode)
+	treeDelta.byLevel[int(offset.Level)] = byBucketNumber
 
-	if curLevelIndex < len(underSync.syncLevels)-1 {
-		lastLevel := underSync.syncLevels[curLevelIndex+1]
+	//if list has data more than delta specified, we trunctate it (so save cost)
+	//but we don't care a shorter list than delta for verify process can handle that
+	if len(metadata.BucketNodeHashList) > int(offset.Delta) {
+		metadata.BucketNodeHashList = metadata.BucketNodeHashList[:offset.Delta]
 	}
-	return err
+
+	for i, hashes := range metadata.BucketNodeHashList {
+		bucketNum := int(offset.BucketNum) + i
+		bk := newBucketKey(stateImpl.currentConfig, int(offset.Level), bucketNum)
+		unmarshaledBucketNode := unmarshalBucketNode(bk, hashes)
+		if unmarshaledBucketNode == nil {
+			continue
+		}
+		byBucketNumber[bucketNum] = unmarshaledBucketNode
+		logger.Debugf("Recv metadata: bucketNode[%v]", unmarshaledBucketNode)
+	}
+
+	return nil
 }

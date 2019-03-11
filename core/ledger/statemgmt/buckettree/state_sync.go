@@ -1,7 +1,6 @@
 package buckettree
 
 import (
-	"bytes"
 	"fmt"
 	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
@@ -12,11 +11,9 @@ type syncProcess struct {
 	*StateImpl
 	targetStateHash []byte
 	current         *protos.BucketTreeOffset
-	syncLevels		[]int
-	curLevelIndex	int
-	metadataTreeDelta   *bucketTreeDelta // metadata
+	metaDelta       int
+	syncLevels      []int
 }
-
 
 const partialStatusKeyPrefixByte = byte(16)
 
@@ -32,12 +29,26 @@ func checkSyncProcess(parent *StateImpl) *syncProcess {
 
 		if err == nil {
 
-			//TODO: should verify the partial data ...
 			logger.Info("Restore sync task to target [%x]", targetStateHash)
-			return &syncProcess{
+			sp := &syncProcess{
 				StateImpl:       parent,
 				targetStateHash: targetStateHash,
-				current:         offset,
+			}
+			sp.calcSyncLevels(parent.currentConfig)
+
+			if offset.GetLevel() == parent.currentConfig.getLowestLevel() {
+				sp.syncLevels = []int{}
+				sp.current = offset
+			} else {
+				//we check current offset against the calculated sync plan ...
+				for i, lvl := range sp.syncLevels {
+					if lvl == int(offset.Level) {
+						sp.current = offset
+					} else if lvl < int(offset.Level) {
+						logger.Infof("We restored different level (%d, nearest is %d)", offset.Level, lvl)
+						sp.syncLevels = sp.syncLevels[:l]
+					}
+				}
 			}
 		}
 
@@ -55,56 +66,69 @@ func newSyncProcess(parent *StateImpl, stateHash []byte) *syncProcess {
 		targetStateHash: stateHash,
 	}
 
-	calcSyncLevels(sp)
-	syncLevel := sp.syncLevels[sp.curLevelIndex]
-	sp.current = &protos.BucketTreeOffset{
-		Level:     uint64(syncLevel),
-		BucketNum: 1,
-		Delta:     sp.currentConfig.getDelta(syncLevel),
-	}
+	sp.calcSyncLevels(parent.currentConfig)
+	sp.resetCurrentOffset()
 
-	logger.Infof("newSyncProcess: curLevelIndex[%d], syncLevels[%+v]", sp.curLevelIndex, sp.syncLevels)
+	logger.Infof("newSyncProcess: sync start with offset %v", sp.current)
 	return sp
 }
 
-// compute the levels by which metadata will be sent for sanity check
-func calcSyncLevels(proc *syncProcess) {
+var metaReferenceDelta = 125
 
-	proc.syncLevels = make([]int, 0)
-	lowestLevel := proc.StateImpl.currentConfig.lowestLevel
-
-	proc.syncLevels = append(proc.syncLevels, proc.StateImpl.currentConfig.lowestLevel)
-
-	enableMetadataVerify := true
-	//enableMetadataVerify = false
-
-	if enableMetadataVerify {
-		diff := 2
-
-		sqrtFunc := func() {
-			res := int(sqrt(float64(lowestLevel + 1)))
-			for res >= diff {
-
-				proc.syncLevels = append(proc.syncLevels, res)
-				res = int(sqrt(float64(res)))
-			}
+func (proc *syncProcess) resetCurrentOffset() {
+	if l := len(proc.syncLevels); l == 0 {
+		sp.current = &protos.BucketTreeOffset{
+			Level:     uint64(proc.StateImpl.currentConfig.getLowestLevel()),
+			BucketNum: 1,
+			Delta:     uint64(proc.StateImpl.currentConfig.syncDelta),
 		}
 
-		decreamentFunc := func() {
-			res := lowestLevel - diff
-			for res >= diff {
-				proc.syncLevels = append(proc.syncLevels, res)
-				res -= diff
-			}
+	} else {
+		sp.current = &protos.BucketTreeOffset{
+			Level:     uint64(proc.syncLevels[l-1]),
+			BucketNum: 1,
+			Delta:     uint64(proc.metaDelta),
 		}
-
-		_ = sqrtFunc
-		_ = decreamentFunc
-
-		decreamentFunc()
-		//sqrtFunc()
 	}
-	proc.curLevelIndex = len(proc.syncLevels) - 1
+
+}
+
+// compute the levels by which metadata will be sent for sanity check
+func (proc *syncProcess) calcSyncLevels(conf *config) {
+
+	syncLevels := []int{}
+	//estimate a suitable delta for metadata: one bucketnode is 32-bytes hash
+	//and ~4k bytes in total (i.e.: 125 hashes) is acceptable
+	//(but we must calculate a number which is just an exponent of maxgroup)
+	metaDelta := conf.getMaxGroupingAtEachLevel()
+	lvldistance := 1
+	for ; metaDelta < metaReferenceDelta; metaDelta = metaDelta * conf.getMaxGroupingAtEachLevel() {
+		lvldistance++
+	}
+
+	//the syncdelta may be small and different with metaDelta, so we should test the
+	//suitable level for last meta-syncing ...
+	testSyncDelta := conf.syncDelta
+	curlvl := conf.getLowestLevel()
+	for ; curlvl > 0; curlvl-- {
+		if testSyncDelta >= conf.getMaxGroupingAtEachLevel() {
+			testSyncDelta = testSyncDelta / conf.getMaxGroupingAtEachLevel()
+		} else {
+			break
+		}
+	}
+	for ; curlvl > 0; curlvl = curlvl - lvldistance {
+		//twe shrink the lvls by metaDelta
+		syncLevels = append(syncLevels, curlvl)
+	}
+
+	proc.metaDelta = metaDelta
+	proc.syncLevels = syncLevels
+	logger.Infof("Calculate sync plan as: %v", syncLevels)
+}
+
+func (underSync *syncProcess) currentLevel() int {
+	return underSync.syncLevels[underSync.curLevelIndex]
 }
 
 //implement for syncinprogress interface
@@ -148,103 +172,85 @@ func (proc *syncProcess) CompletePart(part *protos.BucketTreeOffset) error {
 
 	conf := proc.currentConfig
 
-	err := proc.verifyMetadata()
-	if err != nil {
-		return err
-	}
+	// err := proc.verifyMetadata()
+	// if err != nil {
+	// 	return err
+	// }
 
 	maxNum := uint64(conf.getNumBuckets(int(proc.current.Level)))
 	nextNum := proc.current.BucketNum + proc.current.Delta
 
 	if maxNum <= nextNum-1 {
-
-		if proc.curLevelIndex > 0 {
-			lastLevel := proc.current.Level
-
-			proc.curLevelIndex--
-			syncLevel := proc.syncLevels[proc.curLevelIndex]
-
-			currentDelta := int(proc.currentConfig.syncDelta) *
-				pow(proc.currentConfig.getMaxGroupingAtEachLevel(),
-					syncLevel - int(lastLevel))
-
-			logger.Infof("Compute Next level[%d], delta<%d>", syncLevel, currentDelta)
-
-			proc.current = &protos.BucketTreeOffset{
-				Level:     uint64(syncLevel),
-				BucketNum: 1,
-				Delta:     min(uint64(currentDelta),
-					uint64(proc.currentConfig.getNumBuckets(syncLevel))),
-			}
-
-			maxNum = uint64(conf.getNumBuckets(int(proc.current.Level)))
-			nextNum = proc.current.BucketNum + proc.current.Delta
-
-			logger.Infof("Go to Next level. state offset <%+v>", proc.current)
-
+		//current level is done
+		if l := len(proc.syncLevels); l > 0 {
+			proc.syncLevels = proc.syncLevels[:l-1]
 		} else {
-			logger.Infof("Finally hit maxBucketNum<%d>, target Level<%d> BucketNum<%d>",
-				maxNum, proc.current.Level,	nextNum)
+			logger.Infof("Finally hit maxBucketNum<%d> @ target Level<%d>",
+				maxNum, proc.current.Level)
 			proc.current = nil
+			return nil
 		}
-		return nil
+
+		proc.resetCurrentOffset()
+		logger.Infof("Compute Next level[%d], delta<%d>", proc.current.Level, proc.current.Delta)
+	} else {
+		delta := min(uint64(proc.current.Delta), maxNum-nextNum+1)
+
+		proc.current.BucketNum = nextNum
+		proc.current.Delta = delta
+		logger.Infof("Next state offset <%+v>", proc.current)
 	}
-	delta := min(uint64(proc.current.Delta), maxNum-nextNum+1)
 
-	proc.current.BucketNum = nextNum
-	proc.current.Delta = delta
-
-	logger.Infof("Next state offset <%+v>", proc.current)
 	return nil
 }
 
-func (underSync *syncProcess) verifyMetadata() error {
+// func (underSync *syncProcess) verifyMetadata() error {
 
-	curLevelIndex := underSync.curLevelIndex
-	tempTreeDelta := underSync.StateImpl.bucketTreeDelta
-	if underSync.metadataTreeDelta != nil {
-		tempTreeDelta = underSync.metadataTreeDelta
-	}
+// 	curLevelIndex := underSync.curLevelIndex
+// 	tempTreeDelta := underSync.StateImpl.bucketTreeDelta
+// 	if underSync.metadataTreeDelta != nil {
+// 		tempTreeDelta = underSync.metadataTreeDelta
+// 	}
 
-	var err error
-	if curLevelIndex < len(underSync.syncLevels) - 1 {
+// 	var err error
+// 	if curLevelIndex < len(underSync.syncLevels)-1 {
 
-		lastSyncLevel := underSync.syncLevels[curLevelIndex + 1]
-		bucketNodes := tempTreeDelta.getBucketNodesAt(lastSyncLevel)
+// 		lastSyncLevel := underSync.syncLevels[curLevelIndex+1]
+// 		bucketNodes := tempTreeDelta.getBucketNodesAt(lastSyncLevel)
 
-		var localBucketNode *bucketNode
-		for _, bkNode := range bucketNodes {
+// 		var localBucketNode *bucketNode
+// 		for _, bkNode := range bucketNodes {
 
-			localBucketNode, err = fetchBucketNodeFromDB(underSync.StateImpl.OpenchainDB,
-				bkNode.bucketKey.getBucketKey(underSync.currentConfig))
+// 			localBucketNode, err = fetchBucketNodeFromDB(underSync.StateImpl.OpenchainDB,
+// 				bkNode.bucketKey.getBucketKey(underSync.currentConfig))
 
-			if err == nil {
-				if bytes.Equal(localBucketNode.computeCryptoHash(), bkNode.computeCryptoHash()) {
-					logger.Infof("Pass: verify metadata: bucketKey[%+v] cryptoHash[%x]",
-						bkNode.bucketKey,
-						bkNode.computeCryptoHash())
-				} else {
-					err = fmt.Errorf("Failed to verify metadata: error: mismatch, " +
-						"bucketKey[%+v] cryptoHash[%x] localCryptoHash[%x]",
-						bkNode.bucketKey,
-						bkNode.computeCryptoHash(),
-						localBucketNode.computeCryptoHash())
-					break
-				}
-			} else {
-				err = fmt.Errorf("Failed to verify metadata: error: %s, bucketKey[%+v] cryptoHash[%x]",
-					err,
-					bkNode.bucketKey,
-					bkNode.computeCryptoHash())
-				break
-			}
+// 			if err == nil {
+// 				if bytes.Equal(localBucketNode.computeCryptoHash(), bkNode.computeCryptoHash()) {
+// 					logger.Infof("Pass: verify metadata: bucketKey[%+v] cryptoHash[%x]",
+// 						bkNode.bucketKey,
+// 						bkNode.computeCryptoHash())
+// 				} else {
+// 					err = fmt.Errorf("Failed to verify metadata: error: mismatch, "+
+// 						"bucketKey[%+v] cryptoHash[%x] localCryptoHash[%x]",
+// 						bkNode.bucketKey,
+// 						bkNode.computeCryptoHash(),
+// 						localBucketNode.computeCryptoHash())
+// 					break
+// 				}
+// 			} else {
+// 				err = fmt.Errorf("Failed to verify metadata: error: %s, bucketKey[%+v] cryptoHash[%x]",
+// 					err,
+// 					bkNode.bucketKey,
+// 					bkNode.computeCryptoHash())
+// 				break
+// 			}
 
-		}
-	}
+// 		}
+// 	}
 
-	underSync.metadataTreeDelta = nil
-	return err
-}
+// 	underSync.metadataTreeDelta = nil
+// 	return err
+// }
 
 func sqrt(x float64) float64 {
 	z := 1.0

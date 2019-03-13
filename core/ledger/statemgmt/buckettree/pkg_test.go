@@ -99,6 +99,64 @@ func createFreshDBAndInitTestStateImplWithCustomHasher(t testing.TB, numBuckets 
 	return testHasher, stateImplTestWrapper, stateDelta
 }
 
+
+func (testWrapper *stateImplTestWrapper) syncState(statehash []byte) error {
+	stateImpl := testWrapper.stateImpl
+
+	// produce Snapshot
+	it, err := stateImpl.GetPartialRangeIterator(stateImpl.GetSnapshot())
+	if err != nil {
+		return err
+	}
+
+	stateImpl.ClearWorkingSet(false)
+	err = stateImpl.OpenchainDB.DeleteState()
+	if err != nil {
+		return err
+	}
+
+	stateImpl.InitPartialSync(statehash)
+
+	for true {
+
+		offset, err := stateImpl.RequiredParts()
+		if err != nil && err.Error() != "Not under syncing progress" {
+			return err
+		}
+
+		if offset == nil {
+			break
+		}
+
+		stateChunk, err := statemgmt.GetRequiredParts(it, offset[0])
+		if err != nil {
+			return err
+		}
+		stateChunk.Offset = offset[0]
+
+		umDelta := statemgmt.NewStateDelta()
+		umDelta.ChaincodeStateDeltas = stateChunk.ChaincodeStateDeltas
+		stateImpl.PrepareWorkingSet(umDelta)
+
+		if err := stateImpl.ApplyPartialSync(stateChunk); err != nil {
+			return err
+		}
+
+		writeBatch := stateImpl.OpenchainDB.NewWriteBatch()
+		defer writeBatch.Destroy()
+
+		if err := stateImpl.AddChangesForPersistence(writeBatch); err != nil {
+			return err
+		}
+
+		if err := writeBatch.BatchCommit(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (testWrapper *stateImplTestWrapper) constructNewStateImpl() {
 	stateImpl := NewStateImpl(testDBWrapper.GetDB())
 	err := stateImpl.Initialize(testWrapper.configMap)

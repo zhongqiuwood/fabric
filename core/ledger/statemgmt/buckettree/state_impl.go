@@ -145,6 +145,9 @@ func (stateImpl *StateImpl) ComputeCryptoHash() ([]byte, error) {
 }
 
 func (stateImpl *StateImpl) processDataNodeDelta() error {
+	if stateImpl.dataNodesDelta == nil {
+		return nil
+	}
 	afftectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
 	for _, bucketKeyLite := range afftectedBuckets {
 		bucketKey := bucketKeyLite.getBucketKey(stateImpl.currentConfig)
@@ -168,6 +171,9 @@ func (stateImpl *StateImpl) processBucketTreeDelta(tillLevel int,
 	cache *bucketCache,
 	context string) error {
 
+	if treeDelta == nil {
+		return nil
+	}
 	logger.Infof("Caller [%s]: tillLevel [%d]", context, tillLevel)
 
 	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
@@ -286,6 +292,9 @@ func (stateImpl *StateImpl) AddChangesForPersistence(writeBatch *db.DBWriteBatch
 }
 
 func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *db.DBWriteBatch) {
+	if stateImpl.dataNodesDelta == nil {
+		return
+	}
 	openchainDB := writeBatch.GetDBHandle()
 	affectedBuckets := stateImpl.dataNodesDelta.getAffectedBuckets()
 	for _, affectedBucket := range affectedBuckets {
@@ -303,6 +312,9 @@ func (stateImpl *StateImpl) addDataNodeChangesForPersistence(writeBatch *db.DBWr
 }
 
 func (stateImpl *StateImpl) addBucketNodeChangesForPersistence(writeBatch *db.DBWriteBatch) {
+	if stateImpl.bucketTreeDelta == nil {
+		return
+	}
 	openchainDB := writeBatch.GetDBHandle()
 	secondLastLevel := stateImpl.currentConfig.getLowestLevel() - 1
 	for level := secondLastLevel; level >= 0; level-- {
@@ -443,19 +455,21 @@ func (stateImpl *StateImpl) metalData2BucketTreeDelta(offset *pb.BucketTreeOffse
 	metadata *pb.SyncMetadata) *bucketTreeDelta {
 
 	treeDelta := newBucketTreeDelta()
-	index := 0
-	for bucketNum := offset.BucketNum; bucketNum <= offset.BucketNum + offset.Delta - 1; bucketNum++ {
 
-		bk := bucketKey{bucketKeyLite{int(offset.Level), int(bucketNum)},
+	for _, node := range metadata.BucketNodeList {
+
+		if node.BucketNum < offset.BucketNum || node.Level != offset.Level {
+			panic("Invalide bucket number!")
+		}
+		bk := bucketKey{bucketKeyLite{int(offset.Level), int(node.BucketNum)},
 			stateImpl.currentConfig}
 		bkNode := treeDelta.getOrCreateBucketNode(&bk)
-		unmarshaledBucketNode := unmarshalBucketNode(&bk, metadata.BucketNodeHashList[index])
+		unmarshaledBucketNode := unmarshalBucketNode(&bk, node.CryptoHash)
 		bkNode.childrenCryptoHash = unmarshaledBucketNode.childrenCryptoHash
 
 		logger.Debugf("Recv metadata: bucketKey[%+v] cryptoHash[%x]", bk,
 			bkNode.computeCryptoHash())
 
-		index++
 	}
 
 	return treeDelta
@@ -473,9 +487,9 @@ func (stateImpl *StateImpl) applyPartialMetalData(md []byte, offset *pb.BucketTr
 		return err
 	}
 
-	if int(offset.Delta) != len(metadata.BucketNodeHashList) {
+	if int(offset.Delta) < len(metadata.BucketNodeList) {
 		err = fmt.Errorf("Invalid metadata: offset[%+v] metadata.BucketNodeHashList.len[%d]", offset,
-			len(metadata.BucketNodeHashList))
+			len(metadata.BucketNodeList))
 		panic(err)
 	}
 	underSync := stateImpl.underSync

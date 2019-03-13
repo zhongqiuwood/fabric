@@ -19,6 +19,16 @@ import "chaincode.proto";
 import "chaincodeevent.proto";
 import "google/protobuf/timestamp.proto";
 
+// Globalstate defines the global graph of all states 
+message GlobalState{
+    uint64 count = 1;
+    repeated bytes  nextNodeStateHash = 3;
+    repeated bytes  parentNodeStateHash = 4;
+    bytes  lastBranchNodeStateHash = 5;
+    bytes  nextBranchNodeStateHash = 7;
+    uint64 rcount = 8;
+}
+
 
 // Transaction defines a function call to a contract.
 // `args` is an array of type string so that the chaincode writer can choose

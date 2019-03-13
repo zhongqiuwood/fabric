@@ -44,6 +44,7 @@ It has these top-level messages:
 	Rejection
 	Unregister
 	Event
+	GlobalState
 	Transaction
 	TransactionBlock
 	TransactionResult
@@ -64,7 +65,6 @@ It has these top-level messages:
 	Gossip_Tx
 	Gossip_TxState
 	ServerStatus
-	GlobalState
 	BlockState
 	SyncBlockRange
 	SyncBlocks

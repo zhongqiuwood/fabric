@@ -3,17 +3,7 @@ package protos;
 import "fabric.proto";
 
 service Sync {
-    // response for the controlling channel: state searching and info
-    rpc Control(stream SyncMsg) returns (stream SyncMsg) {}
     rpc Data(stream SyncMsg) returns (stream SyncMsg) {}
-}
-
-message GlobalState{
-    uint64 count = 1;
-    repeated bytes  nextNodeStateHash = 3;
-    repeated bytes  parentNodeStateHash = 4;
-    bytes  lastBranchNodeStateHash = 5;
-    bytes  nextBranchNodeStateHash = 7;
 }
 
 // BlockState is the payload of Message.SYNC_BLOCK_ADDED. When a VP
@@ -109,6 +99,12 @@ message SyncMsg {
 
         SYNC_QUERY_LEDGER      = 20;
         SYNC_QUERY_LEDGER_ACK  = 21;
+
+        SYNC_QUERY_BLOCK      = 22;
+        SYNC_DATA_BLOCK  = 23;
+        SYNC_QUERY_TRANSACTIONS      = 24;
+        SYNC_DATA_TRANSACTIONS  = 25;
+
     }
     Type type = 1;
     uint64 correlationId = 2;

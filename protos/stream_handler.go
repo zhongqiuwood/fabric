@@ -57,7 +57,6 @@ type StreamHandlerImpl interface {
 type StreamHandler struct {
 	sync.RWMutex
 	StreamHandlerImpl
-	tag         string
 	name        string
 	enableLoss  bool
 	writeQueue  chan proto.Message
@@ -71,7 +70,6 @@ const (
 func newStreamHandler(impl StreamHandlerImpl) *StreamHandler {
 	return &StreamHandler{
 		StreamHandlerImpl: impl,
-		tag:               impl.Tag(),
 		enableLoss:        impl.EnableLoss(),
 		writeQueue:        make(chan proto.Message, defaultWriteBuffer),
 		writeExited:       make(chan error),
@@ -94,7 +92,7 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 	h.RLock()
 	defer h.RUnlock()
 	if h.writeQueue == nil {
-		return fmt.Errorf("Streamhandler %s has been killed", h.tag)
+		return fmt.Errorf("Streamhandler %s has been killed", h.Tag())
 	}
 
 	select {
@@ -102,7 +100,7 @@ func (h *StreamHandler) SendMessage(m proto.Message) error {
 		return nil
 	default:
 		if !h.enableLoss {
-			return fmt.Errorf("Streamhandler %s's write channel full, rejecting", h.tag)
+			return fmt.Errorf("Streamhandler %s's write channel full, rejecting", h.Tag())
 		}
 	}
 

@@ -902,7 +902,7 @@ func sendChaincodeEvents(trs []*protos.TransactionResult) (errcnt int) {
 //partial related APIs
 type PartialSync struct {
 	statemgmt.DividableSyncState
-	state *state.State
+	ledger *Ledger
 }
 
 //overwrite ApplyPartialSync
@@ -922,14 +922,22 @@ func (syncer *PartialSync) ApplyPartialSync(data *protos.SyncStateChunk) error {
 		return err
 	}
 
-	writeBatch := syncer.state.OpenchainDB.NewWriteBatch()
+	writeBatch := syncer.ledger.state.OpenchainDB.NewWriteBatch()
 	defer writeBatch.Destroy()
 
 	if err := syncer.AddChangesForPersistence(writeBatch); err != nil {
 		return err
 	}
 
-	return writeBatch.BatchCommit()
+	if err := writeBatch.BatchCommit(); err != nil {
+		return err
+	}
+
+	if syncer.IsCompleted() {
+		ledger.snapshots.ForceUpdate()
+	}
+
+	return nil
 }
 
 func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
@@ -947,18 +955,5 @@ func (ledger *Ledger) StartPartialSync(stateHash []byte) (*PartialSync, error) {
 	}
 
 	partialInf.InitPartialSync(stateHash)
-	return &PartialSync{partialInf, ledger.state}, nil
-}
-
-func (ledger *Ledger) FinishPartialSync() {
-	//sanity check
-	partialInf := ledger.state.GetDividableState()
-	if partialInf == nil {
-		panic("You do sync process on a state impl which is not support partial syncing?")
-	} else if partialInf.IsCompleted() {
-		panic("sync is not complete yet!")
-	}
-
-	//something should be done after syncing
-	ledger.snapshots.ForceUpdate()
+	return &PartialSync{partialInf, ledger}, nil
 }

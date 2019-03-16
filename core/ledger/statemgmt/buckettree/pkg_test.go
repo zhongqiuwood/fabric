@@ -75,12 +75,16 @@ func newStateImplTestWrapper(t testing.TB) *stateImplTestWrapper {
 	return &stateImplTestWrapper{configMap, stateImpl, t}
 }
 
-func newStateImplTestWrapperWithCustomConfig(t testing.TB, numBuckets int, maxGroupingAtEachLevel int) *stateImplTestWrapper {
+func newStateImplTestWrapperOnDBWithCustomConfig(t testing.TB, db *db.OpenchainDB, numBuckets int, maxGroupingAtEachLevel int) *stateImplTestWrapper {
 	configMap := map[string]interface{}{ConfigNumBuckets: numBuckets, ConfigMaxGroupingAtEachLevel: maxGroupingAtEachLevel}
-	stateImpl := NewStateImpl(testDBWrapper.GetDB())
+	stateImpl := NewStateImpl(db)
 	err := stateImpl.Initialize(configMap)
 	testutil.AssertNoError(t, err, "Error while constrcuting stateImpl")
 	return &stateImplTestWrapper{configMap, stateImpl, t}
+}
+
+func newStateImplTestWrapperWithCustomConfig(t testing.TB, numBuckets int, maxGroupingAtEachLevel int) *stateImplTestWrapper {
+	return newStateImplTestWrapperOnDBWithCustomConfig(t, testDBWrapper.GetDB(), numBuckets, maxGroupingAtEachLevel)
 }
 
 func createFreshDBAndInitTestStateImplWithCustomHasher(t testing.TB, numBuckets int, maxGroupingAtEachLevel int) (*testHasher, *stateImplTestWrapper, *statemgmt.StateDelta) {

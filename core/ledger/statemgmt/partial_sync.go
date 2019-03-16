@@ -19,7 +19,7 @@ func GetRequiredParts(itr PartialRangeIterator, offset *protos.SyncOffset) (*pro
 		stateDelta.Set(ccdId, key, value, nil)
 	}
 
-	stateChunk := &protos.SyncStateChunk{}
+	stateChunk := &protos.SyncStateChunk{Offset: offset}
 	stateChunk.ChaincodeStateDeltas = stateDelta.ChaincodeStateDeltas
 	stateChunk.MetaData = itr.GetMetaData()
 

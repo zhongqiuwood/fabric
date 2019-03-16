@@ -1,13 +1,24 @@
-
 package buckettree
 
 import (
 	"fmt"
 	"testing"
 
+	"github.com/abchain/fabric/core/db"
 	"github.com/abchain/fabric/core/ledger/statemgmt"
 	"github.com/abchain/fabric/core/ledger/testutil"
 )
+
+func TestBaseSync(t *testing.T) {
+
+	secondaryDB, _ := db.StartDB("secondary", nil)
+	defer db.StopDB(secondaryDB)
+
+	srcImpl := newStateImplTestWrapperWithCustomConfig(t, 100, 2)
+	targetImpl := newStateImplTestWrapperOnDBWithCustomConfig(t, secondaryDB, 100, 2)
+
+	
+}
 
 func TestSync(t *testing.T) {
 	testDBWrapper.CleanDB(t)

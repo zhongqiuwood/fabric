@@ -41,6 +41,10 @@ func NewStateDelta() *StateDelta {
 	return &StateDelta{make(map[string]*pb.ChaincodeStateDelta), false}
 }
 
+func GenUpdateStateDelta(delta map[string]*pb.ChaincodeStateDelta) *StateDelta {
+	return &StateDelta{delta, false}
+}
+
 // Get get the state from delta if exists
 func (stateDelta *StateDelta) Get(chaincodeID string, key string) *pb.UpdatedValue {
 	if stateDelta == nil {

@@ -78,7 +78,7 @@ func (openchainDB *OpenchainDB) cleanDBOptions() {
 func (txdb *GlobalDataDB) buildOpenDBOptions() []*gorocksdb.Options {
 
 	sOpt := txdb.OpenOpt.Options()
-	sOpt.SetMergeOperator(&globalstatusMO{txdb.useCycleGraph})
+	sOpt.SetMergeOperator(&globalstatusMO{})
 	txdb.globalStateOpt = sOpt
 
 	txOpts := make([]*gorocksdb.Options, len(txDbColumnfamilies))

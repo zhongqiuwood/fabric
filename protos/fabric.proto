@@ -26,9 +26,15 @@ message GlobalState{
     repeated bytes  parentNodeStateHash = 4;
     bytes  lastBranchNodeStateHash = 5;
     bytes  nextBranchNodeStateHash = 7;
-    uint64 rcount = 8;
 }
 
+message GlobalStateUpdateTask{
+    bytes target = 1;
+    bytes targetEdgeBeg = 2;
+    bytes targetEdgeEnd = 3;    
+    uint64 targetId = 4;
+    bool isBackward = 6;
+}
 
 // Transaction defines a function call to a contract.
 // `args` is an array of type string so that the chaincode writer can choose

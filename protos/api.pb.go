@@ -45,6 +45,7 @@ It has these top-level messages:
 	Unregister
 	Event
 	GlobalState
+	GlobalStateUpdateTask
 	Transaction
 	TransactionBlock
 	TransactionResult

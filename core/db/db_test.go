@@ -339,6 +339,7 @@ func deleteTestDBPath() {
 }
 
 func setupTestConfig() {
+	config.SetupTestConfig("")
 	tempDir, err := ioutil.TempDir("", "fabric-db-test")
 	if err != nil {
 		panic(err)

@@ -21,6 +21,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/abchain/fabric/core/util"
 	"github.com/abchain/fabric/protos"
 	"github.com/tecbot/gorocksdb"
 	"sync"
@@ -48,28 +49,59 @@ func (c *txCFs) feed(cfmap map[string]*gorocksdb.ColumnFamilyHandle) {
 	c.persistCF = cfmap[PersistCF]
 }
 
+type pathUnderUpdating struct {
+	index         string
+	branchedId    uint64
+	before, after *pathUpdateTask
+
+	activingPath map[*pathUpdateTask]bool
+}
+
+func (ut *pathUnderUpdating) updateGlobalState(gs *protos.GlobalState) (*protos.GlobalState, error) {
+
+	if gs.Count < ut.branchedId {
+		return ut.before.updateState(gs)
+	} else {
+		return ut.after.updateState(gs)
+	}
+}
+
+func newPathUpdating(txdb *GlobalDataDB, ind string) *pathUnderUpdating {
+	ret := &pathUnderUpdating{
+		index:        ind,
+		activingPath: make(map[*pathUpdateTask]bool),
+	}
+	return ret
+}
+
 type GlobalDataDB struct {
 	baseHandler
 	txCFs
 	globalStateLock sync.Mutex
+	updating        map[string]*pathUnderUpdating
+	activing        map[string][]*pathUpdateTask
+
 	//caution: destroy option before cf/db is WRONG but just ok only if it was just "default"
 	//we must keep object alive if we have custom some options (i.e.: merge operators)
 	openDB         sync.Once
 	openError      error
 	globalStateOpt *gorocksdb.Options
-	useCycleGraph  bool
+	//not a good implement but we have to compatible with existed keys, so the "virtual" end
+	//of key has to be set longer then limit
+	globalHashLimit int
 }
 
 const (
-	update_nextnode = iota
-	update_lastbranch
+	update_nextnode   = iota //update node has been depecrated but we keep it for compatible
+	update_lastbranch        //update branch has been abandoned (become non-op)
 	update_nextbranch
 	update_lastnode
+	update_path
+
+	prefix_virtualNode = byte('*')
 )
 
-type globalstatusMO struct {
-	IsCycleGraph bool
-}
+type globalstatusMO struct{}
 
 func decodeMergeValue(b []byte) (uint64, []byte, error) {
 
@@ -81,17 +113,35 @@ func decodeMergeValue(b []byte) (uint64, []byte, error) {
 	return u, b[n:], nil
 }
 
+func decodePathInfo(b []byte) ([]byte, []byte, error) {
+	var pos int
+	if sz := int(b[pos]); sz > len(b) {
+		return nil, nil, fmt.Errorf("Wrong size: %X", b)
+	} else {
+		return b[1:sz], b[sz:], nil
+	}
+}
+
 func encodeMergeValue(op byte, count uint64, hash []byte) []byte {
 
-	buf := make([]byte, 8)
-
+	buf := make([]byte, 12)
 	return bytes.Join([][]byte{[]byte{op}, buf[:binary.PutUvarint(buf, count)], hash}, nil)
 }
 
+func encodePathUpdateInfo(begin, end []byte) []byte {
+	return bytes.Join([][]byte{[]byte{byte(len(begin) + 1)}, begin, end}, nil)
+}
+
+func encodePathUpdate(count uint64, begin, end []byte) []byte {
+	return encodeMergeValue(update_path, count, encodePathUpdateInfo(begin, end))
+}
+
+var detachedIdStart = uint64(1<<63 - 1) //it was the max of int64 so we have space for both side (increase and decrease)
+
 func (mo *globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte) ([]byte, bool) {
-	//to tell the true: we are not DARE TO use dblogger in these subroutines so we may just
+	//we are not DARE TO use dblogger in these subroutines so we may just
 	//keep all the error silent ...
-	//REMEMBER: return false may ruin the whole db so we must try our best to keep the data robust
+	//REMEMBER: return false may ruin the record so we must try our best to keep the data robust
 	var gs *protos.GlobalState
 	var err error
 	if existingValue != nil {
@@ -104,70 +154,37 @@ func (mo *globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte
 		return nil, true
 	}
 
-	//the "last/next branchnode" mush be updated when we have walked through the operands
-	lbtarget := gs.LastBranchNodeStateHash
-	nxtarget := gs.NextBranchNodeStateHash
-	var nxtargetN, lbtargetN uint64
-
-	//this work for both cyclic/acyclic case, because
-	//in acyclic case, the count is just distance from root node
-	//instead of the nearest node
-	lbtargetN = gs.Count
-	nxtargetN = 1<<64 - 1 //just uint64 max
-
 	for _, op := range operands {
 
 		if len(op) < 2 {
-			continue //wrong op and omit it
+			continue //non-op and omit it
 		}
 
 		opcode := int(op[0])
 		n, h, e := decodeMergeValue(op[1:])
-		if e != nil {
-			continue //skip this op
+		if e != nil || (n != 0 && n < gs.Count) {
+			continue //skip this op, except 0, which is left for update_node
 		}
 
 		switch opcode {
 		case update_nextnode:
 			gs.NextNodeStateHash = append(gs.NextNodeStateHash, h)
-		case update_lastbranch:
-			if n < lbtargetN { //smaller counts
-				lbtargetN = n
-				lbtarget = h
-			} else if n == lbtargetN && lbtarget == nil {
-				//this is a special case when gensis state become a node
-				//else n == lbtargetN should indicate no change to lastbranch
-				lbtarget = h
-			}
-		case update_nextbranch:
-			if n < gs.Count {
-				//equal is OK, means we just set node itself as nextbranch node
-				continue //maybe something wrong, skip this op
-			}
-			if n < nxtargetN {
-				nxtargetN = n
-				nxtarget = h
-			}
 		case update_lastnode:
-			//should only apply in cycle-graph case
-			if mo.IsCycleGraph {
-				gs.ParentNodeStateHash = append(gs.ParentNodeStateHash, h)
-			}
-
+			gs.ParentNodeStateHash = append(gs.ParentNodeStateHash, h)
+		case update_lastbranch, update_nextbranch:
+			//simply non-op
+		case update_path:
+			gs.Count = n
+			gs.LastBranchNodeStateHash, gs.NextBranchNodeStateHash, _ = decodePathInfo(h)
 		}
+
 	}
 
-	//finally we update the branch node hashs
-	gs.LastBranchNodeStateHash = lbtarget
-	gs.NextBranchNodeStateHash = nxtarget
-
-	//for cycle graph, we update count
-	if mo.IsCycleGraph {
-		if gs.Branched() {
-			gs.Count = 0
-		} else {
-			gs.Count = lbtargetN
-		}
+	if len(gs.NextNodeStateHash) > 1 {
+		gs.NextBranchNodeStateHash = key
+	}
+	if len(gs.ParentNodeStateHash) > 1 {
+		gs.LastBranchNodeStateHash = key
 	}
 
 	ret, err := gs.Bytes()
@@ -177,6 +194,7 @@ func (mo *globalstatusMO) FullMerge(key, existingValue []byte, operands [][]byte
 
 	return ret, true
 }
+
 func (mo globalstatusMO) PartialMerge(key, leftOperand, rightOperand []byte) ([]byte, bool) {
 
 	//clear the mal-formed operand ...
@@ -186,39 +204,30 @@ func (mo globalstatusMO) PartialMerge(key, leftOperand, rightOperand []byte) ([]
 		return leftOperand, true
 	}
 
-	opcodeL := int(leftOperand[0])
-	opcodeR := int(rightOperand[0])
-
-	if opcodeL != opcodeR {
-		return nil, false
-	}
-
-	switch opcodeL {
-	case update_lastbranch:
-
-	case update_nextbranch:
-
-	default:
-		return nil, false
-	}
-
-	//only operand with same op code can be merged
-	nL, _, e := decodeMergeValue(leftOperand[1:])
-	if e != nil {
+	//omit all abondanded updatebranch op
+	switch int(leftOperand[0]) {
+	case update_lastbranch, update_nextbranch:
 		return rightOperand, true
 	}
-
-	nR, _, e := decodeMergeValue(rightOperand[1:])
-
-	if e != nil {
+	switch int(rightOperand[0]) {
+	case update_lastbranch, update_nextbranch:
 		return leftOperand, true
 	}
 
-	//smaller n counts
-	if nL < nR {
+	if rightOperand[0] != update_path || leftOperand[0] != update_path {
+		return nil, false
+	}
+
+	nL, _, _ := decodeMergeValue(leftOperand[1:])
+	nR, _, _ := decodeMergeValue(rightOperand[1:])
+
+	//merge updatepath, larger n counts
+	if nL > nR {
 		return leftOperand, true
+	} else if nL < nR {
+		return rightOperand, true
 	} else {
-		return rightOperand, true
+		return nil, false
 	}
 }
 func (mo *globalstatusMO) Name() string {
@@ -228,6 +237,7 @@ func (mo *globalstatusMO) Name() string {
 
 var globalDataDB = new(GlobalDataDB)
 var openglobalDBLock sync.Mutex
+var stateHashLimit = 32
 
 func (txdb *GlobalDataDB) open(dbpath string) error {
 
@@ -244,14 +254,17 @@ func (txdb *GlobalDataDB) open(dbpath string) error {
 	}
 
 	txdb.feed(txdb.cfMap)
+	txdb.globalHashLimit = stateHashLimit
+	txdb.updating = make(map[string]*pathUnderUpdating)
+	txdb.activing = make(map[string][]*pathUpdateTask)
+	//txdb.pathUpdate = make(map[uint64]*sync.Cond)
 
 	return nil
 }
 
-func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
+func (txdb *GlobalDataDB) getGlobalStateRaw(statehash []byte) *protos.GlobalState {
 
-	//notice: rocksdb can even accept nil as kil
-
+	//notice: rocksdb can even accept nil as key
 	data, _ := txdb.get(txdb.globalCF, statehash)
 	if data != nil {
 		gs, err := protos.UnmarshallGS(data)
@@ -259,190 +272,352 @@ func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 			dbLogger.Errorf("Decode global state of [%x] fail: %s", statehash, err)
 			return nil
 		}
-
 		return gs
 	}
 
 	return nil
 }
 
-type gscommiter struct {
-	*gorocksdb.WriteBatch
-	refGS *protos.GlobalState
-	//the gs to be updated use its target hash, only in cycle-graph
-	tailCase bool
-	//"backward gs" used for update, only work in cycle-graph
-	refGSAdded *protos.GlobalState
-}
+func (txdb *GlobalDataDB) GetGlobalState(statehash []byte) *protos.GlobalState {
 
-func (c *gscommiter) clear() {
-	if c != nil && c.WriteBatch != nil {
-		c.WriteBatch.Destroy()
+	gs := txdb.getGlobalStateRaw(statehash)
+	if gs != nil {
+		//cleanup the virtual state
+		if txdb.isVirtualState(gs.LastBranchNodeStateHash) {
+			gs.LastBranchNodeStateHash = nil
+		}
+
+		if txdb.isVirtualState(gs.NextBranchNodeStateHash) {
+			gs.NextBranchNodeStateHash = nil
+		}
 	}
+
+	return gs
 }
 
 type StateDuplicatedError struct {
 	error
 }
 
-func (txdb *GlobalDataDB) addGSCritical(parentStateHash []byte,
-	statehash []byte) (*gscommiter, error) {
-
-	//this read and write is critical and must be serialized
-	txdb.globalStateLock.Lock()
-	defer txdb.globalStateLock.Unlock()
-
-	data, _ := txdb.get(txdb.globalCF, parentStateHash)
-	if data == nil {
-		return nil, fmt.Errorf("No corresponding parent [%x]", parentStateHash)
+func (txdb *GlobalDataDB) isVirtualState(k []byte) bool {
+	if len(k) <= txdb.globalHashLimit {
+		return false
 	}
 
-	parentgs, err := protos.UnmarshallGS(data)
-	if err != nil {
-		return nil, fmt.Errorf("state of parent [%x] was ruined: %s", parentStateHash, err)
-	}
+	return k[0] == prefix_virtualNode
+}
 
-	wb := gorocksdb.NewWriteBatch()
-	cmt := &gscommiter{WriteBatch: wb}
-	defer cmt.clear()
+//read state from snapshot, then update it from updating map
+//CAUTION: must be executed under the protection of globalStateLock
+func (txdb *GlobalDataDB) readState(sn *gorocksdb.Snapshot, key []byte) (*protos.GlobalState, error) {
 
-	// the "critical point": that is, node turn into a branch point and its parents and childs
-	// have to be updated, we exit here so multiple updating may happen concurrently, but
-	// this is safe
-	if len(parentgs.NextNodeStateHash) == 1 {
-		cmt.refGS = parentgs
-	}
+	if data, err := txdb.getFromSnapshot(sn, txdb.globalCF, key); err != nil {
+		return nil, err
+	} else if data == nil {
+		return nil, nil
+	} else {
+		if gs, err := protos.UnmarshallGS(data); err != nil {
+			return nil, fmt.Errorf("state was ruined (could not decode: %s)", err)
+		} else {
 
-	data, _ = txdb.get(txdb.globalCF, statehash)
+			for ud, ok := txdb.updating[stateToEdge(gs).String()]; ok; ud, ok = txdb.updating[stateToEdge(gs).String()] {
+				gs, err = ud.updateGlobalState(gs)
+				if err != nil {
+					return nil, fmt.Errorf("state was ruined (has no valid update: %s)", err)
+				}
+			}
 
-	if data != nil {
-
-		gs, err := protos.UnmarshallGS(data)
-		if err != nil {
-			return nil, fmt.Errorf("state of [%x] was ruined: %s", statehash, err)
+			return gs, nil
 		}
 
-		for _, parentHash := range gs.ParentNodeStateHash {
-			if bytes.Compare(parentHash, parentStateHash) == 0 {
+	}
+}
+
+func (txdb *GlobalDataDB) mustReadState(sn *gorocksdb.Snapshot, key []byte) (gs *protos.GlobalState) {
+	var err error
+	gs, err = txdb.readState(sn, key)
+	if err != nil {
+		dbLogger.Errorf("state [%x] not available: %s", key, err)
+	}
+	return
+}
+
+func (txdb *GlobalDataDB) registryTasks(tsk *pathUnderUpdating) error {
+
+	if tsk == nil {
+		return fmt.Errorf("empty task")
+	}
+
+	//notice: onPath CANNOT be one entry of updating map for we can not obtain reference
+	//state within the path of that (it will be updated to one of the paths in that entry)
+	if _, ok := txdb.updating[tsk.index]; ok {
+		return fmt.Errorf("Duplicated updatine path <%s> ", tsk.index)
+	}
+
+	//clean current activing the task affect ...
+	if tactivings, ok := txdb.activing[tsk.index]; ok {
+		for _, activingTask := range tactivings {
+			dbLogger.Debugf("replace existed active pathupdae task [%s]", tsk.index)
+			if activingTask.cancel != nil {
+				activingTask.cancel()
+			}
+			delete(txdb.activing, tsk.index)
+			//remove it from all updating path
+			for _, udpath := range activingTask.updatingPath {
+				delete(udpath.activingPath, activingTask)
+			}
+
+			//inherit the affected task's updating path
+			for _, newtsk := range []*pathUpdateTask{tsk.before, tsk.after} {
+				if newtsk == nil {
+					continue
+				}
+				newtsk.updatingPath = append(newtsk.updatingPath, activingTask.updatingPath...)
+				//add newtsk into activing path
+				for _, udpath := range newtsk.updatingPath {
+					udpath.activingPath[newtsk] = true
+				}
+			}
+			activingTask.updatingPath = nil
+		}
+	}
+
+	txdb.updating[tsk.index] = tsk
+	//finally we add current tasks into activing map
+	for _, newtsk := range []*pathUpdateTask{tsk.before, tsk.after} {
+		if newtsk == nil {
+			continue
+		}
+		ind := newtsk.index()
+		txdb.activing[ind] = append(txdb.activing[ind], newtsk)
+	}
+
+	return nil
+}
+
+var terminalKeyGen = util.GenerateBytesUUID
+
+func (txdb *GlobalDataDB) genTerminalStateKey() []byte {
+	key := terminalKeyGen()
+	var padding []byte
+	if len(key)+1 <= txdb.globalHashLimit {
+		padding = make([]byte, txdb.globalHashLimit-len(key))
+	}
+	return bytes.Join([][]byte{[]byte{prefix_virtualNode}, key, padding}, nil)
+}
+
+func max(a uint64, b uint64) uint64 {
+	if a > b {
+		return a
+	} else {
+		return b
+	}
+}
+
+func (txdb *GlobalDataDB) newPathUpdatedByBranchNode(key []byte, refGS *protos.GlobalState) *pathUnderUpdating {
+	path := newPathUpdating(txdb, stateToEdge(refGS).String())
+	path.branchedId = refGS.Count
+
+	afterTsk, beforeTsk := &protos.GlobalStateUpdateTask{
+		Target:        refGS.NextNode(),
+		TargetEdgeBeg: key,
+		TargetEdgeEnd: refGS.NextBranchNodeStateHash,
+		IsBackward:    false,
+		TargetId:      refGS.Count + 2,
+	}, &protos.GlobalStateUpdateTask{
+		Target:        refGS.ParentNode(),
+		TargetEdgeBeg: refGS.LastBranchNodeStateHash,
+		TargetEdgeEnd: key,
+		IsBackward:    true,
+		TargetId:      refGS.Count,
+	}
+	path.after = &pathUpdateTask{GlobalStateUpdateTask: afterTsk, idoffset: 1}
+	path.before = &pathUpdateTask{GlobalStateUpdateTask: beforeTsk, idoffset: 1}
+
+	for _, tsk := range []*pathUpdateTask{path.after, path.before} {
+		tsk.updatingPath = append(tsk.updatingPath, path)
+		path.activingPath[tsk] = true
+	}
+
+	return path
+}
+
+func (txdb *GlobalDataDB) newPathUpdatedByConnected(startGS, refGS *protos.GlobalState, key []byte) *pathUnderUpdating {
+	path := newPathUpdating(txdb, stateToEdge(startGS).String())
+	tsk := &pathUpdateTask{updatingPath: []*pathUnderUpdating{path}}
+
+	if len(startGS.NextNodeStateHash) == 0 {
+		path.branchedId = startGS.Count + 1
+		targetId := max(startGS.Count, refGS.Count-1) + 1
+		endBranch := refGS.BranchedSelf()
+		if len(endBranch) == 0 {
+			endBranch = refGS.NextBranchNodeStateHash
+		}
+		tsk.GlobalStateUpdateTask = &protos.GlobalStateUpdateTask{
+			Target:        key,
+			TargetEdgeBeg: startGS.LastBranchNodeStateHash,
+			TargetEdgeEnd: endBranch,
+			IsBackward:    true,
+			TargetId:      targetId,
+		}
+		tsk.idoffset = targetId - startGS.Count
+		path.before = tsk
+		path.activingPath[tsk] = true
+
+	} else if len(startGS.ParentNodeStateHash) == 0 {
+		path.branchedId = startGS.Count
+		targetId := max(startGS.Count, refGS.Count+1) + 1
+		begBranch := refGS.BranchedSelf()
+		if len(begBranch) == 0 {
+			begBranch = refGS.LastBranchNodeStateHash
+		}
+		tsk.GlobalStateUpdateTask = &protos.GlobalStateUpdateTask{
+			Target:        key,
+			TargetEdgeBeg: begBranch,
+			TargetEdgeEnd: startGS.NextBranchNodeStateHash,
+			IsBackward:    false,
+			TargetId:      targetId,
+		}
+		tsk.idoffset = targetId - startGS.Count
+		path.after = tsk
+		path.activingPath[tsk] = true
+	} else {
+		dbLogger.Errorf("required to build update task for malformed state [%v]", startGS)
+		return nil
+	}
+
+	return path
+}
+
+func (txdb *GlobalDataDB) addGSCritical(sn *gorocksdb.Snapshot, wb *gorocksdb.WriteBatch, parentStateHash []byte, statehash []byte) ([]*pathUpdateTask, error) {
+
+	parentgs, newgs := txdb.mustReadState(sn, parentStateHash), txdb.mustReadState(sn, statehash)
+	nbhBackup, lbhBackup := parentgs.GetNextBranchNodeStateHash(), newgs.GetLastBranchNodeStateHash()
+	connected := parentgs != nil && newgs != nil
+
+	//first update possible change on branch inf., so the following reference will be correct
+	if parentgs != nil {
+		for _, childHash := range parentgs.NextNodeStateHash {
+			if bytes.Compare(statehash, childHash) == 0 {
 				//we have a duplicated addition (both current and parent is existed and connected)
 				return nil, nil
 			}
 		}
 
-		//or it was not allowed in DAG
-		if !txdb.useCycleGraph {
-			return nil, StateDuplicatedError{fmt.Errorf("state [%x] exist", statehash)}
+		parentgs.NextNodeStateHash = append(parentgs.NextNodeStateHash, statehash)
+		if len(parentgs.GetNextNodeStateHash()) == 2 {
+			//the "critical" point that is, node will just become branched after
+			//this edge is added
+			parentgs.NextBranchNodeStateHash = parentStateHash
 		}
+	}
 
-		wb.MergeCF(txdb.globalCF, statehash,
-			encodeMergeValue(update_lastnode, 0, parentStateHash))
-
-		if len(gs.ParentNodeStateHash) == 1 {
-			cmt.refGSAdded = gs
+	if newgs != nil {
+		newgs.ParentNodeStateHash = append(newgs.ParentNodeStateHash, parentStateHash)
+		if len(newgs.GetParentNodeStateHash()) == 2 {
+			newgs.LastBranchNodeStateHash = statehash
 		}
+	}
 
-		//consider this case:
-		// ------- grandparent ---- parent --->---> <current>
-		// when parent state (not a node before) connected to current (it definitiely a node now)
-		// the "backward" path of parent (include parent itself) must be updated
-		// because their "lastbranch" should change from nil to <current>
-		if len(parentgs.NextNodeStateHash) == 0 {
-			cmt.refGS = parentgs
-			cmt.tailCase = true
-		}
-
-	} else {
-
-		newgs := protos.NewGlobalState()
-
-		newgs.Count = parentgs.Count + 1
-		newgs.ParentNodeStateHash = [][]byte{parentStateHash}
-		if !parentgs.Branched() && cmt.refGS == nil {
-			newgs.LastBranchNodeStateHash = parentgs.LastBranchNodeStateHash
+	if parentgs == nil {
+		dbLogger.Infof("Will create detach state [%x]", parentStateHash)
+		parentgs = protos.NewGlobalState()
+		parentgs.NextNodeStateHash = [][]byte{statehash}
+		if newgs != nil {
+			parentgs.Count = newgs.Count - 1
+			if newgs.Branched() {
+				parentgs.NextBranchNodeStateHash = statehash
+				parentgs.LastBranchNodeStateHash = txdb.genTerminalStateKey()
+			} else {
+				parentgs.NextBranchNodeStateHash = newgs.NextBranchNodeStateHash
+				parentgs.LastBranchNodeStateHash = newgs.LastBranchNodeStateHash
+			}
 		} else {
+			parentgs.Count = detachedIdStart
+			parentgs.NextBranchNodeStateHash = txdb.genTerminalStateKey()
+			parentgs.LastBranchNodeStateHash = txdb.genTerminalStateKey()
+		}
+	}
+
+	if newgs == nil {
+		dbLogger.Debugf("Will create new state [%x]", statehash)
+		newgs = protos.NewGlobalState()
+		newgs.ParentNodeStateHash = [][]byte{parentStateHash}
+		newgs.Count = parentgs.Count + 1
+		if parentgs.Branched() {
 			newgs.LastBranchNodeStateHash = parentStateHash
+			newgs.NextBranchNodeStateHash = txdb.genTerminalStateKey()
+		} else {
+			newgs.NextBranchNodeStateHash = parentgs.NextBranchNodeStateHash
+			newgs.LastBranchNodeStateHash = parentgs.LastBranchNodeStateHash
 		}
+	}
 
-		vbytes, err := newgs.Bytes()
-		if err != nil {
-			return nil, fmt.Errorf("could not encode state [%x]: %s", statehash, err)
+	cmt := []*pathUpdateTask{}
+	//update task for unbranched state
+	//in handling task, we must "restore" the corresponding state into
+	//its original status (without connected with another)
+	parentgs.NextNodeStateHash = parentgs.NextNodeStateHash[:len(parentgs.NextNodeStateHash)-1]
+	if !parentgs.Branched() {
+		if len(parentgs.NextNodeStateHash) == 1 {
+			//notice, also restore the nextbranch ...
+			parentgs.NextBranchNodeStateHash = nbhBackup
+
+			//we must trigger path updating task for critical point
+			upath := txdb.newPathUpdatedByBranchNode(parentStateHash, parentgs)
+			if err := txdb.registryTasks(upath); err != nil {
+				return nil, err
+			}
+			cmt = append(cmt, upath.before, upath.after)
+			//also update branch information, we have no merge op for this state any more
+			parentgs.NextBranchNodeStateHash = parentStateHash
+			parentgs.Count++
+		} else if connected {
+			//that is, nextnode is 0, we have a "connected" case
+			upath := txdb.newPathUpdatedByConnected(parentgs, newgs, parentStateHash)
+			if err := txdb.registryTasks(upath); err != nil {
+				return nil, err
+			}
+			cmt = append(cmt, upath.before)
 		}
+	}
+	parentgs.NextNodeStateHash = append(parentgs.NextNodeStateHash, statehash)
 
+	newgs.ParentNodeStateHash = newgs.ParentNodeStateHash[:len(newgs.ParentNodeStateHash)-1]
+	if !newgs.Branched() {
+		if len(newgs.ParentNodeStateHash) == 1 {
+			newgs.LastBranchNodeStateHash = lbhBackup
+			upath := txdb.newPathUpdatedByBranchNode(statehash, newgs)
+			if err := txdb.registryTasks(upath); err != nil {
+				return nil, err
+			}
+			cmt = append(cmt, upath.before, upath.after)
+			newgs.LastBranchNodeStateHash = statehash
+			newgs.Count++
+		} else if connected {
+			upath := txdb.newPathUpdatedByConnected(newgs, parentgs, statehash)
+			if err := txdb.registryTasks(upath); err != nil {
+				return nil, err
+			}
+			cmt = append(cmt, upath.after)
+		}
+	}
+	newgs.ParentNodeStateHash = append(newgs.ParentNodeStateHash, parentStateHash)
+
+	//because mustread always obtain the up-to-date state, write-after-read is possible
+	if vbytes, err := parentgs.Bytes(); err != nil {
+		return nil, fmt.Errorf("could not encode state [%x]: %s", parentStateHash, err)
+	} else {
+		wb.PutCF(txdb.globalCF, parentStateHash, vbytes)
+	}
+	if vbytes, err := newgs.Bytes(); err != nil {
+		return nil, fmt.Errorf("could not encode state [%x]: %s", statehash, err)
+	} else {
 		wb.PutCF(txdb.globalCF, statehash, vbytes)
-
 	}
 
-	wb.MergeCF(txdb.globalCF, parentStateHash,
-		encodeMergeValue(update_nextnode, 0, statehash))
+	return cmt, nil
 
-	if cmt.refGS != nil || cmt.refGSAdded != nil {
-		//we clear the wb in cmt, so cmt.clear never release the write batch
-		ret := &gscommiter{}
-		*ret = *cmt
-		cmt.WriteBatch = nil
-		return ret, nil
-	}
-
-	err = txdb.BatchCommit(wb)
-	if err != nil {
-		return nil, fmt.Errorf("commit on node [%x] was ruined: %s", parentStateHash, err)
-	}
-
-	return nil, nil
-
-}
-
-func (txdb *GlobalDataDB) walkOnGraph(sn *gorocksdb.Snapshot, target []byte,
-	di func(*protos.GlobalState) []byte, c chan *protos.GlobalState) {
-
-	var gs *protos.GlobalState
-	for ; target != nil; target = di(gs) {
-
-		gsbyte, err := txdb.getFromSnapshot(sn, txdb.globalCF, target)
-		if gsbyte == nil {
-			dbLogger.Errorf("Could not found state [%x]", target)
-			break
-		}
-
-		gs, err = protos.UnmarshallGS(gsbyte)
-		if err != nil {
-			dbLogger.Errorf("Decode state [%x] fail: %s", target, err)
-			break
-		}
-
-		c <- gs
-	}
-
-	close(c)
-}
-
-//start from a gs which will change into a node in graph, we update the path which it was in
-func (txdb *GlobalDataDB) updatePath(sn *gorocksdb.Snapshot, wb *gorocksdb.WriteBatch,
-	refGS *protos.GlobalState, refGSKey []byte) {
-
-	//update backward for their "nextbranch"
-	cfront := make(chan *protos.GlobalState, 8)
-
-	gskey := refGS.ParentNode()
-	go txdb.walkOnGraph(sn, gskey, (*protos.GlobalState).ParentNode, cfront)
-
-	for gs := range cfront {
-		wb.MergeCF(txdb.globalCF, gskey, encodeMergeValue(update_nextbranch,
-			refGS.Count, refGSKey))
-		gskey = gs.ParentNode()
-	}
-
-	//update forward for their "lastbranch"
-	cback := make(chan *protos.GlobalState, 8)
-
-	gskey = refGS.NextNode()
-	go txdb.walkOnGraph(sn, gskey, (*protos.GlobalState).NextNode, cback)
-
-	for gs := range cback {
-		wb.MergeCF(txdb.globalCF, gskey, encodeMergeValue(update_lastbranch,
-			gs.Count-refGS.Count, refGSKey))
-		gskey = gs.NextNode()
-	}
 }
 
 func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byte) error {
@@ -450,47 +625,55 @@ func (txdb *GlobalDataDB) AddGlobalState(parentStateHash []byte, statehash []byt
 	if bytes.Compare(parentStateHash, statehash) == 0 {
 		//never concat same state
 		return nil
+	} else if len(statehash) > txdb.globalHashLimit {
+		return fmt.Errorf("add a state whose hash (%x) is longer than limited (%d)", statehash, txdb.globalHashLimit)
+	} else if len(parentStateHash) > txdb.globalHashLimit {
+		return fmt.Errorf("add a parent state whose hash (%x) is longer than limited (%d)", parentStateHash, txdb.globalHashLimit)
 	}
 
-	cm, err := txdb.addGSCritical(parentStateHash, statehash)
-	defer cm.clear()
+	wb := txdb.NewWriteBatch()
+	defer wb.Destroy()
 
-	if err != nil {
-		return err
-	}
+	//this read and write is critical and must be serialized
+	txdb.globalStateLock.Lock()
 
-	if cm == nil { //done
-		return nil
-	}
-
-	//create snapshot, start updating on gs-tree
 	sn := txdb.NewSnapshot()
 	defer txdb.ReleaseSnapshot(sn)
 
-	if cm.refGS != nil {
-		var targetHash []byte
-		if cm.tailCase {
-			targetHash = statehash
-		} else {
-			targetHash = parentStateHash
+	tsks, err := txdb.addGSCritical(sn, wb, parentStateHash, statehash)
+	if err == nil {
+		//TODO: we may also need to persist updating tasks?
+		err = txdb.BatchCommit(wb)
+		if err != nil {
+			dbLogger.Errorf("Commiting add global state fail: %s", err)
 		}
-
-		//parent itself should be update for "nextbrach"
-		cm.MergeCF(txdb.globalCF, parentStateHash, encodeMergeValue(update_nextbranch,
-			cm.refGS.Count, targetHash))
-		txdb.updatePath(sn, cm.WriteBatch, cm.refGS, targetHash)
 	}
 
-	if cm.refGSAdded != nil {
-		//(overlapped) gs itself should be update for "last brach"
-		cm.MergeCF(txdb.globalCF, statehash, encodeMergeValue(update_lastbranch,
-			0, statehash))
-		txdb.updatePath(sn, cm.WriteBatch, cm.refGSAdded, statehash)
+	txdb.globalStateLock.Unlock()
+
+	if len(tsks) == 0 {
+		return err
 	}
 
-	err = txdb.BatchCommit(cm.WriteBatch)
-	if err != nil {
-		return fmt.Errorf("commit on node [%x] was ruined: %s", parentStateHash, err)
+	//notice writebatch must be clear first!
+	wb.Clear()
+
+	//execute all tasks ...
+	for _, task := range tsks {
+		dbLogger.Debugf("Spawn path updating <%d> [%v]", task.index, task)
+		defer task.finalize(txdb)
+		for task.updatePath(sn, wb, txdb) == shouldCommit {
+			if err = txdb.BatchCommit(wb); err != nil {
+				dbLogger.Errorf("Commiting updatepath task fail: %s", err)
+				return err
+			}
+			wb.Clear()
+		}
+	}
+	//final commiting
+	if err = txdb.BatchCommit(wb); err != nil {
+		dbLogger.Errorf("Commiting final add global state fail: %s", err)
+		return err
 	}
 
 	return nil
@@ -634,29 +817,12 @@ func (openchainDB *GlobalDataDB) GetIterator(cfName string) *gorocksdb.Iterator 
 func (txdb *GlobalDataDB) PutGenesisGlobalState(statehash []byte) error {
 
 	newgs := protos.NewGlobalState()
-
-	//if you connect root gs from tail, you got some wired situtation:
-	//there is a cycle without any node so walkPath method will not stop
-	//we avoid this case by setting a "dummy" gs which is never accessed
-	if txdb.useCycleGraph {
-		dummygs := protos.NewGlobalState()
-		dummygs.NextNodeStateHash = [][]byte{statehash}
-		v, err := dummygs.Bytes()
-		if err != nil {
-			return err
-		}
-		dummykey := bytes.Join([][]byte{[]byte("DUMMYGS#"), statehash}, nil)
-		err = txdb.PutValue(GlobalCF, dummykey, v)
-		if err != nil {
-			return err
-		}
-		newgs.ParentNodeStateHash = [][]byte{dummykey}
-	}
+	newgs.LastBranchNodeStateHash, newgs.NextBranchNodeStateHash = txdb.genTerminalStateKey(), txdb.genTerminalStateKey()
+	//notice: we set the Lcount is 0 so it cannot be change
 
 	v, err := newgs.Bytes()
-
 	if err == nil {
-		err = txdb.PutValue(GlobalCF, []byte(statehash), v)
+		err = txdb.PutValue(GlobalCF, statehash, v)
 	}
 	return err
 }

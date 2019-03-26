@@ -15,8 +15,57 @@ func (gs *GlobalState) Bytes() ([]byte, error) {
 
 // Test state is a branch (or a node in the state graphic)
 func (gs *GlobalState) Branched() bool {
+
+	if gs == nil {
+		return false
+	}
+
 	return len(gs.NextNodeStateHash) > 1 ||
 		len(gs.ParentNodeStateHash) > 1
+}
+
+func (gs *GlobalState) ForwardBranched() bool {
+
+	if gs == nil {
+		return false
+	}
+
+	return len(gs.NextNodeStateHash) > 1
+}
+
+func (gs *GlobalState) BackwardBranched() bool {
+
+	if gs == nil {
+		return false
+	}
+
+	return len(gs.ParentNodeStateHash) > 1
+}
+
+func (gs *GlobalState) Isolated() bool {
+
+	if gs == nil {
+		return false
+	}
+
+	return len(gs.NextNodeStateHash) == 0 &&
+		len(gs.ParentNodeStateHash) == 0
+}
+
+func (gs *GlobalState) BranchedSelf() []byte {
+
+	if gs == nil {
+		return nil
+	}
+
+	if len(gs.NextNodeStateHash) > 1 {
+		return gs.NextBranchNodeStateHash
+	} else if len(gs.ParentNodeStateHash) > 1 {
+		return gs.LastBranchNodeStateHash
+	} else {
+		return nil
+	}
+
 }
 
 func (gs *GlobalState) NextNode() []byte {
@@ -50,4 +99,13 @@ func UnmarshallGS(gsBytes []byte) (*GlobalState, error) {
 		return nil, fmt.Errorf("Could not unmarshal GlobalState: %s", err)
 	}
 	return gs, nil
+}
+
+func (tsk *GlobalStateUpdateTask) Bytes() ([]byte, error) {
+	data, err := proto.Marshal(tsk)
+	if err != nil {
+		logger.Errorf("Error marshalling GlobalState UpdatingTask: %s", err)
+		return nil, fmt.Errorf("Could not marshal GlobalState UpdatingTask: %s", err)
+	}
+	return data, nil
 }

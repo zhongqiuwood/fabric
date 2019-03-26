@@ -175,21 +175,384 @@ func assertByteEqual(t *testing.T, v []byte, expected string) {
 	t.Fatalf("Value is not equal: get %s, expected %s", string(v), expected)
 }
 
-func TestTxDBGlobalStateBranchRW(t *testing.T) {
+func TestMergeOpEncoding(t *testing.T) {
+	for i := 0; i < 1000; i++ {
+		t1, t2 := util.GenerateBytesUUID(), util.GenerateBytesUUID()
+		rc := rand.Uint64()
+		enc := encodePathUpdate(rc, t1, t2)
 
+		c, h, e := decodeMergeValue(enc[1:])
+		if e != nil {
+			t.Fatalf("first fail: %s;%X", e, enc)
+		}
+
+		td1, td2, e := decodePathInfo(h)
+		if e != nil {
+			t.Fatalf("second fail: %s;%X", e, h)
+		}
+
+		if bytes.Compare(td1, t1) != 0 {
+			t.Fatalf("t1 fail: %X vs %X", td1, t1)
+		}
+		if bytes.Compare(td2, t2) != 0 {
+			t.Fatalf("t2 fail: %X vs %X", td2, t2)
+		}
+		if c != rc {
+			t.Fatalf("count fail: %d vs %d", c, rc)
+		}
+	}
+}
+
+func testTerminalKeyGen() []byte {
+	return []byte(util.GenerateUUID())[:8]
+}
+
+func adjustTKGen(f func() []byte) (ret func() []byte) {
+	terminalKeyGen, ret = f, terminalKeyGen
+	return
+}
+
+func dumpUpdating(t *testing.T, tip string, txdb *GlobalDataDB) {
+	t.Logf("----------- dumping updating: %s ------------", tip)
+	for k, v := range txdb.updating {
+		t.Logf("[%s]:branchid %d; before {%v}, after {%v}, activing %d", k, v.branchedId, v.before, v.after, len(v.activingPath))
+	}
+	t.Logf(" ---------- dumping updating over -----------")
+}
+
+func pollstate(t *testing.T, gs_old *pb.GlobalState, txdb *GlobalDataDB) *pb.GlobalState {
+	gs := new(pb.GlobalState)
+	*gs = *gs_old
+	var err error
+	for ud, ok := txdb.updating[stateToEdge(gs).String()]; ok; ud, ok = txdb.updating[stateToEdge(gs).String()] {
+		//		t.Logf("found path [%#v][%#v]@%d", ud.before, ud.after, ud.branchedId)
+		gs, err = ud.updateGlobalState(gs)
+		//		t.Logf("poll to [%v]", gs)
+		if err != nil {
+			t.Fatalf("state was ruined (has no valid update: %s)", err)
+		}
+	}
+	return gs
+}
+
+func TestTxDBGlobalState_branchtasks(t *testing.T) {
+
+	tdb := new(GlobalDataDB)
+	tdb.globalHashLimit = 6
+	tdb.updating = make(map[string]*pathUnderUpdating)
+	tdb.activing = make(map[string][]*pathUpdateTask)
+
+	testgs := new(pb.GlobalState)
+	testgs.Count = 20
+	testgs.NextBranchNodeStateHash = []byte("*braEnd")
+	testgs.LastBranchNodeStateHash = []byte("*bBegin")
+
+	ud1 := tdb.newPathUpdatedByBranchNode([]byte("test1"), testgs)
+	if err := tdb.registryTasks(ud1); err != nil {
+		t.Fatalf("Ud1 fail: %s [%v]", err, ud1)
+	}
+	dumpUpdating(t, "task 1", tdb)
+
+	if len(tdb.activing) != 2 && len(tdb.updating) != 1 {
+		t.Fatalf("reg fail: [%v]", tdb.activing)
+	}
+
+	testgs.Count = 15
+	testgsUd := pollstate(t, testgs, tdb)
+
+	if testgsUd.Count != 16 {
+		t.Fatalf("update error on count: [%v]", testgsUd)
+	}
+
+	assertByteEqual(t, testgsUd.LastBranchNodeStateHash, "*bBegin")
+	assertByteEqual(t, testgsUd.NextBranchNodeStateHash, "test1")
+
+	testgs.Count = 23
+	testgsUd = pollstate(t, testgs, tdb)
+
+	if testgsUd.Count != 24 {
+		t.Fatalf("update error on count: [%v]", testgsUd)
+	}
+
+	assertByteEqual(t, testgsUd.LastBranchNodeStateHash, "test1")
+	assertByteEqual(t, testgsUd.NextBranchNodeStateHash, "*braEnd")
+
+	ud2 := tdb.newPathUpdatedByBranchNode([]byte("test2"), testgsUd)
+	if err := tdb.registryTasks(ud2); err != nil {
+		t.Fatalf("Ud2 fail: %s [%v]", err, ud2)
+	}
+	dumpUpdating(t, "task 2", tdb)
+
+	if len(tdb.activing) != 3 && len(tdb.updating) != 2 {
+		t.Fatalf("reg fail: [%v]", tdb.activing)
+	}
+
+	testgs.Count = 27
+	testgsUd = pollstate(t, testgs, tdb)
+	if testgsUd.Count != 29 {
+		t.Fatalf("update error on count: [%v]", testgsUd)
+	}
+	assertByteEqual(t, testgsUd.LastBranchNodeStateHash, "test2")
+	assertByteEqual(t, testgsUd.NextBranchNodeStateHash, "*braEnd")
+
+	testgs.Count = 22
+	testgsUd = pollstate(t, testgs, tdb)
+	if testgsUd.Count != 24 {
+		t.Fatalf("update error on count: [%v]", testgsUd)
+	}
+	assertByteEqual(t, testgsUd.LastBranchNodeStateHash, "test1")
+	assertByteEqual(t, testgsUd.NextBranchNodeStateHash, "test2")
+
+	testgs.Count = 23
+	testgs.LastBranchNodeStateHash = []byte("test1")
+	testgs.NextBranchNodeStateHash = []byte("*braEnd")
+
+	testgsUd = pollstate(t, testgs, tdb)
+	if testgsUd.Count != 24 {
+		t.Fatalf("update error on count: [%v]", testgsUd)
+	}
+	assertByteEqual(t, testgsUd.LastBranchNodeStateHash, "test1")
+	assertByteEqual(t, testgsUd.NextBranchNodeStateHash, "test2")
+
+	ud1.before.finalize(tdb)
+	if len(ud1.activingPath) != 2 {
+		t.Fatalf("fail after finalize ud1 before: [%v]", ud1)
+	}
+
+	ud2.before.finalize(tdb)
+	if len(ud2.activingPath) != 1 {
+		t.Fatalf("fail after finalize ud2 before: [%v]", ud2)
+	}
+
+	ud1.after.finalize(tdb)
+	if len(ud1.activingPath) != 1 || len(tdb.updating) != 2 {
+		t.Fatalf("fail after finalize ud1 after: [%v], [%v]", ud1, tdb.updating)
+	}
+
+	ud2.after.finalize(tdb)
+	if len(ud2.activingPath) != 0 {
+		t.Fatalf("fail after finalize ud2 after: [%v]", ud2)
+	}
+
+	if len(tdb.updating) != 0 || len(tdb.activing) != 0 {
+		t.Fatalf("fail all task is cleared: [%v], [%v]", tdb.updating, tdb.activing)
+	}
+}
+
+func TestTxDBGlobalState_connectedtasks(t *testing.T) {
+
+	tdb := new(GlobalDataDB)
+	tdb.globalHashLimit = 6
+	tdb.updating = make(map[string]*pathUnderUpdating)
+	tdb.activing = make(map[string][]*pathUpdateTask)
+
+	testgs1 := new(pb.GlobalState)
+	testgs1.Count = 10
+	testgs1.NextNodeStateHash = [][]byte{[]byte("dummy")}
+	testgs1.NextBranchNodeStateHash = []byte("*braEnd1")
+	testgs1.LastBranchNodeStateHash = []byte("*bBegin1")
+
+	testgs2 := new(pb.GlobalState)
+	testgs2.Count = 20
+	testgs2.ParentNodeStateHash = [][]byte{[]byte("dummy")}
+	testgs2.NextBranchNodeStateHash = []byte("*braEnd2")
+	testgs2.LastBranchNodeStateHash = []byte("*bBegin2")
+
+	ud1 := tdb.newPathUpdatedByConnected(testgs1, testgs2, []byte("test1"))
+	if err := tdb.registryTasks(ud1); err != nil {
+		t.Fatalf("Ud1 fail: %s [%v]", err, ud1)
+	}
+	dumpUpdating(t, "task 1", tdb)
+
+	if ud1.before != nil {
+		t.Fatalf("malform ud1: [%v]", ud1)
+	}
+	assertIntEqual(t, int(ud1.after.idoffset), 12)
+
+	ud2 := tdb.newPathUpdatedByConnected(testgs2, testgs1, []byte("test2"))
+	if err := tdb.registryTasks(ud2); err != nil {
+		t.Fatalf("Ud2 fail: %s [%v]", err, ud2)
+	}
+	dumpUpdating(t, "task 2", tdb)
+
+	if ud2.after != nil {
+		t.Fatalf("malform ud2: [%v]", ud2)
+	}
+	assertIntEqual(t, int(ud2.before.idoffset), 1)
+	assertIntEqual(t, len(ud1.activingPath), 1)
+	assertIntEqual(t, len(tdb.updating), 2)
+	assertIntEqual(t, len(ud2.before.updatingPath), 1)
+	assertIntEqual(t, len(ud1.after.updatingPath), 1)
+
+	testgsUd := pollstate(t, testgs1, tdb)
+	if len(tdb.activing[stateToEdge(testgsUd).String()]) != 2 {
+		t.Fatalf("malform activing on gs [%v]: [%v]", testgsUd, tdb.activing)
+	}
+
+	assertIntEqual(t, int(testgsUd.Count), 22)
+
+	testgs3 := new(pb.GlobalState)
+	testgs3.Count = 4
+	testgs3.NextNodeStateHash = [][]byte{[]byte("dummy")}
+	testgs3.NextBranchNodeStateHash = []byte("*braEnd3")
+	testgs3.LastBranchNodeStateHash = []byte("*bBegin3")
+
+	testgs1.Count = 15
+	testgs1.ParentNodeStateHash = [][]byte{[]byte("dummy")}
+	testgs1.NextNodeStateHash = nil
+	testgs1 = pollstate(t, testgs1, tdb)
+
+	ud3 := tdb.newPathUpdatedByConnected(testgs1, testgs3, []byte("test3"))
+	if err := tdb.registryTasks(ud3); err != nil {
+		t.Fatalf("Ud3 fail: %s [%v]", err, ud3)
+	}
+	ud4 := tdb.newPathUpdatedByConnected(testgs3, testgs1, []byte("test4"))
+	if err := tdb.registryTasks(ud4); err != nil {
+		t.Fatalf("Ud4 fail: %s [%v]", err, ud4)
+	}
+	dumpUpdating(t, "task 3", tdb)
+
+	assertIntEqual(t, len(tdb.activing), 1)
+	assertIntEqual(t, len(tdb.updating), 4)
+	testgsUd = pollstate(t, testgsUd, tdb)
+	if len(tdb.activing[stateToEdge(testgsUd).String()]) != 2 {
+		t.Fatalf("malform activing on gs [%v]: [%v]", testgsUd, tdb.activing)
+	}
+
+	if ud1.after.updatingPath != nil {
+		t.Fatalf("canceled ud1 is not set: [%v]", ud1)
+	}
+
+	assertIntEqual(t, len(ud3.before.updatingPath), 3)
+
+	ud5 := tdb.newPathUpdatedByBranchNode([]byte("test5"), testgsUd)
+	if err := tdb.registryTasks(ud5); err != nil {
+		t.Fatalf("Ud5 fail: %s [%v]", err, ud5)
+	}
+	dumpUpdating(t, "task 4", tdb)
+	assertIntEqual(t, len(tdb.updating), 5)
+	assertIntEqual(t, len(tdb.activing), 2)
+
+	testgs2.Count = 13
+	testgs2.ParentNodeStateHash = nil
+	testgs2.NextNodeStateHash = [][]byte{[]byte("dummy")}
+	testgs2 = pollstate(t, testgs2, tdb)
+	assertByteEqual(t, testgs2.LastBranchNodeStateHash, "*bBegin2")
+
+	testgs4 := new(pb.GlobalState)
+	testgs4.Count = 7
+	testgs4.ParentNodeStateHash = [][]byte{[]byte("dummy")}
+	testgs4.NextBranchNodeStateHash = []byte("*braEnd4")
+	testgs4.LastBranchNodeStateHash = []byte("*bBegin4")
+
+	ud6 := tdb.newPathUpdatedByConnected(testgs4, testgs2, []byte("test6"))
+	if err := tdb.registryTasks(ud6); err != nil {
+		t.Fatalf("Ud6 fail: %s [%v]", err, ud6)
+	}
+	ud7 := tdb.newPathUpdatedByConnected(testgs2, testgs4, []byte("test7"))
+	if err := tdb.registryTasks(ud7); err != nil {
+		t.Fatalf("Ud7 fail: %s [%v]", err, ud7)
+	}
+	dumpUpdating(t, "task 5", tdb)
+	assertIntEqual(t, len(tdb.activing), 2)
+	assertTrue(t, tdb.activing[ud5.after.index()] != nil)
+
+	ud5.after.finalize(tdb)
+	dumpUpdating(t, "task 6", tdb)
+	assertIntEqual(t, len(tdb.activing), 1)
+
+	ud6.before.finalize(tdb)
+	dumpUpdating(t, "task 7", tdb)
+	assertIntEqual(t, len(tdb.activing), 1)
+	//the interval that ud6 built can be removed
+	assertIntEqual(t, len(tdb.updating), 6)
+
+	tt := new(pb.GlobalState)
+	tt.Count = 11
+	tt.NextBranchNodeStateHash = []byte("*braEnd1")
+	tt.LastBranchNodeStateHash = []byte("*bBegin1")
+
+	tt = pollstate(t, tt, tdb)
+	assertByteEqual(t, tt.LastBranchNodeStateHash, "test5")
+	assertByteEqual(t, tt.NextBranchNodeStateHash, "*braEnd3")
+	assertIntEqual(t, int(tt.Count), 25)
+
+	ud7.after.finalize(tdb)
+	if len(tdb.updating) != 0 || len(tdb.activing) != 0 {
+		t.Fatalf("fail all task is cleared: [%v], [%v]", tdb.updating, tdb.activing)
+	}
+}
+
+func TestTxDBGlobalState_Basic(t *testing.T) {
+
+	//test for the base state rw: a linear state, include detaching and connecting
+	defer adjustTKGen(adjustTKGen(testTerminalKeyGen))
 	Start()
+	globalDataDB.globalHashLimit = 8
 	defer deleteTestDBPath()
 	defer Stop()
 
-	err := globalDataDB.PutGenesisGlobalState([]byte("stateroot"))
+	err := globalDataDB.PutGenesisGlobalState([]byte("sroot"))
 	if err != nil {
 		t.Fatal("Add state fail", err)
 	}
 
-	testPopulatePath(t, "stateroot", []string{"s1", "s2", "s3", "s4", "s5", "s6"})
+	dumpCF(t)
+	gs := globalDataDB.getGlobalStateRaw([]byte("sroot"))
+	assertTrue(t, globalDataDB.isVirtualState(gs.LastBranchNodeStateHash))
+	assertTrue(t, globalDataDB.isVirtualState(gs.NextBranchNodeStateHash))
+	sbegin := string(gs.LastBranchNodeStateHash)
+	send := string(gs.NextBranchNodeStateHash)
+
+	testPopulatePath(t, "sroot", []string{"s1", "s2"})
 	dumpCF(t)
 
-	gs := globalDataDB.GetGlobalState([]byte("stateroot"))
+	gs = globalDataDB.getGlobalStateRaw([]byte("sroot"))
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), send)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), sbegin)
+
+	gs = globalDataDB.getGlobalStateRaw([]byte("s2"))
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), send)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), sbegin)
+
+	testPopulatePath(t, "s3", []string{"s4", "s5"})
+	dumpCF(t)
+	gs = globalDataDB.getGlobalStateRaw([]byte("s5"))
+	send = string(gs.NextBranchNodeStateHash)
+
+	err = globalDataDB.AddGlobalState([]byte("s2"), []byte("s3"))
+	if err != nil {
+		t.Fatal("connect state fail", err)
+	}
+	dumpCF(t)
+
+	gs = globalDataDB.getGlobalStateRaw([]byte("s5"))
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), send)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), sbegin)
+
+	gs = globalDataDB.getGlobalStateRaw([]byte("s2"))
+	assertTrue(t, !gs.Branched())
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), send)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), sbegin)
+}
+
+func TestTxDBGlobalState_BranchRW(t *testing.T) {
+
+	defer adjustTKGen(adjustTKGen(testTerminalKeyGen))
+	Start()
+	globalDataDB.globalHashLimit = 8
+	defer deleteTestDBPath()
+	defer Stop()
+
+	err := globalDataDB.PutGenesisGlobalState([]byte("sroot"))
+	if err != nil {
+		t.Fatal("Add state fail", err)
+	}
+
+	testPopulatePath(t, "sroot", []string{"s1", "s2", "s3", "s4", "s5", "s6"})
+	dumpCF(t)
+
+	gs := globalDataDB.GetGlobalState([]byte("sroot"))
 	assertByteEqual(t, gs.NextNode(), "s1")
 	assertByteEqual(t, gs.ParentNode(), "")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
@@ -206,7 +569,7 @@ func TestTxDBGlobalStateBranchRW(t *testing.T) {
 	testPopulatePath(t, "s1", []string{"s11", "s12", "s13"})
 	dumpCF(t)
 
-	gs = globalDataDB.GetGlobalState([]byte("stateroot"))
+	gs = globalDataDB.GetGlobalState([]byte("sroot"))
 	assertByteEqual(t, gs.NextNode(), "s1")
 	assertByteEqual(t, gs.ParentNode(), "")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s1")
@@ -239,7 +602,7 @@ func TestTxDBGlobalStateBranchRW(t *testing.T) {
 	assertIntEqual(t, int(gs.Count), 4)
 
 	gs = globalDataDB.GetGlobalState([]byte("s1"))
-	assertByteEqual(t, gs.ParentNode(), "stateroot")
+	assertByteEqual(t, gs.ParentNode(), "sroot")
 	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s1")
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
@@ -256,17 +619,17 @@ func TestTxDBGlobalStateBranchRW(t *testing.T) {
 	gs = globalDataDB.GetGlobalState([]byte("s6"))
 	assertByteEqual(t, gs.ParentNode(), "s5")
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s5")
-	assertIntEqual(t, int(gs.Count), 6)
+	assertIntEqual(t, int(gs.Count), 8)
 
 	gs = globalDataDB.GetGlobalState([]byte("s51"))
 	assertByteEqual(t, gs.ParentNode(), "s5")
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s5")
-	assertIntEqual(t, int(gs.Count), 6)
+	assertIntEqual(t, int(gs.Count), 7)
 
 	gs = globalDataDB.GetGlobalState([]byte("s4"))
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "s5")
-	assertIntEqual(t, int(gs.Count), 4)
+	assertIntEqual(t, int(gs.Count), 6)
 
 	gs = globalDataDB.GetGlobalState([]byte("s1"))
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
@@ -292,7 +655,7 @@ func TestTxDBGlobalStateBranchRW(t *testing.T) {
 	gs = globalDataDB.GetGlobalState([]byte("s1x2"))
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "s1")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
-	assertIntEqual(t, int(gs.Count), 3)
+	assertIntEqual(t, int(gs.Count), 4)
 
 	//branch 4
 	testPopulatePath(t, "s4", []string{"s41", "s42"})
@@ -320,9 +683,11 @@ func TestTxDBGlobalStateBranchRW(t *testing.T) {
 
 }
 
-func TestTxDBGlobalStateDAGRandomRW(t *testing.T) {
+func TestTxDBGlobalState_RandomRW(t *testing.T) {
 
+	defer adjustTKGen(adjustTKGen(testTerminalKeyGen))
 	Start()
+	globalDataDB.globalHashLimit = 8
 	defer deleteTestDBPath()
 	defer Stop()
 
@@ -330,7 +695,7 @@ func TestTxDBGlobalStateDAGRandomRW(t *testing.T) {
 	//we have such a graphic:
 	//                                       |--<root7>
 	//                                       |
-	// <stateroot> ---- <root1> ---- <root2> --- <root3>
+	// <sroot> ---- <root1> ---- <root2> --- <root3>
 	//               |
 	//               |--<root4> ---- <root5>
 	//               |
@@ -338,14 +703,14 @@ func TestTxDBGlobalStateDAGRandomRW(t *testing.T) {
 	//
 	// The adjacent matrix:
 	adjm := map[string][]string{
-		"stateroot": []string{"root1", "root4", "root6"},
-		"root1":     []string{"root2"},
-		"root2":     []string{"root3", "root7"},
-		"root3":     nil,
-		"root4":     []string{"root5"},
-		"root5":     nil,
-		"root6":     nil,
-		"root7":     nil,
+		"sroot": []string{"root1", "root4", "root6"},
+		"root1": []string{"root2"},
+		"root2": []string{"root3", "root7"},
+		"root3": nil,
+		"root4": []string{"root5"},
+		"root5": nil,
+		"root6": nil,
+		"root7": nil,
 	}
 
 	addTask := func(curtasks [][2]string, state string) [][2]string {
@@ -362,13 +727,13 @@ func TestTxDBGlobalStateDAGRandomRW(t *testing.T) {
 	}
 
 	//random populating ...
-	err := globalDataDB.PutGenesisGlobalState([]byte("stateroot"))
+	err := globalDataDB.PutGenesisGlobalState([]byte("sroot"))
 	if err != nil {
 		t.Fatal("Add state fail", err)
 	}
 
 	r := rand.New(rand.NewSource(time.Now().Unix()))
-	curTasks := addTask(nil, "stateroot")
+	curTasks := addTask(nil, "sroot")
 
 	dumpCF(t)
 	for len(curTasks) != 0 {
@@ -395,59 +760,52 @@ func TestTxDBGlobalStateDAGRandomRW(t *testing.T) {
 	}
 
 	//test
-	gs := globalDataDB.GetGlobalState([]byte("stateroot"))
+	gs := globalDataDB.GetGlobalState([]byte("sroot"))
 	assertIntEqual(t, len(gs.NextNodeStateHash), 3)
 	assertByteEqual(t, gs.ParentNode(), "")
-	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "stateroot")
+	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "sroot")
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "")
-	assertIntEqual(t, int(gs.Count), 0)
+	assertIntEqual(t, int(gs.Count), 1)
 
 	gs = globalDataDB.GetGlobalState([]byte("root1"))
 	assertByteEqual(t, gs.NextNode(), "root2")
-	assertByteEqual(t, gs.ParentNode(), "stateroot")
+	assertByteEqual(t, gs.ParentNode(), "sroot")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "root2")
-	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
-	assertIntEqual(t, int(gs.Count), 1)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "sroot")
 
 	gs = globalDataDB.GetGlobalState([]byte("root2"))
 	assertIntEqual(t, len(gs.NextNodeStateHash), 2)
 	assertByteEqual(t, gs.ParentNode(), "root1")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "root2")
-	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
-	assertIntEqual(t, int(gs.Count), 2)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "sroot")
 
 	gs = globalDataDB.GetGlobalState([]byte("root3"))
 	assertByteEqual(t, gs.NextNode(), "")
 	assertByteEqual(t, gs.ParentNode(), "root2")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "root2")
-	assertIntEqual(t, int(gs.Count), 3)
 
 	gs = globalDataDB.GetGlobalState([]byte("root4"))
 	assertByteEqual(t, gs.NextNode(), "root5")
-	assertByteEqual(t, gs.ParentNode(), "stateroot")
+	assertByteEqual(t, gs.ParentNode(), "sroot")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
-	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
-	assertIntEqual(t, int(gs.Count), 1)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "sroot")
 
 	gs = globalDataDB.GetGlobalState([]byte("root6"))
 	assertByteEqual(t, gs.NextNode(), "")
-	assertByteEqual(t, gs.ParentNode(), "stateroot")
+	assertByteEqual(t, gs.ParentNode(), "sroot")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
-	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
-	assertIntEqual(t, int(gs.Count), 1)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "sroot")
 
 	gs = globalDataDB.GetGlobalState([]byte("root7"))
 	assertByteEqual(t, gs.NextNode(), "")
 	assertByteEqual(t, gs.ParentNode(), "root2")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
 	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "root2")
-	assertIntEqual(t, int(gs.Count), 3)
 
 	gs = globalDataDB.GetGlobalState([]byte("root5"))
 	assertByteEqual(t, gs.NextNode(), "")
 	assertByteEqual(t, gs.ParentNode(), "root4")
 	assertByteEqual(t, gs.GetNextBranchNodeStateHash(), "")
-	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "stateroot")
-	assertIntEqual(t, int(gs.Count), 2)
+	assertByteEqual(t, gs.GetLastBranchNodeStateHash(), "sroot")
 }
